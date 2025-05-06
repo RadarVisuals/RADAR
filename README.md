@@ -95,21 +95,19 @@ This project is born from a lifelong passion for music production, visual art, a
 
 ## Roadmap
 
-*   **Visual Effect Expansion:** Introduce a wider array of dynamic visual effects and provide users with more granular control over their parameters.
+*   **Visual Effect Expansion:** Introduce a wider array of dynamic visual effects, further polish parameter object interpolation now visible on the x/y axis and rotation (mainly implemented to cover up the limited 127 step allocation inhereted by MIDI). To further animate these parameter positions when scrolling through presets. Also, another thing where I'm excited about to dive in is something that is called Parameter Locking, or P-locking. This is a concept borrowed from my hardware sequencer / drumcomputer, the Elektron Analog Rytm mkII, where it could serve as a powerful creative tool in addition to RADAR + MIDI functionality. In its original form, P-locking allows you to "record" parameter changes—like filter sweeps, volume tweaks, or pitch shifts—step-by-step across a looping 16-step sequence. Every knob twist is remembered and retriggered at the end of the 16 step loop, giving your sound dynamic variation without ever having to touch the controller again. So imagine this for RADAR like recording a 5 seconds loop over and over again. Overwriting and retriggering continuously when you move a parameter. Ie. moving an asset over the X axis during a 5 second window would just retrigger this movement over and over again.
+
 *   **Advanced MIDI Capabilities:**
-    *   Implement MIDI clock synchronization for tempo-based effects and rhythmic precision.
-    *   Allow mapping of MIDI controls to specific value ranges within parameters.
-    *   Support toggle actions for MIDI button/pad presses.
-*   **Community & Sharing Features:**
-    *   Develop a preset sharing and discovery hub where users can showcase and exchange their RADAR configurations.
-    *   Define standardized methods for importing/exporting RADAR setups to foster community collaboration.
+*   Implement MIDI clock synchronization for tempo-based effects and rhythmic precision.
+*   Allow mapping of MIDI controls to specific value ranges within parameters.
+*   Support toggle actions for MIDI button/pad presses.
 *   **LSP8 Collection Onboarding:** Streamline the process for community members to propose and for admins/curators to whitelist new, compatible LSP8 NFT collections.
-*   **Performance Optimization:** Continuously refine and optimize the custom 2D rendering engine to ensure smooth performance across a diverse range of devices and browsers.
-*   **Open Source Strategy:** Evaluate and potentially open-source key components, utilities, or libraries from RADAR to contribute back to the LUKSO developer ecosystem and serve as examples.
+*   **Performance Optimization:** Continuously refine and optimize the custom 2D rendering engine to ensure smooth performance across a diverse range of devices and browsers. Possibly check pixiJS/threeJS/collaborate with others on this. With potentially mobile optimization in mind.
+*   **Open Source Strategy:** Evaluate and potentially open-source key components, because only now I understand the true potential of creating an open system where others could just create new effects to add to RADAR.
 *   **Deeper LUKSO Integration:** Actively integrate with new and maturing LUKSO Standard Proposals (LSPs) as they become widely adopted, further enhancing RADAR's capabilities within the ecosystem.
-*   **(Future Idea) Advanced Audio Analysis:** Explore more sophisticated audio analysis techniques for even richer and more nuanced visual responses (e.g., beat subdivision detection, melodic analysis).
 *   **(Future Idea) Theme Customization:** Allow users to customize the RADAR UI theme (colors, fonts) and save these preferences to their UP.
-Use code with caution.
+*   **(Future Idea) Layer Preparation:** Allow users to manipulate their owned assets prior to using them as layers within RADAR (as shown on the RADAR grid > tab > Layer Prep with some examples in the "Room 725" threeJS showroom) 
+**(Future Idea) AR Integration:** I have already been playing around with the idea of scanning the UP QR code and overlaying the default radar key on top of it and it seems like this is not even a far fetched achievement. I have to look deeper into this but this is where LSP2 + reusable components are literally made for. 
 
 
 ## MIDI Control Setup
