@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useMemo } from "react";
 import PropTypes from "prop-types";
 import Panel from "./Panel";
-import "./PanelStyles/EventsPanel.css";
+import "./PanelStyles/Eventspanel.css";
 import { EVENT_TYPE_MAP } from "../../config/global-config";
 import { useToast } from "../../context/ToastContext";
 
