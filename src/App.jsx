@@ -1,6 +1,6 @@
 // src/App.jsx
 import React, { useEffect } from "react";
-import MainView from "./components/Main/MainView";
+import MainView from "./components/Main/Mainview";
 import { useConfig } from "./context/ConfigContext";
 
 // Component to handle URL parameters for pure visitor mode
