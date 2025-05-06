@@ -9,14 +9,17 @@
 ---
 
 ## Table of Contents
+
 *   [The RADAR Vision: From Collector to Creator](#the-radar-vision-from-collector-to-creator)
 *   [RADAR Genesis & The Future of Asset Utility](#radar-genesis--the-future-of-asset-utility)
 *   [Core Features & Technologies](#core-features--technologies)
 *   [The Universal Profile as a Creative Hub](#the-universal-profile-as-a-creative-hub)
 *   [A Note from the Creator](#a-note-from-the-creator)
+*   [MIDI Control Setup](#midi-control-setup)
+*   [Audio Reactivity Setup](#audio-reactivity-setup-using-virtual-audio-cable--voicemeeter)
 *   [Technical Stack](#technical-stack)
-*   [Getting Started](#getting-started)
-*   [Usage Brief](#usage-brief)
+*   [Embedding RADAR (iframe)](#embedding-radar-iframe)
+*   [Getting Started (Development)](#getting-started-development)
 *   [Roadmap](#roadmap)
 *   [Contributing](#contributing)
 *   [License](#license)
@@ -26,8 +29,8 @@
 RADAR challenges the notion of NFTs as static collectibles. We believe true digital ownership, powered by LUKSO's Universal Profiles, unleashes a new universe of dynamic use-cases and ignites the imagination for what NFT 2.0 can truly become. With this approach, RADAR aims to set a new standard for interactive digital asset utility.
 
 *   **Your NFTs, Your Engine:** Don't let your assets gather virtual dust. RADAR treats your LSP8 NFTs as potent visual engines, ready to be manipulated and brought to life.
-*   **Ownership is Control & Creation:** Go beyond just holding. Layer, glitch, blend, and animate your assets. Save an infinite number of unique visual setups directly onto *your* Universal Profile.
-*   **Decentralized & Composable:** All your creations – visual presets, MIDI mapping, custom color coded event reactions – are stored on *your* UP using standard ERC725Y keys. It's *your* data, ready for a future of shared, community-driven visual experiences.
+*   **Ownership is Control & Creation:** Go beyond just holding. Layer, glitch, blend, and animate your assets. Save an infinite number of unique visual setups directly onto your Universal Profile.
+*   **Decentralized & Composable:** All your creations – visual presets, MIDI mapping, custom color-coded event reactions – are stored on *your* UP using standard ERC725Y keys. It's *your* data, ready for a future of shared, community-driven visual experiences.
 
 ## RADAR Genesis & The Future of Asset Utility
 
@@ -56,7 +59,7 @@ RADAR integrates deeply with LUKSO's philosophy and innovative architecture:
 
 *   **Tactile MIDI Control (Web MIDI API):**
     *   Intuitive **MIDI Learn** for all visual parameters.
-    *   **Global MIDI Map:** Your controller mapping is saved to `RADAR.MIDI.ParameterMap` on *your* Universal Profile, ensuring consistent control across all presets.
+    *   **Global MIDI Map:** Your controller mapping is saved to `RADAR.MIDI.ParameterMap` on your Universal Profile, ensuring consistent control across all presets.
 
 *   **On-Chain Event Reactions (LSP1 UniversalReceiver):**
     *   Visual effects triggered by on-chain events on your UP (e.g., receiving LYX, tokens).
@@ -76,19 +79,40 @@ RADAR pushes the concept of the Universal Profile beyond a mere wallet or identi
 *   **Cross-Profile VJing & Spectating:** This is where the power of decentralized, on-chain configurations truly shines:
     *   Visit another user's Universal Profile running RADAR.
     *   Load *their* saved visual presets and witness *their* unique artistic interpretations of their assets.
-    *   If you have a MIDI controller, *your* global MIDI map (from your UP) can control the parameters of *their* presets, enabling an unprecedented live, cross-profile VJing experience.
+    *   If you have a MIDI controller, *your* global MIDI map (from *your* UP) can control the parameters of *their* presets, enabling an unprecedented live, cross-profile VJing experience.
     *   See their on-chain events trigger their personally configured visual reactions.
 *   **Future of Whitelist & Community Curation:** Post-hackathon, activating the whitelist panel *within* RADAR (as a MiniApp on a user's UP) could empower trusted community members or "Layer Creators" to curate and propose collections, further decentralizing the artistic ecosystem.
 
 This interplay of personal creation, shared experiences, and on-chain identity begins to scratch the surface of the possibilities achievable with LUKSO's architecture.
 
-## A Note from the Creator
+## A Note from the Creator aka VXCTXR
 
-RADAR is the culmination of a personal artistic vision, developed by a single creator over thousands of hours. It's born from a passion for music production, visual art, and asset creation, and a deep belief in the transformative potential of the LUKSO ecosystem.
+RADAR is more than just an application; it's the culmination of a deeply personal, year-long artistic endeavor undertaken by a single creator. It represents a journey into the heart of my drive for self-expression, fueled by a relentless curiosity to understand and harness the decentralized mindset that LUKSO pioneers. This truly has opened my eyes. Learning to code and conceptualize within this new framework has been a profound experience.
 
-For me, RADAR represents a personal standard for how digital assets can be experienced – not as static images, but as living, breathing components of an interactive and deeply personal creative world. This project is where all my passions converge, and there's an immense amount of potential I'm excited to explore to push this concept, quite literally, out of this world.
+I am immensely grateful for the foundational work and philosophical inspiration provided by the LUKSO team throughout. Your vision for Universal Profiles and a truly composable digital future has been the bedrock upon which RADAR is built.
 
-### MIDI Control Setup
+This project is born from a lifelong passion for music production, visual art, and asset creation, all converging with a steadfast belief in the transformative power of the LUKSO ecosystem. For me, RADAR is a personal benchmark for how digital assets *should* be experienced, how my art *could* be perceived. Not as static images, but as living, breathing components of an interactive and deeply personal creative world. There's a whole new universe of potential to explore here, and I'm thrilled to push this concept, quite literally, out of this world.
+
+## Roadmap
+
+*   **Visual Effect Expansion:** Introduce a wider array of dynamic visual effects and provide users with more granular control over their parameters.
+*   **Advanced MIDI Capabilities:**
+    *   Implement MIDI clock synchronization for tempo-based effects and rhythmic precision.
+    *   Allow mapping of MIDI controls to specific value ranges within parameters.
+    *   Support toggle actions for MIDI button/pad presses.
+*   **Community & Sharing Features:**
+    *   Develop a preset sharing and discovery hub where users can showcase and exchange their RADAR configurations.
+    *   Define standardized methods for importing/exporting RADAR setups to foster community collaboration.
+*   **LSP8 Collection Onboarding:** Streamline the process for community members to propose and for admins/curators to whitelist new, compatible LSP8 NFT collections.
+*   **Performance Optimization:** Continuously refine and optimize the custom 2D rendering engine to ensure smooth performance across a diverse range of devices and browsers.
+*   **Open Source Strategy:** Evaluate and potentially open-source key components, utilities, or libraries from RADAR to contribute back to the LUKSO developer ecosystem and serve as examples.
+*   **Deeper LUKSO Integration:** Actively integrate with new and maturing LUKSO Standard Proposals (LSPs) as they become widely adopted, further enhancing RADAR's capabilities within the ecosystem.
+*   **(Future Idea) Advanced Audio Analysis:** Explore more sophisticated audio analysis techniques for even richer and more nuanced visual responses (e.g., beat subdivision detection, melodic analysis).
+*   **(Future Idea) Theme Customization:** Allow users to customize the RADAR UI theme (colors, fonts) and save these preferences to their UP.
+Use code with caution.
+
+
+## MIDI Control Setup
 
 RADAR offers intuitive MIDI control over its visual parameters, allowing for a tactile and expressive performance experience. Your MIDI mappings are saved globally to your Universal Profile.
 
@@ -97,94 +121,77 @@ RADAR offers intuitive MIDI control over its visual parameters, allowing for a t
 1.  **Connect Your MIDI Controller:**
     *   Plug your MIDI controller (keyboard, knob/fader controller, drum pads, etc.) into your computer, typically via USB.
     *   Most modern MIDI controllers are class-compliant and should be automatically detected by your operating system and browser.
-
 2.  **Enable MIDI in RADAR:**
     *   Locate the **Global MIDI Status button** in the RADAR interface (usually in the bottom-right corner, often represented by a MIDI plug icon).
     *   Click this button. It should indicate a "Connected" state if your controller is detected.
-        *   If it says "Disconnected" or shows an error, ensure your controller is properly connected and recognized by your system. You may need to click it again to initiate the connection.
-
+    *   *If it says "Disconnected" or shows an error, ensure your controller is properly connected and recognized by your system. You may need to click it again to initiate the connection.*
 3.  **Access Layer Controls:**
     *   Open the main **Controls Panel** (usually triggered by a sliders icon in the vertical toolbar).
     *   Select the visual layer (Top, Middle, or Bottom) you wish to map controls for.
-
 4.  **Initiate MIDI Learn for a Parameter:**
     *   For each parameter you want to control (e.g., `Size`, `Speed`, `X Position`, `Opacity`), you'll see a small **'M' (MIDI Learn) button** next to its slider or value display.
     *   Click the 'M' button for the specific parameter you want to map. The button will typically change appearance (e.g., highlight, show "...") to indicate it's now "listening" for a MIDI message.
-
 5.  **Assign Your MIDI Control:**
     *   On your connected MIDI controller, **move the physical knob, fader, or press the pad/key** you want to assign to the selected parameter.
     *   RADAR will detect the incoming MIDI message (e.g., a Control Change (CC) from a knob, or a Note On from a pad).
     *   The parameter will automatically be mapped to that MIDI control. The 'M' button should return to its normal state, and the UI might display the new mapping (e.g., "CC 21").
-
 6.  **Repeat for All Desired Parameters & Layers:**
     *   Continue this process (Steps 3-5) for all other parameters you wish to control across all three visual layers.
-
 7.  **Save Your Global MIDI Map:**
-    *   Once you're satisfied with your mappings for all desired parameters and layers:
-    *   Open the **Save Panel** (usually triggered by a write/disk icon).
-    *   Look for an option like **"Save Global MIDI Map"** or an option to include MIDI settings when saving a visual preset.
-    *   Click to save. This action writes your entire MIDI mapping configuration to the `RADAR.MIDI.ParameterMap` key on your Universal Profile.
+    *   Once you're satisfied with your mappings:
+        *   Open the **Save Panel** (usually triggered by a write/disk icon).
+        *   Look for an option like **"Save Global MIDI Map"** or an option to include MIDI settings when saving a visual preset.
+        *   Click to save. This action writes your entire MIDI mapping configuration to the `RADAR.MIDI.ParameterMap` key on your Universal Profile.
 
 **Key Benefits of RADAR's MIDI System:**
 
-*   **Global & Persistent:** Your MIDI map is saved once to your UP and applies across *all* visual presets you load or create. You don't need to remap for each new visual setup.
+*   **Global & Persistent:** Your MIDI map is saved once to your UP and applies across *all* visual presets.
 *   **Intuitive Learn Mode:** No manual entry of CC numbers or channels needed; just click and move.
-*   **Cross-Profile Compatibility:** When viewing someone else's RADAR setup, *your* saved MIDI map will still control *their* visual parameters, enabling unique cross-profile VJing experiences.
+*   **Cross-Profile Compatibility:** When viewing someone else's RADAR setup, *your* saved MIDI map controls *their* visual parameters.
 
 Now your MIDI controller is your hands-on interface for sculpting visuals in RADAR!
 
-### Audio Reactivity Setup (Using Virtual Audio Cable & Voicemeeter)
+## Audio Reactivity Setup (Using Virtual Audio Cable & Voicemeeter)
 
 To make RADAR's visuals react to the audio playing on your computer (e.g., from your browser or music player), you can route your audio through Voicemeeter using a Virtual Audio Cable. This gives you fine-grained control.
 
 **Prerequisites:**
+
 *   **Voicemeeter** (or Voicemeeter Banana/Potato) installed. Get it from [vb-audio.com/Voicemeeter/](https://vb-audio.com/Voicemeeter/).
-*   **Restart your computer** after installing both.
+*   **VB-CABLE Virtual Audio Cable** installed (optional, but recommended for specific app routing). Get it from [vb-audio.com/Cable/](https://vb-audio.com/Cable/).
+*   **Restart your computer** after installing these.
 
 **Steps:**
 
-1.  **Route Desired Audio to Virtual Cable:**
-    *   **For Browser Audio (e.g., Spotify Web, YouTube):**
-        *   In Windows Sound settings (right-click speaker icon -> "Open Sound settings" -> "App volume and device preferences" or similar advanced options):
-        *   Find your web browser in the list of apps.
+1.  **Route Desired Audio to Virtual Cable (Recommended for Browser/App Audio):**
+    *   In Windows Sound settings ("Open Sound settings" -> "App volume and device preferences"):
+        *   Find your web browser (or other audio app).
         *   Change its **Output** device to **"CABLE Input (VB-Audio Virtual Cable)"**.
-    *   **For System-Wide Audio (Simpler, but less granular):**
-        *   In Windows Sound settings (Playback tab), set **"CABLE Input (VB-Audio Virtual Cable)"** as your **Default Device**. (Be aware this routes *all* system sound initially).
+    *   *Alternatively, for simpler system-wide audio capture (less granular), set "CABLE Input" as your Default Playback Device in Windows Sound settings (Playback tab).*
 
 2.  **Configure Voicemeeter:**
     *   Open Voicemeeter.
-    *   **Hardware Input 1 (or any available input strip):**
-        *   Click the channel name (e.g., "Hardware Input 1").
-        *   Select **"CABLE Output (VB-Audio Virtual Cable)"**. This brings the audio from the virtual cable *into* Voicemeeter.
-        *   Ensure this channel strip is active (not muted, fader up). If you want to hear this audio also through your speakers/headphones directly from Voicemeeter, enable its output to A1 (or your main hardware out).
-    *   **Hardware Out (A1):**
-        *   Click "A1" (usually top-right).
-        *   Select your main speakers or headphones (e.g., "WDM: Speakers (Your Soundcard)"). This is where you'll hear the final mixed audio.
+    *   **Hardware Input 1 (or any strip):** Click its name and select **"CABLE Output (VB-Audio Virtual Cable)"**. This brings audio from the virtual cable *into* Voicemeeter.
+        *   Ensure this channel is active (fader up, not muted). Enable its output to A1 (or your main hardware out) if you want to monitor this source through Voicemeeter.
+    *   **Hardware Out (A1):** Click "A1" (usually top-right) and select your main speakers/headphones (e.g., "WDM: Speakers (Your Soundcard)").
 
 3.  **Set Voicemeeter Output as Default Recording Device (for RADAR):**
-    *   In Windows Sound settings (Recording tab).
-    *   Find **"Voicemeeter Output (VB-Audio Voicemeeter VAIO)"** (or similar, like "Voicemeeter Aux Output" if using Banana/Potato and routing to AUX).
-    *   Right-click and set it as **"Default Device"** and **"Default Communication Device"**.
+    *   In Windows Sound settings (Recording tab):
+    *   Find **"Voicemeeter Output (VB-Audio Voicemeeter VAIO)"** (or similar, e.g., "Voicemeeter Aux Output").
+    *   Right-click and set as **"Default Device"** and **"Default Communication Device"**.
 
 4.  **Browser Permissions for RADAR:**
-    *   When you open RADAR and enable the Audio Visualizer:
-    *   Your browser will ask for microphone permission.
-    *   Ensure you select **"Voicemeeter Output"** (or the equivalent from step 3) as the microphone source.
+    *   When enabling Audio Reactivity in RADAR, your browser will ask for microphone permission.
+    *   Select **"Voicemeeter Output"** (from step 3) as the microphone source.
 
-**How it Works:**
-Your application audio (e.g., browser) sends sound to the "CABLE Input." The "CABLE Output" then feeds this sound into a Voicemeeter input strip. Voicemeeter processes it and sends it to both your physical speakers/headphones (via A1 Hardware Out) AND its own virtual output ("Voicemeeter Output"). RADAR then listens to "Voicemeeter Output" as if it were a microphone.
+**How it Works:** Your application sends sound to "CABLE Input." "CABLE Output" feeds this into Voicemeeter. Voicemeeter processes it, sends it to your speakers (via A1) AND to its own virtual "Voicemeeter Output." RADAR listens to "Voicemeeter Output" as a microphone.
 
-This method is great because you can selectively route only the audio sources you want into the visualizer.
+This method allows selective audio routing for the visualizer.
 
-## Technical Stack
+---
+**A DETAILED VIDEO DEMO WILL FOLLOW SHORTLY.**
+---
 
-*   **Stack:** React, Vite
-*   **Standards:** LUKSO (Universal Profiles, LSP1 LSP4, LSP7, LSP8, ERC725Y)
-    *   `@lukso/up-provider`
-    *   `@erc725/erc725.js`
-    *   `@lukso/lsp-smart-contracts`
-    *   Viem
-*   **Web APIs:** Web MIDI, Web Audio, HTML5 Canvas
-*   **Styling:** CSS
-
-A DETAILED VIDEO DEMO WILL FOLLOW SHORTLY.
+---
+**725 PROBLEMS BUT MY DAPP AIN'T ONE. (But my coding might have some issues tho. Thanks for checking out RADAR!)**
+---
