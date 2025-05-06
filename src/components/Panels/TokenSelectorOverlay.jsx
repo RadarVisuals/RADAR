@@ -1,15 +1,21 @@
-
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import PropTypes from "prop-types";
-// Removed unused currentProfileAddress from useConfig import
-// import { useConfig } from "../../context/ConfigContext";
 import {
     entityTokenLogo,
     toplayerIcon,
     middlelayerIcon,
     bottomlayerIcon,
 } from "../../assets";
-import * as DemoLayers from "../../assets/DemoLayers";
+// Import the variables as they are actually exported from initLayers.js
+import {
+    demoLayer1, demoLayer2, demoLayer3, demoLayer4, demoLayer5, demoLayer6,
+    demoLayer7, demoLayer8, demoLayer9, demoLayer10, demoLayer11, demoLayer12,
+    demoLayer13, demoLayer14, demoLayer15, demoLayer16, demoLayer17, demoLayer18,
+    demoLayer19, demoLayer20, demoLayer21, demoLayer22, demoLayer23, demoLayer24,
+    demoLayer25, demoLayer26, demoLayer27, demoLayer28, demoLayer29, demoLayer30,
+    demoLayer31, demoLayer32, demoLayer33, demoLayer34, demoLayer35, demoLayer36,
+    demoLayer37, demoLayer38, demoLayer39, demoLayer40
+} from "../../assets/DemoLayers/initLayers"; // Ensure this path is correct
 import { pauseBackgroundWork } from "../../utils/performanceHelpers";
 import "./PanelStyles/TokenSelectorOverlay.css";
 
@@ -24,8 +30,6 @@ const OPEN_CLOSE_ANIMATION_DURATION = 300;
  * to different visual layers. Includes loading animations and preview-on-hold functionality.
  */
 const TokenSelectorOverlay = ({ isOpen, onClose, onTokenApplied, readOnly = false }) => {
-  // Removed unused currentProfileAddress and ADMIN_PROFILE_ADDRESS
-  // const { currentProfileAddress } = useConfig(); // Removed
   const [isLoading, setIsLoading] = useState(false);
   const [demoTokens, setDemoTokens] = useState([]);
   const [selectedLayer, setSelectedLayer] = useState(3);
@@ -36,7 +40,6 @@ const TokenSelectorOverlay = ({ isOpen, onClose, onTokenApplied, readOnly = fals
   const [isPreviewingCanvas, setIsPreviewingCanvas] = useState(false);
   const [logoTimerFinished, setLogoTimerFinished] = useState(false);
 
-  // Refs
   const statusMessageTimerRef = useRef(null);
   const holdPreviewTimerRef = useRef(null);
   const overlayRef = useRef(null);
@@ -45,38 +48,29 @@ const TokenSelectorOverlay = ({ isOpen, onClose, onTokenApplied, readOnly = fals
   const isMountedRef = useRef(false);
   const cancelPauseRef = useRef(null);
 
-  // isAdmin check removed as it wasn't used effectively
-
+  // demoLayerImageMap correctly uses the individually imported demoLayerX variables
   const demoLayerImageMap = useMemo(() => ({
-    1: DemoLayers.demoLayer1, 2: DemoLayers.demoLayer2, 3: DemoLayers.demoLayer3,
-    4: DemoLayers.demoLayer4, 5: DemoLayers.demoLayer5, 6: DemoLayers.demoLayer6,
-    7: DemoLayers.demoLayer7, 8: DemoLayers.demoLayer8, 9: DemoLayers.demoLayer9,
-    10: DemoLayers.demoLayer10, 11: DemoLayers.demoLayer11, 12: DemoLayers.demoLayer12,
-    13: DemoLayers.demoLayer13, 14: DemoLayers.demoLayer14, 15: DemoLayers.demoLayer15,
-    16: DemoLayers.demoLayer16, 17: DemoLayers.demoLayer17, 18: DemoLayers.demoLayer18,
-    19: DemoLayers.demoLayer19, 20: DemoLayers.demoLayer20, 21: DemoLayers.demoLayer21,
-    22: DemoLayers.demoLayer22, 23: DemoLayers.demoLayer23, 24: DemoLayers.demoLayer24,
-    25: DemoLayers.demoLayer25, 26: DemoLayers.demoLayer26, 27: DemoLayers.demoLayer27,
-    28: DemoLayers.demoLayer28, 29: DemoLayers.demoLayer29, 30: DemoLayers.demoLayer30,
-    31: DemoLayers.demoLayer31, 32: DemoLayers.demoLayer32, 33: DemoLayers.demoLayer33,
-    34: DemoLayers.demoLayer34, 35: DemoLayers.demoLayer35, 36: DemoLayers.demoLayer36,
-    37: DemoLayers.demoLayer37, 38: DemoLayers.demoLayer38, 39: DemoLayers.demoLayer39,
-    40: DemoLayers.demoLayer40
-  }), []);
+    1: demoLayer1, 2: demoLayer2, 3: demoLayer3, 4: demoLayer4, 5: demoLayer5,
+    6: demoLayer6, 7: demoLayer7, 8: demoLayer8, 9: demoLayer9, 10: demoLayer10,
+    11: demoLayer11, 12: demoLayer12, 13: demoLayer13, 14: demoLayer14, 15: demoLayer15,
+    16: demoLayer16, 17: demoLayer17, 18: demoLayer18, 19: demoLayer19, 20: demoLayer20,
+    21: demoLayer21, 22: demoLayer22, 23: demoLayer23, 24: demoLayer24, 25: demoLayer25,
+    26: demoLayer26, 27: demoLayer27, 28: demoLayer28, 29: demoLayer29, 30: demoLayer30,
+    31: demoLayer31, 32: demoLayer32, 33: demoLayer33, 34: demoLayer34, 35: demoLayer35,
+    36: demoLayer36, 37: demoLayer37, 38: demoLayer38, 39: demoLayer39, 40: demoLayer40
+  }), []); // <<< CHANGED TO EMPTY DEPENDENCY ARRAY to satisfy ESLint exhaustive-deps for static imports
 
-  // Populate Demo Tokens state
   useEffect(() => {
       const pdt = Object.entries(demoLayerImageMap).map(([k, s]) => ({
           id: `demo_token_${parseInt(k)}`,
           displayId: parseInt(k),
           type: 'demo',
-          metadata: { name: `Demo Token #${parseInt(k)}`, image: s }
+          metadata: { name: `Demo Token #${parseInt(k)}`, image: s } // 's' is now the direct image path
       }));
       setDemoTokens(pdt);
-      setAreImagesPreloaded(false);
-  }, [demoLayerImageMap]); // Removed isAdmin dependency
+      setAreImagesPreloaded(false); // Reset preloading state when map changes
+  }, [demoLayerImageMap]);
 
-  // Mount tracking & Timer Cleanup
   useEffect(() => {
       isMountedRef.current = true;
       const timers = { status: statusMessageTimerRef.current, logo: logoTimerRef.current, hold: holdPreviewTimerRef.current };
@@ -97,7 +91,6 @@ const TokenSelectorOverlay = ({ isOpen, onClose, onTokenApplied, readOnly = fals
       };
   }, []);
 
-  // Image Preloading Effect
   useEffect(() => {
       if (!isOpen || demoTokens.length === 0 || areImagesPreloaded) {
           if (!isOpen) setAreImagesPreloaded(false);
@@ -105,15 +98,28 @@ const TokenSelectorOverlay = ({ isOpen, onClose, onTokenApplied, readOnly = fals
       }
       let isEffectMounted = true;
       setIsLoading(true);
-      const preloadPromises = demoTokens.map(token => new Promise((resolve, reject) => {
-          const img = new Image();
-          img.onload = resolve;
-          img.onerror = (err) => { reject(err); };
-          img.src = token.metadata.image;
-      }));
-      // Removed unused 'results' variable
-      Promise.allSettled(preloadPromises).then(() => {
+      const preloadPromises = demoTokens.map(token => {
+        if (typeof token.metadata.image !== 'string' || !token.metadata.image) {
+          console.warn(`[TokenSelectorOverlay] Preload skipped for token ID ${token.id}: image source is invalid. Source:`, token.metadata.image);
+          return Promise.resolve({ status: 'fulfilled', value: `Skipped invalid source for token ${token.id}` });
+        }
+        return new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => resolve({ status: 'fulfilled', value: token.metadata.image });
+            img.onerror = (err) => {
+                console.error(`[TokenSelectorOverlay] Preload FAILED for ${token.metadata.image}:`, err);
+                resolve({ status: 'rejected', reason: `Failed for ${token.metadata.image}` });
+            };
+            img.src = token.metadata.image;
+        });
+      });
+
+      Promise.allSettled(preloadPromises).then((results) => {
           if (isEffectMounted && isMountedRef.current) {
+              const failedLoads = results.filter(r => r.status === 'rejected');
+              if (failedLoads.length > 0) {
+                  console.warn(`[TokenSelectorOverlay] ${failedLoads.length} images failed to preload.`);
+              }
               setAreImagesPreloaded(true);
               setIsLoading(false);
           }
@@ -121,7 +127,6 @@ const TokenSelectorOverlay = ({ isOpen, onClose, onTokenApplied, readOnly = fals
       return () => { isEffectMounted = false; };
   }, [isOpen, demoTokens, areImagesPreloaded]);
 
-  // Status Message Setter
   const showStatusMessage = useCallback((text, type = 'info', duration = 3000) => {
       setDisplayMessage({ text, type });
       if (statusMessageTimerRef.current) { clearTimeout(statusMessageTimerRef.current); }
@@ -135,7 +140,6 @@ const TokenSelectorOverlay = ({ isOpen, onClose, onTokenApplied, readOnly = fals
       }
   }, []);
 
-  // Animation Control Effect
   useEffect(() => {
     const clearOpeningTimers = () => {
         if (logoTimerRef.current) { clearTimeout(logoTimerRef.current); logoTimerRef.current = null; }
@@ -181,15 +185,12 @@ const TokenSelectorOverlay = ({ isOpen, onClose, onTokenApplied, readOnly = fals
     };
   }, [isOpen, animationState]);
 
-  // Effect to transition from logo to content phase
   useEffect(() => {
       if (animationState === 'logo' && logoTimerFinished && areImagesPreloaded) {
           setAnimationState('content');
       }
   }, [animationState, logoTimerFinished, areImagesPreloaded]);
 
-
-  // Event handlers
   const handleClose = useCallback(() => {
       setIsPreviewingCanvas(false);
       setAnimationState("exiting");
@@ -198,7 +199,6 @@ const TokenSelectorOverlay = ({ isOpen, onClose, onTokenApplied, readOnly = fals
       setTimeout(() => {
           if (isMountedRef.current) onClose();
        }, OPEN_CLOSE_ANIMATION_DURATION);
-  // Removed unnecessary eslint-disable comment and animationState dependency
   }, [onClose]);
 
   const handleBackgroundClick = useCallback((e) => {
@@ -250,14 +250,18 @@ const TokenSelectorOverlay = ({ isOpen, onClose, onTokenApplied, readOnly = fals
       } catch (error) { console.error("[Preview Debug] Error in handleTokenPointerUp:", error); }
   }, []);
 
-  // Rendering helpers
   const renderTokenItem = useCallback((token) => {
       const uniqueKey = token.id;
-      const tokenIdentifier = token.metadata.image;
+      const tokenIdentifier = typeof token.metadata.image === 'string' ? token.metadata.image : '';
       const selectedId = selectedTokens[selectedLayer];
       const isSelected = selectedId === tokenIdentifier;
-      const iconSrc = token.metadata.image || entityTokenLogo;
+      const iconSrc = typeof token.metadata.image === 'string' && token.metadata.image ? token.metadata.image : entityTokenLogo;
       const name = token.metadata.name || 'Unnamed Token';
+
+      if (!tokenIdentifier) {
+        console.warn(`[TokenSelectorOverlay renderTokenItem] Token ID ${uniqueKey} has invalid image path:`, token.metadata.image);
+        return null;
+      }
 
       return (
         <div

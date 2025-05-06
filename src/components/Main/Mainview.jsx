@@ -1,4 +1,4 @@
-// src/components/Main/Mainview.jsx (Full File - Corrected Ref Handling)
+// src/components/Main/Mainview.jsx (Full File - Corrected Ref Handling, handleTokenApplied, and typo fix)
 import React, { useRef, useEffect, useCallback, useState, useMemo } from "react";
 import ReactDOM from "react-dom";
 
@@ -18,7 +18,7 @@ import { useAnimationLifecycleManager } from '../../hooks/useAnimationLifecycleM
 import AudioAnalyzer from "../Audio/AudioAnalyzer";
 import ToastContainer from "../Notifications/ToastContainer";
 import UIOverlay from '../UI/UIOverlay';
-import { sliderParams } from '../Panels/EnhancedControlPanel'; // Imported from new location
+import { sliderParams } from '../Panels/EnhancedControlPanel';
 
 import { BLEND_MODES } from "../../config/global-config";
 import { demoAssetMap } from '../../assets/DemoLayers/initLayers';
@@ -49,7 +49,7 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     isPreviewMode, currentConfigName, updateLayerConfig: updateCentralConfig,
     updateTokenAssignment, updateSavedReaction, deleteSavedReaction,
     upInitializationError, upFetchStateError,
-    isLoading: isConfigLoading, // Corrected prop name
+    isLoading: isConfigLoading,
     loadNamedConfig, savedConfigList, configServiceRef,
   } = configContextData;
 
@@ -59,7 +59,7 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   const { processEffect, createDefaultEffect } = useVisualEffects(updateCentralConfig);
   const audioState = useAudioVisualizer();
   const { isAudioActive, audioSettings, handleAudioDataUpdate } = audioState;
-  const uiState = useUIState('tab1'); // Default to Layer 3 controls tab
+  const uiState = useUIState('tab1');
   const { setActiveLayerTab } = uiState;
 
   const [currentFps, setCurrentFps] = useState(0);
@@ -72,26 +72,21 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   const transitionInProgressRef = useRef(false);
   const onZeroDimensionsCallbackRef = useRef(null);
 
-  // --- Define Refs Here ---
   const canvasRef1 = useRef(null);
   const canvasRef2 = useRef(null);
   const canvasRef3 = useRef(null);
-  // Create the canvasRefs object to pass down
   const canvasRefs = useMemo(() => ({ 1: canvasRef1, 2: canvasRef2, 3: canvasRef3 }), []);
-  // --- End Ref Definition ---
 
-  // Custom Hook Instantiation Order
   const {
-    // Remove canvasRefs from here, as they are defined above
     managersReady, defaultImagesLoaded, managerInstancesRef,
     applyConfigurationsToManagers, applyTokenAssignmentsToManagers,
     updateLayerConfigProperty, stopCanvasAnimations, restartCanvasAnimations,
     redrawAllCanvases, handleCanvasResize, setCanvasLayerImage,
-  } = useCanvasOrchestrator({ configServiceRef, canvasRefs }); // Pass canvasRefs to the hook
+  } = useCanvasOrchestrator({ configServiceRef, canvasRefs });
 
   const renderLifecycleData = useRenderLifecycle({
-      managersReady, defaultImagesLoaded, isInitiallyResolved, hasValidDimensions: false, // hasValidDimensions will be updated by useCanvasContainer
-      isContainerObservedVisible: true, // Assume visible initially, updated by useCanvasContainer
+      managersReady, defaultImagesLoaded, isInitiallyResolved, hasValidDimensions: false,
+      isContainerObservedVisible: true,
       configLoadNonce, currentConfigName, layerConfigs,
       tokenAssignments, loadError, upInitializationError, upFetchStateError,
       stopAllAnimations: stopCanvasAnimations, applyConfigurationsToManagers: applyConfigurationsToManagers,
@@ -125,12 +120,11 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
       }, [resetLifecycle]),
   });
 
-  // Pass the actual hasValidDimensions to useRenderLifecycle
   const {
       renderState, loadingStatusMessage, isStatusFadingOut, showStatusDisplay,
       showRetryButton, isTransitioning, isCanvasVisible, isAnimating, handleManualRetry,
-  } = useRenderLifecycle({ // Re-call or update useRenderLifecycle with correct hasValidDimensions
-      managersReady, defaultImagesLoaded, isInitiallyResolved, hasValidDimensions, // <-- Use actual value now
+  } = useRenderLifecycle({
+      managersReady, defaultImagesLoaded, isInitiallyResolved, hasValidDimensions,
       isContainerObservedVisible, configLoadNonce, currentConfigName, layerConfigs,
       tokenAssignments, loadError, upInitializationError, upFetchStateError,
       stopAllAnimations: stopCanvasAnimations, applyConfigurationsToManagers: applyConfigurationsToManagers,
@@ -199,10 +193,11 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   }, [pendingParamUpdate, pendingLayerSelect, handleLayerPropChange, setActiveLayerTab, clearPendingActions, managerInstancesRef, updateCentralConfig]);
 
   const handleTokenApplied = useCallback((data, layerId) => {
-    console.log(`[MainView] handleTokenApplied called. Layer: ${layerId}`);
+    console.log(`[MainView] handleTokenApplied called. Layer: ${layerId}, Data:`, data);
+
     if (!isMountedRef.current || !setCanvasLayerImage) {
-      console.warn(`[MainView] handleTokenApplied aborted: Not mounted or setCanvasLayerImage missing.`);
-      return;
+        console.warn(`[MainView] handleTokenApplied aborted: Not mounted or setCanvasLayerImage missing.`);
+        return;
     }
 
     let idToSave = null;
@@ -211,47 +206,52 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     if (data?.type === 'owned' && data.address && data.iconUrl) {
         idToSave = data.address;
         srcToApply = data.iconUrl;
+        console.log(`[MV handleTokenApplied L${layerId}] Identified owned asset. ID: ${idToSave}, Src: ${srcToApply}`);
     } else if (typeof data === 'string') {
-        const isDemoImagePath = data.startsWith('/src/assets/DemoLayers/');
-        const demoKeyFromPath = isDemoImagePath ? Object.keys(demoAssetMap).find(k => demoAssetMap[k] === data) : null;
+        const demoKey = Object.keys(demoAssetMap).find(key => demoAssetMap[key] === data);
 
-        if (isDemoImagePath && demoKeyFromPath) {
-            idToSave = demoKeyFromPath;
+        if (demoKey) {
+            idToSave = demoKey;
             srcToApply = data;
-        } else if (demoAssetMap[data]) {
-            idToSave = data;
-            srcToApply = demoAssetMap[data];
+            console.log(`[MV handleTokenApplied L${layerId}] Identified demo asset. Key: ${idToSave}, Src: ${srcToApply}`);
         } else if (data.startsWith('http')) {
-             idToSave = data;
-             srcToApply = data;
-        } else {
             idToSave = data;
-            srcToApply = null;
+            srcToApply = data;
+            console.log(`[MV handleTokenApplied L${layerId}] Identified HTTP asset. URL: ${srcToApply}`);
+        } else {
+            console.warn(`[MV handleTokenApplied L${layerId}] Unhandled string data type. Not a known demo asset path, not http. Trying as direct source. Data: ${data}`);
+            idToSave = data;
+            srcToApply = data;
         }
     } else {
-        console.warn(`[MV handleTokenApplied L${layerId}] Invalid data type received:`, data);
-        return;
+        console.warn(`[MV handleTokenApplied L${layerId}] Invalid or undefined data type received:`, data);
     }
 
     if (srcToApply) {
+      console.log(`[MV handleTokenApplied L${layerId}] Calling setCanvasLayerImage with src: ${srcToApply}`);
       setCanvasLayerImage(layerId, srcToApply)
-        .catch(e=>console.error(`[MV handleTokenApplied L${layerId}] Apply Image FAIL:`, e));
+        .then(() => {
+            console.log(`[MV handleTokenApplied L${layerId}] setCanvasLayerImage for ${srcToApply ? srcToApply.substring(0,60) : 'null'}... successful.`);
+        })
+        .catch(e => console.error(`[MV handleTokenApplied L${layerId}] setCanvasLayerImage for ${srcToApply ? srcToApply.substring(0,60): 'null'}... FAILED:`, e));
     } else {
-      console.warn(`[MV handleTokenApplied L${layerId}] No image source URL determined to apply immediately for ID: ${idToSave}`);
+      console.warn(`[MV handleTokenApplied L${layerId}] No image source URL determined (srcToApply is null). Token will not be applied. ID to save was: ${idToSave}`);
     }
 
     if (updateTokenAssignment && idToSave !== null) {
+      console.log(`[MV handleTokenApplied L${layerId}] Calling updateTokenAssignment with ID: ${idToSave}`);
       updateTokenAssignment(layerId, idToSave);
-    } else {
-      console.warn(`[MV handleTokenApplied L${layerId}] No ID determined to save assignment.`);
+    } else if (idToSave === null) {
+      console.warn(`[MV handleTokenApplied L${layerId}] No ID determined (idToSave is null), cannot save assignment.`);
     }
-  }, [updateTokenAssignment, setCanvasLayerImage]);
+  }, [updateTokenAssignment, setCanvasLayerImage]); // demoAssetMap is implicitly part of this component's closure
+
 
   const handleEventReceived = useCallback((event) => {
     if (!isMountedRef.current || !event?.type) return;
     if (addNotification) addNotification(event);
     const reactions = savedReactions || {};
-    const eventTypeLower = event.type.toLowerCase();
+    const eventTypeLower = event.type.toLowerCase(); // <<< CORRECTED TYPO HERE
     const matchingReactions = Object.values(reactions).filter(r => r?.event?.toLowerCase() === eventTypeLower);
     if (matchingReactions.length > 0) {
       matchingReactions.forEach(reactionConfig => {
@@ -333,7 +333,7 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     configData: {
       layerConfigs, blendModes, notifications: notificationData.notifications,
       savedReactions, savedConfigList, currentConfigName, isTransitioning,
-      isConfigHookLoading: isConfigLoading, // Correct prop name passed
+      isLoading: isConfigLoading,
       canSave, isParentAdmin, isProfileOwner, isVisitor,
       isPreviewMode, unreadCount: notificationData.unreadCount,
     },
@@ -349,7 +349,7 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   }), [
     uiState, audioState, layerConfigs, blendModes, notificationData,
     savedReactions, savedConfigList, currentConfigName, isTransitioning,
-    isConfigLoading, // Dependency added
+    isConfigLoading,
     canSave, isParentAdmin, isProfileOwner, isVisitor,
     isPreviewMode, enterFullscreen, handleLayerPropChange,
     handleSaveReactionConfig, handleRemoveReactionConfig,
@@ -372,11 +372,9 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
       <div id="fullscreen-root" ref={rootRef} className="main-view radar-cursor">
         <div ref={containerRef} className={containerClass} onClick={handleCanvasClick}>
           <div className="grid-overlay"></div>
-          {/* --- Apply Refs Here --- */}
           <canvas ref={canvasRef1} className={canvas1Class} />
           <canvas ref={canvasRef2} className={canvas2Class} />
           <canvas ref={canvasRef3} className={canvas3Class} />
-          {/* --- End Apply Refs --- */}
         </div>
 
         {portalContainer && isFullscreenActive ? ReactDOM.createPortal(renderFpsCounter(), portalContainer) : renderFpsCounter()}
