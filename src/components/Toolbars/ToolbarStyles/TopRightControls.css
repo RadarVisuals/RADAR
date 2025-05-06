@@ -1,0 +1,81 @@
+.top-right-controls-container {
+  position: fixed;
+  top: var(--space-lg);
+  right: var(--space-lg);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  z-index: var(--z-controls);
+  width: fit-content;
+  max-width: 100%;
+  background: none;
+}
+
+.top-right-controls-container .toolbar-icon {
+  width: var(--icon-size-lg);
+  height: var(--icon-size-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  background: rgba(0, 243, 255, 0.05);
+  border: 1px solid rgba(0, 243, 255, 0.2);
+  overflow: visible;
+  position: relative;
+  padding: 0;
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+
+.top-right-controls-container .toolbar-icon:hover {
+  background: rgba(0, 243, 255, 0.15);
+  border-color: rgba(0, 243, 255, 0.3);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-primary-sm);
+}
+
+.top-right-controls-container .icon-image {
+  width: var(--icon-size-md);
+  height: var(--icon-size-md);
+  transition: all var(--transition-fast);
+  opacity: 0.9;
+}
+
+.top-right-controls-container .toolbar-icon:hover .icon-image {
+  opacity: 1;
+  filter: drop-shadow(0 0 5px rgba(0, 243, 255, 0.3));
+}
+
+.enhanced-view-icon {
+  font-size: 18px;
+  color: var(--color-primary);
+  transition: all var(--transition-fast);
+}
+
+.top-right-controls-container .toolbar-icon:hover .enhanced-view-icon {
+  transform: scale(1.1);
+  filter: drop-shadow(0 0 3px var(--color-primary-a30));
+}
+
+.top-right-controls-container.ui-hidden {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  flex-direction: row;
+}
+
+.top-right-controls-container.ui-hidden
+  .toolbar-icon:not(.fixed-toggle-button) {
+  display: none;
+}
+
+.show-ui-btn {
+  opacity: 0.7;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 50%;
+  padding: 10px;
+}

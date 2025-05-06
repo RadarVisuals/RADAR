@@ -1,0 +1,257 @@
+@import "../../../styles/variables.css";
+
+.events-panel-custom-scroll .section-title {
+  font-size: var(--font-size-sm);
+  color: var(--color-primary);
+  margin-bottom: var(--space-sm);
+  text-transform: uppercase;
+  opacity: 0.9;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--space-xs);
+}
+
+.events-panel-custom-scroll .form-help-text {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  line-height: 1.4;
+  margin-bottom: var(--space-md);
+}
+
+/* Target options specifically within this panel's selects */
+.events-panel-custom-scroll .custom-select option {
+  background-color: var(--color-bg-dark, #050f19);
+  color: var(--color-primary);
+  padding: var(--space-xs) var(--space-sm);
+}
+/* Style for the select element itself when opened (browser dependent) */
+.events-panel-custom-scroll .custom-select {
+    background-color: var(--color-bg-alt);
+}
+.events-panel-custom-scroll .custom-select:focus {
+   background-color: var(--color-bg-dark);
+   border-color: var(--color-primary-a50);
+}
+
+.reaction-form.section-box {
+  margin-bottom: var(--space-lg);
+}
+
+.color-config-section {
+  background: var(--color-primary-a05);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  margin-top: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.config-section-title {
+  font-size: var(--font-size-xs);
+  color: var(--color-primary);
+  margin-bottom: var(--space-sm);
+  text-transform: uppercase;
+  opacity: 0.8;
+  font-weight: 500;
+}
+
+.color-preview-container {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-md);
+}
+
+.color-preview-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.color-preview {
+  height: 25px;
+  flex-grow: 1;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.2);
+}
+
+.slider-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+.slider-container {
+  margin-bottom: var(--space-xxs);
+}
+
+input[type="range"].color-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  outline: none;
+  margin-top: var(--space-xxs);
+}
+input[type="range"].color-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--color-primary);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 0 4px rgba(var(--color-primary-rgb), 0.5);
+  margin-top: -4px;
+}
+input[type="range"].color-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--color-primary);
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 4px rgba(var(--color-primary-rgb), 0.5);
+}
+
+input[type="range"].red-slider { background: linear-gradient(to right, #000000, #ff0000); }
+input[type="range"].green-slider { background: linear-gradient(to right, #000000, #00ff00); }
+input[type="range"].blue-slider { background: linear-gradient(to right, #000000, #0000ff); }
+input[type="range"].alpha-slider { background: linear-gradient( to right, rgba(var(--color-primary-rgb), 0), var(--color-primary) ); }
+
+.active-reactions.section-box {
+  margin-top: var(--space-lg);
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-md);
+}
+
+.no-reactions {
+  color: var(--color-primary-a50);
+  font-style: italic;
+  font-size: var(--font-size-sm);
+  text-align: center;
+  padding: var(--space-sm);
+}
+
+.reactions-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  max-height: 200px;
+  overflow-y: auto;
+  /* Custom Scrollbar */
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-primary-a30) rgba(0, 0, 0, 0.1);
+}
+.reactions-list::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.reactions-list::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 3px;
+}
+.reactions-list::-webkit-scrollbar-thumb {
+  background-color: var(--color-primary-a30);
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+.reactions-list::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-primary-a50);
+}
+
+.reaction-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--color-primary-a05);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm);
+  transition: all var(--transition-fast);
+}
+
+.reaction-item:hover {
+  background: var(--color-primary-a15);
+}
+
+.reaction-details {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-grow: 1;
+  overflow: hidden;
+}
+
+.reaction-event {
+  color: var(--color-primary);
+  font-size: var(--font-size-sm);
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+.reaction-effect-type {
+  color: var(--color-primary-a70);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+
+.color-pill {
+  display: inline-block;
+  min-width: 12px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  vertical-align: middle;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.3);
+  flex-shrink: 0;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin-top: var(--space-lg);
+}
+
+.btn-preview,
+.btn-save-reaction {
+  flex-grow: 1;
+  font-size: var(--font-size-sm);
+}
+
+.save-hint,
+.read-only-hint {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  text-align: center;
+  margin-top: var(--space-md);
+  padding: var(--space-xs);
+  background-color: var(--color-primary-a05);
+  border-radius: var(--radius-sm);
+}
+
+.status-message {
+  padding: var(--space-xs);
+  margin-top: var(--space-sm);
+  border-radius: var(--radius-sm);
+  text-align: center;
+  font-size: var(--font-size-xs);
+}
+
+.preview-status {
+  color: var(--color-info-a90, lightblue);
+}
+
+.save-status.error {
+  color: var(--color-error-a90);
+  background-color: var(--color-error-a10);
+}
+
+.save-status.success {
+  color: var(--color-success-a90);
+  background-color: var(--color-success-a10);
+}

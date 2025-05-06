@@ -1,0 +1,81 @@
+@import "../../styles/variables.css";
+
+.toast-container {
+  position: fixed;
+  bottom: var(--space-lg, 20px);
+  right: var(--space-lg, 20px);
+  z-index: var(--z-top, 2000);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-sm, 12px);
+  pointer-events: none; /* Container doesn't block */
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm, 12px) var(--space-md, 16px);
+  border-radius: var(--radius-md, 6px);
+  box-shadow: var(--shadow-md, 0 4px 10px rgba(0, 0, 0, 0.3));
+  color: var(--color-text, #eee);
+  font-size: var(--font-size-md, 14px);
+  min-width: 250px;
+  max-width: 400px;
+  pointer-events: auto; /* Toasts are interactive */
+  opacity: 0;
+  transform: translateX(100%);
+  transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+  border: 1px solid transparent;
+}
+
+.toast.visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.toast-info {
+  background-color: var(--color-primary-a15, rgba(0, 243, 255, 0.15));
+  border-color: var(--color-primary-a30, rgba(0, 243, 255, 0.3));
+  color: var(--color-primary, #00f3ff);
+}
+
+.toast-success {
+  background-color: var(--color-success-a10, rgba(0, 255, 0, 0.1));
+  border-color: var(--color-success-a30, rgba(0, 255, 0, 0.3));
+  color: var(--color-success, #00ff00);
+}
+
+.toast-warning {
+  background-color: var(--color-warning-a10, rgba(255, 165, 0, 0.1));
+  border-color: var(--color-warning-a30, rgba(255, 165, 0, 0.3));
+  color: var(--color-warning, #ffa500);
+}
+
+.toast-error {
+  background-color: var(--color-error-a10, rgba(255, 85, 85, 0.1));
+  border-color: var(--color-error-a30, rgba(255, 85, 85, 0.3));
+  color: var(--color-error, #ff5555);
+}
+
+.toast-content {
+  margin-right: var(--space-md, 16px);
+  flex-grow: 1;
+}
+
+.toast-dismiss-button {
+  background: none;
+  border: none;
+  color: inherit;
+  opacity: 0.7;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0 0 var(--space-xs);
+  margin-left: var(--space-sm);
+}
+
+.toast-dismiss-button:hover {
+  opacity: 1;
+}

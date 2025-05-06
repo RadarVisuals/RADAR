@@ -1,0 +1,192 @@
+/* src/components/UI/PresetSelectorBar.css */
+/* No changes needed from the previous version, but included for completeness */
+@import "../../styles/variables.css";
+
+/* Define theme colors (using orange/yellow for active/hover) */
+:root {
+  /* Active State (Yellow) */
+  --color-preset-active-bg: rgba(255, 193, 7, 0.85); /* Yellow background */
+  --color-preset-active-border: rgba(255, 193, 7, 1.0); /* Solid yellow border */
+  --color-preset-active-text: #1a1a2e; /* Dark text for contrast */
+
+  /* Hover State (Lighter Yellow/Orange) */
+  --color-preset-hover-bg: rgba(255, 204, 51, 0.8); /* Lighter yellow alpha bg */
+  --color-preset-hover-border: rgba(255, 214, 82, 1.0); /* Brighter yellow border */
+  --color-preset-hover-text: #1a1a2e; /* Dark text on hover */
+
+  /* Ping Animation */
+  --ping-duration: 1.5s;
+  --ping-color: rgba(255, 193, 7, 0.7); /* Ping effect color (yellow) */
+  --ping-spread: 5px;
+
+  /* Default border - keeping neutral for contrast unless hovered/active */
+  --color-preset-default-border: var(--color-border);
+
+  /* Slide Animation */
+  --slide-duration: 300ms;
+}
+
+.preset-selector-bar {
+  position: fixed;
+  bottom: var(--space-md);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-controls);
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xxs);
+  border: none;
+  border-radius: var(--radius-md);
+  transition: opacity var(--transition-normal), visibility var(--transition-normal);
+  opacity: 1;
+  visibility: visible;
+  background: transparent;
+  /* Add perspective for 3D transforms if needed */
+  /* perspective: 1000px; */
+}
+
+.preset-buttons-container {
+  display: flex;
+  gap: var(--space-sm);
+  transition: transform var(--slide-duration) ease-in-out; /* Add transition for sliding */
+  transform: translateX(0); /* Default position */
+}
+
+/* --- Slide Animations --- */
+@keyframes slideInFromRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes slideInFromLeft {
+  from { transform: translateX(-100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* Apply animations */
+.preset-buttons-container.slide-in-left {
+  animation: slideInFromLeft var(--slide-duration) ease-in-out forwards;
+}
+.preset-buttons-container.slide-in-right {
+  animation: slideInFromRight var(--slide-duration) ease-in-out forwards;
+}
+/* --- End Slide Animations --- */
+
+
+/* Base styles for ALL buttons in the bar */
+.preset-selector-button,
+.pagination-button {
+  font-family: var(--font-family);
+  font-weight: 600;
+  color: var(--color-text); /* Default text color */
+  border: 1px solid var(--color-preset-default-border); /* Use neutral default border */
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast); /* Added box-shadow transition */
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+  background: var(--color-button-secondary-a80);
+  backdrop-filter: blur(var(--blur-amount));
+  -webkit-backdrop-filter: blur(var(--blur-amount));
+  overflow: hidden; /* Clip potential inner content, but allow box-shadow */
+  position: relative;
+}
+
+/* Specific styles for Preset buttons */
+.preset-selector-button {
+  font-size: var(--font-size-xs);
+  width: 28px; /* Keep original size */
+  height: 28px;
+}
+
+/* --- REVISED: Pagination button size --- */
+.pagination-button {
+  font-size: var(--font-size-sm); /* Keep font size */
+  width: 24px;  /* Make slightly smaller */
+  height: 24px; /* Make slightly smaller */
+}
+/* --- END REVISED --- */
+
+
+/* Hover states (Yellow Theme) */
+.preset-selector-button:hover:not(:disabled):not(.active),
+.pagination-button:hover:not(:disabled) {
+  background: var(--color-preset-hover-bg);
+  border-color: var(--color-preset-hover-border);
+  color: var(--color-preset-hover-text);
+  transform: translateY(-1px);
+}
+
+/* Active (pressed down) states */
+.preset-selector-button:active:not(:disabled):not(.active),
+.pagination-button:active:not(:disabled) {
+  /* Use a slightly darker version of hover or active color */
+  background: rgba(255, 180, 0, 0.9); /* Darker yellow/orange for press */
+  transform: translateY(0px);
+  box-shadow: none;
+}
+
+/* --- REVISED: Disabled states --- */
+.preset-selector-button:disabled,
+.pagination-button:disabled {
+  /* Keep visual appearance similar to normal state */
+  color: var(--color-text); /* Keep text color */
+  border-color: var(--color-preset-default-border); /* Keep border color */
+  background: var(--color-button-secondary-a80); /* Keep background */
+  backdrop-filter: blur(var(--blur-amount)); /* Keep blur */
+  -webkit-backdrop-filter: blur(var(--blur-amount));
+
+  /* Ensure non-interactive */
+  cursor: not-allowed;
+  pointer-events: none; /* Explicitly disable pointer events */
+  opacity: 0.8; /* Slight opacity reduction to indicate disabled, but not greyed out */
+
+  /* Ensure disabled buttons don't ping or transform */
+  animation: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+/* --- END REVISED --- */
+
+/* --- Continuous Ping Animation --- */
+@keyframes continuous-ping-animation {
+  0%, 100% { /* Start and end state */
+    box-shadow: 0 0 0 0px var(--ping-color); /* Initial solid shadow */
+  }
+  50% { /* Mid-point state */
+    box-shadow: 0 0 0 var(--ping-spread) rgba(255, 193, 7, 0); /* Expand and fade */
+  }
+}
+
+/* --- ADDED: Specific ACTIVE state for Preset buttons --- */
+.preset-selector-button.active {
+  background: var(--color-preset-active-bg); /* Apply yellow background */
+  border-color: var(--color-preset-active-border); /* Apply yellow border */
+  color: var(--color-preset-active-text); /* Apply dark text */
+  cursor: default;
+  transform: translateY(0px); /* Reset transform */
+
+  /* Apply the continuous ping animation */
+  animation: continuous-ping-animation var(--ping-duration) infinite ease-out;
+}
+/* --- END ADDED --- */
+
+/* Ensure disabled active preset button still looks distinct but stops pinging */
+.preset-selector-button.active:disabled {
+  /* Keep active background/border but reduce opacity */
+  background: var(--color-preset-active-bg);
+  border-color: var(--color-preset-active-border);
+  color: var(--color-preset-active-text);
+  opacity: 0.7; /* Reduce opacity more than standard disabled */
+
+  /* Explicitly remove animation when disabled */
+  animation: none;
+  box-shadow: none; /* Remove shadow from animation */
+  cursor: not-allowed;
+  pointer-events: none;
+  transform: none;
+}

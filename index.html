@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vite + React</title>
+    <style>
+      /* Ensure html and body take full height of the iframe's allocated space */
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background: #000000; /* Base background */
+        color: #00f3ff; /* Base text color */
+        font-family: Arial, sans-serif;
+        display: block; /* Explicitly block */
+      }
+
+      /* Ensure #root takes full height of the body */
+      #root {
+        width: 100%;
+        height: 100%;
+        margin: 0; /* Reset margin */
+        padding: 0; /* Reset padding */
+        overflow: hidden; /* Prevent scrollbars on root */
+        display: block; /* Ensure it behaves as a block */
+        position: relative; /* Needed if children use absolute positioning relative to root */
+      }
+
+      /* Style for the portal target - ensure it doesn't interfere */
+      #portal-container {
+        position: fixed; /* Or absolute, depending on need */
+        top: 0;
+        left: 0;
+        width: 0; /* Takes no space */
+        height: 0; /* Takes no space */
+        z-index: 10000; /* High z-index for overlays */
+        pointer-events: none; /* Allow clicks through container */
+      }
+      /* Allow pointer events on direct children */
+      #portal-container > * {
+         pointer-events: auto;
+      }
+
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <!-- Add a dedicated container for portals outside the main app root -->
+    <div id="portal-container"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

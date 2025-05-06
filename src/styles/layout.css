@@ -1,0 +1,273 @@
+@import "./variables.css";
+
+/* Core App Layout */
+.main-view {
+  width: 100%;
+  height: 100%;
+  background: none;
+  position: relative;
+  overflow: hidden;
+  display: block;
+}
+
+/* Canvas Container Layout */
+.canvas-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient( circle at center, var(--color-bg-light) 0%, #000000 100% );
+  z-index: var(--z-background);
+}
+
+/* Background Grid */
+.grid-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image: radial-gradient( circle, rgba(var(--color-primary-rgb), 0.1) 1px, transparent 1px );
+  background-size: 20px 20px;
+  pointer-events: none;
+  opacity: 1;
+  z-index: 0; /* Behind canvases */
+}
+
+/* Centered Logo */
+.entity-logo {
+  position: absolute;
+  bottom: var(--space-lg);
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 200px;
+  z-index: var(--z-ui);
+  opacity: 1;
+  transition: all var(--transition-slow) ease;
+}
+.entity-logo:hover {
+  opacity: 1;
+  transform: translateX(-50%) scale(1.1);
+  filter: drop-shadow(0 0 10px var(--color-primary-a30));
+}
+
+/* Preview Mode Indicator */
+.preview-mode-indicator {
+  position: fixed;
+  top: calc(var(--space-lg) + var(--icon-size-lg) + 10px); /* Position below top-right controls */
+  right: var(--space-lg);
+  z-index: var(--z-controls);
+  display: flex;
+  align-items: center;
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-md);
+  background: var(--color-warning-a10);
+  border: 1px solid var(--color-warning-a30);
+  animation: fadeIn var(--transition-normal);
+}
+.preview-icon {
+  font-size: 18px;
+  margin-right: var(--space-xs);
+}
+.preview-text {
+  color: var(--color-warning-a90);
+  font-size: var(--font-size-md);
+  font-weight: bold;
+  margin-right: var(--space-xs);
+}
+.exit-preview-button {
+  background: var(--color-warning-a30);
+  border: none;
+  color: var(--color-text);
+  padding: var(--space-xxs) var(--space-xs);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.exit-preview-button:hover {
+  background: var(--color-warning-a50, rgba(255, 165, 0, 0.5));
+}
+
+/* Main UI Container */
+.ui-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none; /* Allow clicks through container */
+  z-index: var(--z-ui);
+}
+/* Enable pointer events on direct UI children */
+.ui-container > * {
+  pointer-events: auto;
+}
+
+/* Status Display (Loading/Error/Idle Messages) */
+.status-display {
+  position: fixed;
+  top: 20%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-top);
+  backdrop-filter: blur(var(--blur-amount, 3px));
+  -webkit-backdrop-filter: blur(var(--blur-amount, 3px));
+  box-shadow: var(--shadow-md);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-md);
+  font-weight: 500;
+  text-align: center;
+  min-width: 250px;
+  transition: opacity 500ms ease-in-out;
+  opacity: 1;
+  pointer-events: none;
+}
+.status-display.info-state {
+  background: rgba(var(--color-warning-rgb), 0.25);
+  border: 1px solid var(--color-warning-a50, rgba(255, 165, 0, 0.5));
+  color: var(--color-warning, #ffa500);
+  box-shadow: 0 0 12px rgba(var(--color-warning-rgb), 0.4);
+}
+.status-display.error-state {
+  background: rgba(var(--color-error-rgb), 0.25);
+  border: 1px solid var(--color-error-a50, rgba(255, 85, 85, 0.5));
+  color: var(--color-error, #ff5555);
+  box-shadow: 0 0 12px rgba(var(--color-error-rgb), 0.4);
+}
+.status-display.fade-out {
+  opacity: 0;
+}
+.status-display .retry-render-button {
+  display: block;
+  margin: var(--space-sm) auto 0;
+  padding: var(--space-xs) var(--space-md);
+  background: var(--color-error-a30);
+  color: var(--color-text);
+  border: 1px solid var(--color-error-a50, rgba(255, 85, 85, 0.5));
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  pointer-events: auto;
+  font-size: var(--font-size-sm);
+  font-family: var(--font-family);
+  font-weight: bold;
+  text-transform: uppercase;
+}
+.status-display .retry-render-button:hover:not(:disabled) {
+  background: var(--color-error-a50, rgba(255, 165, 0, 0.5));
+}
+.status-display .retry-render-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* FPS Counter */
+.fps-counter {
+  position: fixed;
+  bottom: var(--space-sm, 12px);
+  left: var(--space-sm, 12px);
+  z-index: 10001;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(1px);
+  -webkit-backdrop-filter: blur(1px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: none;
+  color: var(--color-text-dim, rgba(255, 255, 255, 0.4));
+  padding: var(--space-xxs) var(--space-xs);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  font-family: monospace;
+  text-align: center;
+  opacity: 0.7;
+}
+
+/* Custom Cursor */
+#fullscreen-root.radar-cursor {
+  cursor: url('/assets/cursors/radar-dot.svg') 8 8, auto;
+}
+
+/* Click Ping Effect */
+.click-ping-svg-container {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  transform: translate(-50%, -50%);
+  transform-origin: center center;
+  opacity: 1;
+  pointer-events: none;
+  z-index: var(--z-effects, 10);
+  transform: translate(-50%, -50%) scale(0.1);
+}
+.click-ping-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.click-ping-svg circle {
+  stroke-opacity: 1;
+  fill: none;
+}
+.ping-svg-animation {
+  animation: pingSVGEffect 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+@keyframes pingSVGEffect {
+  0% { transform: translate(-50%, -50%) scale(0.1); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(6); opacity: 0; }
+}
+
+/* Hidden Audio Analyzer Element */
+.hidden-audio-analyzer {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Maximize/Fullscreen Button */
+.maximize-button {
+  position: fixed;
+  bottom: var(--space-lg, 20px);
+  left: var(--space-lg, 20px);
+  z-index: 10000;
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 14px;
+  backdrop-filter: blur(4px);
+  transition: all 0.3s ease;
+}
+.maximize-button:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Dimming background canvases during overlay transitions */
+.main-view.overlay-animating .canvas-container .canvas {
+  opacity: 0.7 !important; /* Dim canvas */
+  transition: opacity 0.3s ease-out !important;
+}
+.main-view .canvas-container .canvas {
+  opacity: 1 !important; /* Restore opacity */
+  transition: opacity 0.3s ease-in !important;
+}
+
+/* Bottom Right Icons Container */
+.bottom-right-icons {
+  position: fixed;
+  bottom: var(--space-lg);
+  right: var(--space-lg);
+  z-index: var(--z-controls);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-sm);
+  pointer-events: auto;
+}

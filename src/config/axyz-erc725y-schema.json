@@ -1,0 +1,44 @@
+[
+  {
+    "name": "RADAR.NamedConfiguration:<configName>",
+    "key": "0x44f0a644f86a60b959270000<bytes20 nameHash>",
+    "keyType": "Mapping",
+    "valueType": "bytes",
+    "valueContent": "JSONURL"
+  },
+  {
+    "name": "RADAR.SavedConfigurationList[]",
+    "key": "0xb705191a8b41d1f6b4bd88156334f8218a5d70f6a579c9c5a0a6871d2e398a9a",
+    "keyType": "Array",
+    "valueType": "string",
+    "valueContent": "String"
+  },
+  {
+    "name": "RADAR.DefaultConfigurationName",
+    "key": "0xaf9518865d704640a115a21518b109f9a37c0ab1f6865c84d6a150f5f6693e19",
+    "keyType": "Singleton",
+    "valueType": "string",
+    "valueContent": "String"
+  },
+  {
+    "name": "RADAR.MIDI.ParameterMap",
+    "key": "0x9e5e3b0c7c8a4f6d1d9d63429a9743e3f38270f5a8c2633e7e6dfb01fc17e3bd",
+    "keyType": "Singleton",
+    "valueType": "bytes",
+    "valueContent": "JSONURL"
+  },
+  {
+    "name": "RADAR.EventReactions",
+    "key": "0x0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b",
+    "keyType": "Singleton",
+    "valueType": "bytes",
+    "valueContent": "JSONURL"
+  },
+  {
+    "name": "RADAR.WhitelistedCollections",
+    "key": "0x5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b",
+    "keyType": "Singleton",
+    "valueType": "bytes",
+    "valueContent": "JSONURL"
+  }
+]

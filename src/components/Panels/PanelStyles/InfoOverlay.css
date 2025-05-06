@@ -1,0 +1,163 @@
+@import "../../../styles/variables.css";
+
+.overlay {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: var(--z-overlay); background-color: rgba(0, 0, 0, 0.8); backdrop-filter: blur(var(--blur-amount)); -webkit-backdrop-filter: blur(var(--blur-amount)); display: flex; justify-content: center; align-items: center; transition: background-color var(--transition-slow), backdrop-filter var(--transition-slow);
+}
+
+.overlay-content {
+  width: 90%; max-width: 900px; height: 85vh; background: var(--color-glass-bg-dark); border: 1px solid var(--color-border); border-radius: var(--radius-xl); overflow: hidden; position: relative; box-shadow: var(--shadow-primary-lg); transition: transform var(--transition-slow), opacity var(--transition-slow); display: flex; flex-direction: column;
+}
+
+.overlay-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 1px solid var(--color-border);
+  z-index: 10;
+  flex-shrink: 0;
+}
+
+.overlay-title {
+  margin: 0;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+}
+
+.radar-logo-image {
+  display: block;
+  height: 60px;
+  width: auto;
+  position: relative;
+  left: 10px;
+  opacity: 0.55;
+}
+
+.close-button {
+  background: none; border: none; color: var(--color-primary); font-size: var(--font-size-xl); cursor: pointer; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; transition: all var(--transition-fast); padding: 0; margin: 0; flex-shrink: 0;
+}
+.close-button:hover { opacity: 0.8; transform: scale(1.1); }
+
+.overlay-body {
+  flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 0; align-items: stretch; min-height: 0; width: 100%;
+}
+
+/* Tab Navigation specific to Info Overlay */
+.info-overlay-tab-navigation {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  padding: var(--space-md) 0;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-shrink: 0;
+  align-items: center;
+  min-width: 0;
+  box-sizing: border-box;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none;  /* IE and Edge */
+}
+.info-overlay-tab-navigation::-webkit-scrollbar {
+  display: none; /* Safari and Chrome */
+  height: 0;
+  width: 0;
+}
+.info-overlay-tab-navigation {
+  mask-image: linear-gradient(to right, transparent 0%, black var(--space-lg), black calc(100% - var(--space-lg)), transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, black var(--space-lg), black calc(100% - var(--space-lg)), transparent 100%);
+}
+
+/* Tab Button specific to Info Overlay */
+.info-overlay-tab-button {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--color-text-muted);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  margin: 0 2px;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+  font-weight: 500;
+  flex-shrink: 0;
+  line-height: 1.2;
+}
+.info-overlay-tab-button:first-child {
+    margin-left: var(--space-lg);
+}
+.info-overlay-tab-button:last-child {
+    margin-right: var(--space-lg);
+}
+.info-overlay-tab-button:hover {
+  background: var(--color-primary-a05);
+  color: var(--color-primary-a90);
+  border-color: var(--color-primary-a15);
+}
+.info-overlay-tab-button.active {
+  background: var(--color-primary-a15);
+  color: var(--color-primary);
+  border-color: var(--color-primary-a30);
+  box-shadow: var(--shadow-primary-sm);
+}
+
+.tab-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-lg) var(--space-lg);
+  padding-right: calc(var(--space-lg) - 8px); /* Adjust for scrollbar */
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-primary-a30) rgba(0, 0, 0, 0.1);
+}
+.tab-content::-webkit-scrollbar { width: 8px; height: 8px; }
+.tab-content::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius: 4px; }
+.tab-content::-webkit-scrollbar-thumb { background: var(--color-primary-a30); border-radius: 4px; }
+.tab-content::-webkit-scrollbar-thumb:hover { background: var(--color-primary-a50); }
+
+.tab-pane { padding-bottom: var(--space-lg); }
+.tab-pane h3 { color: var(--color-primary); font-size: var(--font-size-lg); margin-top: 0; border-bottom: 1px solid var(--color-border); padding-bottom: var(--space-sm); margin-bottom: var(--space-lg); font-weight: 600; }
+.tab-pane h4 { color: var(--color-primary-a90); font-size: 1.1em; margin-top: var(--space-lg); border-bottom: 1px solid var(--color-border); padding-bottom: var(--space-xs); margin-bottom: var(--space-md); font-weight: 600; }
+.tab-pane p { color: var(--color-text); line-height: 1.7; margin-bottom: var(--space-md); font-size: 12px; }
+.tab-pane ul { list-style: none; padding-left: 0; margin-bottom: var(--space-md); }
+.tab-pane li { margin-bottom: var(--space-sm); line-height: 1.6; color: var(--color-text); position: relative; padding-left: var(--space-md); font-size: 12px; }
+.tab-pane li::before { content: '◆'; position: absolute; left: 0; top: 1px; color: var(--color-primary-a50); font-size: 0.8em; }
+.tab-pane strong { color: var(--color-primary-a90); font-weight: 600; }
+.tab-pane code { background-color: var(--color-primary-a05); color: var(--color-primary-a90); padding: 2px 4px; border-radius: var(--radius-sm); font-family: monospace; font-size: 0.9em; }
+.info-card { background: var(--color-primary-a05); border: 1px solid var(--color-primary-a15); border-radius: var(--radius-md); padding: var(--space-md); margin-top: var(--space-lg); margin-bottom: var(--space-lg); }
+.info-card h4 { color: var(--color-primary); margin-top: 0; margin-bottom: var(--space-sm); font-size: var(--font-size-md); border-bottom: none; padding-bottom: 0; font-weight: 600; }
+.info-card p, .info-card li { font-size: 12px; color: var(--color-text); margin-bottom: var(--space-sm); }
+.info-card p:last-child, .info-card ul:last-child { margin-bottom: 0; }
+.info-card ul { margin-top: var(--space-sm); }
+.info-card li::before { content: '—'; left: 2px; color: var(--color-primary-a70); }
+
+.overlay {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease-out, visibility 0s linear 0.3s;
+}
+
+.overlay.fadeToContent {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.3s ease-in, visibility 0s linear 0s;
+}
+
+.overlay.exiting {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease-out, visibility 0s linear 0.3s;
+}
+
+.overlay-content {
+  transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+}
+
+.overlay.exiting .overlay-content {
+  transform: scale(0.98);
+  opacity: 0;
+  transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+}

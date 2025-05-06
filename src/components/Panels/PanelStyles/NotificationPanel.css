@@ -1,0 +1,102 @@
+.notification-empty {
+  text-align: center;
+  padding: 15px 0;
+  color: var(--color-primary-a50);
+  font-style: italic;
+  font-size: var(--font-size-sm);
+}
+
+.panel-header-actions {
+  margin-bottom: var(--space-md);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.btn-clear-all {
+  background: var(--color-error-a10);
+  color: var(--color-error-a90);
+  border-color: var(--color-error-a30);
+}
+.btn-clear-all:hover:not(:disabled) {
+  background: var(--color-error-a30);
+  color: var(--color-text);
+}
+
+.notification-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.notification-item {
+  padding: var(--space-sm);
+  background: var(--color-primary-a05);
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--color-primary-a30);
+  transition: all var(--transition-fast);
+  cursor: pointer;
+}
+
+.notification-item:hover {
+  background: var(--color-primary-a15);
+  transform: translateY(-2px);
+}
+
+.notification-item.new {
+  border-left-color: var(--color-error, #ff5555);
+  background: var(--color-error-a05, rgba(255, 85, 85, 0.05));
+  animation: highlight-new 2s ease-out;
+}
+
+.notification-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-xs);
+}
+
+.notification-timestamp {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.notification-type-tag {
+  font-size: var(--font-size-xs);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  text-transform: uppercase;
+  font-weight: bold;
+}
+
+.notification-type-tag.lyx {
+  background: var(--color-lyx-a20);
+  color: var(--color-lyx);
+}
+
+.notification-type-tag.token {
+  background: var(--color-token-a20);
+  color: var(--color-token);
+}
+
+.notification-type-tag.contract {
+  background: var(--color-contract-a20);
+  color: var(--color-contract);
+}
+
+.notification-type-tag.social {
+  background: rgba(138, 43, 226, 0.2); /* Example: Purple */
+  color: #9370db; /* Example: Medium Purple */
+}
+
+.notification-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.notification-message {
+  font-size: var(--font-size-sm);
+  flex: 1;
+  color: var(--color-text);
+  line-height: 1.4;
+}

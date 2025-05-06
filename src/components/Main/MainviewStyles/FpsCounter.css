@@ -1,0 +1,15 @@
+.fps-counter {
+  position: fixed;
+  bottom: var(--space-md, 16px);
+  left: var(--space-md, 16px);
+  background-color: rgba(0, 0, 0, 0.7);
+  color: #00f3ff;
+  padding: var(--space-xs, 8px) var(--space-sm, 12px);
+  border-radius: var(--radius-sm, 4px);
+  font-size: var(--font-size-lg, 16px);
+  font-family: monospace;
+  z-index: 10001;
+  pointer-events: none;
+  opacity: 0.9;
+  border: 1px solid var(--color-primary-a30, rgba(0, 243, 255, 0.3));
+}

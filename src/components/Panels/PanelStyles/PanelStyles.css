@@ -1,0 +1,69 @@
+@import "../../../styles/variables.css";
+
+.panel {
+  border: 1px solid rgba(0, 243, 255, 0.25);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  overflow: hidden;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.4);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 10, 20, 0.8);
+  border-top: 1px solid rgba(0, 243, 255, 0.25) !important;
+  transition: none !important;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 15px;
+  background: rgba(0, 243, 255, 0.05);
+  border-bottom: 1px solid rgba(0, 243, 255, 0.15);
+  border-top: none !important;
+  box-shadow: none !important;
+  position: relative;
+}
+
+.panel-header:before,
+.panel-header:after {
+  display: none !important;
+}
+
+.panel-title {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--color-primary);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.close-button {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--color-primary);
+  cursor: pointer;
+  font-size: 16px;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+  padding: 0;
+}
+
+.close-button:hover {
+  background: rgba(0, 243, 255, 0.1);
+}
+
+.panel-content {
+  padding: 15px;
+  overflow-y: auto;
+  flex: 1;
+}

@@ -1,0 +1,389 @@
+@import "./variables.css";
+
+/*---------- Buttons ----------*/
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-xs) var(--space-md);
+  background: var(--color-primary-a15);
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary-a30);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-md);
+  font-weight: 500;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+}
+.btn:hover:not(:disabled) {
+  background: var(--color-primary-a30);
+  border-color: var(--color-primary-a50);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-primary-sm);
+}
+.btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-sm {
+  font-size: var(--font-size-sm);
+  padding: var(--space-xxs) var(--space-xs);
+}
+.btn-block {
+  width: 100%;
+  display: block;
+}
+.btn-icon {
+  width: var(--icon-size-md);
+  height: var(--icon-size-md);
+  padding: 0;
+  border-radius: var(--radius-circle);
+}
+
+/* Generic Close Button Style */
+.close-button {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  font-size: var(--font-size-xl);
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+  padding: 0;
+  margin: 0;
+}
+.close-button:hover {
+  opacity: 0.8;
+  transform: scale(1.1);
+}
+
+/*---------- Forms ----------*/
+.form-group {
+  margin-bottom: var(--space-md);
+}
+.form-group label {
+  display: block;
+  margin-bottom: var(--space-xs);
+  font-size: var(--font-size-sm);
+  color: var(--color-primary-a90);
+  text-transform: uppercase;
+}
+.form-control {
+  width: 100%;
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--color-glass-bg);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-md);
+  transition: border-color var(--transition-fast);
+}
+.form-control:focus {
+  outline: none;
+  border-color: var(--color-primary-a50);
+  box-shadow: var(--shadow-primary-sm);
+}
+
+/* Custom Select Dropdown */
+.custom-select {
+  width: 100%;
+  padding: var(--space-xs) var(--space-md) var(--space-xs) var(--space-sm);
+  background: var(--color-glass-bg);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='6' viewBox='0 0 12 6' fill='none'%3E%3Cpath d='M6 6L0 0H12L6 6Z' fill='%2300f3ff'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  border: 1px solid var(--color-border);
+  color: var(--color-primary);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none; /* For Safari */
+  -moz-appearance: none;    /* For Firefox */
+}
+.custom-select:hover {
+  border-color: var(--color-primary-a30);
+  background-color: var(--color-primary-a05);
+}
+.custom-select:focus {
+  outline: none;
+  border-color: var(--color-primary-a50);
+  box-shadow: var(--shadow-primary-sm);
+}
+
+/* Sliders */
+.slider-container {
+  margin-bottom: var(--space-md);
+}
+.slider-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: var(--space-xs);
+}
+.slider-label {
+  text-transform: uppercase;
+  font-size: var(--font-size-sm);
+  color: var(--color-primary-a90);
+}
+.slider-value {
+  font-size: var(--font-size-sm);
+  color: var(--color-primary-a90);
+}
+input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  background: var(--color-primary-a15);
+  border-radius: 2px;
+  outline: none;
+  transition: background var(--transition-fast);
+}
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--color-primary);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+input[type="range"]::-moz-range-thumb { /* Styles for Firefox */
+  width: 16px;
+  height: 16px;
+  background: var(--color-primary);
+  border-radius: 50%;
+  cursor: pointer;
+  border: none; /* Remove default border */
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+input[type="range"]:hover::-webkit-slider-thumb {
+  transform: scale(1.2);
+  box-shadow: 0 0 10px var(--color-primary-a30);
+}
+input[type="range"]:hover::-moz-range-thumb {
+  transform: scale(1.2);
+  box-shadow: 0 0 10px var(--color-primary-a30);
+}
+input[type="range"]:hover {
+  background: var(--color-primary-a30);
+}
+
+/* Checkbox */
+.checkbox-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+.checkbox-group input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-primary);
+}
+
+/*---------- Panels ----------*/
+.panel {
+  background: var(--color-glass-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  color: var(--color-text);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  width: var(--panel-width);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-sm) var(--space-md);
+  background: rgba(16, 16, 24, 0.4); /* Semi-transparent header */
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0; /* Prevent header from shrinking */
+}
+.panel-title {
+  font-size: var(--font-size-lg);
+  text-transform: uppercase;
+  margin: 0;
+  letter-spacing: 0.5px;
+  font-weight: 500;
+  color: var(--color-primary);
+}
+.panel-content {
+  padding: var(--space-md);
+  overflow-y: auto;
+  /* Removed max-height rule - let flex handle sizing */
+  flex-grow: 1; /* Allow content to take remaining space */
+}
+.panel-from-toolbar {
+  position: fixed;
+  top: var(--space-lg);
+  left: var(--panel-left-position);
+  z-index: var(--z-controls);
+  animation: slideInFromLeft var(--transition-normal) var(--transition-elastic);
+}
+
+/*---------- Toolbar ----------*/
+.toolbar-icon {
+  width: var(--icon-size-lg);
+  height: var(--icon-size-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  background: var(--color-primary-a05);
+  border: 1px solid var(--color-border);
+  overflow: visible; /* Allow potential badges/effects */
+  position: relative;
+}
+.toolbar-icon:hover {
+  background: var(--color-primary-a15);
+  border-color: var(--color-primary-a30);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-primary-sm);
+}
+.toolbar-icon.active {
+  background: var(--color-primary-a15);
+  border-color: var(--color-primary-a50);
+  box-shadow: var(--shadow-primary-md);
+}
+.toolbar-icon .icon-image {
+  width: var(--icon-size-md);
+  height: var(--icon-size-md);
+  transition: all var(--transition-fast);
+  opacity: 1; /* Keep default opacity */
+}
+.toolbar-icon:hover .icon-image,
+.toolbar-icon.active .icon-image {
+  opacity: 1;
+  filter: drop-shadow(0 0 5px var(--color-primary-a30));
+}
+
+/*---------- Notifications ----------*/
+.notification-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  min-width: 16px;
+  height: 16px;
+  background: var(--color-error);
+  color: white;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  box-shadow: 0 0 5px var(--color-error-a50, rgba(255, 85, 85, 0.5));
+  z-index: var(--z-base); 
+}
+.notification-item {
+  padding: var(--space-sm);
+  background: var(--color-primary-a05);
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--color-primary-a30);
+  transition: all var(--transition-fast);
+  cursor: pointer;
+  margin-bottom: var(--space-xs);
+}
+.notification-item:hover {
+  background: var(--color-primary-a15);
+  transform: translateY(-2px);
+}
+.notification-item.new {
+  border-left-color: var(--color-error, #ff5555);
+  background: var(--color-error-a05, rgba(255, 85, 85, 0.05));
+  animation: highlight-new 2s ease-out;
+}
+
+/*---------- Overlays ----------*/
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: var(--z-overlay);
+  background-color: rgba(0, 0, 0, 0.75);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: background-color var(--transition-slow);
+}
+.overlay-content {
+    width: 90%;
+    max-width: 900px;
+    height: 80vh;
+    background: var(--color-glass-bg-dark);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-xl);
+    overflow: hidden; 
+    position: relative;
+    box-shadow: var(--shadow-primary-lg);
+    transition: opacity var(--transition-slow);
+    display: flex; 
+    flex-direction: column; 
+}
+.overlay-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0; 
+}
+.overlay-title {
+  color: var(--color-primary);
+  font-size: var(--font-size-xxl);
+  margin: 0;
+}
+.overlay-body {
+  padding: var(--space-lg);
+  overflow-y: auto; 
+  flex-grow: 1; 
+}
+
+/*---------- Custom Scrollbar (for panel content, etc.) ----------*/
+.panel-content::-webkit-scrollbar,
+.overlay-body::-webkit-scrollbar 
+ {
+  width: 8px;
+  height: 8px;
+}
+.panel-content::-webkit-scrollbar-track,
+.overlay-body::-webkit-scrollbar-track
+ {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+}
+.panel-content::-webkit-scrollbar-thumb,
+.overlay-body::-webkit-scrollbar-thumb
+ {
+  background: var(--color-primary-a30);
+  border-radius: 4px;
+}
+.panel-content::-webkit-scrollbar-thumb:hover,
+.overlay-body::-webkit-scrollbar-thumb:hover
+ {
+  background: var(--color-primary-a50);
+}
+
+/* Add Firefox scrollbar styles if needed */
+.panel-content, .overlay-body {
+  scrollbar-width: thin; 
+  scrollbar-color: var(--color-primary-a30) rgba(0, 0, 0, 0.1); 
+}

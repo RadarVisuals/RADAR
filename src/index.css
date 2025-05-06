@@ -1,0 +1,12 @@
+@import "./styles/variables.css";
+@import "./styles/base.css";
+@import "./styles/layout.css"; 
+@import "./styles/components.css"; 
+@import "./components/Toolbars/ToolbarStyles/TopRightControls.css";
+@import "./components/MIDI/MIDIStyles/GlobalMIDIStatus.css";
+
+
+#root {
+  width: 100%;
+  height: 100%;
+}

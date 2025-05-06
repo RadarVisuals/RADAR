@@ -1,0 +1,304 @@
+.slider-container {
+  margin-bottom: var(--space-md);
+}
+
+.slider-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-xs);
+}
+
+.slider-label {
+  font-weight: bold;
+  color: var(--color-text);
+}
+
+.slider-value {
+  font-family: monospace;
+  color: var(--color-primary);
+}
+
+.midi-status {
+  background: var(--color-bg-alt);
+  padding: var(--space-sm);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-md);
+  display: flex;
+  flex-direction: column;
+}
+
+.midi-status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.midi-buttons {
+  display: flex;
+  gap: var(--space-xs);
+  align-items: center;
+}
+
+.midi-connect-btn,
+.midi-monitor-btn,
+.midi-clear-btn,
+.midi-cancel-btn,
+.midi-reset-btn {
+  background: var(--color-primary-a15);
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary-a30);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.midi-connect-btn:hover,
+.midi-monitor-btn:hover,
+.midi-clear-btn:hover,
+.midi-cancel-btn:hover,
+.midi-reset-btn:hover {
+  background: var(--color-primary-a25);
+  transform: translateY(-1px);
+}
+
+.midi-reset-btn {
+  background: var(--color-warning-a15);
+  color: var(--color-warning);
+  border-color: var(--color-warning-a30);
+}
+
+.midi-reset-btn:hover {
+  background: var(--color-warning-a25);
+}
+
+.midi-cancel-btn {
+  background: var(--color-error-a15);
+  color: var(--color-error);
+  border-color: var(--color-error-a30);
+  margin-left: var(--space-sm);
+}
+
+.midi-cancel-btn:hover {
+  background: var(--color-error-a25);
+}
+
+.midi-channel-select {
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: var(--font-size-xs);
+}
+
+.midi-learning-container {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--space-xs);
+  padding: var(--space-sm);
+  background: var(--color-accent-a05);
+  border: 1px solid var(--color-accent-a15);
+  border-radius: var(--radius-md);
+}
+
+.midi-learning-container.layer-learning {
+  background: var(--color-warning-a05);
+  border: 1px solid var(--color-warning-a15);
+}
+
+.midi-learning {
+  color: var(--color-accent);
+  font-weight: bold;
+  animation: blink 1s infinite;
+}
+
+.layer-learning .midi-learning {
+  color: var(--color-warning);
+}
+
+.midi-learning-instructions {
+  margin-top: var(--space-xs);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-dim);
+}
+
+.midi-mapping-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.midi-mapping-text {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-dim);
+  background: var(--color-bg-alt);
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+}
+
+.midi-learn-btn {
+  padding: 2px 6px;
+  font-size: var(--font-size-xs);
+  background: var(--color-primary-a10);
+  border: 1px solid var(--color-primary-a20);
+  border-radius: var(--radius-sm);
+  color: var(--color-primary);
+  cursor: pointer;
+}
+
+.midi-learn-btn:hover:not(:disabled) {
+  background: var(--color-primary-a20);
+}
+
+.midi-learn-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.midi-monitor {
+  margin-bottom: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  max-height: 150px;
+  display: flex;
+  flex-direction: column;
+}
+
+.midi-monitor-header {
+  background: var(--color-bg-alt);
+  padding: var(--space-xs) var(--space-sm);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.midi-monitor-header h4 {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+}
+
+.midi-monitor-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-xs);
+  font-size: var(--font-size-xs);
+  font-family: monospace;
+  background: var(--color-bg);
+}
+
+.midi-monitor-empty {
+  padding: var(--space-sm);
+  text-align: center;
+  color: var(--color-text-dim);
+}
+
+.midi-monitor-msg {
+  padding: 2px 0;
+  display: flex;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.midi-monitor-time {
+  width: 70px;
+  color: var(--color-text-dim);
+}
+
+.midi-monitor-type {
+  width: 100px;
+  color: var(--color-primary);
+}
+
+.midi-monitor-channel {
+  width: 60px;
+  color: var(--color-accent);
+}
+
+.midi-monitor-data {
+  width: 40px;
+  text-align: right;
+  color: var(--color-text);
+  margin-right: var(--space-sm);
+}
+
+.layer-mappings {
+  margin-bottom: var(--space-md);
+  background: var(--color-bg-alt);
+  padding: var(--space-sm);
+  border-radius: var(--radius-md);
+}
+
+.section-title {
+  margin: 0 0 var(--space-sm) 0;
+  font-size: var(--font-size-md);
+  color: var(--color-primary);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--space-xs);
+}
+
+.layer-mapping-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-sm);
+}
+
+.layer-mapping-item {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs);
+}
+
+.layer-mapping-item.active {
+  border-color: var(--color-primary-a50);
+  background: var(--color-primary-a10);
+}
+
+.layer-mapping-label {
+  font-weight: bold;
+  margin-bottom: var(--space-xs);
+  font-size: var(--font-size-sm);
+}
+
+.layer-mapping-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.layer-mapping-text {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-dim);
+}
+
+.visitor-message {
+  margin-top: var(--space-md);
+  padding: var(--space-sm);
+  background: var(--color-primary-a05);
+  border: 1px solid var(--color-primary-a15);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  color: var(--color-primary-a90);
+  text-align: center;
+}
+
+@keyframes blink {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 1;
+  }
+}
