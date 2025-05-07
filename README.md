@@ -32,9 +32,9 @@ RADAR challenges the notion of NFTs as static collectibles. We believe true digi
 *   **Ownership is Control & Creation:** Go beyond just holding. Layer, glitch, blend, and animate your assets. Save an infinite number of unique visual setups directly onto your Universal Profile.
 *   **Decentralized & Composable:** All your creations – visual presets, MIDI mapping, custom color-coded event reactions – are stored on *your* UP using standard ERC725Y keys. It's *your* data, ready for a future of shared, community-driven visual experiences.
 
-## RADAR Genesis & The Future of Asset Utility
+## The RADAR Genesis Collection & The Future of Asset Utility
 
-Following this hackathon and feedback from the team, the official **RADAR 1.0 Beta** will launch, headlined by the **RADAR Genesis Collection**: a massive 8,000-piece LSP8 NFT collection designed *by the creator of RADAR, specifically for RADAR*.
+Following this hackathon and feedback from the team, the official **RADAR 1.0 Beta** will launch, headlined by the **RADAR Genesis Collection**: a massive 8,000-piece LSP8 NFT collection designed *by the founder / creator of RADAR, VXCTXR, specifically for RADAR*.
 
 *   **Benchmark for Asset Design:** The RADAR Genesis Collection will set the standard for how assets should be prepared for optimal use within the visualizer. This isn't about random generation; it's about intentional artistry.
 *   **The Value of Artistic Preparation:**
@@ -59,7 +59,7 @@ RADAR integrates deeply with LUKSO's philosophy and innovative architecture:
 
 *   **Tactile MIDI Control (Web MIDI API):**
     *   Intuitive **MIDI Learn** for all visual parameters.
-    *   **Global MIDI Map:** Your controller mapping is saved to `RADAR_MIDI_MAP` on your Universal Profile, ensuring consistent control across all presets.
+    *   **Global MIDI Map:** Your controller mapping is saved to `RADAR.MIDI.ParameterMap` on your Universal Profile, ensuring consistent control across all presets.
 
 *   **On-Chain Event Reactions (LSP1 UniversalReceiver):**
     *   Visual effects triggered by on-chain events on your UP (e.g., receiving LYX, tokens).
@@ -95,14 +95,17 @@ This project is born from a lifelong passion for music production, visual art, a
 
 ## Roadmap
 
-*   **Visual Effect Expansion:** Introduce a wider array of dynamic visual effects, further polish parameter object interpolation now visible on the x/y axis and rotation (mainly implemented to cover up the limited 127 step allocation inhereted by MIDI). To further animate these parameter positions when scrolling through presets. Also, another thing where I'm excited about to dive in is something that is called Parameter Locking, or P-locking. This is a concept borrowed from my hardware sequencer / drumcomputer, the Elektron Analog Rytm mkII, where it could serve as a powerful creative tool in addition to RADAR + MIDI functionality. In its original form, P-locking allows you to "record" parameter changes—like filter sweeps, volume tweaks, or pitch shifts—step-by-step across a looping 16-step sequence. Every knob twist is remembered and retriggered at the end of the 16 step loop, giving your sound dynamic variation without ever having to touch the controller again. So imagine this for RADAR like recording a 5 seconds loop over and over again. Overwriting and retriggering continuously when you move a parameter. Ie. moving an asset over the X axis during a 5 second window would just retrigger this movement over and over again.
+*   **Visual Effect Expansion:** Introduce a wider array of dynamic visual effects.
+*   Further polish & introduce parameter object interpolation, now visible on the x/y axis and rotation (mainly implemented to cover up the limited 127 step allocation inhereted by MIDI).
+*   Interpolate between presets. 
+*   Another thing where I'm excited about to dive in is something that is called Parameter Locking, or "P-locking". This is a concept borrowed from my hardware sequencer / drumcomputer, the Elektron Analog Rytm MKII, where it could serve as a powerful creative tool in addition to RADAR + MIDI functionality. In its original form, P-locking allows you to "record" parameter changes—like filter sweeps, volume tweaks, or pitch shifts—step-by-step across a looping 16-step sequence. Every knob twist is remembered and retriggered at the end of the 16 step loop, giving your sound dynamic variation without ever having to touch the controller again. So imagine this for RADAR like recording a 5 seconds loop over and over again. Overwriting and retriggering continuously when you move a parameter. Ie. moving an asset over the X axis during a 5 second window would just retrigger this movement over and over again.
 
 *   **Advanced MIDI Capabilities:**
 *   Implement MIDI clock synchronization for tempo-based effects and rhythmic precision.
 *   Allow mapping of MIDI controls to specific value ranges within parameters.
 *   Support toggle actions for MIDI button/pad presses.
 *   **LSP8 Collection Onboarding:** Streamline the process for community members to propose and for admins/curators to whitelist new, compatible LSP8 NFT collections.
-*   **Performance Optimization:** Continuously refine and optimize the custom 2D rendering engine to ensure smooth performance across a diverse range of devices and browsers. Possibly check pixiJS/threeJS/collaborate with others on this. With potentially mobile optimization in mind.
+*   **Performance Optimization:** Continuously refine and optimize the custom 2D rendering engine to ensure smooth performance across a diverse range of devices and browsers. Possibly check pixiJS/threeJS/collaborate with others on this. With potentially mobile optimization in
 *   **Open Source Strategy:** Evaluate and potentially open-source key components, because only now I understand the true potential of creating an open system where others could just create new effects to add to RADAR.
 *   **Deeper LUKSO Integration:** Actively integrate with new and maturing LUKSO Standard Proposals (LSPs) as they become widely adopted, further enhancing RADAR's capabilities within the ecosystem.
 *   **(Future Idea) Theme Customization:** Allow users to customize the RADAR UI theme (colors, fonts) and save these preferences to their UP.
@@ -155,28 +158,22 @@ To make RADAR's visuals react to the audio playing on your computer (e.g., from 
 
 **Prerequisites:**
 
-*   **Voicemeeter** (or Voicemeeter Banana/Potato) installed. Get it from [vb-audio.com/Voicemeeter/](https://vb-audio.com/Voicemeeter/).
-*   **VB-CABLE Virtual Audio Cable** installed (optional, but recommended for specific app routing). Get it from [vb-audio.com/Cable/](https://vb-audio.com/Cable/).
+*   **Voicemeeter** (Standard version or Banana/Potato) installed. Get it from [vb-audio.com/Voicemeeter/](https://vb-audio.com/Voicemeeter/).
 *   **Restart your computer** after installing these.
 
 **Steps:**
 
 1.  **Route Desired Audio to Virtual Cable (Recommended for Browser/App Audio):**
     *   In Windows Sound settings ("Open Sound settings" -> "App volume and device preferences"):
-        *   Find your web browser (or other audio app).
+        *   Find your web browser.
         *   Change its **Output** device to **"CABLE Input (VB-Audio Virtual Cable)"**.
     *   *Alternatively, for simpler system-wide audio capture (less granular), set "CABLE Input" as your Default Playback Device in Windows Sound settings (Playback tab).*
 
 2.  **Configure Voicemeeter:**
     *   Open Voicemeeter.
-    *   **Hardware Input 1 (or any strip):** Click its name and select **"CABLE Output (VB-Audio Virtual Cable)"**. This brings audio from the virtual cable *into* Voicemeeter.
+    *   **Hardware Input 1 (Stereo Input 1 or 2):** Click its name and select **"CABLE Output (VB-Audio Virtual Cable)"**. This brings audio from the virtual cable *into* Voicemeeter.
         *   Ensure this channel is active (fader up, not muted). Enable its output to A1 (or your main hardware out) if you want to monitor this source through Voicemeeter.
-    *   **Hardware Out (A1):** Click "A1" (usually top-right) and select your main speakers/headphones (e.g., "WDM: Speakers (Your Soundcard)").
-
-3.  **Set Voicemeeter Output as Default Recording Device (for RADAR):**
-    *   In Windows Sound settings (Recording tab):
-    *   Find **"Voicemeeter Output (VB-Audio Voicemeeter VAIO)"** (or similar, e.g., "Voicemeeter Aux Output").
-    *   Right-click and set as **"Default Device"** and **"Default Communication Device"**.
+    *   **Hardware Out (A1 is the MAIN OUT):** Click "A1" (last channel strip) and select your main speakers/headphones. Done.
 
 4.  **Browser Permissions for RADAR:**
     *   When enabling Audio Reactivity in RADAR, your browser will ask for microphone permission.
@@ -185,6 +182,8 @@ To make RADAR's visuals react to the audio playing on your computer (e.g., from 
 **How it Works:** Your application sends sound to "CABLE Input." "CABLE Output" feeds this into Voicemeeter. Voicemeeter processes it, sends it to your speakers (via A1) AND to its own virtual "Voicemeeter Output." RADAR listens to "Voicemeeter Output" as a microphone.
 
 This method allows selective audio routing for the visualizer.
+
+Don't forget to manually add the application because you will need to allow following attributes:  <iframe src="https://radar725.netlify.app/" allow="microphone, midi, fullscreen"></iframe>
 
 ---
 **A DETAILED VIDEO DEMO WILL FOLLOW SHORTLY.**
