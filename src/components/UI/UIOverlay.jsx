@@ -1,4 +1,4 @@
-// src/components/UI/UIOverlay.jsx (Fixed PropTypes Warning)
+// src/components/UI/UIOverlay.jsx
 import React, { useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
 
@@ -30,9 +30,7 @@ const MemoizedPresetSelectorBar = React.memo(PresetSelectorBar);
 const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
     const { activePanel, animatingPanel, activeLayerTab, closePanel, setActiveLayerTab } = uiState;
     const { isAudioActive, audioSettings, analyzerData, setIsAudioActive, setAudioSettings } = audioState;
-    // isParentAdmin is used in OverlayRenderer, not here directly
     const { layerConfigs, blendModes, notifications, savedReactions, canSave, isPreviewMode } = configData;
-    // Removed onRemoveReaction as it's unused in EventsPanel
     const { onLayerConfigChange, onMarkNotificationRead, onClearAllNotifications, onSaveReaction, onPreviewEffect, onTokenApplied } = actions;
 
     const handleTokenSelectorClose = useCallback(() => {
@@ -70,7 +68,6 @@ const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
                 <PanelWrapper key="events-panel" className={animatingPanel ? "animating" : ""}>
                     <EventsPanel
                         onSaveReaction={onSaveReaction}
-                        // onRemoveReaction removed
                         reactions={savedReactions}
                         onClose={closePanel}
                         readOnly={!canSave}
@@ -117,14 +114,13 @@ const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
  */
 const OverlayRenderer = ({ uiState, configData }) => {
     const { infoOverlayOpen, whitelistPanelOpen, toggleInfoOverlay, toggleWhitelistPanel } = uiState;
-    const { isParentAdmin } = configData; // isParentAdmin is used here
+    const { isParentAdmin } = configData;
 
     return (
         <>
             {infoOverlayOpen && (
                 <InfoOverlay isOpen={infoOverlayOpen} onClose={toggleInfoOverlay} />
             )}
-            {/* Whitelist panel only renders if the user is the designated admin */}
             {whitelistPanelOpen && isParentAdmin && (
                 <WhitelistCollectionsPanel isOpen={whitelistPanelOpen} onClose={toggleWhitelistPanel} />
             )}
@@ -132,17 +128,9 @@ const OverlayRenderer = ({ uiState, configData }) => {
     );
 };
 
-
 /**
  * UIOverlay component: Renders the main user interface elements,
  * including toolbars, panels, and overlays, based on the provided state.
- *
- * @param {object} props - Component props.
- * @param {boolean} props.shouldShowUI - Whether the base conditions for showing UI are met.
- * @param {object} props.uiState - State object from useUIState hook.
- * @param {object} props.audioState - State object from useAudioVisualizer hook.
- * @param {object} props.configData - Object containing configuration and context data.
- * @param {object} props.actions - Object containing action callbacks.
  */
 function UIOverlay(props) {
   const {
@@ -158,81 +146,85 @@ function UIOverlay(props) {
     toggleWhitelistPanel, toggleUiVisibility
   } = uiState;
   const { isAudioActive } = audioState;
-  // isProfileOwner, isVisitor are not directly used here, derived logic like canSave is passed in configData
   const {
     isParentAdmin, isPreviewMode, unreadCount,
     savedConfigList, currentConfigName, isTransitioning
-    // isLoading (previously isConfigHookLoading) is available here but not directly used by UIOverlay render logic itself
   } = configData;
   const { onEnhancedView, onPresetSelect } = actions;
 
   const showPresetBar = useMemo(() => shouldShowUI && isUiVisible && !activePanel, [shouldShowUI, isUiVisible, activePanel]);
 
+  // UPDATED: Class for the main UI container that holds hideable elements
+  const mainUiContainerClass = `ui-elements-container ${shouldShowUI && isUiVisible ? "visible" : "hidden-by-opacity"}`;
+
   return (
-    <div className={`ui-container ${shouldShowUI && isUiVisible ? "visible" : "hidden"}`}>
+    // Use a fragment as the outermost wrapper for UI elements
+    <>
+      {/* TopRightControls is always rendered IF shouldShowUI is true. Its internal state is managed by isUiVisible prop. */}
       {shouldShowUI && (
-        <>
-          <MemoizedTopRightControls
-            showWhitelist={isParentAdmin && isUiVisible} // Whitelist button depends on admin status
-            showInfo={isUiVisible}
-            showToggleUI={true}
-            showEnhancedView={true}
-            onWhitelistClick={toggleWhitelistPanel}
-            onInfoClick={toggleInfoOverlay}
-            onToggleUI={toggleUiVisibility}
-            onEnhancedView={onEnhancedView}
-            isUiVisible={isUiVisible}
-          />
+        <MemoizedTopRightControls
+          showWhitelist={isParentAdmin} // This button will be hidden by TopRightControls if !isUiVisible
+          showInfo={true}              // This button will be hidden by TopRightControls if !isUiVisible
+          showToggleUI={true}          // This is the toggle button, always conceptually present
+          showEnhancedView={true}      // This button will be hidden by TopRightControls if !isUiVisible
+          onWhitelistClick={toggleWhitelistPanel}
+          onInfoClick={toggleInfoOverlay}
+          onToggleUI={toggleUiVisibility}
+          onEnhancedView={onEnhancedView}
+          isUiVisible={isUiVisible} // Pass isUiVisible for TopRightControls internal logic
+        />
+      )}
 
-          <div className="bottom-right-icons">
-            {isUiVisible && <MemoizedAudioStatusIcon isActive={isAudioActive} onClick={() => openPanel('audio')} />}
-            {isUiVisible && <MemoizedGlobalMIDIStatus />}
-          </div>
-
-          {isUiVisible && isPreviewMode && (
-            <div className="preview-mode-indicator">
-              <span>👁️</span> Preview Mode
+      {/* This container holds elements that will fade in/out based on isUiVisible */}
+      <div className={mainUiContainerClass}>
+        {/* Only render these children if shouldShowUI is true AND isUiVisible is true */}
+        {shouldShowUI && isUiVisible && (
+          <>
+            <div className="bottom-right-icons">
+              <MemoizedAudioStatusIcon isActive={isAudioActive} onClick={() => openPanel('audio')} />
+              <MemoizedGlobalMIDIStatus />
             </div>
-          )}
 
-          {isUiVisible && (
+            {isPreviewMode && (
+              <div className="preview-mode-indicator">
+                <span>👁️</span> Preview Mode
+              </div>
+            )}
+
             <MemoizedVerticalToolbar
               activePanel={activePanel}
               setActivePanel={openPanel}
               notificationCount={unreadCount}
-              // Removed unused props
-              // isParentAdmin={isParentAdmin}
-              // isProfileOwner={isProfileOwner}
-              // isVisitor={isVisitor}
             />
-          )}
 
-          {isUiVisible && (
             <ActivePanelRenderer
                 uiState={uiState}
                 audioState={audioState}
                 configData={configData}
                 actions={actions}
             />
-          )}
 
-          <OverlayRenderer uiState={uiState} configData={configData} />
+            {showPresetBar && (
+              <MemoizedPresetSelectorBar
+                savedConfigList={savedConfigList}
+                currentConfigName={currentConfigName}
+                onPresetSelect={onPresetSelect}
+                isLoading={isTransitioning}
+              />
+            )}
+          </>
+        )}
+      </div>
 
-          {showPresetBar && (
-            <MemoizedPresetSelectorBar
-              savedConfigList={savedConfigList}
-              currentConfigName={currentConfigName}
-              onPresetSelect={onPresetSelect}
-              isLoading={isTransitioning} // Use isTransitioning to disable buttons during load/preset change
-            />
-          )}
-        </>
+      {/* Overlays are rendered outside the mainUiContainerClass if their visibility is independent */}
+      {shouldShowUI && (
+        <OverlayRenderer uiState={uiState} configData={configData} />
       )}
-    </div>
+    </>
   );
 }
 
-// --- PropType Definitions ---
+// --- PropType Definitions (remain unchanged) ---
 const UIStatePropTypes = PropTypes.shape({
   isUiVisible: PropTypes.bool.isRequired,
   infoOverlayOpen: PropTypes.bool.isRequired,
@@ -265,7 +257,7 @@ const ConfigDataPropTypes = PropTypes.shape({
   savedConfigList: PropTypes.array.isRequired,
   currentConfigName: PropTypes.string,
   isTransitioning: PropTypes.bool.isRequired,
-  isLoading: PropTypes.bool.isRequired, // ****** CHANGED HERE ******
+  isLoading: PropTypes.bool.isRequired,
   canSave: PropTypes.bool.isRequired,
   isParentAdmin: PropTypes.bool.isRequired,
   isProfileOwner: PropTypes.bool.isRequired,
@@ -293,6 +285,5 @@ UIOverlay.propTypes = {
   configData: ConfigDataPropTypes.isRequired,
   actions: ActionsPropTypes.isRequired,
 };
-
 
 export default UIOverlay;

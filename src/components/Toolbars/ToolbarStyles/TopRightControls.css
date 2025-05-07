@@ -6,10 +6,11 @@
   flex-direction: row;
   align-items: center;
   gap: 10px;
-  z-index: var(--z-controls);
+  z-index: var(--z-controls); /* Ensure it's above other UI that might fade */
   width: fit-content;
   max-width: 100%;
   background: none;
+  pointer-events: auto; /* This container should always be interactive */
 }
 
 .top-right-controls-container .toolbar-icon {
@@ -29,6 +30,7 @@
   padding: 0;
   backdrop-filter: blur(5px);
   -webkit-backdrop-filter: blur(5px);
+  pointer-events: auto; /* Individual icons also need this */
 }
 
 .top-right-controls-container .toolbar-icon:hover {
@@ -61,21 +63,23 @@
   filter: drop-shadow(0 0 3px var(--color-primary-a30));
 }
 
-.top-right-controls-container.ui-hidden {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  flex-direction: row;
+/* This class is added to top-right-controls-container by TopRightControls.jsx when isUiVisible is false */
+.top-right-controls-container.ui-hidden .toolbar-icon:not(.fixed-toggle-button) {
+  display: none !important; /* Hide other icons when UI is "hidden" */
 }
 
-.top-right-controls-container.ui-hidden
-  .toolbar-icon:not(.fixed-toggle-button) {
-  display: none;
+/* Ensure the toggle button itself is always displayed correctly */
+.top-right-controls-container .fixed-toggle-button {
+  display: flex !important;
 }
 
-.show-ui-btn {
-  opacity: 0.7;
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 50%;
-  padding: 10px;
+/* Styles for the toggle button when the rest of the UI is hidden */
+.top-right-controls-container.ui-hidden .fixed-toggle-button.show-ui-btn {
+  opacity: 0.7; /* Make it slightly less prominent if desired */
+  background: rgba(0, 0, 0, 0.2); /* Example background */
+  border-color: rgba(var(--color-primary-rgb), 0.4);
+}
+.top-right-controls-container.ui-hidden .fixed-toggle-button.show-ui-btn:hover {
+  opacity: 1;
+  background: rgba(var(--color-primary-rgb), 0.15);
 }

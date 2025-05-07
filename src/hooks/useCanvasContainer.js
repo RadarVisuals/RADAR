@@ -133,20 +133,47 @@ export function useCanvasContainer(options) {
         setIsFullscreenActive(isCurrentlyFullscreen);
     };
     document.addEventListener('fullscreenchange', handleFullscreenChange); document.addEventListener('webkitfullscreenchange', handleFullscreenChange); document.addEventListener('mozfullscreenchange', handleFullscreenChange); document.addEventListener('MSFullscreenChange', handleFullscreenChange);
-    handleFullscreenChange();
+    handleFullscreenChange(); // Call once to set initial state
     return () => {
         document.removeEventListener('fullscreenchange', handleFullscreenChange); document.removeEventListener('webkitfullscreenchange', handleFullscreenChange); document.removeEventListener('mozfullscreenchange', handleFullscreenChange); document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
     };
   }, []);
 
-  const enterFullscreen = useCallback(() => {
-    const elem = document.getElementById('fullscreen-root') || containerRef.current;
-    if (!elem) { console.warn("[useCanvasContainer] Cannot enter fullscreen, container ref or #fullscreen-root not available."); return; }
-    if (elem.requestFullscreen) { elem.requestFullscreen().catch((err) => { console.error(`[useCanvasContainer] Error attempting full-screen: ${err.message} (${err.name})`); }); }
-    else if (elem.webkitRequestFullscreen) { elem.webkitRequestFullscreen().catch((err) => { console.error(`[useCanvasContainer] Error attempting webkit full-screen: ${err.message} (${err.name})`); }); }
-    else if (elem.msRequestFullscreen) { elem.msRequestFullscreen().catch((err) => { console.error(`[useCanvasContainer] Error attempting ms full-screen: ${err.message} (${err.name})`); }); }
-    else { console.warn("[useCanvasContainer] Fullscreen API not supported."); }
-  }, []);
+  // Helper for error logging during fullscreen operations
+  const handleFullscreenError = (err) => {
+      console.error(`[useCanvasContainer] Error with fullscreen operation: ${err.message} (${err.name})`);
+  };
 
-  return { containerRef, hasValidDimensions, isContainerObservedVisible, isFullscreenActive, enterFullscreen };
+  const toggleFullscreen = useCallback(() => {
+    const elem = document.getElementById('fullscreen-root') || containerRef.current;
+    if (!elem) {
+      console.warn("[useCanvasContainer] Cannot toggle fullscreen, container ref or #fullscreen-root not available.");
+      return;
+    }
+
+    const isInFullscreen = !!(
+      document.fullscreenElement ||
+      document.webkitFullscreenElement ||
+      document.mozFullScreenElement || // Corrected: mozFullScreenElement
+      document.msFullscreenElement
+    );
+
+    if (!isInFullscreen) {
+      // Enter fullscreen
+      if (elem.requestFullscreen) { elem.requestFullscreen().catch(handleFullscreenError); }
+      else if (elem.webkitRequestFullscreen) { elem.webkitRequestFullscreen().catch(handleFullscreenError); }
+      else if (elem.mozRequestFullScreen) { elem.mozRequestFullScreen().catch(handleFullscreenError); } // Corrected: mozRequestFullScreen
+      else if (elem.msRequestFullscreen) { elem.msRequestFullscreen().catch(handleFullscreenError); }
+      else { console.warn("[useCanvasContainer] Fullscreen API not supported for entering."); }
+    } else {
+      // Exit fullscreen
+      if (document.exitFullscreen) { document.exitFullscreen().catch(handleFullscreenError); }
+      else if (document.webkitExitFullscreen) { document.webkitExitFullscreen().catch(handleFullscreenError); }
+      else if (document.mozCancelFullScreen) { document.mozCancelFullScreen().catch(handleFullscreenError); } // Corrected: mozCancelFullScreen
+      else if (document.msExitFullscreen) { document.msExitFullscreen().catch(handleFullscreenError); }
+      else { console.warn("[useCanvasContainer] Fullscreen API not supported for exiting."); }
+    }
+  }, [containerRef]); // containerRef is the dependency
+
+  return { containerRef, hasValidDimensions, isContainerObservedVisible, isFullscreenActive, enterFullscreen: toggleFullscreen };
 }

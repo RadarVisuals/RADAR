@@ -3,39 +3,39 @@ import PropTypes from "prop-types";
 import "./ToolbarStyles/TopRightControls.css";
 import {
   whitelistIcon,
-  enlargeIcon,
+  enlargeIcon, // This will be used by the fullscreen toggle
   learnIcon,
-  eyeIcon,
-  eyeopenIcon,
+  eyeIcon,      // Assuming this is the "closed eye" for "Show UI"
+  eyeopenIcon,  // Assuming this is the "open eye" for "Hide UI"
 } from "../../assets";
 
 /**
  * TopRightControls: Renders a set of control icons positioned at the top-right
- * of the screen. Includes buttons for Enhanced View, Whitelist Management (conditional),
+ * of the screen. Includes buttons for Enhanced View (Fullscreen), Whitelist Management (conditional),
  * Information Overlay, and toggling the main UI visibility.
  */
 const TopRightControls = ({
   showWhitelist = false,
   showInfo = false,
   showToggleUI = true,
-  showEnhancedView = true,
+  showEnhancedView = true, // This prop now controls the fullscreen toggle button
   onWhitelistClick,
   onInfoClick,
   onToggleUI,
-  onEnhancedView,
+  onEnhancedView, // This callback will now handle fullscreen toggling
   isUiVisible = true,
 }) => {
   return (
-    <div className="top-right-controls-container">
+    <div className={`top-right-controls-container ${!isUiVisible ? "ui-hidden" : ""}`}>
       {showEnhancedView && isUiVisible && (
         <button
           className="toolbar-icon"
-          onClick={onEnhancedView}
-          title="Enhanced View"
+          onClick={onEnhancedView} // onEnhancedView now points to toggleFullscreen
+          title="Toggle Fullscreen" // Updated title
         >
           <img
-            src={enlargeIcon}
-            alt="Enhanced View"
+            src={enlargeIcon} // Using enlargeIcon for fullscreen
+            alt="Toggle Fullscreen" // Updated alt text
             className="enhanced-view-icon icon-image"
           />
         </button>
@@ -72,7 +72,7 @@ const TopRightControls = ({
           title={isUiVisible ? "Hide UI" : "Show UI"}
         >
           <img
-            src={isUiVisible ? eyeIcon : eyeopenIcon}
+            src={isUiVisible ? eyeopenIcon : eyeIcon} // Corrected icon logic: open eye when UI visible, closed when hidden
             alt={isUiVisible ? "Hide UI" : "Show UI"}
             className="icon-image"
           />

@@ -1,3 +1,4 @@
+// src/context/ConfigContext.jsx (Cleaned)
 import React, {
   createContext,
   useContext,
@@ -12,7 +13,6 @@ import { USER_ROLES } from "../config/global-config";
 
 // Default context value structure
 const defaultConfigContext = {
-  configServiceReady: false,
   isConfigLoading: true,
   configLoadNonce: 0,
   isInitiallyResolved: false,
@@ -88,34 +88,31 @@ export const ConfigProvider = ({ children }) => {
     [profileAddress],
   );
 
-  const isParentProfile = false; // Simplified: No longer checking against a known parent
+  const isParentProfile = false;
 
-  // Use the custom hook to manage the core configuration state and actions
   const configState = useConfigState(profileAddress);
   const {
-    configServiceReady, loadDefaultConfig, midiMap, updateMidiMap,
-    hasPendingChanges, setHasPendingChanges, isConfigLoading, configLoadNonce,
-    isInitiallyResolved, layerConfigs, tokenAssignments, savedReactions,
-    saveVisualPreset, saveGlobalReactions, saveGlobalMidiMap, loadNamedConfig,
-    loadSavedConfigList, deleteNamedConfig, updateLayerConfig, updateTokenAssignment,
-    updateSavedReaction, deleteSavedReaction, loadError, saveError, isSaving,
-    saveSuccess, savedConfigList, configServiceRef, currentConfigName,
+    loadDefaultConfig, midiMap, updateMidiMap,
+    hasPendingChanges, setHasPendingChanges, isLoading: isConfigLoading,
+    configLoadNonce, isInitiallyResolved, layerConfigs, tokenAssignments,
+    savedReactions, saveVisualPreset, saveGlobalReactions, saveGlobalMidiMap,
+    loadNamedConfig, loadSavedConfigList, deleteNamedConfig, updateLayerConfig,
+    updateTokenAssignment, updateSavedReaction, deleteSavedReaction, loadError,
+    saveError, isSaving, saveSuccess, savedConfigList, configServiceRef,
+    currentConfigName,
   } = configState;
 
   // Determine user role based on connected accounts and viewed profile
   useEffect(() => {
     if (upInitializationError || upFetchStateError) {
-      setUserRole(USER_ROLES.VISITOR);
-      return;
+      setUserRole(USER_ROLES.VISITOR); return;
     }
     if (!accounts || accounts.length === 0) {
-      setUserRole(USER_ROLES.VISITOR);
-      return;
+      setUserRole(USER_ROLES.VISITOR); return;
     }
     const userAddressLower = accounts[0]?.toLowerCase();
     if (!userAddressLower) {
-      setUserRole(USER_ROLES.VISITOR);
-      return;
+      setUserRole(USER_ROLES.VISITOR); return;
     }
     if (profileAddressLower && userAddressLower === profileAddressLower) {
       setUserRole(USER_ROLES.PROFILE_OWNER);
@@ -136,42 +133,33 @@ export const ConfigProvider = ({ children }) => {
 
   useEffect(() => {
     const shouldBeAutoPureVisitor = userRole === USER_ROLES.VISITOR && !isParentProfile;
-    // Only set automatically if not forced by URL
     if (!pureModeFromUrl) {
       setIsPureVisitorMode(shouldBeAutoPureVisitor);
     }
   }, [userRole, isParentProfile, pureModeFromUrl]);
 
-  // Callback to toggle pure visitor mode (if not set by URL)
   const togglePureVisitorMode = useCallback(() => {
-    if (pureModeFromUrl) {
-       // Log removed - function simply won't change state
-       return;
-    }
+    if (pureModeFromUrl) return;
     setIsPureVisitorMode((prev) => !prev);
   }, [pureModeFromUrl]);
 
   // Callback to toggle preview mode (loads default config on enter)
   const togglePreviewMode = useCallback(() => {
-    if (!configServiceReady) {
-      // Log removed - function simply won't change state
-      return;
-    }
     setIsPreviewMode((prevIsPreview) => {
       const enteringPreview = !prevIsPreview;
       if (enteringPreview) {
         if (loadDefaultConfig) {
-          loadDefaultConfig().catch((err) => console.error("Error loading default config on preview enter:", err)); // Keep error log
+          loadDefaultConfig().catch((err) => console.error("Error loading default config on preview enter:", err)); // Keep Error
         } else {
-          // Log removed - indicates missing function which is handled elsewhere
+          console.error("loadDefaultConfig function not available in ConfigContext."); // Keep Error
         }
       }
       return enteringPreview;
     });
-  }, [configServiceReady, loadDefaultConfig]);
+  }, [loadDefaultConfig]);
 
   // Derived flags and permissions
-  const isParentAdmin = false; // Admin functionality removed/simplified
+  const isParentAdmin = false;
   const isProfileOwner = userRole === USER_ROLES.PROFILE_OWNER;
   const isVisitor = userRole === USER_ROLES.VISITOR;
   const canSave = useMemo(
@@ -179,10 +167,10 @@ export const ConfigProvider = ({ children }) => {
     [isProfileOwner, isPreviewMode, isPureVisitorMode],
   );
 
-  // Memoized context value to prevent unnecessary re-renders
+  // Memoized context value
   const contextValue = useMemo(
     () => ({
-      configServiceReady, isConfigLoading, configLoadNonce, isInitiallyResolved,
+      isConfigLoading, configLoadNonce, isInitiallyResolved,
       hasPendingChanges, setHasPendingChanges, layerConfigs, tokenAssignments,
       savedReactions, midiMap, updateMidiMap, saveVisualPreset,
       saveGlobalReactions, saveGlobalMidiMap, loadNamedConfig, loadDefaultConfig,
@@ -196,8 +184,8 @@ export const ConfigProvider = ({ children }) => {
       togglePreviewMode, togglePureVisitorMode,
       upInitializationError, upFetchStateError,
     }),
-    [ // Dependencies list
-      configServiceReady, isConfigLoading, configLoadNonce, isInitiallyResolved,
+    [
+      isConfigLoading, configLoadNonce, isInitiallyResolved,
       hasPendingChanges, setHasPendingChanges, layerConfigs, tokenAssignments,
       savedReactions, midiMap, updateMidiMap, saveVisualPreset,
       saveGlobalReactions, saveGlobalMidiMap, loadNamedConfig, loadDefaultConfig,
@@ -227,8 +215,7 @@ export const ConfigProvider = ({ children }) => {
 export const useConfig = () => {
   const context = useContext(ConfigContext);
   if (context === null || context === defaultConfigContext) {
-    // Keep this critical error check
-    console.error("useConfig context details:", context);
+    console.error("useConfig context details:", context); // Keep Error
     throw new Error(
       "useConfig must be used within a ConfigProvider component. Context is null or still default.",
     );

@@ -271,3 +271,44 @@
   gap: var(--space-sm);
   pointer-events: auto;
 }
+
+.ui-elements-container {
+  position: absolute; /* Or fixed, depending on desired behavior relative to viewport/parent */
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none; /* Children will override this if they need to be interactive */
+  z-index: 50; /* Below TopRightControls if it's a sibling with higher z-index */
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.5s ease-in-out, visibility 0s linear 0s;
+}
+
+.ui-elements-container.visible {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s; /* Show immediately */
+}
+.ui-elements-container.visible > * {
+  pointer-events: auto; /* Allow children to be interactive */
+}
+
+
+.ui-elements-container.hidden-by-opacity {
+  opacity: 0;
+  visibility: visible; /* Still visible, but transparent */
+  transition: opacity 0.5s ease-in-out 0s, visibility 0s linear 0.5s; /* Delay visibility change if you were to use it */
+  pointer-events: none !important; /* Ensure no interaction when hidden */
+}
+.ui-elements-container.hidden-by-opacity > * {
+  pointer-events: none !important; /* Ensure children also don't interact */
+}
+
+/* Ensure specific children like panel wrappers inside ui-elements-container get pointer events when visible */
+.ui-elements-container.visible .panel-wrapper,
+.ui-elements-container.visible .vertical-toolbar-icon, /* if vertical toolbar is inside */
+.ui-elements-container.visible .bottom-right-icons, /* if these are inside */
+.ui-elements-container.visible .preset-selector-bar {
+  pointer-events: auto;
+}
