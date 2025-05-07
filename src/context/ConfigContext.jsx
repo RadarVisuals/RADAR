@@ -1,4 +1,4 @@
-// src/context/ConfigContext.jsx (Cleaned)
+// src/context/ConfigContext.jsx
 import React, {
   createContext,
   useContext,
@@ -11,7 +11,6 @@ import useConfigState from "../hooks/useConfigState";
 import { useUpProvider } from "./UpProvider";
 import { USER_ROLES } from "../config/global-config";
 
-// Default context value structure
 const defaultConfigContext = {
   isConfigLoading: true,
   configLoadNonce: 0,
@@ -54,17 +53,11 @@ const defaultConfigContext = {
   saveSuccess: false,
   savedConfigList: [],
   configServiceRef: { current: null },
+  configServiceInstanceReady: false, // <-- NEW default
 };
 
 const ConfigContext = createContext(defaultConfigContext);
 
-/**
- * ConfigProvider: Manages and provides application configuration state,
- * including layer settings, token assignments, reactions, MIDI maps,
- * user roles, permissions, and interaction modes (preview, pure visitor).
- * It integrates with UpProvider to determine user context and uses
- * useConfigState hook for managing persistent configuration data.
- */
 export const ConfigProvider = ({ children }) => {
   const {
     contextAccounts,
@@ -88,21 +81,22 @@ export const ConfigProvider = ({ children }) => {
     [profileAddress],
   );
 
-  const isParentProfile = false;
+  const isParentProfile = false; // Placeholder for parent/showcase profile logic
 
   const configState = useConfigState(profileAddress);
   const {
+    configServiceInstanceReady,
+    configServiceRef,
     loadDefaultConfig, midiMap, updateMidiMap,
     hasPendingChanges, setHasPendingChanges, isLoading: isConfigLoading,
     configLoadNonce, isInitiallyResolved, layerConfigs, tokenAssignments,
     savedReactions, saveVisualPreset, saveGlobalReactions, saveGlobalMidiMap,
     loadNamedConfig, loadSavedConfigList, deleteNamedConfig, updateLayerConfig,
     updateTokenAssignment, updateSavedReaction, deleteSavedReaction, loadError,
-    saveError, isSaving, saveSuccess, savedConfigList, configServiceRef,
+    saveError, isSaving, saveSuccess, savedConfigList,
     currentConfigName,
   } = configState;
 
-  // Determine user role based on connected accounts and viewed profile
   useEffect(() => {
     if (upInitializationError || upFetchStateError) {
       setUserRole(USER_ROLES.VISITOR); return;
@@ -121,7 +115,6 @@ export const ConfigProvider = ({ children }) => {
     }
   }, [accounts, profileAddressLower, upInitializationError, upFetchStateError]);
 
-  // Handle pure visitor mode based on URL parameter or user role
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const isPureFromUrl = urlParams.get("pure") === "true";
@@ -143,23 +136,21 @@ export const ConfigProvider = ({ children }) => {
     setIsPureVisitorMode((prev) => !prev);
   }, [pureModeFromUrl]);
 
-  // Callback to toggle preview mode (loads default config on enter)
   const togglePreviewMode = useCallback(() => {
     setIsPreviewMode((prevIsPreview) => {
       const enteringPreview = !prevIsPreview;
       if (enteringPreview) {
         if (loadDefaultConfig) {
-          loadDefaultConfig().catch((err) => console.error("Error loading default config on preview enter:", err)); // Keep Error
+          loadDefaultConfig().catch((err) => console.error("Error loading default config on preview enter:", err));
         } else {
-          console.error("loadDefaultConfig function not available in ConfigContext."); // Keep Error
+          console.error("loadDefaultConfig function not available in ConfigContext.");
         }
       }
       return enteringPreview;
     });
   }, [loadDefaultConfig]);
 
-  // Derived flags and permissions
-  const isParentAdmin = false;
+  const isParentAdmin = false; // Placeholder for admin logic
   const isProfileOwner = userRole === USER_ROLES.PROFILE_OWNER;
   const isVisitor = userRole === USER_ROLES.VISITOR;
   const canSave = useMemo(
@@ -167,7 +158,6 @@ export const ConfigProvider = ({ children }) => {
     [isProfileOwner, isPreviewMode, isPureVisitorMode],
   );
 
-  // Memoized context value
   const contextValue = useMemo(
     () => ({
       isConfigLoading, configLoadNonce, isInitiallyResolved,
@@ -183,6 +173,7 @@ export const ConfigProvider = ({ children }) => {
       canSave,
       togglePreviewMode, togglePureVisitorMode,
       upInitializationError, upFetchStateError,
+      configServiceInstanceReady,
     }),
     [
       isConfigLoading, configLoadNonce, isInitiallyResolved,
@@ -195,6 +186,7 @@ export const ConfigProvider = ({ children }) => {
       userRole, isParentAdmin, isProfileOwner, isVisitor, isParentProfile,
       profileAddress, isPreviewMode, isPureVisitorMode, canSave, togglePreviewMode,
       togglePureVisitorMode, upInitializationError, upFetchStateError,
+      configServiceInstanceReady,
     ],
   );
 
@@ -205,17 +197,10 @@ export const ConfigProvider = ({ children }) => {
   );
 };
 
-/**
- * Hook to consume the ConfigContext.
- * Provides access to configuration state, user roles, permissions,
- * and functions to interact with the configuration service.
- * Throws an error if used outside of a ConfigProvider.
- */
-// eslint-disable-next-line react-refresh/only-export-components
 export const useConfig = () => {
   const context = useContext(ConfigContext);
   if (context === null || context === defaultConfigContext) {
-    console.error("useConfig context details:", context); // Keep Error
+    console.error("useConfig context details:", context);
     throw new Error(
       "useConfig must be used within a ConfigProvider component. Context is null or still default.",
     );

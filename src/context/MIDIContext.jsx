@@ -1,12 +1,12 @@
-// src/context/MIDIContext.jsx (UPDATED FOR CROSS-PROFILE VJING - FULL FILE)
+// src/context/MIDIContext.jsx
 import React, {
   createContext, useContext, useState, useEffect, useCallback, useRef, useMemo
 } from 'react';
 import PropTypes from 'prop-types';
 import { useConfig } from './ConfigContext';
-import { useUpProvider } from './UpProvider'; // <-- Import useUpProvider
-import { RADAR_MIDI_MAP_KEY } from '../config/global-config'; // <-- Import key
-import { hexToString } from 'viem'; // <-- Import hex decoder
+import { useUpProvider } from './UpProvider';
+import { RADAR_MIDI_MAP_KEY } from '../config/global-config';
+import { hexToString } from 'viem';
 
 // Constants & Config
 const MAX_MONITOR_ENTRIES = 100;
@@ -40,7 +40,7 @@ const getMidiMessageType = (status) => {
   }
 };
 
-// Create MIDI Context (Default value remains the same structure)
+// Create MIDI Context
 const defaultContextValue = {
   midiAccess: null, isConnected: false, isConnecting: false, error: null, midiInputs: [],
   midiMap: {}, layerMappings: { 1: {}, 2: {}, 3: {} }, globalMappings: {},
@@ -54,21 +54,14 @@ const defaultContextValue = {
 };
 const MIDIContext = createContext(defaultContextValue);
 
-/**
-* MIDIProvider: Manages Web MIDI API access, device connections, state changes,
-* incoming message handling, MIDI learn functionality, and MIDI mappings.
-* Integrates with ConfigContext to read/write persistent parameter mappings.
-* **Loads the connected user's (controller's) MIDI map for processing input.**
-*/
 export function MIDIProvider({ children }) {
 const {
-  midiMap: configMidiMap, // This map from useConfig is primarily for SAVING the controller's map
   updateMidiMap: configUpdateMidiMap,
-  configServiceRef, // <-- Get configServiceRef
-  configServiceReady, // <-- Get service readiness
+  configServiceRef,
+  configServiceInstanceReady, // Use the new, more accurate flag
 } = useConfig();
-const { accounts } = useUpProvider(); // <-- Get connected user accounts
-const controllerAddress = useMemo(() => accounts?.[0], [accounts]); // <-- Your connected address
+const { accounts } = useUpProvider();
+const controllerAddress = useMemo(() => accounts?.[0], [accounts]);
 
 const [midiAccess, setMidiAccess] = useState(null);
 const [isConnected, setIsConnected] = useState(false);
@@ -85,16 +78,13 @@ const [showMidiMonitor, setShowMidiMonitor] = useState(false);
 const [pendingLayerSelect, setPendingLayerSelect] = useState(null);
 const [pendingParamUpdate, setPendingParamUpdate] = useState(null);
 
-// --- NEW: State and Ref for the Controller's specific MIDI map ---
 const [activeControllerMidiMap, setActiveControllerMidiMap] = useState({});
 const activeControllerMidiMapRef = useRef(activeControllerMidiMap);
-// Keep the ref updated whenever the state changes
+
 useEffect(() => {
     activeControllerMidiMapRef.current = activeControllerMidiMap;
 }, [activeControllerMidiMap]);
-// --- END NEW ---
 
-// Refs
 const layerMappingsRef = useRef(layerMappings);
 const globalMappingsRef = useRef(globalMappings);
 const midiLearningRef = useRef(midiLearning);
@@ -107,7 +97,6 @@ const isUnmountingRef = useRef(false);
 const midiAccessRefForCallbacks = useRef(midiAccess);
 const handleMIDIMessageRef = useRef(null);
 
-// Update refs when state changes
 useEffect(() => { midiAccessRefForCallbacks.current = midiAccess; }, [midiAccess]);
 useEffect(() => { layerMappingsRef.current = layerMappings; }, [layerMappings]);
 useEffect(() => { globalMappingsRef.current = globalMappings; }, [globalMappings]);
@@ -115,11 +104,9 @@ useEffect(() => { midiLearningRef.current = midiLearning; }, [midiLearning]);
 useEffect(() => { learningLayerRef.current = learningLayer; }, [learningLayer]);
 useEffect(() => { selectedChannelRef.current = selectedChannel; }, [selectedChannel]);
 
-// Misc Effects
-useEffect(() => { // Force end loading listener
+useEffect(() => {
   const handleForceEndLoading = () => {
     if (connectionInProgressRef.current) {
-      console.warn("[MIDIContext] Force-end detected: Ending potentially stuck connection attempt.");
       if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
       setIsConnecting(false); connectionInProgressRef.current = false; setError("Connection attempt force-ended.");
     }
@@ -128,7 +115,7 @@ useEffect(() => { // Force end loading listener
   return () => document.removeEventListener('force-end-loading', handleForceEndLoading);
 }, []);
 
-useEffect(() => { // Pending action expiry timer
+useEffect(() => {
     if (pendingLayerSelect || pendingParamUpdate) {
         if (pendingTimeoutRef.current) clearTimeout(pendingTimeoutRef.current);
         pendingTimeoutRef.current = setTimeout(() => { setPendingLayerSelect(null); setPendingParamUpdate(null); pendingTimeoutRef.current = null; }, PENDING_ACTION_EXPIRY_MS);
@@ -136,59 +123,64 @@ useEffect(() => { // Pending action expiry timer
     return () => { if (pendingTimeoutRef.current) { clearTimeout(pendingTimeoutRef.current); } };
 }, [pendingLayerSelect, pendingParamUpdate]);
 
-// --- NEW: Effect to load the CONTROLLER'S MIDI map ---
 useEffect(() => {
   const loadControllerMap = async () => {
-      const logPrefix = `[MIDIContext LoadMap Addr:${controllerAddress?.slice(0, 6)}]`;
-      if (controllerAddress && configServiceReady && configServiceRef.current) {
-          console.log(`${logPrefix} Loading controller MIDI map...`);
+      const logPrefix = `[MIDIContext LoadControllerMap Addr:${controllerAddress?.slice(0, 6) || 'N/A'}]`;
+      if (controllerAddress && configServiceInstanceReady && configServiceRef.current) {
+          console.log(`${logPrefix} Attempting to load controller MIDI map (Instance Ready: ${configServiceInstanceReady})...`);
           try {
               const hexData = await configServiceRef.current.loadDataFromKey(controllerAddress, RADAR_MIDI_MAP_KEY);
               if (hexData && hexData !== '0x') {
+                  console.log(`${logPrefix} Received hexData: ${hexData.substring(0, 100)}...`);
                   const jsonString = hexToString(hexData);
+                  console.log(`${logPrefix} Decoded JSON string: ${jsonString.substring(0, 100)}...`);
                   const parsedMap = JSON.parse(jsonString);
                   if (parsedMap && typeof parsedMap === 'object') {
                       setActiveControllerMidiMap(parsedMap);
-                      console.log(`${logPrefix} Controller MIDI map loaded successfully.`);
+                      console.log(`${logPrefix} Controller MIDI map loaded and parsed successfully:`, parsedMap);
                   } else {
-                       setActiveControllerMidiMap({}); // Reset if invalid
-                       console.warn(`${logPrefix} Parsed MIDI map invalid structure.`);
+                       setActiveControllerMidiMap({});
+                       console.warn(`${logPrefix} Parsed MIDI map invalid structure. Parsed:`, parsedMap, ". Map reset.");
                   }
               } else {
-                  setActiveControllerMidiMap({}); // Reset if no map found
-                  console.log(`${logPrefix} No MIDI map found for controller.`);
+                  setActiveControllerMidiMap({});
+                  console.log(`${logPrefix} No MIDI map data found (hexData is null or '0x'). Controller map reset.`);
               }
           } catch (error) {
-              console.error(`${logPrefix} Error loading controller MIDI map:`, error);
-              setActiveControllerMidiMap({}); // Reset on error
+              console.error(`${logPrefix} Error loading or parsing controller MIDI map:`, error);
+              setActiveControllerMidiMap({});
+              console.log(`${logPrefix} Controller map reset due to error.`);
           }
       } else {
-           setActiveControllerMidiMap({}); // Reset if no address or service not ready
-           if (!controllerAddress) console.log(`[MIDIContext LoadMap] No controller address.`);
-           if (!configServiceReady) console.log(`[MIDIContext LoadMap] Config service not ready.`);
+           setActiveControllerMidiMap({});
+           if (!controllerAddress) console.log(`${logPrefix} Skipped: No controller address. Map reset.`);
+           else if (!configServiceInstanceReady) console.log(`${logPrefix} Skipped: Config service INSTANCE not ready (Flag value: ${configServiceInstanceReady}). Map reset.`);
+           else if (configServiceInstanceReady && !configServiceRef.current) console.log(`${logPrefix} Skipped: Config service INSTANCE ready but ref.current is null. Map reset.`);
+           else console.log(`${logPrefix} Skipped: Unknown reason, conditions not met. Map reset.`);
       }
   };
-
   loadControllerMap();
+}, [controllerAddress, configServiceInstanceReady, configServiceRef]);
 
-}, [controllerAddress, configServiceReady, configServiceRef]); // Re-run if controller or service changes
-// --- END NEW ---
 
-// Core Functions (Callbacks)
 const mapParameterToMIDI = useCallback((param, layer, mappingData) => {
-    // This function now updates the map that will be SAVED for the controller
-    const currentMap = configMidiMap || {}; // Use the map from useConfig for saving
-    const updatedMap = {
-        ...currentMap,
-        [String(layer)]: {
-            ...(currentMap[String(layer)] || {}),
-            [param]: mappingData
+    setActiveControllerMidiMap(prevControllerMap => {
+        const baseMap = prevControllerMap || {};
+        const updatedActiveMap = {
+            ...baseMap,
+            [String(layer)]: {
+                ...(baseMap[String(layer)] || {}),
+                [param]: mappingData
+            }
+        };
+        if (typeof configUpdateMidiMap === 'function') {
+            configUpdateMidiMap(updatedActiveMap);
+        } else {
+            console.error("[MIDIContext] mapParameterToMIDI: configUpdateMidiMap is not a function!");
         }
-    };
-    configUpdateMidiMap(updatedMap); // Update central state via ConfigContext action
-    // Also update the locally used map immediately for responsiveness
-    setActiveControllerMidiMap(updatedMap);
-}, [configMidiMap, configUpdateMidiMap]);
+        return updatedActiveMap;
+    });
+}, [configUpdateMidiMap]);
 
 const mapLayerToMIDI = useCallback((layer, mappingData) => {
   setLayerMappings(prev => ({ ...prev, [String(layer)]: { ...(prev[String(layer)] || {}), layerSelect: mappingData } }));
@@ -199,7 +191,6 @@ const stopMIDILearn = useCallback(() => { if (midiLearningRef.current) setMidiLe
 const startLayerMIDILearn = useCallback((layer) => { setLearningLayer(layer); setMidiLearning(null); }, []);
 const stopLayerMIDILearn = useCallback(() => { if (learningLayerRef.current !== null) setLearningLayer(null); }, []);
 
-// --- MODIFIED: handleMIDIMessage uses controller's map ---
 const handleMIDIMessage = useCallback((message) => {
   if (!message || !message.data || message.data.length === 0) return;
   const [status, data1, data2] = message.data; const msgChan = status & 0x0F; const msgType = getMidiMessageType(status); const timestamp = Date.now();
@@ -208,7 +199,7 @@ const handleMIDIMessage = useCallback((message) => {
   const isCC = msgType === 'Control Change'; const isNoteOn = msgType === 'Note On' && data2 > 0; const isPitch = msgType === 'Pitch Bend';
   const currentLearningState = midiLearningRef.current;
 
-  if (currentLearningState) { // Learning Parameter
+  if (currentLearningState) {
       if (isCC || isNoteOn || isPitch) {
           const mappingData = { type: isCC ? 'cc' : (isNoteOn ? 'note' : 'pitchbend'), number: data1, channel: msgChan };
           mapParameterToMIDI(currentLearningState.param, currentLearningState.layer, mappingData);
@@ -216,13 +207,13 @@ const handleMIDIMessage = useCallback((message) => {
       }
       return;
   }
-  if (learningLayerRef.current !== null) { // Learning Layer Select
+  if (learningLayerRef.current !== null) {
       if (isNoteOn) { const mappingData = { type: 'note', number: data1, channel: msgChan }; mapLayerToMIDI(learningLayerRef.current, mappingData); stopLayerMIDILearn(); }
       return;
   }
 
   let actionTaken = false;
-  if (isNoteOn) { // Check Layer Select Mapping (Uses local layerMappings state)
+  if (isNoteOn) {
      Object.entries(layerMappingsRef.current).forEach(([layerId, mapping]) => {
         const lsm = mapping.layerSelect;
         if (lsm?.type === 'note' && lsm.number === data1 && (lsm.channel === undefined || lsm.channel === msgChan)) {
@@ -231,9 +222,8 @@ const handleMIDIMessage = useCallback((message) => {
      });
   }
 
-  // --- CRUCIAL CHANGE HERE: Use activeControllerMidiMapRef for parameter checks ---
-  if ((isCC || isPitch || isNoteOn) && !actionTaken) { // Check Parameter Mapping
-    const currentControllerMap = activeControllerMidiMapRef.current || {}; // Use the controller's map via ref
+  if ((isCC || isPitch || isNoteOn) && !actionTaken) {
+    const currentControllerMap = activeControllerMidiMapRef.current || {};
     Object.entries(currentControllerMap).forEach(([layerId, layerParams]) => {
       if (typeof layerParams !== 'object' || layerParams === null) return;
       Object.entries(layerParams).forEach(([paramName, mappingData]) => {
@@ -250,29 +240,23 @@ const handleMIDIMessage = useCallback((message) => {
       });
     });
   }
-  // --- END CRUCIAL CHANGE ---
+}, [mapLayerToMIDI, mapParameterToMIDI, stopMIDILearn, stopLayerMIDILearn]);
 
-}, [mapLayerToMIDI, mapParameterToMIDI, stopMIDILearn, stopLayerMIDILearn]); // Dependencies don't include activeControllerMidiMap state directly
-
-// Update handleMIDIMessageRef whenever handleMIDIMessage callback itself changes
 useEffect(() => {
     handleMIDIMessageRef.current = handleMIDIMessage;
 }, [handleMIDIMessage]);
 
-// Setup MIDI Listeners (Attach WRAPPER function)
 const setupMIDIListeners = useCallback((access) => {
     if (!access) return;
     access.inputs.forEach(input => {
         const messageHandlerWrapper = (message) => {
             if (handleMIDIMessageRef.current) { handleMIDIMessageRef.current(message); }
-            else { console.warn(`[MIDIContext Wrapper] handleMIDIMessageRef is null for input ${input.id}`); }
         };
-        if (input.onmidimessage) { input.onmidimessage = null; } // Clear previous listener if any
+        if (input.onmidimessage) { input.onmidimessage = null; }
         input.onmidimessage = messageHandlerWrapper;
     });
- }, []); // Empty dependency array as it uses refs
+ }, []);
 
-// Handle State Change (Attach WRAPPER function)
 const handleStateChange = useCallback((event) => {
    if (!event || !event.port || event.port.type !== "input") return;
    const currentMidiAccess = midiAccessRefForCallbacks.current;
@@ -284,13 +268,10 @@ const handleStateChange = useCallback((event) => {
        anyConnected = true;
        const messageHandlerWrapper = (message) => {
             if (handleMIDIMessageRef.current) { handleMIDIMessageRef.current(message); }
-            else { console.warn(`[MIDIContext Wrapper] handleMIDIMessageRef is null for input ${input.id}`); }
         };
-       if (!input.onmidimessage) { // Re-attach if missing
-           input.onmidimessage = messageHandlerWrapper;
-       }
+       if (!input.onmidimessage) { input.onmidimessage = messageHandlerWrapper; }
      } else {
-         if (input.onmidimessage) { input.onmidimessage = null; } // Remove listener if disconnected
+         if (input.onmidimessage) { input.onmidimessage = null; }
      }
    });
    setMidiInputs(currentInputs);
@@ -301,15 +282,14 @@ const handleStateChange = useCallback((event) => {
         }
         return wasConnected;
     });
-}, []); // Empty dependency array as it uses refs
+}, []);
 
-// Connect MIDI
 const connectMIDI = useCallback(async () => {
   if (connectionInProgressRef.current) return midiAccessRefForCallbacks.current;
   if (isConnected && midiAccessRefForCallbacks.current) return midiAccessRefForCallbacks.current;
   if (typeof navigator === 'undefined' || !navigator.requestMIDIAccess) { setError("Web MIDI API not supported"); return null; }
   connectionInProgressRef.current = true; setIsConnecting(true); setError(null);
-  connectTimeoutRef.current = setTimeout(() => { if (isConnecting && connectionInProgressRef.current) { console.error("[MIDIContext] connectMIDI timed out"); setError("MIDI connection timed out."); setIsConnecting(false); connectionInProgressRef.current = false; } }, MIDI_CONNECT_TIMEOUT_MS);
+  connectTimeoutRef.current = setTimeout(() => { if (isConnecting && connectionInProgressRef.current) { setError("MIDI connection timed out."); setIsConnecting(false); connectionInProgressRef.current = false; } }, MIDI_CONNECT_TIMEOUT_MS);
   let access = null;
   try {
     access = await navigator.requestMIDIAccess({ sysex: false });
@@ -321,18 +301,16 @@ const connectMIDI = useCallback(async () => {
     setupMIDIListeners(access);
     access.onstatechange = handleStateChange;
     setIsConnected(anyDeviceConnected);
-    if (!anyDeviceConnected) console.warn("[MIDIContext connectMIDI] Granted access, but no devices connected.");
     setIsConnecting(false); connectionInProgressRef.current = false;
     return access;
   } catch (err) {
     if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current); connectTimeoutRef.current = null;
-    console.error("[MIDIContext connectMIDI] Error:", err); setError(`MIDI access failed: ${err.message || err.name || 'Unknown'}`);
+    setError(`MIDI access failed: ${err.message || err.name || 'Unknown'}`);
     setMidiAccess(null); setIsConnected(false); setIsConnecting(false); connectionInProgressRef.current = false;
     return null;
   }
-}, [isConnected, setupMIDIListeners, handleStateChange, isConnecting]); // Added isConnecting dependency
+}, [isConnected, setupMIDIListeners, handleStateChange, isConnecting]);
 
-// Disconnect MIDI
 const disconnectMIDI = useCallback((forceFullDisconnect = false) => {
   const isDevelopment = import.meta.env.DEV;
   const isFinalUnmount = isUnmountingRef.current && forceFullDisconnect;
@@ -347,14 +325,15 @@ const disconnectMIDI = useCallback((forceFullDisconnect = false) => {
   if (!isDevelopment || isFinalUnmount) {
       setMidiAccess(null); setIsConnected(false); setIsConnecting(false);
       setMidiInputs([]); setError(null);
-  } else { console.warn("[MIDIContext] Skipping state reset (Dev/Strict mode)."); setIsConnecting(false); }
-}, []); // Empty dependency array as it uses refs
+  } else { setIsConnecting(false); }
+}, []);
 
-// Other Callbacks
 const clearAllMappings = useCallback(() => {
     if (window.confirm("Reset ALL persistent MIDI parameter mappings?")) {
-        configUpdateMidiMap({}); // Update central state for saving
-        setActiveControllerMidiMap({}); // Clear local active map
+        if(typeof configUpdateMidiMap === 'function') {
+            configUpdateMidiMap({});
+        }
+        setActiveControllerMidiMap({});
         setLayerMappings({ 1: {}, 2: {}, 3: {} });
         setGlobalMappings({});
     }
@@ -364,26 +343,24 @@ const setChannelFilter = useCallback((channel) => { const ch = parseInt(channel,
 const clearMIDIMonitor = useCallback(() => { setMidiMonitorData([]); }, []);
 const clearPendingActions = useCallback(() => { setPendingLayerSelect(null); setPendingParamUpdate(null); if (pendingTimeoutRef.current) clearTimeout(pendingTimeoutRef.current); }, []);
 
-// Cleanup Effect on Unmount
 useEffect(() => {
   isUnmountingRef.current = false;
   return () => {
     isUnmountingRef.current = true;
-    disconnectMIDI(true); // Force full cleanup on unmount
+    disconnectMIDI(true);
   };
 }, [disconnectMIDI]);
 
-// Context Value (Provide the midiMap from useConfig for saving purposes)
 const contextValue = useMemo(() => ({
   midiAccess, isConnected, isConnecting, error, midiInputs,
-  midiMap: configMidiMap || {}, // Provide central map state (primarily for saving)
+  midiMap: activeControllerMidiMap,
   layerMappings, globalMappings, midiLearning, learningLayer, selectedChannel,
   midiMonitorData, showMidiMonitor, pendingLayerSelect, pendingParamUpdate,
   setShowMidiMonitor, connectMIDI, disconnectMIDI, startMIDILearn, stopMIDILearn,
   startLayerMIDILearn, stopLayerMIDILearn, clearAllMappings, setChannelFilter,
   clearMIDIMonitor, mapParameterToMIDI, mapLayerToMIDI, clearPendingActions,
 }), [
-  midiAccess, isConnected, isConnecting, error, midiInputs, configMidiMap, // Use configMidiMap here
+  midiAccess, isConnected, isConnecting, error, midiInputs, activeControllerMidiMap,
   layerMappings, globalMappings, midiLearning, learningLayer, selectedChannel,
   midiMonitorData, showMidiMonitor, pendingLayerSelect, pendingParamUpdate,
   connectMIDI, disconnectMIDI, clearAllMappings, mapParameterToMIDI, mapLayerToMIDI,
@@ -400,7 +377,6 @@ return (
 
 MIDIProvider.propTypes = { children: PropTypes.node.isRequired };
 
-// useMIDI hook remains the same
 export function useMIDI() {
   const context = useContext(MIDIContext);
   if (context === undefined || context === defaultContextValue) {

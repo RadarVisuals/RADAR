@@ -1,4 +1,4 @@
-// src/hooks/useConfigState.js (Cleaned)
+// src/hooks/useConfigState.js
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useUpProvider } from "../context/UpProvider";
 import ConfigurationService from "../services/ConfigurationService";
@@ -9,12 +9,6 @@ import {
 } from "../config/global-config";
 import { stringToHex } from "viem";
 
-/**
- * Transforms an array of preset name strings into an array of objects,
- * suitable for components like PresetSelectorBar.
- * @param {string[]} list - Array of preset name strings.
- * @returns {{ name: string }[]} Array of preset objects.
- */
 const transformStringListToObjects = (list) => {
   if (!Array.isArray(list)) return [];
   return list
@@ -22,7 +16,6 @@ const transformStringListToObjects = (list) => {
     .map(name => ({ name }));
 };
 
-// Helper function to ensure all default keys are present
 const ensureCompleteLayerConfig = (layerConfig, defaultLayerConfig) => {
     const completeConfig = { ...defaultLayerConfig };
     for (const key in layerConfig) {
@@ -39,7 +32,6 @@ const ensureCompleteLayerConfig = (layerConfig, defaultLayerConfig) => {
     return completeConfig;
 };
 
-// Helper to get a default config structure
 const getDefaultLayerConfigTemplate = () => ({
     enabled: true, blendMode: 'normal', opacity: 1.0, size: 1.0,
     speed: 0.01, drift: 0, driftSpeed: 0.1, angle: 0,
@@ -47,22 +39,12 @@ const getDefaultLayerConfigTemplate = () => ({
     driftState: { x: 0, y: 0, phase: Math.random() * Math.PI * 2, enabled: false },
 });
 
-/**
- * Manages the core configuration state of the application, including layer settings,
- * token assignments, MIDI mappings, event reactions, and preset management (load, save, delete).
- * It interacts with the ConfigurationService to persist and retrieve data from the
- * user's Universal Profile based on the provided profileAddress. It also handles
- * loading status, errors, pending changes, and triggers updates via a nonce.
- *
- * @param {string | null} profileAddress - The address of the Universal Profile whose configuration is being managed.
- * @returns {{...}} An object containing the configuration state and associated actions.
- */
 const useConfigState = (profileAddress) => {
   const { provider, walletClient, publicClient } = useUpProvider();
   const { addToast } = useToast();
   const configServiceRef = useRef(null);
-  const [configServiceReadyForRead, setConfigServiceReadyForRead] = useState(false);
-  const [configServiceReadyForWrite, setConfigServiceReadyForWrite] = useState(false);
+  const [actualConfigServiceInstanceReady, setActualConfigServiceInstanceReady] = useState(false);
+
   const [currentConfigName, setCurrentConfigName] = useState(null);
   const [layerConfigs, setLayerConfigs] = useState({});
   const [tokenAssignments, setTokenAssignments] = useState({});
@@ -80,52 +62,60 @@ const useConfigState = (profileAddress) => {
   const initialLoadPerformedRef = useRef(false);
   const initialLoadTimeoutRef = useRef(null);
 
-  // Service Initialization Effect
   useEffect(() => {
     const isReadClientReady = !!publicClient;
-    const isWriteClientReady = !!publicClient && !!walletClient;
-
-    setConfigServiceReadyForRead(isReadClientReady);
-    setConfigServiceReadyForWrite(isWriteClientReady);
 
     if (isReadClientReady && !configServiceRef.current) {
       const service = new ConfigurationService(provider, walletClient, publicClient);
+      console.log("[useConfigState] Attempting to initialize ConfigurationService instance...");
       service.initialize().then(() => {
           configServiceRef.current = service;
+          setActualConfigServiceInstanceReady(true);
+          console.log("[useConfigState] ConfigurationService instance CREATED and set to READY.");
       }).catch(err => {
-          console.error("[useConfigState] Error during async ConfigurationService init (if any):", err); // Keep Error
-          setConfigServiceReadyForRead(false);
-          setConfigServiceReadyForWrite(false);
+          console.error("[useConfigState] Error during ConfigurationService instance.initialize():", err);
+          configServiceRef.current = null;
+          setActualConfigServiceInstanceReady(false);
       });
     } else if (isReadClientReady && configServiceRef.current) {
       configServiceRef.current.publicClient = publicClient;
       configServiceRef.current.walletClient = walletClient;
       configServiceRef.current.initialized = true;
-    } else if (!isReadClientReady && configServiceRef.current) {
-      configServiceRef.current = null;
+      if (!actualConfigServiceInstanceReady) {
+          setActualConfigServiceInstanceReady(true);
+          console.log("[useConfigState] Existing ConfigurationService instance confirmed READY.");
+      }
+    } else if (!isReadClientReady) {
+      if (configServiceRef.current) {
+          console.log("[useConfigState] Viem clients no longer ready, nullifying configServiceRef.");
+          configServiceRef.current = null;
+      }
+      if (actualConfigServiceInstanceReady) {
+          setActualConfigServiceInstanceReady(false);
+          console.log("[useConfigState] ConfigurationService instance set to NOT READY (Viem clients lost).");
+      }
       setIsInitiallyResolved(false);
       initialLoadPerformedRef.current = false;
       setSavedConfigList([]);
       setCurrentConfigName(null);
     }
-  }, [publicClient, walletClient, provider]);
+  }, [publicClient, walletClient, provider, actualConfigServiceInstanceReady]);
 
-  /** Updates the MIDI mapping state and marks changes as pending. */
+
   const updateMidiMap = useCallback((newMap) => {
       const mapToSet = typeof newMap === "object" && newMap !== null ? newMap : {};
       setMidiMap(mapToSet);
       setHasPendingChanges(true);
     }, []);
 
-  /** Applies loaded configuration data to the state. */
   const applyLoadedData = useCallback(
     (loadedData, reason = "unknown", targetAddress, targetName = null) => {
-      const logPrefix = `[useConfigState applyLoadedData Addr:${targetAddress?.slice(0, 6)}]`;
+      const logPrefix = `[useConfigState applyLoadedData Addr:${targetAddress?.slice(0, 6) || 'N/A'}]`;
 
       setLoadError(null);
 
       if (loadedData?.error) {
-        console.error(`${logPrefix} Load error received:`, loadedData.error); // Keep Error
+        console.error(`${logPrefix} Load error received:`, loadedData.error);
         setLoadError(loadedData.error);
         addToast(`Error loading configuration: ${loadedData.error}`, 'error');
         if (reason === "initial") {
@@ -162,7 +152,6 @@ const useConfigState = (profileAddress) => {
         setConfigLoadNonce(prevNonce => prevNonce + 1);
 
       } else {
-        // Clearing data
         setLayerConfigs({});
         setTokenAssignments({});
         setSavedReactions({});
@@ -172,7 +161,6 @@ const useConfigState = (profileAddress) => {
         setConfigLoadNonce(0);
       }
 
-      // Set resolved state AFTER applying data
       if (!isInitiallyResolved) {
           setIsInitiallyResolved(true);
       }
@@ -185,9 +173,8 @@ const useConfigState = (profileAddress) => {
     [addToast, currentConfigName, isInitiallyResolved],
   );
 
-  /** Fetches the list of saved configuration names from the profile. */
   const loadSavedConfigList = useCallback(async () => {
-    if (!configServiceReadyForRead || !configServiceRef.current) {
+    if (!actualConfigServiceInstanceReady || !configServiceRef.current) {
         addToast("Configuration service not ready for reading.", "warning");
         return { success: false, error: "Service not ready for reading." };
     }
@@ -201,17 +188,16 @@ const useConfigState = (profileAddress) => {
       setSavedConfigList(objectList);
       return { success: true, list: objectList };
     } catch (error) {
-      console.error("[useConfigState loadSavedConfigList] Error:", error); // Keep Error
+      console.error("[useConfigState loadSavedConfigList] Error:", error);
       addToast(`Failed to load preset list: ${error.message}`, 'error');
       setSavedConfigList([]);
       return { success: false, error: error.message || "Failed to load list." };
     }
-  }, [configServiceReadyForRead, profileAddress, addToast]);
+  }, [actualConfigServiceInstanceReady, profileAddress, addToast]);
 
-  /** Core function to load configuration (default or named). */
   const performLoad = useCallback(
     async (address, configName = null, customKey = null, reason = "manual") => {
-      if (!configServiceReadyForRead || !configServiceRef.current) {
+      if (!actualConfigServiceInstanceReady || !configServiceRef.current) {
           addToast("Configuration service not ready for reading.", "warning");
           return { success: false, error: "Service not ready for reading." };
       }
@@ -237,24 +223,23 @@ const useConfigState = (profileAddress) => {
         setIsLoading(false);
         const loadSuccessful = !loadedData?.error;
         if (loadSuccessful) {
-          loadSavedConfigList().catch(err => console.error("Error refreshing list after load:", err)); // Keep Error
+          loadSavedConfigList().catch(err => console.error("Error refreshing list after load:", err));
         }
         return { success: loadSuccessful, error: loadedData?.error, config: loadedData?.config };
       } catch (error) {
-        console.error(`[useConfigState performLoad] Unexpected load error:`, error); // Keep Error
+        console.error(`[useConfigState performLoad] Unexpected load error:`, error);
         const errorMsg = error.message || "Unknown load error";
         applyLoadedData({ error: errorMsg }, reason, address, targetName);
         setIsLoading(false);
         return { success: false, error: errorMsg };
       }
     },
-    [configServiceReadyForRead, applyLoadedData, addToast, loadSavedConfigList],
+    [actualConfigServiceInstanceReady, applyLoadedData, addToast, loadSavedConfigList],
   );
 
-  // Initial Load Effect
   useEffect(() => {
-    const logPrefix = `[useConfigState AutoLoad Addr:${profileAddress?.slice(0, 6)}]`;
-    const shouldLoad = profileAddress && configServiceReadyForRead && !initialLoadPerformedRef.current;
+    const logPrefix = `[useConfigState AutoLoad Addr:${profileAddress?.slice(0, 6) || 'N/A'}]`;
+    const shouldLoad = profileAddress && actualConfigServiceInstanceReady && !initialLoadPerformedRef.current;
 
     if (initialLoadTimeoutRef.current) {
         clearTimeout(initialLoadTimeoutRef.current);
@@ -262,19 +247,24 @@ const useConfigState = (profileAddress) => {
     }
 
     if (shouldLoad) {
+        console.log(`${logPrefix} Conditions met for initial load. Setting timeout.`);
         initialLoadTimeoutRef.current = setTimeout(() => {
+            console.log(`${logPrefix} Executing initial load via setTimeout.`);
             initialLoadPerformedRef.current = true;
-            setIsInitiallyResolved(false); // Reset before load
+            setIsInitiallyResolved(false);
             performLoad(profileAddress, null, null, "initial")
                 .then(({ success }) => {
                     if (success) {
-                        loadSavedConfigList().catch(err => console.error("Error loading list after initial load:", err)); // Keep Error
+                        console.log(`${logPrefix} Initial load successful. Refreshing preset list.`);
+                        loadSavedConfigList().catch(err => console.error("Error loading list after initial load:", err));
+                    } else {
+                        console.warn(`${logPrefix} Initial load reported !success.`);
                     }
                 })
                 .catch((err) => {
-                    console.error(`${logPrefix} Uncaught initial load error via setTimeout:`, err); // Keep Error
+                    console.error(`${logPrefix} Uncaught initial load error via setTimeout:`, err);
                     addToast(`Failed initial configuration load: ${err.message}`, 'error');
-                    setIsInitiallyResolved(true); // Ensure UI unblocks on critical failure
+                    setIsInitiallyResolved(true);
                 })
                 .finally(() => {
                     initialLoadTimeoutRef.current = null;
@@ -282,7 +272,6 @@ const useConfigState = (profileAddress) => {
         }, 100);
 
     } else if (!profileAddress) {
-       // Reset logic when address is cleared
        if (initialLoadPerformedRef.current || isInitiallyResolved) {
          applyLoadedData(null, "address_cleared", null);
          setIsInitiallyResolved(false);
@@ -290,7 +279,9 @@ const useConfigState = (profileAddress) => {
          setSavedConfigList([]);
          setConfigLoadNonce(0);
        }
-    } // No need for else logging 'why not'
+    } else {
+        // console.log(`${logPrefix} Conditions NOT met for initial load: Addr=${!!profileAddress}, ServiceInstanceReady=${actualConfigServiceInstanceReady}, InitialLoadPerf=${initialLoadPerformedRef.current}`);
+    }
 
     return () => {
         if (initialLoadTimeoutRef.current) {
@@ -298,13 +289,12 @@ const useConfigState = (profileAddress) => {
             initialLoadTimeoutRef.current = null;
         }
     };
-  }, [profileAddress, configServiceReadyForRead, isInitiallyResolved, performLoad, applyLoadedData, addToast, loadSavedConfigList]);
+  }, [profileAddress, actualConfigServiceInstanceReady, isInitiallyResolved, performLoad, applyLoadedData, addToast, loadSavedConfigList]);
 
 
-  /** Saves the current visual preset and optionally global settings. */
   const saveCurrentConfig = useCallback(
     async (nameToSave, setAsDefault, includeReactions, includeMidi) => {
-      if (!configServiceReadyForWrite || !configServiceRef.current) {
+      if (!actualConfigServiceInstanceReady || !configServiceRef.current || !walletClient) {
           addToast("Cannot save: Wallet not connected or service not ready.", "error");
           return { success: false, error: "Write service not ready." };
       }
@@ -344,14 +334,14 @@ const useConfigState = (profileAddress) => {
           setSaveSuccess(true);
           setHasPendingChanges(false);
           setCurrentConfigName(nameToSave);
-          loadSavedConfigList().catch(err => console.error("Error refreshing list after save:", err)); // Keep Error
+          loadSavedConfigList().catch(err => console.error("Error refreshing list after save:", err));
         } else {
           throw new Error(result.error || "Save configuration failed.");
         }
         setIsSaving(false);
         return result;
       } catch (error) {
-        console.error(`[useConfigState saveCurrentConfig] Save failed:`, error); // Keep Error
+        console.error(`[useConfigState saveCurrentConfig] Save failed:`, error);
         const errorMsg = error.message || "Unknown save error.";
         setSaveError(errorMsg);
         addToast(`Error saving preset: ${errorMsg}`, 'error');
@@ -360,12 +350,11 @@ const useConfigState = (profileAddress) => {
         return { success: false, error: errorMsg };
       }
     },
-    [configServiceReadyForWrite, profileAddress, layerConfigs, tokenAssignments, savedReactions, midiMap, addToast, loadSavedConfigList],
+    [actualConfigServiceInstanceReady, walletClient, profileAddress, layerConfigs, tokenAssignments, savedReactions, midiMap, addToast, loadSavedConfigList],
   );
 
-  /** Saves only the current event reaction settings globally. */
   const saveGlobalReactions = useCallback(async () => {
-     if (!configServiceReadyForWrite || !configServiceRef.current) {
+     if (!actualConfigServiceInstanceReady || !configServiceRef.current || !walletClient) {
          addToast("Cannot save: Wallet not connected or service not ready.", "error");
          return { success: false, error: "Write service not ready." };
      }
@@ -392,7 +381,7 @@ const useConfigState = (profileAddress) => {
       setIsSaving(false);
       return result;
     } catch (error) {
-      console.error(`[useConfigState saveGlobalReactions] Save failed:`, error); // Keep Error
+      console.error(`[useConfigState saveGlobalReactions] Save failed:`, error);
       const errorMsg = error.message || `Unknown reactions save error.`;
       setSaveError(errorMsg);
       addToast(`Error saving reactions: ${errorMsg}`, 'error');
@@ -400,11 +389,10 @@ const useConfigState = (profileAddress) => {
       setSaveSuccess(false);
       return { success: false, error: errorMsg };
     }
-  }, [configServiceReadyForWrite, profileAddress, savedReactions, addToast]);
+  }, [actualConfigServiceInstanceReady, walletClient, profileAddress, savedReactions, addToast]);
 
-  /** Saves only the current MIDI map settings globally. */
   const saveGlobalMidiMap = useCallback(async () => {
-     if (!configServiceReadyForWrite || !configServiceRef.current) {
+     if (!actualConfigServiceInstanceReady || !configServiceRef.current || !walletClient) {
          addToast("Cannot save: Wallet not connected or service not ready.", "error");
          return { success: false, error: "Write service not ready." };
      }
@@ -431,7 +419,7 @@ const useConfigState = (profileAddress) => {
       setIsSaving(false);
       return result;
     } catch (error) {
-      console.error(`[useConfigState saveGlobalMidiMap] Save failed:`, error); // Keep Error
+      console.error(`[useConfigState saveGlobalMidiMap] Save failed:`, error);
       const errorMsg = error.message || `Unknown MIDI save error.`;
       setSaveError(errorMsg);
       addToast(`Error saving MIDI map: ${errorMsg}`, 'error');
@@ -439,12 +427,11 @@ const useConfigState = (profileAddress) => {
       setSaveSuccess(false);
       return { success: false, error: errorMsg };
     }
-  }, [configServiceReadyForWrite, profileAddress, midiMap, addToast]);
+  }, [actualConfigServiceInstanceReady, walletClient, profileAddress, midiMap, addToast]);
 
-  /** Deletes a named configuration preset from the profile. */
   const deleteNamedConfig = useCallback(
     async (nameToDelete) => {
-      if (!configServiceReadyForWrite || !configServiceRef.current) {
+      if (!actualConfigServiceInstanceReady || !configServiceRef.current || !walletClient) {
           addToast("Cannot delete: Wallet not connected or service not ready.", "error");
           return { success: false, error: "Write service not ready." };
       }
@@ -475,7 +462,7 @@ const useConfigState = (profileAddress) => {
         setIsSaving(false);
         return result;
       } catch (error) {
-        console.error(`[useConfigState delete] Delete failed:`, error); // Keep Error
+        console.error(`[useConfigState delete] Delete failed:`, error);
         const errorMsg = error.message || "Unknown delete error.";
         setSaveError(errorMsg);
         addToast(`Error deleting preset: ${errorMsg}`, 'error');
@@ -483,10 +470,9 @@ const useConfigState = (profileAddress) => {
         return { success: false, error: errorMsg };
       }
     },
-    [configServiceReadyForWrite, profileAddress, performLoad, addToast, loadSavedConfigList, currentConfigName],
+    [actualConfigServiceInstanceReady, walletClient, profileAddress, performLoad, addToast, loadSavedConfigList, currentConfigName],
   );
 
-  /** Updates a specific property within a layer's configuration. */
   const updateLayerConfig = useCallback((layerId, key, value) => {
     setLayerConfigs((prev) => ({
       ...prev,
@@ -495,20 +481,17 @@ const useConfigState = (profileAddress) => {
     setHasPendingChanges(true);
   }, []);
 
-  /** Updates the assigned token for a specific layer. */
   const updateTokenAssignment = useCallback((layerId, tokenId) => {
     setTokenAssignments((prev) => ({ ...prev, [String(layerId)]: tokenId }));
     setHasPendingChanges(true);
   }, []);
 
-  /** Stages a reaction configuration locally (doesn't save globally yet). */
   const updateSavedReaction = useCallback((eventType, reactionData) => {
     if (!eventType || !reactionData) return;
     setSavedReactions((prev) => ({ ...prev, [eventType]: reactionData }));
     setHasPendingChanges(true);
   }, []);
 
-  /** Removes a locally staged reaction configuration. */
   const deleteSavedReaction = useCallback((eventType) => {
     if (!eventType) return;
     setSavedReactions((prev) => {
@@ -522,10 +505,8 @@ const useConfigState = (profileAddress) => {
     });
   }, []);
 
-    // Return state and functions
     return {
-        configServiceReady: configServiceReadyForRead, // Indicate general readiness based on read capability
-        // configServiceReadyForWrite, // Can expose if needed
+        configServiceInstanceReady: actualConfigServiceInstanceReady,
         configServiceRef,
         currentConfigName,
         layerConfigs,
