@@ -59,7 +59,7 @@ RADAR integrates deeply with LUKSO's philosophy and innovative architecture:
 
 *   **Tactile MIDI Control (Web MIDI API):**
     *   Intuitive **MIDI Learn** for all visual parameters.
-    *   **Global MIDI Map:** Your controller mapping is saved to `RADAR.MIDI.ParameterMap` on your Universal Profile, ensuring consistent control across all presets.
+    *   **Global MIDI Map:** Your controller mapping is saved to `RADAR_MIDI_MAP` on your Universal Profile, ensuring consistent control across all presets.
 
 *   **On-Chain Event Reactions (LSP1 UniversalReceiver):**
     *   Visual effects triggered by on-chain events on your UP (e.g., receiving LYX, tokens).
