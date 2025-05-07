@@ -15,14 +15,10 @@
 *   [Core Features & Technologies](#core-features--technologies)
 *   [The Universal Profile as a Creative Hub](#the-universal-profile-as-a-creative-hub)
 *   [A Note from the Creator](#a-note-from-the-creator)
+*   [Roadmap](#roadmap)
 *   [MIDI Control Setup](#midi-control-setup)
 *   [Audio Reactivity Setup](#audio-reactivity-setup-using-virtual-audio-cable--voicemeeter)
-*   [Technical Stack](#technical-stack)
-*   [Embedding RADAR (iframe)](#embedding-radar-iframe)
-*   [Getting Started (Development)](#getting-started-development)
-*   [Roadmap](#roadmap)
-*   [Contributing](#contributing)
-*   [License](#license)
+
 
 ## The RADAR Vision: From Collector to Creator
 
