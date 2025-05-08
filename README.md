@@ -8,25 +8,13 @@
 
 ---
 
-## Table of Contents
-
-*   [The RADAR Vision: From Collector to Creator](#the-radar-vision-from-collector-to-creator)
-*   [RADAR Genesis & The Future of Asset Utility](#radar-genesis--the-future-of-asset-utility)
-*   [Core Features & Technologies](#core-features--technologies)
-*   [The Universal Profile as a Creative Hub](#the-universal-profile-as-a-creative-hub)
-*   [A Note from the Creator](#a-note-from-the-creator)
-*   [Roadmap](#roadmap)
-*   [MIDI Control Setup](#midi-control-setup)
-*   [Audio Reactivity Setup](#audio-reactivity-setup-using-virtual-audio-cable--voicemeeter)
-
-
 ## The RADAR Vision: From Collector to Creator
 
 RADAR challenges the notion of NFTs as static collectibles. We believe true digital ownership, powered by LUKSO's Universal Profiles, unleashes a new universe of dynamic use-cases and ignites the imagination for what NFT 2.0 can truly become. With this approach, RADAR aims to set a new standard for interactive digital asset utility.
 
 *   **Your NFTs, Your Engine:** Don't let your assets gather virtual dust. RADAR treats your LSP8 NFTs as potent visual engines, ready to be manipulated and brought to life.
 *   **Ownership is Control & Creation:** Go beyond just holding. Layer, glitch, blend, and animate your assets. Save an infinite number of unique visual setups directly onto your Universal Profile.
-*   **Decentralized & Composable:** All your creations – visual presets, MIDI mapping, custom color-coded event reactions – are stored on *your* UP using standard ERC725Y keys. It's *your* data, ready for a future of shared, community-driven visual experiences.
+*   **Decentralized & Composable:** All your creations, visual presets, MIDI mapping, custom color-coded event reactions are stored on your UP using ERC725Y keys. It's your data, ready for a future of shared, community-driven visual experiences.
 
 ## The RADAR Genesis Collection & The Future of Asset Utility
 
@@ -81,35 +69,19 @@ RADAR pushes the concept of the Universal Profile beyond a mere wallet or identi
 
 This interplay of personal creation, shared experiences, and on-chain identity begins to scratch the surface of the possibilities achievable with LUKSO's architecture.
 
-## A Note from the Creator aka VXCTXR
+---
 
-RADAR is more than just an application; it's the culmination of a deeply personal, year-long artistic endeavor undertaken by a single creator. It represents a journey into the heart of my drive for self-expression, fueled by a relentless curiosity to understand and harness the decentralized mindset that LUKSO pioneers. This truly has opened my eyes. Learning to code and conceptualize within this new framework has been a profound experience.
+## Roadmap Highlights
 
-I am immensely grateful for the foundational work and philosophical inspiration provided by the LUKSO team throughout. Your vision for Universal Profiles and a truly composable digital future has been the bedrock upon which RADAR is built.
+*   **Visual Effect Expansion:** More effects, parameter interpolation, "P-locking" concepts.
+*   **Advanced MIDI:** Clock sync, value range mapping, toggle actions.
+*   **LSP8 Collection Onboarding:** Streamlined community whitelisting.
+*   **Performance Optimization:** Custom 2D engine refinement (potential for PixiJS/ThreeJS).
+*   **Open Source Strategy:** Evaluate open-sourcing key components.
+*   **Deeper LUKSO Integration:** Adapt to new LSPs.
+*   *(Future Ideas: UI Theme Customization, On-Platform Layer Prep (see other grid tab), AR Integration, Mobile App Visual Feedback).*
 
-This project is born from a lifelong passion for music production, visual art, and asset creation, all converging with a steadfast belief in the transformative power of the LUKSO ecosystem. For me, RADAR is a personal benchmark for how digital assets *should* be experienced, how my art *could* be perceived. Not as static images, but as living, breathing components of an interactive and deeply personal creative world. There's a whole new universe of potential to explore here, and I'm thrilled to push this concept, quite literally, out of this world.
-
-## Roadmap
-
-*   **Visual Effect Expansion:** Introduce a wider array of dynamic visual effects.
-*   Further polish & introduce parameter object interpolation, now visible on the x/y axis and rotation (mainly implemented to cover up the limited 127 step allocation inhereted by MIDI).
-*   Interpolate between presets. 
-*   Another thing where I'm excited about to dive in is something that is called Parameter Locking, or "P-locking". This is a concept borrowed from my hardware sequencer / drumcomputer, the Elektron Analog Rytm MKII, where it could serve as a powerful creative tool in addition to RADAR + MIDI functionality. In its original form, P-locking allows you to "record" parameter changes—like filter sweeps, volume tweaks, or pitch shifts—step-by-step across a looping 16-step sequence. Every knob twist is remembered and retriggered at the end of the 16 step loop, giving your sound dynamic variation without ever having to touch the controller again. So imagine this for RADAR like recording a 5 seconds loop over and over again. Overwriting and retriggering continuously when you move a parameter. Ie. moving an asset over the X axis during a 5 second window would just retrigger this movement over and over again.
-
-*   **Advanced MIDI Capabilities:**
-*   Implement MIDI clock synchronization for tempo-based effects and rhythmic precision.
-*   Allow mapping of MIDI controls to specific value ranges within parameters.
-*   Support toggle actions for MIDI button/pad presses.
-*   **LSP8 Collection Onboarding:** Streamline the process for community members to propose and for admins/curators to whitelist new, compatible LSP8 NFT collections.
-*   **Performance Optimization:** Continuously refine and optimize the custom 2D rendering engine to ensure smooth performance across a diverse range of devices and browsers. Possibly check pixiJS/threeJS/collaborate with others on this. With potentially mobile optimization in
-*   **Open Source Strategy:** Evaluate and potentially open-source key components, because only now I understand the true potential of creating an open system where others could just create new effects to add to RADAR.
-*   **Deeper LUKSO Integration:** Actively integrate with new and maturing LUKSO Standard Proposals (LSPs) as they become widely adopted, further enhancing RADAR's capabilities within the ecosystem.
-*   **(Future Idea) Theme Customization:** Allow users to customize the RADAR UI theme (colors, fonts) and save these preferences to their UP.
-*   **(Future Idea) Layer Preparation:** Allow users to manipulate their owned assets prior to using them as layers within RADAR (as shown on the RADAR grid tab > RADAR Layer Prep (An example NFT is pre-loaded) with some derived examples in the Grid tab "Room 725", a threeJS showroom) 
-*   **(Future Idea) AR Integration:** I have already been playing around with the idea of scanning the UP QR code, fetching the `RADAR.DefaultConfigurationName` + overlaying a simplified version of the canvasmanager component on top of it. I have to look deeper into this but browsing to your UP on your mobile browser, having an iframe with added attributes that allow you to use your mobile camera through the iframe on a printed QR code or integrating it inside artwork seems to be the way forward. There is also something like AR markers that could also allow the artwork itself to be the object to scan. This would make a printed version of your RADAR layer artwork (they look great when printed btw (without UI/background ofcourse)) animated through scanning it from your universal profile. Which could also definitely be further integrated with the LUKSO mobile app because it has the camer built into the application.
-*   **(Future Idea):** I see a huge oportunity for having a simplified version of the RADAR Default configuration running in the mobile application. This could ask as a visual feedback system.
-It's already pretty cool that when subscribing to the websocket and have RADAR running on my second screen, I have an actual visual feedback when something reaches my account.
-
+---
 
 ## MIDI Control Setup
 
