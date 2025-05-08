@@ -44,7 +44,7 @@ Following this hackathon and team feedback, the official **RADAR 1.0 Beta** will
 > **Important Note on Embedding/Permissions:**
 > If you plan to embed RADAR (e.g., within another site or application using an iframe), ensure you grant the necessary permissions for full functionality. You will need to allow the following attributes:
 > ```html
-> <iframe src="URL_TO_YOUR_RADAR_INSTANCE" allow="microphone; midi; fullscreen"></iframe>
+> <iframe src="https://radar725.netlify.app/" allow="microphone; midi; fullscreen"></iframe>
 > ```
 > Failure to include these `allow` attributes will prevent microphone access (for audio reactivity) and MIDI access (for controller input).
 
