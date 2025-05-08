@@ -8,9 +8,19 @@
 
 ---
 
+<p align="center">
+  <a href="https://youtu.be/qO70c37fP9s" target="_blank" rel="noopener noreferrer">
+    <img src="./src/assets/branding/radar_demo_thumbnail.png" alt="Watch the RADAR Demo Video!" width="600" style="max-width: 100%;">
+  </a>
+  <br/>
+  <em>Click the image above to watch the RADAR demo video!</em>
+</p>
+
+---
+
 ## The RADAR Vision: From Collector to Creator
 
-RADAR challenges the notion of NFTs as static collectibles. We believe true digital ownership, powered by LUKSO's Universal Profiles, unleashes a new universe of dynamic use-cases and ignites the imagination for what NFT 2.0 can truly become.
+RADAR challenges the notion of NFTs as static collectibles and believe that true digital ownership, powered by LUKSO's Universal Profiles, unleashes a new universe of dynamic use-cases and ignites the imagination for what NFT 2.0 can truly become.
 
 *   **Your NFTs, Your Engine:** Don't let your assets gather virtual dust. RADAR treats your LSP8 NFTs as visual engines, ready to be manipulated and brought to life.
 *   **Ownership is Control & Creation:** Go beyond just holding. Layer, glitch, blend, and animate your assets. Save an infinite number of unique visual setups directly onto your Universal Profile.
@@ -28,6 +38,17 @@ Following this hackathon and team feedback, the official **RADAR 1.0 Beta** will
 *   **Redefining Value Beyond Traits:** RADAR shifts the focus from randomly allocated traits dictating perceived value to intrinsic artistic merit. For the first time, collect an asset for its color palette, an admired detail, or its potential within the RADAR engine, not just its "rarity score." **Making ART about the ART again.**
 *   **Artistic Effort Rewarded:** In a space often dominated by mass-generated collections, RADAR champions the time, skill, and artistic vision invested in creating assets truly suited for dynamic visual experiences.
 *   **New Perspectives on Creation:** While the technology is cool, perception and creativity often hold us back. RADAR is one piece of the puzzle. A quick glance at the "layer preparation grid" tab reveals how I plan to overhaul conceptual blockers: by providing asset owners with tools to deconstruct and reconstruct, the collector immediately becomes a creator. This opens entirely new perspectives on asset interaction, potentially making RADAR the largest community-driven visualizer in existence. See a few transformations in the "Room725" tab.
+
+---
+
+> **Important Note on Embedding/Permissions:**
+> If you plan to embed RADAR (e.g., within another site or application using an iframe), ensure you grant the necessary permissions for full functionality. You will need to allow the following attributes:
+> ```html
+> <iframe src="URL_TO_YOUR_RADAR_INSTANCE" allow="microphone; midi; fullscreen"></iframe>
+> ```
+> Failure to include these `allow` attributes will prevent microphone access (for audio reactivity) and MIDI access (for controller input).
+
+---
 
 ## Core Features & Technologies
 
@@ -85,7 +106,9 @@ This interplay of personal creation, shared experiences, and on-chain identity o
 
 ---
 
-## MIDI Control Setup
+## Setup Guides
+
+### MIDI Control Setup
 
 RADAR offers intuitive MIDI control over its visual parameters, allowing for a tactile and expressive performance experience. Your MIDI mappings are saved globally to your Universal Profile.
 
@@ -124,39 +147,34 @@ RADAR offers intuitive MIDI control over its visual parameters, allowing for a t
 
 Now your MIDI controller is your hands-on interface for sculpting visuals in RADAR!
 
-## Audio Reactivity Setup (Using Virtual Audio Cable & Voicemeeter)
+### Audio Reactivity Setup (Using Virtual Audio Cable & Voicemeeter)
 
 To make RADAR's visuals react to the audio playing on your computer (e.g., from your browser or music player), you can route your audio through Voicemeeter using a Virtual Audio Cable. This gives you fine-grained control.
 
 **Prerequisites:**
 
 *   **Voicemeeter** (Standard version or Banana/Potato) installed. Get it from [vb-audio.com/Voicemeeter/](https://vb-audio.com/Voicemeeter/).
+*   **VB-CABLE Virtual Audio Cable** installed. Get it from [vb-audio.com/Cable/](https://vb-audio.com/Cable/).
 *   **Restart your computer** after installing these.
 
 **Steps:**
 
 1.  **Route Desired Audio to Virtual Cable (Recommended for Browser/App Audio):**
     *   In Windows Sound settings ("Open Sound settings" -> "App volume and device preferences"):
-        *   Find your web browser.
+        *   Find your web browser (or the specific application whose audio you want to capture).
         *   Change its **Output** device to **"CABLE Input (VB-Audio Virtual Cable)"**.
     *   *Alternatively, for simpler system-wide audio capture (less granular), set "CABLE Input" as your Default Playback Device in Windows Sound settings (Playback tab).*
 
 2.  **Configure Voicemeeter:**
     *   Open Voicemeeter.
-    *   **Hardware Input 1 (Stereo Input 1 or 2):** Click its name and select **"CABLE Output (VB-Audio Virtual Cable)"**. This brings audio from the virtual cable *into* Voicemeeter.
-        *   Ensure this channel is active (fader up, not muted). Enable its output to A1 (or your main hardware out) if you want to monitor this source through Voicemeeter.
-    *   **Hardware Out (A1 is the MAIN OUT):** Click "A1" (last channel strip) and select your main speakers/headphones. Done.
+    *   **Hardware Input 1 (Stereo Input 1 or 2):** Click its name (e.g., "Hardware Input 1") and select **"CABLE Output (VB-Audio Virtual Cable)"**. This brings audio from the virtual cable *into* Voicemeeter.
+        *   Ensure this channel strip is active (fader is up, not muted - check A/B buttons if using Banana/Potato). Enable its output route to **A1** (your main hardware out) if you want to monitor this source through Voicemeeter.
+    *   **Hardware Out (A1):** Click "A1" (under Hardware Out section) and select your main speakers/headphones (e.g., "WDM: Speakers (Realtek Audio)").
 
-4.  **Browser Permissions for RADAR:**
-    *   When enabling Audio Reactivity in RADAR, your browser will ask for microphone permission.
-    *   Select **"Voicemeeter Output"** (from step 3) as the microphone source.
+3.  **Browser Permissions for RADAR:**
+    *   When enabling Audio Reactivity in RADAR for the first time, your browser will ask for microphone permission.
+    *   In the permission prompt, select **"Voicemeeter Output (VB-Audio Voicemeeter VAIO)"** (or similar, depending on Voicemeeter version) as the microphone source. **Do not select CABLE Output or your physical microphone here.**
 
-**How it Works:** Your application sends sound to "CABLE Input." "CABLE Output" feeds this into Voicemeeter. Voicemeeter processes it, sends it to your speakers (via A1) AND to its own virtual "Voicemeeter Output." RADAR listens to "Voicemeeter Output" as a microphone.
+**How it Works:** Your target application (e.g., browser) sends its sound output to the virtual "CABLE Input". The other end of this virtual cable, "CABLE Output", is selected as an *input* in Voicemeeter. Voicemeeter processes this audio and sends it to two places: your speakers/headphones (via Hardware Out A1) and its own internal virtual output, "Voicemeeter Output". RADAR then listens to this "Voicemeeter Output" as if it were a microphone, capturing the audio you routed into Voicemeeter.
 
-This method allows selective audio routing for the visualizer.
-
-Don't forget to manually add the application because you will need to allow following attributes:  <iframe src="https://radar725.netlify.app/" allow="microphone, midi, fullscreen"></iframe>
-
----
-**A DETAILED VIDEO DEMO WILL FOLLOW SHORTLY.**
----
+This method allows selective audio routing for the visualizer without needing to capture *all* system sound or use a physical loopback.
