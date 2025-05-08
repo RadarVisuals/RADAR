@@ -1,4 +1,3 @@
-// src/main.jsx (Original from Dump)
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
@@ -10,38 +9,37 @@ import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import "./index.css";
 import { initializeHostUPConnector } from "./context/UpServerProvider.js";
 
-// Simple check if running inside an iframe
+/**
+ * Checks if the application is running inside an iframe.
+ * @returns {boolean} True if running inside an iframe, false otherwise.
+ */
 const isRunningInIframe = () => {
   try {
-    // Check if window is different from the top window
+    // If window.self is different from window.top, it's in an iframe.
     return window.self !== window.top;
-  } catch (e) {
-    // If accessing top fails (cross-origin), assume it's in an iframe
+  // eslint-disable-next-line no-unused-vars
+  } catch (_e) { // Catch potential cross-origin errors when accessing window.top
+    // If accessing top fails, it's highly likely due to cross-origin restrictions, indicating an iframe.
     return true;
   }
 };
 
 const inIframe = isRunningInIframe();
-let hostConnectorInitialized = false;
 
+// Initialize the host connector only if running as the main window (not in an iframe)
 if (!inIframe) {
-  console.log(
-    "[main.jsx] Running as host/top window, initializing Host UP Connector.",
-  );
-  // Initialize only if it's the main window
-  // Ensure this function doesn't cause issues if called multiple times accidentally
-  // (though the check should prevent it)
+  console.log("[main.jsx] Running as host/top window, initializing Host UP Connector.");
   initializeHostUPConnector();
-  hostConnectorInitialized = true; // Mark as initialized
 } else {
-  console.log(
-    "[main.jsx] Running inside an iframe, skipping Host UP Connector initialization.",
-  );
+  console.log("[main.jsx] Running inside an iframe, skipping Host UP Connector initialization.");
 }
 
-// Conditionally wrap with UpProvider only when in an iframe
+// Determine the appropriate provider nesting based on the environment
 const AppTree = (
-    <ErrorBoundary>
+  <ErrorBoundary>
+    {inIframe ? (
+      // In an iframe (MiniApp): Use UpProvider to connect as a client
+      <UpProvider>
         <ConfigProvider>
           <MIDIProvider>
             <ToastProvider>
@@ -49,22 +47,21 @@ const AppTree = (
             </ToastProvider>
           </MIDIProvider>
         </ConfigProvider>
-    </ErrorBoundary>
+      </UpProvider>
+    ) : (
+      // As host/standalone: Don't need UpProvider, ConfigProvider is outermost
+      <ConfigProvider>
+        <MIDIProvider>
+          <ToastProvider>
+            <App />
+          </ToastProvider>
+        </MIDIProvider>
+      </ConfigProvider>
+    )}
+  </ErrorBoundary>
 );
 
-ReactDOM.createRoot(document.getElementById("root")).render(
-  // <React.StrictMode> // Keep commented out for now
-    <>
-      {inIframe ? (
-        // If in iframe, wrap with UpProvider to act as client
-        <UpProvider>{AppTree}</UpProvider>
-      ) : (
-        // If host, render AppTree directly (server logic handled outside React tree)
-        AppTree
-      )}
-    </>
-  // </React.StrictMode>
-);
-
+// Render the application
+ReactDOM.createRoot(document.getElementById("root")).render(AppTree);
 
 console.log("[main.jsx] React application rendered successfully.");

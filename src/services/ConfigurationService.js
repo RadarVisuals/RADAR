@@ -11,6 +11,12 @@ import {
 
 import { ERC725YDataKeys } from '@lukso/lsp-smart-contracts';
 import { resolveLsp4Metadata } from '../utils/erc725.js';
+import { Buffer } from 'buffer'; // Needed for Data URI decoding
+
+// Ensure Buffer is globally available if needed for Data URI parsing
+if (typeof window !== 'undefined' && typeof window.Buffer === 'undefined') {
+  window.Buffer = Buffer;
+}
 
 // Minimal ABI for ERC725Y interactions
 const ERC725Y_ABI = [
@@ -21,178 +27,273 @@ const ERC725Y_ABI = [
     { name: "supportsInterface", inputs: [{ type: "bytes4", name: "interfaceId" }], outputs: [{ type: "bool" }], stateMutability: "view", type: "function" },
 ];
 
-/** Safely decodes hex to UTF-8 string, returning null on error. */
+/**
+ * Safely decodes hex to UTF-8 string, returning null on error.
+ * @param {string | null | undefined} hex - The hex string to decode.
+ * @returns {string | null} The decoded string or null.
+ */
 function hexToUtf8Safe(hex) {
   if (!hex || typeof hex !== "string" || !hex.startsWith("0x") || hex === "0x") return null;
   try { return hexToString(hex); }
-  catch (e) { console.warn(`[CS hexToUtf8Safe] Failed decode: "${hex.substring(0, 60)}...". Error:`, e.message || e); return null; }
+  catch { return null; }
 }
 
-/** Safely converts hex bytes to a number, clamping at MAX_SAFE_INTEGER. Returns 0 on error. */
+/**
+ * Safely converts hex bytes to a number, clamping at MAX_SAFE_INTEGER. Returns 0 on error.
+ * @param {string | null | undefined} hex - The hex string to convert.
+ * @returns {number} The resulting number or 0.
+ */
 export function hexBytesToIntegerSafe(hex) {
   if (!hex || typeof hex !== "string" || !hex.startsWith("0x") || hex === "0x") return 0;
   try {
     const bigIntValue = BigInt(hex);
     if (bigIntValue > BigInt(Number.MAX_SAFE_INTEGER)) {
-      console.warn(`[CS hexBytesToIntegerSafe] Value ${hex} exceeds MAX_SAFE_INTEGER.`);
       return Number.MAX_SAFE_INTEGER;
     }
     return Number(bigIntValue);
-  } catch (e) {
-    console.warn(`[CS hexBytesToIntegerSafe] Failed convert: "${hex}". Error:`, e); return 0;
-  }
+  } catch { return 0; }
 }
 
-/** Safely gets a checksummed address from a string, returning null on error. */
+/**
+ * Safely gets a checksummed address from a string, returning null on error.
+ * @param {string | null | undefined} address - The address string.
+ * @returns {string | null} The checksummed address or null.
+ */
 function getChecksumAddressSafe(address) {
     if (typeof address !== 'string') return null;
     try { return getAddress(address.trim()); }
-    catch { return null; } // Removed unused '_' variable
+    catch { return null; }
 }
 
 /**
  * Service class for interacting with ERC725Y storage on Universal Profiles
  * to load, save, and manage RADAR application configurations (presets, reactions, MIDI maps).
- * Requires initialized Viem Public and Wallet Clients.
+ * Requires initialized Viem Public and Wallet Clients. Distinguishes between readiness
+ * for read and write operations.
  */
 class ConfigurationService {
   /** @type {import('viem').WalletClient | null} */
   walletClient = null;
   /** @type {import('viem').PublicClient | null} */
   publicClient = null;
-  /** @type {boolean} */
-  initialized = false;
+  /** @type {boolean} Indicates if the service has basic requirements (public client) */
+  readReady = false;
+  /** @type {boolean} Indicates if the service has requirements for writing */
+  writeReady = false;
 
   /**
    * Creates an instance of ConfigurationService.
-   * @param {any} _provider - The EIP-1193 provider (unused).
-   * @param {import('viem').WalletClient} walletClient - The Viem Wallet Client instance.
-   * @param {import('viem').PublicClient} publicClient - The Viem Public Client instance.
+   * @param {any} _provider - The EIP-1193 provider (currently unused).
+   * @param {import('viem').WalletClient | null} walletClient - The Viem Wallet Client instance.
+   * @param {import('viem').PublicClient | null} publicClient - The Viem Public Client instance.
    */
   constructor(_provider, walletClient, publicClient) {
     this.walletClient = walletClient;
     this.publicClient = publicClient;
-    this.initialized = !!publicClient && !!walletClient;
+    this.readReady = !!publicClient;
+    this.writeReady = !!publicClient && !!walletClient?.account;
+    // console.log(`[ConfigurationService] Created. ReadReady: ${this.readReady}, WriteReady: ${this.writeReady}`); // Keep for initial setup debug if needed
   }
 
   /**
-   * Initializes the service.
-   * @returns {Promise<boolean>} True if clients are available.
+   * Initializes the service by checking client availability.
+   * @returns {Promise<boolean>} True if the service is ready for read operations.
    */
   async initialize() {
-    this.initialized = !!this.publicClient && !!this.walletClient;
-    return this.initialized;
+    this.readReady = !!this.publicClient;
+    this.writeReady = this.readReady && !!this.walletClient?.account;
+    return this.readReady;
   }
 
-  /** Gets the connected signer address. */
+  /**
+   * Gets the connected signer address.
+   * @returns {string | null} The connected EOA address or null.
+   */
   getUserAddress() {
     return this.walletClient?.account?.address ?? null;
   }
 
-  /** Checks if ready for read operations. */
+  /**
+   * Checks if ready for read operations, updating internal state.
+   * @returns {boolean} True if ready for reads.
+   */
   checkReadyForRead() {
-    return !!this.publicClient;
-  }
-
-  /** Checks if ready for write operations. */
-  checkReadyForWrite() {
-    return !!this.walletClient?.account && !!this.publicClient;
+    this.readReady = !!this.publicClient;
+    return this.readReady;
   }
 
   /**
-   * Loads configuration data for a profile.
-   * @param {string | null} profileAddress - Profile address.
-   * @param {string | null} [configNameToLoad=null] - Preset name or null for default.
-   * @param {string | null} [customKey=null] - Specific ERC725Y key override.
-   * @returns {Promise<{config: object|null, reactions: object, midi: object, error: string|null}>} Loaded data or error.
+   * Checks if ready for write operations, updating internal state.
+   * @returns {boolean} True if ready for writes.
+   */
+  checkReadyForWrite() {
+    this.readReady = !!this.publicClient;
+    this.writeReady = this.readReady && !!this.walletClient?.account;
+    return this.writeReady;
+  }
+
+  /**
+   * Gets a default layer configuration template.
+   * @private
+   * @returns {Object} Default layer configuration object.
+   */
+  _getDefaultLayerConfigTemplate() {
+    return {
+      enabled: true,
+      blendMode: 'normal',
+      opacity: 1.0,
+      size: 1.0,
+      speed: 0.01,
+      drift: 0,
+      driftSpeed: 0.1,
+      angle: 0,
+      xaxis: 0,
+      yaxis: 0,
+      direction: 1,
+      driftState: {
+        x: 0,
+        y: 0,
+        phase: Math.random() * Math.PI * 2,
+        enabled: false
+      }
+    };
+  }
+
+  /**
+   * Loads configuration data (visual preset, global reactions, global MIDI map) for a profile.
+   * Prioritizes customKey, then configNameToLoad, then the profile's default preset.
+   * @param {string | null} profileAddress - Profile address to load from.
+   * @param {string | null} [configNameToLoad=null] - Specific preset name to load. If null, attempts to load the default.
+   * @param {string | null} [customKey=null] - Specific ERC725Y key override for the visual preset.
+   * @returns {Promise<{config: object|null, reactions: object, midi: object, error: string|null}>} Loaded data or error state.
    */
   async loadConfiguration(profileAddress = null, configNameToLoad = null, customKey = null) {
     const defaultResult = { config: null, reactions: {}, midi: {}, error: null };
-    if (!this.checkReadyForRead()) return { ...defaultResult, error: "Public client not ready" };
+
+    if (!this.checkReadyForRead()) {
+      return { ...defaultResult, error: "Public client not ready for reading." };
+    }
 
     const checksummedProfileAddr = getChecksumAddressSafe(profileAddress);
     if (!checksummedProfileAddr) {
-      console.error(`[CS loadConfiguration] Invalid input address format: ${profileAddress}`);
       return { ...defaultResult, error: "Invalid profile address format" };
     }
 
-    const logPrefix = `[CS loadConfiguration Addr:${checksummedProfileAddr.slice(0, 6)} Name:${configNameToLoad || (customKey ? 'CUSTOM' : 'DEFAULT')}]`;
+    const logPrefix = `[CS loadConfiguration Addr:${checksummedProfileAddr.slice(0, 6)}]`;
+    // console.log(`${logPrefix} Starting load for Name:${configNameToLoad || (customKey ? 'CUSTOM' : 'DEFAULT')}`);
+
     try {
         let targetConfigKey = customKey;
         let configNameUsed = customKey ? "Custom Key" : configNameToLoad;
+        let nameReadFromDefaultPointer = null;
 
+        // Determine Target Config Key
         if (!targetConfigKey && !configNameToLoad) {
             let defaultNameBytes = null;
             try {
-                defaultNameBytes = await this.publicClient.readContract({ address: checksummedProfileAddr, abi: ERC725Y_ABI, functionName: "getData", args: [RADAR_DEFAULT_CONFIG_NAME_KEY] });
-            } catch { /* Ignore */ }
-
+                defaultNameBytes = await this.loadDataFromKey(checksummedProfileAddr, RADAR_DEFAULT_CONFIG_NAME_KEY);
+            } catch (e) {
+                console.warn(`${logPrefix} Error reading default pointer key: ${e.message}`);
+            }
             const nameFromPointer = hexToUtf8Safe(defaultNameBytes);
             if (nameFromPointer) {
+                nameReadFromDefaultPointer = nameFromPointer;
                 configNameUsed = nameFromPointer;
                 targetConfigKey = getNamedConfigMapKey(nameFromPointer);
+            } else {
+                configNameUsed = null;
+                targetConfigKey = null;
             }
         } else if (!targetConfigKey && configNameToLoad) {
             configNameUsed = configNameToLoad;
             targetConfigKey = getNamedConfigMapKey(configNameToLoad);
         }
 
+        // Prepare Batch Read
         const dataKeysToFetch = [];
         const keyIndexMap = { config: -1, reactions: -1, midi: -1 };
         if (targetConfigKey) { keyIndexMap.config = dataKeysToFetch.push(targetConfigKey) - 1; }
         keyIndexMap.reactions = dataKeysToFetch.push(RADAR_EVENT_REACTIONS_KEY) - 1;
         keyIndexMap.midi = dataKeysToFetch.push(RADAR_MIDI_MAP_KEY) - 1;
 
+        // Execute Batch Read
         let dataValues = [];
         if (dataKeysToFetch.length > 0) {
             try {
-                dataValues = await this.publicClient.readContract({ address: checksummedProfileAddr, abi: ERC725Y_ABI, functionName: "getDataBatch", args: [dataKeysToFetch] });
+                const batchResults = await this.loadData(checksummedProfileAddr, dataKeysToFetch);
+                dataValues = dataKeysToFetch.map(key => batchResults[key]);
             } catch (batchReadError) {
-                console.error(`${logPrefix} Error during getDataBatch:`, batchReadError);
-                console.warn(`${logPrefix} getDataBatch potentially failed, treating missing keys as null.`);
+                console.error(`${logPrefix} Error during batch read via loadData:`, batchReadError);
                 dataValues = dataKeysToFetch.map(() => null);
             }
-        } else {
-            console.warn(`${logPrefix} No keys to fetch.`);
-            return { ...defaultResult };
+        } else if (keyIndexMap.reactions !== -1 && keyIndexMap.midi !== -1) { // Handle globals only if no visual key
+            try {
+                const globalKeys = [RADAR_EVENT_REACTIONS_KEY, RADAR_MIDI_MAP_KEY];
+                const globalResults = await this.loadData(checksummedProfileAddr, globalKeys);
+                dataValues = globalKeys.map(key => globalResults[key]);
+                keyIndexMap.reactions = 0; // Adjust indices
+                keyIndexMap.midi = 1;
+            } catch (batchReadError) {
+                console.error(`${logPrefix} Error fetching globals only:`, batchReadError);
+                dataValues = [null, null];
+            }
         }
 
+        // Parse Results
         let parsedConfig = null;
         let parsedReactions = {};
         let parsedMidi = {};
 
-        if (keyIndexMap.config !== -1 && dataValues[keyIndexMap.config] && dataValues[keyIndexMap.config] !== "0x") {
-            const configJson = hexToUtf8Safe(dataValues[keyIndexMap.config]);
-            if (configJson) {
-                try {
-                    const tempParsed = JSON.parse(configJson);
-                    if (tempParsed && typeof tempParsed === "object" && typeof tempParsed.l === 'object' && typeof tempParsed.tA === 'object') {
-                        parsedConfig = { name: String(tempParsed.name || configNameUsed || "Unnamed Config"), ts: tempParsed.ts || 0, layers: tempParsed.l, tokenAssignments: tempParsed.tA };
-                    } else { console.warn(`${logPrefix} Config JSON parsed but structure invalid.`); }
-                } catch (parseError) { console.error(`${logPrefix} Error parsing config JSON:`, parseError); }
-            } else { console.warn(`${logPrefix} Config data invalid hex or empty string.`); }
+        // Parse Config
+        if (keyIndexMap.config !== -1) {
+            const configHex = dataValues[keyIndexMap.config];
+            if (configHex && configHex !== "0x") {
+                const configJson = hexToUtf8Safe(configHex);
+                if (configJson) {
+                    try {
+                        const tempParsed = JSON.parse(configJson);
+                        if (tempParsed && typeof tempParsed === "object" && typeof tempParsed.l === 'object' && typeof tempParsed.tA === 'object') {
+                            const finalConfigName = nameReadFromDefaultPointer || tempParsed.name || configNameUsed || "Unnamed Config";
+                            parsedConfig = { name: String(finalConfigName), ts: tempParsed.ts || 0, layers: tempParsed.l, tokenAssignments: tempParsed.tA };
+                        } else { console.warn(`${logPrefix} Parsed config JSON has unexpected structure.`); }
+                    } catch (parseError) { console.error(`${logPrefix} Error parsing config JSON:`, parseError); }
+                } else { console.warn(`${logPrefix} Failed to decode config hex.`); }
+            }
         }
 
-        if (keyIndexMap.reactions !== -1 && dataValues[keyIndexMap.reactions] && dataValues[keyIndexMap.reactions] !== "0x") {
-            const reactionsJson = hexToUtf8Safe(dataValues[keyIndexMap.reactions]);
-            if (reactionsJson) {
-                try {
-                    const tempParsed = JSON.parse(reactionsJson);
-                    if (tempParsed && typeof tempParsed === "object") { parsedReactions = tempParsed; }
-                    else { console.warn(`${logPrefix} Reactions JSON parsed but not a valid object.`); }
-                } catch (parseError) { console.error(`${logPrefix} Error parsing reactions JSON:`, parseError); }
-            } else { console.warn(`${logPrefix} Reactions data was invalid hex or empty string.`); }
+        // Parse Reactions
+        if (keyIndexMap.reactions !== -1) {
+            const reactionsHex = dataValues[keyIndexMap.reactions];
+             if (reactionsHex && reactionsHex !== "0x") {
+                 const reactionsJson = hexToUtf8Safe(reactionsHex);
+                 if (reactionsJson) {
+                    try {
+                        const tempParsed = JSON.parse(reactionsJson);
+                        if (tempParsed && typeof tempParsed === "object") { parsedReactions = tempParsed; }
+                        else { console.warn(`${logPrefix} Parsed reactions JSON is not an object.`); }
+                    } catch (parseError) { console.error(`${logPrefix} Error parsing reactions JSON:`, parseError); }
+                } else { console.warn(`${logPrefix} Failed to decode reactions hex.`); }
+            }
         }
 
-        if (keyIndexMap.midi !== -1 && dataValues[keyIndexMap.midi] && dataValues[keyIndexMap.midi] !== "0x") {
-            const midiJson = hexToUtf8Safe(dataValues[keyIndexMap.midi]);
-            if (midiJson) {
-                try {
-                    const tempParsed = JSON.parse(midiJson);
-                    if (tempParsed && typeof tempParsed === "object") { parsedMidi = tempParsed; }
-                    else { console.warn(`${logPrefix} MIDI JSON parsed but not a valid object.`); }
-                } catch (parseError) { console.error(`${logPrefix} Error parsing MIDI JSON:`, parseError); }
-            } else { console.warn(`${logPrefix} MIDI data was invalid hex or empty string.`); }
+        // Parse MIDI
+        if (keyIndexMap.midi !== -1) {
+            const midiHex = dataValues[keyIndexMap.midi];
+             if (midiHex && midiHex !== "0x") {
+                 const midiJson = hexToUtf8Safe(midiHex);
+                 if (midiJson) {
+                    try {
+                        const tempParsed = JSON.parse(midiJson);
+                        if (tempParsed && typeof tempParsed === "object") { parsedMidi = tempParsed; }
+                        else { console.warn(`${logPrefix} Parsed MIDI JSON is not an object.`); }
+                    } catch (parseError) { console.error(`${logPrefix} Error parsing MIDI JSON:`, parseError); }
+                } else { console.warn(`${logPrefix} Failed to decode MIDI hex.`); }
+            }
+        }
+
+        // Ensure config is null if no specific target was loaded
+        if (!targetConfigKey && !parsedConfig) {
+            parsedConfig = null;
         }
 
         return { config: parsedConfig, reactions: parsedReactions, midi: parsedMidi, error: null };
@@ -203,19 +304,23 @@ class ConfigurationService {
   }
 
   /**
-   * Saves configuration data to the target profile.
-   * @param {string} targetProfileAddress - Profile address.
-   * @param {object} saveData - Data object (layers, tokenAssignments, reactions, midi).
-   * @param {string} configName - Preset name (required if includeVisuals).
-   * @param {boolean} [setAsDefault=false] - Set as default preset.
-   * @param {boolean} [includeVisuals=false] - Save visual preset data.
-   * @param {boolean} [includeReactions=false] - Save global reactions.
-   * @param {boolean} [includeMidi=false] - Save global MIDI map.
-   * @param {string | null} [customKey=null] - Specific key override for visual preset.
-   * @returns {Promise<{success: boolean, hash: string|null, error?: string}>} Result object.
+   * Saves configuration data to the target profile using setData or setDataBatch.
+   * Can save visual presets, global reactions, and global MIDI maps selectively.
+   * Updates the saved configurations list and default pointer if necessary.
+   * Requires the wallet client to be connected and own the target profile.
+   *
+   * @param {string} targetProfileAddress - The address of the profile to save data to.
+   * @param {object} saveData - An object containing the data to save, structured as { layers, tokenAssignments, reactions, midi }.
+   * @param {string} configName - The name for the visual preset (required if includeVisuals is true and customKey is null).
+   * @param {boolean} [setAsDefault=false] - If true, sets this visual preset as the profile's default.
+   * @param {boolean} [includeVisuals=false] - Whether to save the visual configuration (layers, tokenAssignments).
+   * @param {boolean} [includeReactions=false] - Whether to save the global reactions configuration.
+   * @param {boolean} [includeMidi=false] - Whether to save the global MIDI map configuration.
+   * @param {string | null} [customKey=null] - A specific ERC725Y key to save the visual preset to, bypassing naming conventions and list updates.
+   * @returns {Promise<{success: boolean, hash: string|null, error?: string}>} Result object indicating success/failure and transaction hash.
    */
   async saveConfiguration(targetProfileAddress, saveData, configName, setAsDefault = false, includeVisuals = false, includeReactions = false, includeMidi = false, customKey = null) {
-    const logPrefix = `[CS saveConfiguration Addr:${targetProfileAddress?.slice(0, 6)} Name:${configName || "N/A"} V:${includeVisuals} R:${includeReactions} M:${includeMidi}]`;
+    const logPrefix = `[CS saveConfiguration Addr:${targetProfileAddress?.slice(0, 6)}]`;
 
     if (!this.checkReadyForWrite()) throw new Error("Client not ready for writing.");
     const checksummedTargetAddr = getChecksumAddressSafe(targetProfileAddress);
@@ -223,8 +328,7 @@ class ConfigurationService {
     if (!saveData || typeof saveData !== "object") throw new Error("Invalid saveData object.");
     if (includeVisuals && !configName?.trim() && !customKey) throw new Error("Configuration name required for visual presets.");
     if (!includeVisuals && !includeReactions && !includeMidi) {
-      console.warn(`${logPrefix} No data types included. Nothing to save.`);
-      return { success: true, hash: null };
+      return { success: true, hash: null }; // Nothing to save
     }
 
     const userAddress = this.walletClient.account.address;
@@ -235,7 +339,6 @@ class ConfigurationService {
     try {
         const dataKeys = [];
         const dataValues = [];
-        const preparedItemsLog = [];
         const trimmedName = configName?.trim();
 
         if (includeVisuals) {
@@ -247,17 +350,18 @@ class ConfigurationService {
             let visualConfigHex;
             try { visualConfigHex = stringToHex(JSON.stringify(visualConfigToStore)); }
             catch (stringifyError) { throw new Error(`Failed to prepare visual config data: ${stringifyError.message}`); }
-            dataKeys.push(configStorageKey); dataValues.push(visualConfigHex); preparedItemsLog.push(`Visuals`);
+            dataKeys.push(configStorageKey); dataValues.push(visualConfigHex);
 
+            // Update list and default pointer only if NOT using a custom key
             if (!customKey) {
                 const currentList = await this.loadSavedConfigurations(checksummedTargetAddr);
                 if (!currentList.includes(trimmedName)) {
                     const currentIndex = currentList.length;
-                    dataKeys.push(getRadarConfigListElementKey(currentIndex)); dataValues.push(stringToHex(trimmedName)); preparedItemsLog.push(`ListAdd`);
-                    dataKeys.push(RADAR_SAVED_CONFIG_LIST_KEY); dataValues.push(numberToHex(BigInt(currentIndex + 1), { size: 16 })); preparedItemsLog.push(`ListLen`);
+                    dataKeys.push(getRadarConfigListElementKey(currentIndex)); dataValues.push(stringToHex(trimmedName));
+                    dataKeys.push(RADAR_SAVED_CONFIG_LIST_KEY); dataValues.push(numberToHex(BigInt(currentIndex + 1), { size: 16 }));
                 }
                 if (setAsDefault) {
-                    dataKeys.push(RADAR_DEFAULT_CONFIG_NAME_KEY); dataValues.push(stringToHex(trimmedName)); preparedItemsLog.push(`SetDefault`);
+                    dataKeys.push(RADAR_DEFAULT_CONFIG_NAME_KEY); dataValues.push(stringToHex(trimmedName));
                 }
             }
         }
@@ -267,7 +371,7 @@ class ConfigurationService {
             let reactionsHex;
             try { reactionsHex = stringToHex(JSON.stringify(saveData.reactions || {})); }
             catch (stringifyError) { throw new Error(`Failed to prepare reactions data: ${stringifyError.message}`); }
-            dataKeys.push(RADAR_EVENT_REACTIONS_KEY); dataValues.push(reactionsHex); preparedItemsLog.push(`Reactions`);
+            dataKeys.push(RADAR_EVENT_REACTIONS_KEY); dataValues.push(reactionsHex);
         }
 
         if (includeMidi) {
@@ -275,25 +379,19 @@ class ConfigurationService {
             let midiHex;
             try { midiHex = stringToHex(JSON.stringify(saveData.midi || {})); }
             catch (stringifyError) { throw new Error(`Failed to prepare MIDI map data: ${stringifyError.message}`); }
-            dataKeys.push(RADAR_MIDI_MAP_KEY); dataValues.push(midiHex); preparedItemsLog.push(`MIDI`);
+            dataKeys.push(RADAR_MIDI_MAP_KEY); dataValues.push(midiHex);
         }
 
-        if (dataKeys.length === 0) {
-            console.warn(`${logPrefix} No data keys prepared. Aborting save.`);
-            return { success: true, hash: null };
-        }
+        if (dataKeys.length === 0) return { success: true, hash: null };
 
-        console.log(`${logPrefix} Prepared ${dataKeys.length} operations: ${preparedItemsLog.join(', ')}`);
         const isBatch = dataKeys.length > 1;
         const functionName = isBatch ? "setDataBatch" : "setData";
         const args = isBatch ? [dataKeys, dataValues] : [dataKeys[0], dataValues[0]];
-        console.warn(`${logPrefix} Attempting ${functionName}...`);
 
         try {
             const hash = await this.walletClient.writeContract({
                 address: checksummedTargetAddr, abi: ERC725Y_ABI, functionName, args, account: this.walletClient.account,
             });
-            console.log(`${logPrefix} ${functionName} successful! Hash:`, hash);
             return { success: true, hash };
         } catch (writeError) {
             console.error(`${logPrefix} ${functionName} FAILED:`, writeError);
@@ -308,23 +406,25 @@ class ConfigurationService {
   }
 
   /**
-   * Loads the list of saved configuration preset names.
-   * @param {string} profileAddress - Profile address.
-   * @returns {Promise<string[]>} Array of preset names.
+   * Loads the list of saved configuration preset names from the profile.
+   * Reads the array length and then fetches each element key.
+   * @param {string} profileAddress - The profile address to read from.
+   * @returns {Promise<string[]>} An array of saved preset names. Returns empty array on error or if none found.
    */
   async loadSavedConfigurations(profileAddress) {
     const checksummedProfileAddr = getChecksumAddressSafe(profileAddress);
     if (!this.checkReadyForRead() || !checksummedProfileAddr) {
-      console.error(`[CS loadSavedList] Client not ready or invalid address: ${profileAddress}`);
+      console.warn("[CS loadSavedList] Aborted: Client not ready or invalid address.");
       return [];
     }
     const logPrefix = `[CS loadSavedList Addr:${checksummedProfileAddr.slice(0, 6)}]`;
+    // console.log(`${logPrefix} Fetching saved configuration list...`);
     try {
         let lengthBytes;
         try {
-            lengthBytes = await this.publicClient.readContract({ address: checksummedProfileAddr, abi: ERC725Y_ABI, functionName: "getData", args: [RADAR_SAVED_CONFIG_LIST_KEY] });
+            lengthBytes = await this.loadDataFromKey(checksummedProfileAddr, RADAR_SAVED_CONFIG_LIST_KEY);
         } catch (readError) {
-            if (readError.message.includes('ContractFunctionExecutionError') || readError.message.includes('reverted')) return [];
+            if (lengthBytes === null) { return []; } // Handled by loadDataFromKey returning null
             console.error(`${logPrefix} Error reading list length:`, readError.message);
             return [];
         }
@@ -333,37 +433,43 @@ class ConfigurationService {
         if (count <= 0) return [];
 
         const elementKeys = Array.from({ length: count }, (_, i) => getRadarConfigListElementKey(i));
-        let nameValuesBytes;
+        let nameValuesBytes = [];
         try {
-            nameValuesBytes = await this.publicClient.readContract({ address: checksummedProfileAddr, abi: ERC725Y_ABI, functionName: "getDataBatch", args: [elementKeys] });
+            const batchResults = await this.loadData(checksummedProfileAddr, elementKeys);
+            nameValuesBytes = elementKeys.map(key => batchResults[key]);
         } catch (batchReadError) {
             console.error(`${logPrefix} Error reading list elements:`, batchReadError);
             return [];
         }
 
         const names = nameValuesBytes
-            .map((hex, idx) => {
+            .map((hex, i) => {
                 const name = hexToUtf8Safe(hex);
-                if (name === null) console.warn(`${logPrefix} Failed decode index ${idx}, key: ${elementKeys[idx]}, raw: ${hex}`);
+                if (name === null || name.trim() === "") {
+                    console.warn(`${logPrefix} Found null or empty name at index ${i}. Key: ${elementKeys[i]}`);
+                }
                 return name;
             })
             .filter(name => name !== null && name.trim() !== "");
+
+        // console.log(`${logPrefix} Successfully loaded list:`, names);
         return names;
     } catch (error) {
         console.error(`${logPrefix} Unexpected error loading list:`, error);
         return [];
     }
   }
-
-  /**
-   * Deletes a named configuration preset.
-   * @param {string} targetProfileAddress - Profile address.
-   * @param {string} configNameToDelete - Name of the preset to delete.
-   * @returns {Promise<{success: boolean, hash: string|null, error?: string}>} Result object.
+/**
+   * Deletes a named configuration preset from the profile.
+   * Clears the preset's Map key, removes it from the Array (adjusting length and potentially moving the last element),
+   * and clears the Default pointer if it matches the deleted name.
+   * Requires the wallet client to be connected and own the target profile.
+   * @param {string} targetProfileAddress - The address of the profile to modify.
+   * @param {string} configNameToDelete - The name of the preset to delete.
+   * @returns {Promise<{success: boolean, hash: string|null, error?: string}>} Result object indicating success/failure and transaction hash.
    */
-  async deleteConfiguration(targetProfileAddress, configNameToDelete) {
+async deleteConfiguration(targetProfileAddress, configNameToDelete) {
     const logPrefix = `[CS deleteConfiguration Addr:${targetProfileAddress?.slice(0, 6)} Name:${configNameToDelete}]`;
-    console.warn(`${logPrefix} Attempting delete.`);
     if (!this.checkReadyForWrite()) throw new Error("Client not ready for writing.");
     const checksummedTargetAddr = getChecksumAddressSafe(targetProfileAddress);
     if (!checksummedTargetAddr) throw new Error("Invalid target profile address format.");
@@ -378,9 +484,9 @@ class ConfigurationService {
     try {
         const dataKeysToUpdate = [];
         const dataValuesToUpdate = [];
-        const preparedItemsLog = [];
 
-        dataKeysToUpdate.push(getNamedConfigMapKey(trimmedNameToDelete)); dataValuesToUpdate.push("0x"); preparedItemsLog.push(`ClearPreset`);
+        dataKeysToUpdate.push(getNamedConfigMapKey(trimmedNameToDelete));
+        dataValuesToUpdate.push("0x");
 
         const currentList = await this.loadSavedConfigurations(checksummedTargetAddr);
         const deleteIndex = currentList.findIndex((name) => name === trimmedNameToDelete);
@@ -390,26 +496,23 @@ class ConfigurationService {
             if (deleteIndex < lastIndex) {
                 dataKeysToUpdate.push(getRadarConfigListElementKey(deleteIndex));
                 dataValuesToUpdate.push(stringToHex(currentList[lastIndex]));
-                preparedItemsLog.push(`ListMove`);
             }
-            dataKeysToUpdate.push(getRadarConfigListElementKey(lastIndex)); dataValuesToUpdate.push("0x"); preparedItemsLog.push(`ListClearLast`);
+            dataKeysToUpdate.push(getRadarConfigListElementKey(lastIndex)); dataValuesToUpdate.push("0x");
             const newLength = BigInt(currentList.length - 1);
-            dataKeysToUpdate.push(RADAR_SAVED_CONFIG_LIST_KEY); dataValuesToUpdate.push(numberToHex(newLength >= 0 ? newLength : 0, { size: 16 })); preparedItemsLog.push(`ListLen`);
-        } else { console.warn(`${logPrefix} Config "${trimmedNameToDelete}" not in list.`); }
-
-        let defaultNameBytes = null;
-        try { defaultNameBytes = await this.publicClient.readContract({ address: checksummedTargetAddr, abi: ERC725Y_ABI, functionName: "getData", args: [RADAR_DEFAULT_CONFIG_NAME_KEY] }); }
-        catch { console.warn(`${logPrefix} Could not read default name pointer.`); }
-        if (defaultNameBytes && hexToUtf8Safe(defaultNameBytes) === trimmedNameToDelete) {
-            dataKeysToUpdate.push(RADAR_DEFAULT_CONFIG_NAME_KEY); dataValuesToUpdate.push("0x"); preparedItemsLog.push(`ClearDefault`);
+            dataKeysToUpdate.push(RADAR_SAVED_CONFIG_LIST_KEY);
+            dataValuesToUpdate.push(numberToHex(newLength >= 0 ? newLength : 0, { size: 16 }));
         }
 
-        if (dataKeysToUpdate.length === 0) { console.warn(`${logPrefix} No operations determined for delete.`); return { success: true, hash: null }; }
+        let defaultNameBytes = null;
+        try { defaultNameBytes = await this.loadDataFromKey(checksummedTargetAddr, RADAR_DEFAULT_CONFIG_NAME_KEY); } catch { /* Ignore */ }
+        if (defaultNameBytes && hexToUtf8Safe(defaultNameBytes) === trimmedNameToDelete) {
+            dataKeysToUpdate.push(RADAR_DEFAULT_CONFIG_NAME_KEY); dataValuesToUpdate.push("0x");
+        }
 
-        console.warn(`${logPrefix} Attempting setDataBatch for delete... Ops: ${preparedItemsLog.join(', ')}`);
+        if (dataKeysToUpdate.length === 0) return { success: true, hash: null };
+
         try {
             const hash = await this.walletClient.writeContract({ address: checksummedTargetAddr, abi: ERC725Y_ABI, functionName: "setDataBatch", args: [dataKeysToUpdate, dataValuesToUpdate], account: this.walletClient.account });
-            console.log(`${logPrefix} Delete (setDataBatch) successful! Hash:`, hash);
             return { success: true, hash };
         } catch (writeError) {
             console.error(`${logPrefix} Delete (setDataBatch) FAILED:`, writeError);
@@ -424,17 +527,18 @@ class ConfigurationService {
   }
 
   /**
-   * Saves arbitrary data to a specific ERC725Y key.
-   * @param {string} targetAddress - Profile address.
-   * @param {string} key - The bytes32 data key.
-   * @param {string} valueHex - Data value as hex ('0x...' or '0x' to clear).
-   * @returns {Promise<{success: boolean, hash: string|null, error?: string}>} Result object.
+   * Saves arbitrary hex data to a specific ERC725Y key using setData.
+   * Requires the wallet client to be connected and own the target profile.
+   * @param {string} targetAddress - The profile address to save data to.
+   * @param {string} key - The bytes32 data key (must start with '0x' and be 66 chars long).
+   * @param {string} valueHex - Data value as a hex string (e.g., '0x123abc', or '0x' to clear).
+   * @returns {Promise<{success: boolean, hash: string|null, error?: string}>} Result object indicating success/failure and transaction hash.
    */
   async saveDataToKey(targetAddress, key, valueHex) {
     const logPrefix = `[CS saveDataToKey Addr:${targetAddress?.slice(0, 6) ?? 'N/A'} Key:${key?.slice(0, 15) ?? 'N/A'}...]`;
     if (!this.checkReadyForWrite()) throw new Error("Client not ready for writing.");
     const checksummedTargetAddr = getChecksumAddressSafe(targetAddress);
-    if (!checksummedTargetAddr) { console.error(`${logPrefix} Validation failed. Invalid targetAddress:`, targetAddress); throw new Error("Invalid target address format."); }
+    if (!checksummedTargetAddr) throw new Error("Invalid target address format.");
 
     const userAddress = this.walletClient.account.address;
     if (userAddress?.toLowerCase() !== checksummedTargetAddr?.toLowerCase()) {
@@ -443,13 +547,11 @@ class ConfigurationService {
 
     if (!key || typeof key !== "string" || !key.startsWith("0x") || key.length !== 66) { throw new Error("Data key must be a valid bytes32 hex string."); }
     const finalValueHex = (valueHex === undefined || valueHex === null) ? "0x" : valueHex;
-    if (typeof finalValueHex !== "string" || !finalValueHex.startsWith("0x")) { console.error(`${logPrefix} Validation failed. Invalid valueHex:`, finalValueHex); throw new Error("Value must be a valid hex string (0x...)."); }
+    if (typeof finalValueHex !== "string" || !finalValueHex.startsWith("0x")) { throw new Error("Value must be a valid hex string (0x...)."); }
 
     try {
-        console.warn(`${logPrefix} Attempting setData...`);
         try {
             const hash = await this.walletClient.writeContract({ address: checksummedTargetAddr, abi: ERC725Y_ABI, functionName: "setData", args: [key, finalValueHex], account: this.walletClient.account });
-            console.log(`${logPrefix} setData successful! Hash:`, hash);
             return { success: true, hash };
         } catch (writeError) {
             console.error(`${logPrefix} setData FAILED:`, writeError);
@@ -465,61 +567,123 @@ class ConfigurationService {
 
   /**
    * Loads raw hex data from a single ERC725Y key.
-   * @param {string} address - Profile address.
+   * @param {string} address - Profile address to read from.
    * @param {string} key - The bytes32 data key.
-   * @returns {Promise<string|null>} Hex data value or null.
+   * @returns {Promise<string|null>} Hex data value ('0x...') or null if not found or error.
    */
   async loadDataFromKey(address, key) {
-    if (!this.checkReadyForRead()) return null;
+    if (!this.checkReadyForRead()) {
+      console.warn(`[CS loadDataFromKey] Public client not ready for read operations, returning null`);
+      return null;
+    }
+
     const checksummedAddress = getChecksumAddressSafe(address);
-    if (!checksummedAddress) return null;
+    if (!checksummedAddress) {
+      console.warn(`[CS loadDataFromKey] Invalid address format: ${address}`);
+      return null;
+    }
+
     const isKeyValid = typeof key === "string" && key.startsWith("0x") && key.length === 66;
-    if (!isKeyValid) return null;
+    if (!isKeyValid) {
+      console.warn(`[CS loadDataFromKey] Invalid key format: ${key}`);
+      return null;
+    }
+
     try {
-        const dataValueBytes = await this.publicClient.readContract({ address: checksummedAddress, abi: ERC725Y_ABI, functionName: "getData", args: [key] });
-        return dataValueBytes && dataValueBytes !== "0x" ? dataValueBytes : null;
-    } catch (e) { console.error(`[CS loadDataFromKey] readContract FAILED:`, e.message); return null; }
+        const dataValueBytes = await this.publicClient.readContract({
+          address: checksummedAddress,
+          abi: ERC725Y_ABI,
+          functionName: "getData",
+          args: [key]
+        });
+
+        // Return null if value is '0x' or undefined/null
+        if (!dataValueBytes || dataValueBytes === "0x") {
+          return null;
+        }
+        return dataValueBytes;
+    } catch (e) {
+        // Handle contract read errors (e.g., key not found might revert)
+        console.warn(`[CS loadDataFromKey] Error reading key ${key} for ${address.slice(0,6)}: ${e.message}`);
+        return null;
+    }
   }
 
   /**
    * Loads raw hex data from multiple ERC725Y keys using a batch call.
-   * @param {string} profileAddress - Profile address.
-   * @param {string[]} dataKeys - Array of bytes32 data keys.
-   * @returns {Promise<Object.<string, string|null>>} Object mapping keys to hex values (or null).
+   * @param {string} profileAddress - Profile address to read from.
+   * @param {string[]} dataKeys - Array of valid bytes32 data keys.
+   * @returns {Promise<Object.<string, string|null>>} Object mapping requested keys to hex values (or null if not found/error).
    */
   async loadData(profileAddress, dataKeys = []) {
     const checksummedProfileAddr = getChecksumAddressSafe(profileAddress);
-    if (!this.checkReadyForRead() || !checksummedProfileAddr || !Array.isArray(dataKeys) || dataKeys.length === 0) return {};
+    if (!this.checkReadyForRead()) {
+      console.warn(`[CS loadData] Public client not ready for read operations`);
+      return {};
+    }
+
+    if (!checksummedProfileAddr) {
+      console.warn(`[CS loadData] Invalid address format: ${profileAddress}`);
+      return {};
+    }
+
+    if (!Array.isArray(dataKeys) || dataKeys.length === 0) {
+      console.warn(`[CS loadData] No valid data keys provided`);
+      return {};
+    }
+
     const validKeys = dataKeys.filter(key => typeof key === "string" && key.startsWith("0x") && key.length === 66);
-    if (validKeys.length === 0) return {};
+    if (validKeys.length === 0) {
+      console.warn(`[CS loadData] No valid keys in provided array`);
+      return {};
+    }
+
     try {
-      const dataValuesBytes = await this.publicClient.readContract({ address: checksummedProfileAddr, abi: ERC725Y_ABI, functionName: "getDataBatch", args: [validKeys] });
+      const dataValuesBytes = await this.publicClient.readContract({
+        address: checksummedProfileAddr,
+        abi: ERC725Y_ABI,
+        functionName: "getDataBatch",
+        args: [validKeys]
+      });
+
       const results = {};
-      validKeys.forEach((key, i) => { results[key] = dataValuesBytes[i] && dataValuesBytes[i] !== "0x" ? dataValuesBytes[i] : null; });
+      validKeys.forEach((key, i) => {
+        results[key] = dataValuesBytes[i] && dataValuesBytes[i] !== "0x" ? dataValuesBytes[i] : null;
+      });
+
       return results;
     } catch (e) {
       console.error(`[CS loadData] readContract (batch) FAILED:`, e.message);
-      const results = {}; validKeys.forEach((key) => { results[key] = null; }); return results;
+      const results = {};
+      validKeys.forEach((key) => { results[key] = null; });
+      return results;
     }
   }
 
-  /** Checks if a contract supports the ERC725Y interface. */
+  /**
+   * Checks if a contract supports the ERC725Y interface (0x5a988c0f).
+   * @param {string} address - The contract address.
+   * @returns {Promise<boolean>} True if the interface is supported, false otherwise.
+   */
   async checkSupportsERC725Y(address) {
     const checksummedAddr = getChecksumAddressSafe(address);
     if (!this.checkReadyForRead() || !checksummedAddr) return false;
     try { return await this.publicClient.readContract({ address: checksummedAddr, abi: ERC725Y_ABI, functionName: "supportsInterface", args: ["0x5a988c0f"] }); }
-    catch (e) { console.warn(`[CS checkSupportsERC725Y] Error checking interface: ${e.message}`); return false; }
+    catch { return false; }
   }
 
   /**
    * Retrieves the addresses of assets received by the profile (LSP5ReceivedAssets).
+   * Reads the array length and then fetches all asset addresses via batch call.
    * @param {string} profileAddress - The profile address.
-   * @returns {Promise<string[]>} Array of checksummed asset addresses.
+   * @returns {Promise<string[]>} Array of checksummed asset addresses. Returns empty array on error or if none found.
    */
   async getOwnedAssetAddresses(profileAddress) {
     const logPrefix = `[CS getOwnedAssetAddresses Addr:${profileAddress?.slice(0, 6) ?? 'N/A'}]`;
     const checksummedProfileAddr = getChecksumAddressSafe(profileAddress);
-    if (!this.checkReadyForRead() || !checksummedProfileAddr) { console.error(`${logPrefix} Client not ready or invalid address.`); return []; }
+    if (!this.checkReadyForRead() || !checksummedProfileAddr) {
+        console.error(`${logPrefix} Client not ready or invalid address.`); return [];
+    }
     const lsp5ArrayLengthKey = ERC725YDataKeys.LSP5['LSP5ReceivedAssets[]'].length;
     const lsp5BaseIndexKey = ERC725YDataKeys.LSP5['LSP5ReceivedAssets[]'].index;
     try {
@@ -532,36 +696,51 @@ class ConfigurationService {
         const addresses = elementKeys
             .map(key => elementDataMap[key])
             .filter(data => data && data !== '0x')
-            .map(data => { try { return getAddress(slice(data, 0, 20)); } catch (decodeError) { console.warn(`${logPrefix} Failed address decode: ${data}`, decodeError); return null; } })
+            .map(data => { try { return getAddress(slice(data, 0, 20)); } catch { return null; } })
             .filter(address => address !== null);
         return addresses;
     } catch (error) { console.error(`${logPrefix} Error fetching owned assets:`, error); return []; }
   }
 
   /**
-   * Resolves token assignments to image URLs and applies them to CanvasManagers.
-   * @param {object} assignments - Maps layerId to assignment data.
-   * @param {object} managers - Maps layerId to CanvasManager instances.
-   * @param {object} defaultLayerAssets - Maps layerId to default image sources.
-   * @param {object} demoAssetMap - Maps demo keys to image sources.
+   * Resolves token assignments to image URLs by fetching LSP4 metadata and applies them to the provided CanvasManagers.
+   * Handles different assignment types (demo keys, owned addresses, direct URLs).
+   * Uses the ConfigurationService's internal public client for metadata resolution.
+   *
+   * @param {object} assignments - An object mapping layerId ('1', '2', '3') to assignment data (e.g., 'DEMO_LAYER_X', '0x...', { type: 'owned', iconUrl: '...' }, 'http://...').
+   * @param {object} managers - An object mapping layerId ('1', '2', '3') to initialized CanvasManager instances.
+   * @param {object} defaultLayerAssets - An object mapping layerId ('1', '2', '3') to default image source URLs used as fallback.
+   * @param {object} demoAssetMap - An object mapping demo keys (e.g., 'DEMO_LAYER_1') to their image source URLs.
+   * @returns {Promise<void>} A promise that resolves when all image applications have been attempted.
    */
   async applyTokenAssignmentsToManagers(assignments, managers, defaultLayerAssets, demoAssetMap) {
     const logPrefix = "[CS applyTokenAssignmentsToManagers]";
-    if (!managers || !assignments || !defaultLayerAssets || !demoAssetMap) { console.warn(`${logPrefix} Skipped (missing inputs)`); return; }
+    if (!this.checkReadyForRead()) {
+      console.warn(`${logPrefix} Aborted: Client not ready.`);
+      return;
+    }
+    if (!managers || !assignments || !defaultLayerAssets || !demoAssetMap) {
+      console.warn(`${logPrefix} Aborted: Missing required arguments.`);
+      return;
+    }
 
     const layerIdsToProcess = ['1', '2', '3'];
     const promises = layerIdsToProcess.map(async (layerId) => {
         const manager = managers[layerId];
-        if (!manager) { console.warn(`${logPrefix} Missing manager for L${layerId}`); return; }
+        if (!manager) {
+            console.warn(`${logPrefix} L${layerId}: No manager found.`);
+            return;
+        }
 
         const assignmentValue = assignments[layerId];
         const defaultAssetSrc = defaultLayerAssets[layerId];
-        let imageSourceToApply = defaultAssetSrc;
+        let imageSourceToApply = defaultAssetSrc; // Default to fallback
 
         try {
             if (typeof assignmentValue === 'string' && assignmentValue.startsWith("DEMO_LAYER_")) {
                 const demoAssetSource = demoAssetMap[assignmentValue];
                 if (demoAssetSource) { imageSourceToApply = demoAssetSource; }
+                else { console.warn(`${logPrefix} L${layerId}: Demo key '${assignmentValue}' not found in map.`); }
             } else if (typeof assignmentValue === 'object' && assignmentValue?.type === 'owned' && assignmentValue.iconUrl) {
                 imageSourceToApply = assignmentValue.iconUrl;
             } else if (typeof assignmentValue === 'string' && isAddress(assignmentValue)) {
@@ -578,30 +757,41 @@ class ConfigurationService {
                         }
                     }
                     if (resolvedImageUrl) { imageSourceToApply = resolvedImageUrl; }
-                } catch (error) { console.error(`${logPrefix} L${layerId}: Error resolving LSP4:`, error); }
+                    else { console.warn(`${logPrefix} L${layerId}: Could not resolve image URL from LSP4 metadata for ${assignmentValue}`); }
+                } catch (error) { console.error(`${logPrefix} L${layerId}: Error resolving LSP4 for ${assignmentValue}:`, error); }
             } else if (typeof assignmentValue === 'string' && (assignmentValue.includes('/') || assignmentValue.startsWith('data:'))) {
                  imageSourceToApply = assignmentValue;
+            } else if (assignmentValue) {
+                 console.warn(`${logPrefix} L${layerId}: Unhandled assignment type or value:`, assignmentValue);
             }
 
+            // Apply the determined image source
             if (manager.setImage) {
                 if (imageSourceToApply) {
                     await manager.setImage(imageSourceToApply);
                 } else {
-                    console.error(`${logPrefix} L${layerId}: CRITICAL - imageSourceToApply is null/undefined! Reverting.`);
+                    console.warn(`${logPrefix} L${layerId}: imageSourceToApply is null/undefined, applying default: ${defaultAssetSrc}`);
                     if (defaultAssetSrc) await manager.setImage(defaultAssetSrc);
                 }
-            } else { console.warn(`${logPrefix} manager.setImage missing for L${layerId}`); }
+            } else {
+                 console.warn(`${logPrefix} L${layerId}: manager.setImage is not available.`);
+            }
 
         } catch (error) {
-            console.error(`[CS applyTokens] L${layerId}: ERROR processing assignment '${JSON.stringify(assignmentValue)}': `, error);
-            try { if (defaultAssetSrc && manager.setImage) await manager.setImage(defaultAssetSrc); }
-            catch (revertError) { console.error(`${logPrefix} Failed to revert L${layerId} to default:`, revertError); }
+            console.error(`${logPrefix} L${layerId}: ERROR processing assignment '${JSON.stringify(assignmentValue)}': `, error);
+            try {
+                if (defaultAssetSrc && manager.setImage) {
+                    console.warn(`${logPrefix} L${layerId}: Reverting to default image due to error.`);
+                    await manager.setImage(defaultAssetSrc);
+                }
+            }
+            catch (revertError) { console.error(`${logPrefix} Failed to revert L${layerId} to default after error:`, revertError); }
         }
     });
 
     await Promise.all(promises);
+    // console.log(`${logPrefix} All token assignment applications attempted.`); // Optional: Keep if needed
   }
-
 }
 
 export default ConfigurationService;

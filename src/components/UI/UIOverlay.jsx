@@ -1,7 +1,7 @@
-// src/components/UI/UIOverlay.jsx
 import React, { useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
 
+// Import Child Components
 import TopRightControls from '../Toolbars/TopRightControls';
 import VerticalToolbar from '../Toolbars/VerticalToolbar';
 import PanelWrapper from '../Panels/PanelWrapper';
@@ -25,18 +25,28 @@ const MemoizedAudioStatusIcon = React.memo(AudioStatusIcon);
 const MemoizedPresetSelectorBar = React.memo(PresetSelectorBar);
 
 /**
- * Renders the currently active panel based on uiState.activePanel.
+ * Renders the currently active side panel based on uiState.activePanel.
+ * @param {object} props - Component props.
+ * @param {object} props.uiState - State object from useUIState hook.
+ * @param {object} props.audioState - State object from useAudioVisualizer hook.
+ * @param {object} props.configData - Relevant configuration data.
+ * @param {object} props.actions - Callback functions for interactions.
+ * @returns {React.ReactElement | null} The rendered panel or null.
  */
 const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
     const { activePanel, animatingPanel, activeLayerTab, closePanel, setActiveLayerTab } = uiState;
     const { isAudioActive, audioSettings, analyzerData, setIsAudioActive, setAudioSettings } = audioState;
+    // Destructure only necessary props from configData for this component
+    // Removed 'isVisitor' as it was unused here. 'canSave' implicitly handles visitor state for readOnly.
     const { layerConfigs, blendModes, notifications, savedReactions, canSave, isPreviewMode } = configData;
     const { onLayerConfigChange, onMarkNotificationRead, onClearAllNotifications, onSaveReaction, onPreviewEffect, onTokenApplied } = actions;
 
+    // Callback to handle closing the Token Selector overlay
     const handleTokenSelectorClose = useCallback(() => {
         closePanel();
     }, [closePanel]);
 
+    // Render the appropriate panel based on the activePanel state
     switch (activePanel) {
         case "controls":
             return (
@@ -48,7 +58,7 @@ const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
                         onToggleMinimize={closePanel}
                         activeTab={activeLayerTab}
                         onTabChange={setActiveLayerTab}
-                        readOnly={!canSave}
+                        readOnly={!canSave} // Panels are read-only if user cannot save
                     />
                 </PanelWrapper>
             );
@@ -64,7 +74,7 @@ const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
                 </PanelWrapper>
             );
         case "events":
-            return !isPreviewMode ? (
+            return !isPreviewMode ? ( // Don't show events panel in preview mode
                 <PanelWrapper key="events-panel" className={animatingPanel ? "animating" : ""}>
                     <EventsPanel
                         onSaveReaction={onSaveReaction}
@@ -76,7 +86,7 @@ const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
                 </PanelWrapper>
             ) : null;
         case "save":
-            return !isPreviewMode ? (
+            return !isPreviewMode ? ( // Don't show save panel in preview mode
                 <PanelWrapper key="save-panel" className={animatingPanel ? "animating" : ""}>
                     <EnhancedSavePanel onClose={closePanel} />
                 </PanelWrapper>
@@ -95,32 +105,37 @@ const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
                 </PanelWrapper>
             );
         case "tokens":
-            return !isPreviewMode ? (
+            return !isPreviewMode ? ( // Don't show token selector in preview mode
                 <TokenSelectorOverlay
                     key="token-selector-overlay"
                     isOpen={activePanel === "tokens"}
                     onClose={handleTokenSelectorClose}
                     onTokenApplied={onTokenApplied}
-                    readOnly={!canSave}
+                    readOnly={!canSave} // Token selector is read-only if user cannot save
                 />
             ) : null;
         default:
-            return null;
+            return null; // No panel active
     }
 };
 
 /**
- * Renders overlays like Info and Whitelist.
+ * Renders modal-like overlays (Info, Whitelist).
+ * @param {object} props - Component props.
+ * @param {object} props.uiState - State object from useUIState hook.
+ * @param {object} props.configData - Relevant configuration data.
+ * @returns {React.ReactElement} Rendered overlays.
  */
 const OverlayRenderer = ({ uiState, configData }) => {
     const { infoOverlayOpen, whitelistPanelOpen, toggleInfoOverlay, toggleWhitelistPanel } = uiState;
-    const { isParentAdmin } = configData;
+    const { isParentAdmin } = configData; // Check if user is admin for whitelist
 
     return (
         <>
             {infoOverlayOpen && (
                 <InfoOverlay isOpen={infoOverlayOpen} onClose={toggleInfoOverlay} />
             )}
+            {/* Only render Whitelist Panel if the user is admin */}
             {whitelistPanelOpen && isParentAdmin && (
                 <WhitelistCollectionsPanel isOpen={whitelistPanelOpen} onClose={toggleWhitelistPanel} />
             )}
@@ -129,8 +144,15 @@ const OverlayRenderer = ({ uiState, configData }) => {
 };
 
 /**
- * UIOverlay component: Renders the main user interface elements,
- * including toolbars, panels, and overlays, based on the provided state.
+ * UIOverlay component: The main container for all user interface elements,
+ * coordinating the display of toolbars, panels, and overlays.
+ * @param {object} props - Component props.
+ * @param {boolean} props.shouldShowUI - Whether the base conditions for showing UI are met.
+ * @param {object} props.uiState - State object from useUIState hook.
+ * @param {object} props.audioState - State object from useAudioVisualizer hook.
+ * @param {object} props.configData - Relevant configuration data.
+ * @param {object} props.actions - Callback functions for interactions.
+ * @returns {React.ReactElement} The rendered UI overlay structure.
  */
 function UIOverlay(props) {
   const {
@@ -141,6 +163,7 @@ function UIOverlay(props) {
     actions,
   } = props;
 
+  // Destructure states and actions for clarity
   const {
     isUiVisible, activePanel, openPanel, toggleInfoOverlay,
     toggleWhitelistPanel, toggleUiVisibility
@@ -152,51 +175,54 @@ function UIOverlay(props) {
   } = configData;
   const { onEnhancedView, onPresetSelect } = actions;
 
+  // Determine if the preset selector bar should be visible
   const showPresetBar = useMemo(() => shouldShowUI && isUiVisible && !activePanel, [shouldShowUI, isUiVisible, activePanel]);
 
-  // UPDATED: Class for the main UI container that holds hideable elements
+  // Dynamic class for the container holding hideable UI elements
   const mainUiContainerClass = `ui-elements-container ${shouldShowUI && isUiVisible ? "visible" : "hidden-by-opacity"}`;
 
   return (
-    // Use a fragment as the outermost wrapper for UI elements
     <>
-      {/* TopRightControls is always rendered IF shouldShowUI is true. Its internal state is managed by isUiVisible prop. */}
+      {/* Top Right Controls: Always rendered if base condition met, visibility managed internally */}
       {shouldShowUI && (
         <MemoizedTopRightControls
-          showWhitelist={isParentAdmin} // This button will be hidden by TopRightControls if !isUiVisible
-          showInfo={true}              // This button will be hidden by TopRightControls if !isUiVisible
-          showToggleUI={true}          // This is the toggle button, always conceptually present
-          showEnhancedView={true}      // This button will be hidden by TopRightControls if !isUiVisible
+          showWhitelist={isParentAdmin}
+          showInfo={true}
+          showToggleUI={true}
+          showEnhancedView={true}
           onWhitelistClick={toggleWhitelistPanel}
           onInfoClick={toggleInfoOverlay}
           onToggleUI={toggleUiVisibility}
           onEnhancedView={onEnhancedView}
-          isUiVisible={isUiVisible} // Pass isUiVisible for TopRightControls internal logic
+          isUiVisible={isUiVisible}
         />
       )}
 
-      {/* This container holds elements that will fade in/out based on isUiVisible */}
+      {/* Container for UI elements that fade in/out */}
       <div className={mainUiContainerClass}>
-        {/* Only render these children if shouldShowUI is true AND isUiVisible is true */}
         {shouldShowUI && isUiVisible && (
           <>
+            {/* Bottom Right Icons */}
             <div className="bottom-right-icons">
               <MemoizedAudioStatusIcon isActive={isAudioActive} onClick={() => openPanel('audio')} />
               <MemoizedGlobalMIDIStatus />
             </div>
 
+            {/* Preview Mode Indicator */}
             {isPreviewMode && (
               <div className="preview-mode-indicator">
                 <span>👁️</span> Preview Mode
               </div>
             )}
 
+            {/* Left Vertical Toolbar */}
             <MemoizedVerticalToolbar
               activePanel={activePanel}
               setActivePanel={openPanel}
               notificationCount={unreadCount}
             />
 
+            {/* Renders the currently selected side panel */}
             <ActivePanelRenderer
                 uiState={uiState}
                 audioState={audioState}
@@ -204,6 +230,7 @@ function UIOverlay(props) {
                 actions={actions}
             />
 
+            {/* Preset Selector Bar */}
             {showPresetBar && (
               <MemoizedPresetSelectorBar
                 savedConfigList={savedConfigList}
@@ -216,7 +243,7 @@ function UIOverlay(props) {
         )}
       </div>
 
-      {/* Overlays are rendered outside the mainUiContainerClass if their visibility is independent */}
+      {/* Overlays (Info, Whitelist) */}
       {shouldShowUI && (
         <OverlayRenderer uiState={uiState} configData={configData} />
       )}
@@ -224,7 +251,7 @@ function UIOverlay(props) {
   );
 }
 
-// --- PropType Definitions (remain unchanged) ---
+// --- PropType Definitions ---
 const UIStatePropTypes = PropTypes.shape({
   isUiVisible: PropTypes.bool.isRequired,
   infoOverlayOpen: PropTypes.bool.isRequired,
@@ -261,9 +288,10 @@ const ConfigDataPropTypes = PropTypes.shape({
   canSave: PropTypes.bool.isRequired,
   isParentAdmin: PropTypes.bool.isRequired,
   isProfileOwner: PropTypes.bool.isRequired,
-  isVisitor: PropTypes.bool.isRequired,
+  isVisitor: PropTypes.bool.isRequired, // Keep this prop definition even if unused locally
   isPreviewMode: PropTypes.bool.isRequired,
   unreadCount: PropTypes.number.isRequired,
+  currentProfileAddress: PropTypes.string, // Added this prop
 });
 
 const ActionsPropTypes = PropTypes.shape({

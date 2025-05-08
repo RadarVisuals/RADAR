@@ -354,6 +354,19 @@
   box-shadow: var(--shadow-primary-md);
 }
 
+/* --- ADDED: Styles for read-only tokens --- */
+.token-item.read-only {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.token-item.read-only:hover {
+  border-color: var(--color-border); /* Prevent hover border change */
+  background: var(--color-primary-a05); /* Prevent hover background change */
+  transform: none; /* Prevent hover transform */
+  box-shadow: none; /* Prevent hover shadow */
+}
+/* --- END ADDED --- */
+
 .token-image-container {
   width: 100%;
   height: 0;
@@ -379,6 +392,9 @@
 .token-item:hover .token-image {
   transform: scale(1.05);
 }
+.token-item.read-only:hover .token-image {
+  transform: none; /* Prevent image scale on hover if read-only */
+}
 
 /* Token name is hidden in the UI by design */
 .token-name {
@@ -391,6 +407,24 @@
   color: var(--color-text-muted);
   font-style: italic;
 }
+
+/* --- UPDATED: Visitor Banner Styling (Removed icon styles) --- */
+.visitor-banner {
+  /* Removed display: flex, align-items, gap */
+  text-align: center; /* Center the text */
+  padding: var(--space-sm) var(--space-md); /* Keep padding */
+  margin: var(--space-md); /* Apply margin all around */
+  border-radius: var(--radius-md); /* Keep border-radius */
+  background: var(--color-warning-a10); /* Keep warning colors */
+  border: 1px solid var(--color-warning-a30);
+  color: var(--color-warning-a90);
+  font-size: var(--font-size-sm); /* Keep font size */
+  font-weight: 500; /* Keep font weight */
+  flex-shrink: 0; /* Keep shrinking behavior */
+  box-shadow: var(--shadow-sm); /* Add a subtle shadow */
+}
+/* Removed .visitor-banner span[aria-hidden="true"] rule */
+/* --- END UPDATED --- */
 
 @keyframes pulse {
   0% { opacity: 0.7; }

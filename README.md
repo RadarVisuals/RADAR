@@ -186,7 +186,3 @@ Don't forget to manually add the application because you will need to allow foll
 ---
 **A DETAILED VIDEO DEMO WILL FOLLOW SHORTLY.**
 ---
-
----
-**725 PROBLEMS BUT MY DAPP AIN'T ONE. (But my coding might have some issues tho. Thanks for checking out RADAR!)**
----
