@@ -9,7 +9,7 @@
 ---
 
 <p align="center">
-  <a href="https://youtu.be/qO70c37fP9s" target="_blank" rel="noopener noreferrer">
+  <a href="https://www.youtube.com/watch?v=eFxECO9I888&t=327s" target="_blank" rel="noopener noreferrer">
     <img src="./src/assets/branding/radar_demo_thumbnail.png" alt="Watch the RADAR Demo Video!" width="600" style="max-width: 100%;">
   </a>
   <br/>
