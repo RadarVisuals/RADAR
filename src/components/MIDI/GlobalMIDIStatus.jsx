@@ -1,66 +1,54 @@
 // src/components/MIDI/GlobalMIDIStatus.jsx
-import React from 'react'; // Removed unused useState, useEffect
+import React from 'react';
 import { useMIDI } from '../../context/MIDIContext';
 import './MIDIStyles/GlobalMIDIStatus.css';
 import { midiIcon } from '../../assets';
 
 /**
- * GlobalMIDIStatus: Displays the current MIDI connection status (Disconnected, Connecting, Connected, Error)
- * as an icon in the toolbar. Allows initiating connection, retrying on error, or toggling
- * the mini MIDI monitor when connected. Also shows a small indicator when MIDI learn mode is active.
+ * GlobalMIDIStatus: Displays the current MIDI connection status.
+ * Allows initiating connection, disconnecting, or retrying on error.
+ * Also shows a small indicator when MIDI learn mode is active.
  */
 const GlobalMIDIStatus = () => {
   const {
     isConnected,
     isConnecting,
     connectMIDI,
+    disconnectMIDI, // Get disconnectMIDI from context
     error: midiError,
-    midiMonitorData,
     midiLearning,
     learningLayer,
-    setShowMidiMonitor,
-    showMidiMonitor
   } = useMIDI();
 
   const hasCriticalError = !!midiError;
 
   const handleConnectionClick = () => {
     if (isConnected) {
-      setShowMidiMonitor(!showMidiMonitor);
-      return;
+      // If connected, disconnect MIDI entirely
+      disconnectMIDI(true); // Pass true for a user-initiated full disconnect
+    } else if (!isConnecting) {
+      // If disconnected and not currently connecting, try to connect
+      connectMIDI()
+        .catch(err => {
+          console.error("[GlobalMIDIStatus] connectMIDI promise rejected:", err);
+        });
     }
-    if (isConnecting) {
-      // Connection already in progress via context
-      return;
-    }
-
-    connectMIDI()
-      .then((access) => {
-        if (!access) {
-           // Log removed - context state reflects connection success/failure
-        }
-      })
-      .catch(err => {
-        // Keep error log for critical API failure
-        console.error("[GlobalMIDIStatus] connectMIDI promise rejected:", err);
-      });
+    // If isConnecting, do nothing (connection already in progress)
   };
 
-  const buttonTitle = hasCriticalError ? `MIDI Error: ${midiError?.message || 'Click to retry'}`
+  const buttonTitle = hasCriticalError ? `MIDI Error: ${midiError?.message || 'Click to retry connection'}`
                      : isConnecting ? "Connecting MIDI..."
-                     : isConnected ? "MIDI Connected - Click to toggle monitor"
-                     : "MIDI Disconnected - Click to connect";
+                     : isConnected ? "MIDI Connected - Click to Disconnect"
+                     : "MIDI Disconnected - Click to Connect";
 
   const buttonClass = `toolbar-icon ${hasCriticalError ? 'error' : isConnected ? 'connected' : 'disconnected'} ${isConnecting ? 'connecting' : ''}`;
-
-  const recentMessages = midiMonitorData.slice(-5);
 
   return (
     <div className="global-midi-status">
       <button
         className={buttonClass}
         onClick={handleConnectionClick}
-        disabled={isConnecting}
+        disabled={isConnecting && !isConnected} // Disable only if connecting and not yet connected
         title={buttonTitle}
       >
         {hasCriticalError ? (
@@ -79,31 +67,6 @@ const GlobalMIDIStatus = () => {
           ) : (
             <span>Mapping: Layer {learningLayer}</span>
           )}
-        </div>
-      )}
-
-      {isConnected && showMidiMonitor && (
-        <div className="mini-midi-monitor">
-          <div className="monitor-header">
-            <h4>Recent MIDI Activity</h4>
-            <button
-              className="close-monitor"
-              onClick={() => setShowMidiMonitor(false)}
-            >×</button>
-          </div>
-          <div className="monitor-content">
-            {recentMessages.length === 0 ? (
-              <div className="no-activity">No recent MIDI activity</div>
-            ) : (
-              recentMessages.map((msg, index) => (
-                <div key={index} className="midi-message">
-                  <span className="msg-type">{msg.type}</span>
-                  <span className="msg-channel">Ch {msg.channel + 1}</span>
-                  <span className="msg-data">{msg.data1}:{msg.data2}</span>
-                </div>
-              ))
-            )}
-          </div>
         </div>
       )}
     </div>

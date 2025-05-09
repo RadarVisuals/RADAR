@@ -1,3 +1,4 @@
+// src/components/Panels/EnhancedControlPanel.jsx
 import React, { useCallback } from "react";
 import PropTypes from "prop-types";
 import Panel from "./Panel";
@@ -59,6 +60,7 @@ const EnhancedControlPanel = ({
   const { isVisitor, isParentProfile } = useConfig();
   const {
     isConnected: midiConnected,
+    // disconnectMIDI, // No longer needed here if global icon handles it
     midiLearning,
     learningLayer,
     selectedChannel,
@@ -72,11 +74,11 @@ const EnhancedControlPanel = ({
     clearAllMappings,
     setChannelFilter,
     clearMIDIMonitor,
-    midiMap, // Use the centrally managed midiMap from MIDIContext/ConfigContext
+    midiMap, 
     layerMappings,
   } = useMIDI();
 
-  const activeLayer = tabToLayerIdMap[activeTab] || 1; // Default to layer 1 if tab is invalid
+  const activeLayer = tabToLayerIdMap[activeTab] || 1;
   const config = layerConfigs?.[activeLayer] || {};
 
   const handleEnterMIDILearnMode = useCallback(
@@ -85,7 +87,6 @@ const EnhancedControlPanel = ({
       if (!midiConnected) { alert("Please connect a MIDI device first."); return; }
       const isValidParam = sliderParams.some((p) => p.prop === paramName);
       if (!isValidParam) {
-          // console.error removed - check prevents invalid calls
           return;
       }
       startMIDILearn(paramName, activeLayer);
@@ -111,7 +112,7 @@ const EnhancedControlPanel = ({
 
   const displayMidiMapping = useCallback(
     (layer, param) => {
-      const mapping = midiMap?.[layer]?.[param]; // Use midiMap from context
+      const mapping = midiMap?.[layer]?.[param];
       if (!mapping) return "None";
       const channel = mapping.channel !== undefined ? ` (Ch ${mapping.channel + 1})` : "";
       if (mapping.type === "cc") return `CC ${mapping.number}${channel}`;
@@ -119,7 +120,7 @@ const EnhancedControlPanel = ({
       if (mapping.type === "pitchbend") return `Pitch${channel}`;
       return "Unknown";
     },
-    [midiMap], // Depend on midiMap from context
+    [midiMap],
   );
 
   const displayLayerMidiMapping = useCallback(
@@ -185,7 +186,7 @@ const EnhancedControlPanel = ({
         {midiConnected && (
           <div className="layer-mappings">
             <div className="layer-mapping-grid">
-              {[3, 2, 1].map((layer) => ( // Iterate 3, 2, 1 to match visual order (Top, Middle, Bottom)
+              {[3, 2, 1].map((layer) => ( 
                 <div key={`layer_${layer}`} className={`layer-mapping-item ${activeLayer === layer ? "active" : ""}`} >
                   <div className="layer-mapping-label">Layer {layer}</div>
                   <div className="layer-mapping-controls">
@@ -241,16 +242,22 @@ const EnhancedControlPanel = ({
           </div>
         </div>
 
-        {midiConnected && (
-          <div className="midi-tools">
-            <button className="midi-monitor-btn" onClick={handleToggleMonitor}> {showMidiMonitor ? "Hide Monitor" : "Show Monitor"} </button>
-            <button className="midi-reset-btn" onClick={handleResetAllMappings} title="Reset all MIDI mappings" > Reset Mappings </button>
-            <select className="midi-channel-select" value={selectedChannel} onChange={handleMidiChannelChange} title="Filter MIDI messages by channel" >
-              <option value="0">All Channels</option>
-              {[...Array(16)].map((_, i) => ( <option key={i + 1} value={i + 1}> Channel {i + 1} </option> ))}
-            </select>
-          </div>
-        )}
+        <div className="midi-tools">
+          {midiConnected ? (
+            <>
+              <button className="midi-monitor-btn" onClick={handleToggleMonitor}> {showMidiMonitor ? "Hide Monitor" : "Show Monitor"} </button>
+              <button className="midi-reset-btn" onClick={handleResetAllMappings} title="Reset all MIDI mappings" > Reset Mappings </button>
+              <select className="midi-channel-select" value={selectedChannel} onChange={handleMidiChannelChange} title="Filter MIDI messages by channel" >
+                <option value="0">All Channels</option>
+                {[...Array(16)].map((_, i) => ( <option key={i + 1} value={i + 1}> Channel {i + 1} </option> ))}
+              </select>
+              {/* The Disconnect MIDI button can be removed from here if the global icon is the sole disconnect point */}
+              {/* <button className="midi-disconnect-btn" onClick={handleDisconnectMIDI} title="Disconnect MIDI device">Disconnect MIDI</button> */}
+            </>
+          ) : (
+            <p className="midi-disconnected-message">MIDI Disconnected. Connect via global status icon.</p>
+          )}
+        </div>
       </div>
 
       {midiConnected && showMidiMonitor && (

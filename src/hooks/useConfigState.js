@@ -1,3 +1,4 @@
+// src/hooks/useConfigState.js
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useUpProvider } from "../context/UpProvider";
 import ConfigurationService from "../services/ConfigurationService";
@@ -7,6 +8,8 @@ import {
   RADAR_MIDI_MAP_KEY,
 } from "../config/global-config";
 import { stringToHex } from "viem";
+// --- IMPORT THE FALLBACK CONFIG ---
+import fallbackConfig from "../config/fallback-config.js"; // Use the new filename
 
 // Helper functions (assuming they are defined elsewhere or replace with actual implementations)
 const transformStringListToObjects = (list) => {
@@ -30,11 +33,22 @@ const ensureCompleteLayerConfig = (layerConfig, defaultLayerConfig) => {
     }
     return completeConfig;
 };
+
+// Neutral Defaults, fallback-config will override
+
 const getDefaultLayerConfigTemplate = () => ({
-    enabled: true, blendMode: 'normal', opacity: 1.0, size: 1.0,
-    speed: 0.01, drift: 0, driftSpeed: 0.1, angle: 0,
-    xaxis: 0, yaxis: 0, direction: 1,
-    driftState: { x: 0, y: 0, phase: Math.random() * Math.PI * 2, enabled: false },
+  enabled: true,        // Sensible default
+  blendMode: 'normal',  // Sensible default
+  opacity: 1.0,         // Sensible default
+  size: 1.0,            // Neutral default 
+  speed: 0.0,           // Neutral default
+  drift: 0,             // Neutral default
+  driftSpeed: 0.0,      // Neutral default
+  angle: 0,             // Neutral default
+  xaxis: 0,             // Neutral default
+  yaxis: 0,             // Neutral default
+  direction: 1,         // Sensible default
+  driftState: { x: 0, y: 0, phase: Math.random() * Math.PI * 2, enabled: false }, // Keep random phase
 });
 
 
@@ -98,7 +112,7 @@ const useConfigState = (currentProfileAddress) => {
   const [tokenAssignments, setTokenAssignments] = useState({});
   const [savedReactions, setSavedReactions] = useState({});
   const [midiMap, setMidiMap] = useState({});
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true); 
   const [loadError, setLoadError] = useState(null);
   const [isInitiallyResolved, setIsInitiallyResolved] = useState(false);
   const [configLoadNonce, setConfigLoadNonce] = useState(0);
@@ -138,54 +152,82 @@ const useConfigState = (currentProfileAddress) => {
     (loadedData, reason = "unknown", loadedForAddress, targetName = null) => {
       setLoadError(null);
       const completionMarker = loadedForAddress;
+      const defaultLayerTemplate = getDefaultLayerConfigTemplate();
+
+      let finalName = null;
+      let finalLayers = {};
+      let finalTokens = {};
+      let finalReactions = {};
+      let finalMidi = {};
+      let appliedFallbackVisuals = false;
+      let shouldIncrementNonce = false;
+
+      const isInitialDisplayFallbackReason = reason === 'initial_no_address_display_fallback' || reason === 'initial_service_not_ready_display_fallback';
 
       if (loadedData?.error) {
         setLoadError(loadedData.error);
         addToast(`Error loading configuration: ${loadedData.error}`, 'error');
-        setLayerConfigs({}); setTokenAssignments({});
-        setSavedReactions({}); setMidiMap({});
-        setCurrentConfigName(null); setHasPendingChanges(false);
-      } else if (loadedData) {
-        const finalName = loadedData.config?.name ?? targetName ?? null;
-        const newLayers = loadedData.config?.layers || {};
-        const newTokens = loadedData.config?.tokenAssignments || {};
-        const newReactions = loadedData.reactions || {};
-        const newMidi = loadedData.midi || {};
-        const defaultLayerTemplate = getDefaultLayerConfigTemplate();
-        const completeLayers = {};
+        finalLayers = {}; finalTokens = {}; finalName = null;
+        finalReactions = {}; finalMidi = {};
+      } else if (loadedData?.config) {
+        finalName = loadedData.config.name ?? targetName ?? "Unnamed Preset";
+        const loadedLayers = loadedData.config.layers || {};
         for (const layerId of ['1', '2', '3']) {
-            completeLayers[layerId] = ensureCompleteLayerConfig(newLayers[layerId], defaultLayerTemplate);
+            finalLayers[layerId] = ensureCompleteLayerConfig(loadedLayers[layerId], defaultLayerTemplate);
         }
-        setLayerConfigs(completeLayers);
-        setTokenAssignments(newTokens);
-        setSavedReactions(newReactions);
-        setMidiMap(newMidi);
-        if (finalName !== currentConfigName) setCurrentConfigName(finalName);
-        setHasPendingChanges(false);
-        setConfigLoadNonce(prevNonce => prevNonce + 1);
-      } else if (loadedData === null && (reason === "address_cleared" || reason === "no_target_address")) {
-          setLayerConfigs({}); setTokenAssignments({});
-          setSavedReactions({}); setMidiMap({});
-          setCurrentConfigName(null); setHasPendingChanges(false);
-          if (reason === "address_cleared") {
-              setConfigLoadNonce(0); setIsInitiallyResolved(false);
-              initialLoadCompletedForRef.current = undefined; setIsLoading(true);
-              return;
-          }
-      } else {
-          if (reason === 'initial' || reason === 'load:default' || reason === 'service_not_ready_initial') {
-              setLayerConfigs({}); setTokenAssignments({});
-              setSavedReactions({}); setMidiMap({});
-              setCurrentConfigName(null); setHasPendingChanges(false);
-          }
+        finalTokens = loadedData.config.tokenAssignments || {};
+        finalReactions = loadedData.reactions || {};
+        finalMidi = loadedData.midi || {};
+        shouldIncrementNonce = true;
+      } else if (reason === "address_cleared") {
+          finalLayers = {}; finalTokens = {}; finalReactions = {}; finalMidi = {};
+          finalName = null;
+          setConfigLoadNonce(0); setIsInitiallyResolved(false);
+          initialLoadCompletedForRef.current = undefined; setIsLoading(true);
+          return;
+      } else { // Fallback case
+        appliedFallbackVisuals = true;
+        finalName = "Fallback";
+        const fallbackLayersData = fallbackConfig.layers || {};
+        for (const layerId of ['1', '2', '3']) {
+            finalLayers[layerId] = ensureCompleteLayerConfig(fallbackLayersData[layerId], defaultLayerTemplate);
+        }
+        finalTokens = fallbackConfig.tokenAssignments || {};
+        finalReactions = loadedData?.reactions || {};
+        finalMidi = loadedData?.midi || {};
+        console.log(`[useConfigState] Applying fallback visuals. Reason: ${reason}`);
+
+        if ( (loadedForAddress && !isInitialDisplayFallbackReason) || (configLoadNonce === 0 && !isInitialDisplayFallbackReason) ) {
+            shouldIncrementNonce = true;
+        } else {
+            console.log(`[useConfigState] Fallback applied but nonce not incremented. Reason: ${reason}, LoadedFor: ${loadedForAddress}, Nonce: ${configLoadNonce}`);
+        }
       }
 
-      if (!isInitiallyResolved) {
-          setIsInitiallyResolved(true);
-          initialLoadCompletedForRef.current = completionMarker;
+      setLayerConfigs(finalLayers);
+      setTokenAssignments(finalTokens);
+      setSavedReactions(finalReactions);
+      setMidiMap(finalMidi);
+      if (finalName !== currentConfigName) setCurrentConfigName(finalName);
+      setHasPendingChanges(false);
+
+      if (shouldIncrementNonce) {
+          setConfigLoadNonce(prevNonce => prevNonce + 1);
+          console.log(`[useConfigState] Incremented configLoadNonce. Reason: ${loadedData?.config ? 'Loaded Config' : (appliedFallbackVisuals && shouldIncrementNonce) ? 'Applied Fallback (with nonce)' : 'No Change/Error'}`);
+      }
+
+      if ((completionMarker !== undefined && completionMarker !== null) || reason === 'no_target_address_performLoad') {
+          if (!isInitiallyResolved) {
+            setIsInitiallyResolved(true);
+          }
+          if (completionMarker !== undefined) {
+            initialLoadCompletedForRef.current = completionMarker;
+          }
+      } else if (isInitialDisplayFallbackReason && !isInitiallyResolved) {
+          console.log("[useConfigState] Initial display fallback applied, isLoading=false, isInitiallyResolved remains false.");
       }
       setIsLoading(false);
-    }, [addToast, currentConfigName, isInitiallyResolved]);
+    }, [addToast, currentConfigName, isInitiallyResolved, configLoadNonce]); 
 
   // Load saved config list
   const loadSavedConfigList = useCallback(async () => {
@@ -214,18 +256,29 @@ const useConfigState = (currentProfileAddress) => {
     async (address, configName = null, customKey = null, reason = "manual") => {
       const service = configServiceRef.current;
       const isReady = !!service && isUpProviderStableForRead;
-      if (!isReady || !address) {
-          const errorMsg = !isReady ? "Service not ready." : "No address provided.";
-          addToast(errorMsg, "warning"); setIsLoading(false);
-          return { success: false, error: errorMsg };
+
+      if (!address) {
+          console.warn("[useConfigState performLoad] No address provided. Applying fallback.");
+          setIsLoading(false);
+          applyLoadedData(null, 'no_target_address_performLoad', null);
+          return { success: true, config: fallbackConfig };
       }
+      if (!isReady) {
+          addToast("Configuration service not ready. Applying fallback.", "warning");
+          setIsLoading(false);
+          applyLoadedData(null, 'service_not_ready_performLoad', address);
+          return { success: false, error: "Service not ready." };
+      }
+
       const targetName = configName || "Default";
       setIsLoading(true); setLoadError(null);
       try {
         const loadedData = await service.loadConfiguration(address, configName, customKey);
         applyLoadedData(loadedData, reason, address, targetName);
         const loadSuccessful = !loadedData?.error;
-        if (loadSuccessful) { loadSavedConfigList().catch(() => {}); }
+        if (loadSuccessful && loadedData.config) {
+            loadSavedConfigList().catch(() => {});
+        }
         return { success: loadSuccessful, error: loadedData?.error, config: loadedData?.config };
       } catch (error) {
         const errorMsg = error.message || "Unknown load error";
@@ -233,42 +286,53 @@ const useConfigState = (currentProfileAddress) => {
         return { success: false, error: errorMsg };
       }
     },
-    [isUpProviderStableForRead, applyLoadedData, addToast, loadSavedConfigList, configServiceRef] // Added configServiceRef
+    [isUpProviderStableForRead, applyLoadedData, addToast, loadSavedConfigList, configServiceRef]
   );
 
-  // --- Initial Load Effect ---
   useEffect(() => {
     const addressToLoad = currentProfileAddress;
     const serviceReady = configServiceInstanceReady;
+
     if (addressToLoad !== prevProfileAddressRef.current) {
+        console.log(`[useConfigState] Profile address changed: ${prevProfileAddressRef.current?.slice(0,6) || 'none'} -> ${addressToLoad?.slice(0,6) || 'none'}. Resetting state.`);
         prevProfileAddressRef.current = addressToLoad;
         initialLoadCompletedForRef.current = undefined;
         setIsInitiallyResolved(false);
-        setSavedConfigList([]); setConfigLoadNonce(0); setCurrentConfigName(null);
-        setLayerConfigs({}); setTokenAssignments({}); setSavedReactions({}); setMidiMap({});
-        setIsLoading(true); setLoadError(null);
+        setSavedConfigList([]);
+        setCurrentConfigName(null);
+        setLayerConfigs({});
+        setTokenAssignments({});
+        setSavedReactions({});
+        setMidiMap({});
+        setIsLoading(true);
+        setLoadError(null);
     }
+
     const hasLoadCompletedForThisAddress = initialLoadCompletedForRef.current === addressToLoad;
-    const shouldAttemptLoad = serviceReady && !hasLoadCompletedForThisAddress && isLoading;
-    if (shouldAttemptLoad) {
-        if (addressToLoad) {
-            performLoad(addressToLoad, null, null, "initial")
-                .then(({ success }) => {
-                    if (!success && !isInitiallyResolved) {
-                        setIsInitiallyResolved(true);
-                        initialLoadCompletedForRef.current = addressToLoad;
-                    }
-                })
-                .catch((err) => {
-                    addToast(`Failed initial configuration load: ${err.message}`, 'error');
-                    applyLoadedData({ error: err.message || "Unknown initial load error" }, "initial", addressToLoad);
-                });
+
+    if (isLoading) {
+        if (serviceReady) {
+            if (addressToLoad) {
+                if (!hasLoadCompletedForThisAddress) {
+                    console.log(`[useConfigState Initial Load] Address ${addressToLoad.slice(0,6)} present, service ready. Performing initial load.`);
+                    performLoad(addressToLoad, null, null, "initial");
+                } else {
+                    setIsLoading(false);
+                }
+            } else {
+                if (!isInitiallyResolved) {
+                    console.log("[useConfigState Initial Load] Service ready, no address, not resolved. Applying initial display fallback.");
+                    applyLoadedData(null, 'initial_no_address_display_fallback', null);
+                }
+            }
         } else {
-             applyLoadedData(null, "no_target_address", null);
+            if (!isInitiallyResolved) {
+                console.log("[useConfigState Initial Load] Service not ready, not resolved. Applying initial display fallback.");
+                applyLoadedData(null, 'initial_service_not_ready_display_fallback', null);
+            }
         }
-    } else if (isLoading && isInitiallyResolved && hasLoadCompletedForThisAddress) {
-         setIsLoading(false);
     }
+
   }, [currentProfileAddress, configServiceInstanceReady, performLoad, applyLoadedData, addToast, isLoading, isInitiallyResolved]);
 
 
@@ -303,8 +367,14 @@ const useConfigState = (currentProfileAddress) => {
         addToast(`Error saving preset: ${errorMsg}`, 'error'); setIsSaving(false);
         setSaveSuccess(false); return { success: false, error: errorMsg };
       }
-    }, [currentProfileAddress, layerConfigs, tokenAssignments, savedReactions, midiMap, addToast, loadSavedConfigList, isUpProviderStableForRead, configServiceRef],
+    },
+    
+    [
+        currentProfileAddress, layerConfigs, tokenAssignments, savedReactions, midiMap,
+        addToast, loadSavedConfigList, isUpProviderStableForRead, configServiceRef
+    ]
   );
+
   const saveGlobalReactions = useCallback(async () => {
      const service = configServiceRef.current;
      const addressToSave = currentProfileAddress;
@@ -328,7 +398,7 @@ const useConfigState = (currentProfileAddress) => {
         addToast(`Error saving reactions: ${errorMsg}`, 'error'); setIsSaving(false);
         setSaveSuccess(false); return { success: false, error: errorMsg };
      }
-  }, [currentProfileAddress, savedReactions, addToast, isUpProviderStableForRead, configServiceRef]);
+  }, [currentProfileAddress, savedReactions, addToast, isUpProviderStableForRead, configServiceRef]); 
 
   const saveGlobalMidiMap = useCallback(async () => {
      const service = configServiceRef.current;
@@ -353,7 +423,7 @@ const useConfigState = (currentProfileAddress) => {
         addToast(`Error saving MIDI map: ${errorMsg}`, 'error'); setIsSaving(false);
         setSaveSuccess(false); return { success: false, error: errorMsg };
      }
-  }, [currentProfileAddress, midiMap, addToast, isUpProviderStableForRead, configServiceRef]);
+  }, [currentProfileAddress, midiMap, addToast, isUpProviderStableForRead, configServiceRef]); 
 
   const deleteNamedConfig = useCallback(
     async (nameToDelete) => {
@@ -375,6 +445,7 @@ const useConfigState = (currentProfileAddress) => {
               setSaveSuccess(true);
               await loadSavedConfigList();
               if (currentConfigName === nameToDelete) {
+                // Load default (which will apply fallback if no default exists)
                 await performLoad(addressToDeleteFrom, null, null, `delete_cleanup:${nameToDelete}`);
               }
           } else { throw new Error(result.error || "Delete operation failed."); }
@@ -447,8 +518,8 @@ const useConfigState = (currentProfileAddress) => {
       saveVisualPreset: saveCurrentConfig,
       saveGlobalReactions,
       saveGlobalMidiMap,
-      loadNamedConfig, // Include stable function
-      loadDefaultConfig, // Include stable function
+      loadNamedConfig, 
+      loadDefaultConfig, 
       loadSavedConfigList,
       deleteNamedConfig,
       updateLayerConfig,
@@ -462,7 +533,7 @@ const useConfigState = (currentProfileAddress) => {
       tokenAssignments, savedReactions, midiMap, isLoading, loadError, isSaving,
       saveError, saveSuccess, hasPendingChanges, savedConfigList, isInitiallyResolved,
       configLoadNonce, saveCurrentConfig, saveGlobalReactions, saveGlobalMidiMap,
-      loadNamedConfig, loadDefaultConfig, // Include stable functions in dependency array
+      loadNamedConfig, loadDefaultConfig, 
       loadSavedConfigList, deleteNamedConfig, updateLayerConfig, updateTokenAssignment,
       updateSavedReaction, deleteSavedReaction, updateMidiMap, setHasPendingChanges
   ]);

@@ -58,7 +58,7 @@ export function MIDIProvider({ children }) {
 const {
   updateMidiMap: configUpdateMidiMap,
   configServiceRef,
-  configServiceInstanceReady, // Use the new, more accurate flag
+  configServiceInstanceReady,
 } = useConfig();
 const { accounts } = useUpProvider();
 const controllerAddress = useMemo(() => accounts?.[0], [accounts]);
@@ -302,6 +302,9 @@ const connectMIDI = useCallback(async () => {
     access.onstatechange = handleStateChange;
     setIsConnected(anyDeviceConnected);
     setIsConnecting(false); connectionInProgressRef.current = false;
+    if (!anyDeviceConnected) {
+        setError("No MIDI devices found or connected.");
+    }
     return access;
   } catch (err) {
     if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current); connectTimeoutRef.current = null;
@@ -309,24 +312,48 @@ const connectMIDI = useCallback(async () => {
     setMidiAccess(null); setIsConnected(false); setIsConnecting(false); connectionInProgressRef.current = false;
     return null;
   }
-}, [isConnected, setupMIDIListeners, handleStateChange, isConnecting]);
+}, [isConnected, setupMIDIListeners, handleStateChange, isConnecting]); // Added isConnecting
 
 const disconnectMIDI = useCallback((forceFullDisconnect = false) => {
   const isDevelopment = import.meta.env.DEV;
   const isFinalUnmount = isUnmountingRef.current && forceFullDisconnect;
   const currentMidiAccess = midiAccessRefForCallbacks.current;
+
+  console.log(`[MIDIContext] disconnectMIDI called. Force: ${forceFullDisconnect}, isDev: ${isDevelopment}, isUnmounting: ${isUnmountingRef.current}`);
+
   if (currentMidiAccess) {
-    if (currentMidiAccess.onstatechange) currentMidiAccess.onstatechange = null;
-    currentMidiAccess.inputs.forEach(input => { if (input.onmidimessage) { input.onmidimessage = null; } });
+    if (currentMidiAccess.onstatechange) {
+      currentMidiAccess.onstatechange = null;
+      console.log("[MIDIContext] Cleared onstatechange listener.");
+    }
+    currentMidiAccess.inputs.forEach(input => {
+      if (input.onmidimessage) {
+        input.onmidimessage = null;
+        console.log(`[MIDIContext] Cleared onmidimessage for input: ${input.id}`);
+      }
+    });
   }
-  if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current); connectTimeoutRef.current = null;
-  if (pendingTimeoutRef.current) clearTimeout(pendingTimeoutRef.current); pendingTimeoutRef.current = null;
+
+  if (connectTimeoutRef.current) { clearTimeout(connectTimeoutRef.current); connectTimeoutRef.current = null; }
+  if (pendingTimeoutRef.current) { clearTimeout(pendingTimeoutRef.current); pendingTimeoutRef.current = null; }
   connectionInProgressRef.current = false;
-  if (!isDevelopment || isFinalUnmount) {
-      setMidiAccess(null); setIsConnected(false); setIsConnecting(false);
-      setMidiInputs([]); setError(null);
-  } else { setIsConnecting(false); }
-}, []);
+
+  // --- MODIFIED: Always perform full state reset on user-initiated disconnect ---
+  if (forceFullDisconnect || isFinalUnmount || !isDevelopment) {
+      setMidiAccess(null);
+      setIsConnected(false);
+      setIsConnecting(false); // Ensure this is also reset
+      setMidiInputs([]);
+      setError(null); // Clear any previous errors
+      setShowMidiMonitor(false); // Ensure monitor is closed
+      console.log("[MIDIContext] Full MIDI Disconnect executed: States reset.");
+  } else { // Soft disconnect for dev mode without force (e.g., HMR)
+      setIsConnecting(false);
+      // Optionally keep isConnected true if you want the button to still show "Connected" during HMR
+      // setIsConnected(false); // Or set to false to reflect no active listeners
+      console.log("[MIDIContext] Soft MIDI Disconnect (dev mode, no force). isConnecting set to false.");
+  }
+}, []); // Removed isUnmountingRef from deps as it's a ref
 
 const clearAllMappings = useCallback(() => {
     if (window.confirm("Reset ALL persistent MIDI parameter mappings?")) {
@@ -347,9 +374,9 @@ useEffect(() => {
   isUnmountingRef.current = false;
   return () => {
     isUnmountingRef.current = true;
-    disconnectMIDI(true);
+    disconnectMIDI(true); // Ensure full cleanup on unmount
   };
-}, [disconnectMIDI]);
+}, [disconnectMIDI]); // disconnectMIDI is stable
 
 const contextValue = useMemo(() => ({
   midiAccess, isConnected, isConnecting, error, midiInputs,

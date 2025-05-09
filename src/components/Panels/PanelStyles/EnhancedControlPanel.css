@@ -502,3 +502,44 @@
   50% { opacity: 0.5; }
   100% { opacity: 1; }
 }
+
+.midi-tools {
+  display: flex;
+  gap: var(--space-xs);
+  margin-top: var(--space-sm);
+  justify-content: space-between; /* Adjusted for better spacing */
+  flex-wrap: wrap;
+  padding-top: var(--space-xs);
+  border-top: 1px solid var(--color-border);
+}
+
+/* Style for the new disconnect button */
+.midi-disconnect-btn {
+  background: var(--color-error-a15);
+  color: var(--color-error);
+  border: 1px solid var(--color-error-a30);
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  outline: none;
+  flex-shrink: 0;
+  transition: background-color var(--transition-fast);
+}
+
+.midi-disconnect-btn:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.midi-disconnect-btn:hover {
+  background: var(--color-error-a25);
+}
+
+.midi-disconnected-message {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  text-align: center;
+  width: 100%;
+  padding: var(--space-xs) 0;
+}

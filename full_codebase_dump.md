@@ -165,34 +165,56 @@ export default [
 
 ---
 
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=eFxECO9I888&t=327s" target="_blank" rel="noopener noreferrer">
+    <img src="./src/assets/branding/radar_demo_thumbnail.png" alt="Watch the RADAR Demo Video!" width="600" style="max-width: 100%;">
+  </a>
+  <br/>
+  <em>Click the image above to watch the RADAR demo video!</em>
+</p>
+
+---
+
 ## The RADAR Vision: From Collector to Creator
 
-RADAR challenges the notion of NFTs as static collectibles. We believe true digital ownership, powered by LUKSO's Universal Profiles, unleashes a new universe of dynamic use-cases and ignites the imagination for what NFT 2.0 can truly become. With this approach, RADAR aims to set a new standard for interactive digital asset utility.
+RADAR challenges the notion of NFTs as static collectibles and believe that true digital ownership, powered by LUKSO's Universal Profiles, unleashes a new universe of dynamic use-cases and ignites the imagination for what NFT 2.0 can truly become.
 
-*   **Your NFTs, Your Engine:** Don't let your assets gather virtual dust. RADAR treats your LSP8 NFTs as potent visual engines, ready to be manipulated and brought to life.
+*   **Your NFTs, Your Engine:** Don't let your assets gather virtual dust. RADAR treats your LSP8 NFTs as visual engines, ready to be manipulated and brought to life.
 *   **Ownership is Control & Creation:** Go beyond just holding. Layer, glitch, blend, and animate your assets. Save an infinite number of unique visual setups directly onto your Universal Profile.
-*   **Decentralized & Composable:** All your creations, visual presets, MIDI mapping, custom color-coded event reactions are stored on your UP using ERC725Y keys. It's your data, ready for a future of shared, community-driven visual experiences.
+*   **Decentralized & Composable:** All your creations—visual presets, MIDI mappings, custom color-coded event reactions—are stored on your UP using ERC725Y keys. Your data, ready for a future of shared, community-driven visual experiences.
 
 ## The RADAR Genesis Collection & The Future of Asset Utility
 
-Following this hackathon and feedback from the team, the official **RADAR 1.0 Beta** will launch, headlined by the **RADAR Genesis Collection**: a massive 8,000-piece LSP8 NFT collection designed *by the founder / creator of RADAR, VXCTXR, specifically for RADAR*.
+Following this hackathon and team feedback, the official **RADAR 1.0 Beta** will launch, headlined by the **RADAR Genesis Collection**: a massive 8,000-piece LSP8 NFT collection designed by RADAR's founder/creator, VXCTXR, specifically to showcase what NFT 2.0 can offer.
 
-*   **Benchmark for Asset Design:** The RADAR Genesis Collection will set the standard for how assets should be prepared for optimal use within the visualizer. This isn't about random generation; it's about intentional artistry.
+*   **Benchmark for Asset Design:** The RADAR Genesis Collection will set the standard for how assets should be prepared for optimal use within the visualizer.
 *   **The Value of Artistic Preparation:**
-    *   **Isolation & Whitespace:** Assets must be properly isolated within their "NFT canvas." They cannot touch the borders, which would result in undesirable straight lines during rotation and scaling.
+    *   **Isolation & Whitespace:** Assets must be properly isolated within their "NFT canvas," not touching borders, which prevents undesirable straight lines during rotation and scaling.
     *   **Intentional Gaps:** Optimal designs incorporate "gaps" or negative space, allowing underlying layers to show through, creating depth and intricate visual interplay.
-    *   **Anti-AI Tampering Layer:** RADAR inherently values thoughtful design. Lazy, mass-generated, or AI-created assets that are simply fully colored squares will appear as just that – rotating squares – offering little dynamic value and blocking interaction with other layers.
-*   **Redefining Value Beyond Traits:** RADAR shifts the focus from randomly allocated traits to intrinsic artistic merit. For the first time, you can collect an asset purely for its color palette, an intricate detail you admire, or its potential within the RADAR engine, not just its "rarity score."
+    *   **Championing Thoughtful Design:** RADAR inherently values meticulous artistry. Simplistic, mass-generated, or AI-created assets (e.g., fully colored squares) will appear as just that – rotating squares – offering little dynamic value and obscuring interaction with underlying layers. This encourages more intricate and consciously prepared designs.
+*   **Redefining Value Beyond Traits:** RADAR shifts the focus from randomly allocated traits dictating perceived value to intrinsic artistic merit. For the first time, collect an asset for its color palette, an admired detail, or its potential within the RADAR engine, not just its "rarity score." **Making ART about the ART again.**
 *   **Artistic Effort Rewarded:** In a space often dominated by mass-generated collections, RADAR champions the time, skill, and artistic vision invested in creating assets truly suited for dynamic visual experiences.
+*   **New Perspectives on Creation:** While the technology is cool, perception and creativity often hold us back. RADAR is one piece of the puzzle. A quick glance at the "layer preparation grid" tab reveals how I plan to overhaul conceptual blockers: by providing asset owners with tools to deconstruct and reconstruct, the collector immediately becomes a creator. This opens entirely new perspectives on asset interaction, potentially making RADAR the largest community-driven visualizer in existence. See a few transformations in the "Room725" tab.
+
+---
+
+> **Important Note on Embedding/Permissions:**
+> If you plan to embed RADAR (e.g., within another site or application using an iframe), ensure you grant the necessary permissions for full functionality. You will need to allow the following attributes:
+> ```html
+> <iframe src="https://radar725.netlify.app/" allow="microphone; midi; fullscreen"></iframe>
+> ```
+> Failure to include these `allow` attributes will prevent microphone access (for audio reactivity) and MIDI access (for controller input).
+
+---
 
 ## Core Features & Technologies
 
 RADAR integrates deeply with LUKSO's philosophy and innovative architecture:
 
 *   **Dynamic NFT Visualization (3-Layer Engine):**
-    *   Assign LSP8 NFTs (initially from the 40 pre-loaded demo tokens, and later from the RADAR Genesis collection and other whitelisted collections) to three distinct visual layers.
+    *   Assign LSP8 NFTs (initially from 40 pre-loaded demo tokens, later from the RADAR Genesis collection and other whitelisted collections) to three distinct visual layers.
     *   Manipulate each layer's `Speed`, `Size`, `Opacity`, `X/Y Position`, `Drift`, `Angle`, `Direction`, and `Blend Mode`.
-    *   **Note (Hackathon Version):** For the scope of this hackathon, the on-chain whitelist management panel for adding new LSP7/LSP8 collections is temporarily disabled. To facilitate immediate experimentation, RADAR includes 40 pre-loaded demo tokens. The underlying ERC725Y data storage (`RADAR.WhitelistedCollections`) and retrieval mechanisms for whitelists are implemented but need feedback on the implementation of this.
+    *   **Note (Hackathon Scope):** For this hackathon, the on-chain whitelist management panel for adding new LSP7/LSP8 collections is temporarily disabled. To facilitate immediate experimentation, RADAR includes 40 pre-loaded demo tokens. The underlying ERC725Y data storage (`RADAR.WhitelistedCollections`) and retrieval mechanisms for whitelists are implemented and await feedback.
 
 *   **Audio Reactivity (Web Audio API):**
     *   Layers pulsate and resize in response to audio frequencies (Bass -> Bottom Layer, Mid -> Middle Layer, Treble -> Top Layer) and overall beat detection.
@@ -204,7 +226,7 @@ RADAR integrates deeply with LUKSO's philosophy and innovative architecture:
 
 *   **On-Chain Event Reactions (LSP1 UniversalReceiver):**
     *   Visual effects triggered by on-chain events on your UP (e.g., receiving LYX, tokens).
-    *   **Global Event Reactions:** Ruleset stored on *your* UP via `RADAR.EventReactions`.
+    *   **Global Event Reactions:** Rulesets stored on *your* UP via `RADAR.EventReactions`.
 
 *   **Decentralized Configuration Storage (ERC725Y):**
     RADAR leverages your Universal Profile for true data ownership:
@@ -214,17 +236,17 @@ RADAR integrates deeply with LUKSO's philosophy and innovative architecture:
 
 ## The Universal Profile as a Creative Hub
 
-RADAR pushes the concept of the Universal Profile beyond a mere wallet or identity layer, transforming it into a dynamic canvas and creative launchpad.
+RADAR transforms the Universal Profile from a mere wallet or identity layer into a dynamic canvas and creative launchpad.
 
-*   **Collector Becomes Creator:** By loading an asset into RADAR and manipulating its parameters, *you* become the artist. The visual configurations you save to your UP are new, derived creations. This is your unique way of "minting" new visual experiences from the assets you hold.
+*   **Collector Becomes Creator:** By loading an asset into RADAR and manipulating its parameters, you become the artist. The visual configurations you save to your UP are new, derived creations—your unique way of "minting" new visual experiences from the assets you hold.
 *   **Cross-Profile VJing & Spectating:** This is where the power of decentralized, on-chain configurations truly shines:
     *   Visit another user's Universal Profile running RADAR.
-    *   Load *their* saved visual presets and witness *their* unique artistic interpretations of their assets.
-    *   If you have a MIDI controller, *your* global MIDI map (from *your* UP) can control the parameters of *their* presets, enabling an unprecedented live, cross-profile VJing experience.
+    *   Load their saved visual presets and witness their unique artistic interpretations of their assets.
+    *   If you have a MIDI controller, *your* global MIDI map (from your UP) can control the parameters of *their* presets, enabling unprecedented live, cross-profile VJing.
     *   See their on-chain events trigger their personally configured visual reactions.
-*   **Future of Whitelist & Community Curation:** Post-hackathon, activating the whitelist panel *within* RADAR (as a MiniApp on a user's UP) could empower trusted community members or "Layer Creators" to curate and propose collections, further decentralizing the artistic ecosystem.
+*   **Future of Whitelist & Community Curation:** Post-hackathon, activating the whitelist panel within RADAR (as a MiniApp on a user's UP) could empower trusted community members or "Layer Creators" to curate and propose collections, further decentralizing the artistic ecosystem.
 
-This interplay of personal creation, shared experiences, and on-chain identity begins to scratch the surface of the possibilities achievable with LUKSO's architecture.
+This interplay of personal creation, shared experiences, and on-chain identity only scratches the surface of the possibilities achievable with LUKSO's architecture.
 
 ---
 
@@ -232,15 +254,18 @@ This interplay of personal creation, shared experiences, and on-chain identity b
 
 *   **Visual Effect Expansion:** More effects, parameter interpolation, "P-locking" concepts.
 *   **Advanced MIDI:** Clock sync, value range mapping, toggle actions.
-*   **LSP8 Collection Onboarding:** Streamlined community whitelisting.
-*   **Performance Optimization:** Custom 2D engine refinement (potential for PixiJS/ThreeJS).
+*   **LSP8 Collection Onboarding:** Streamlined community whitelisting, artist onboarding guidelines.
+*   **Performance Optimization:** Custom 2D engine refinement.
+*   **AR Integration:** QR / AR art marker overlay directly integrating the UP QR.
 *   **Open Source Strategy:** Evaluate open-sourcing key components.
-*   **Deeper LUKSO Integration:** Adapt to new LSPs.
-*   *(Future Ideas: UI Theme Customization, On-Platform Layer Prep (see other grid tab), AR Integration, Mobile App Visual Feedback).*
+*   **Deeper LUKSO Integration:** Continuously explore and implement new LUKSO standards and features.
+*   **The Vision:** RADAR is an extremely well-aimed and positioned first step with a clear artistic direction and an innovative mindset, poised to redefine interactive asset utility.
 
 ---
 
-## MIDI Control Setup
+## Setup Guides
+
+### MIDI Control Setup
 
 RADAR offers intuitive MIDI control over its visual parameters, allowing for a tactile and expressive performance experience. Your MIDI mappings are saved globally to your Universal Profile.
 
@@ -279,42 +304,37 @@ RADAR offers intuitive MIDI control over its visual parameters, allowing for a t
 
 Now your MIDI controller is your hands-on interface for sculpting visuals in RADAR!
 
-## Audio Reactivity Setup (Using Virtual Audio Cable & Voicemeeter)
+### Audio Reactivity Setup (Using Virtual Audio Cable & Voicemeeter)
 
 To make RADAR's visuals react to the audio playing on your computer (e.g., from your browser or music player), you can route your audio through Voicemeeter using a Virtual Audio Cable. This gives you fine-grained control.
 
 **Prerequisites:**
 
 *   **Voicemeeter** (Standard version or Banana/Potato) installed. Get it from [vb-audio.com/Voicemeeter/](https://vb-audio.com/Voicemeeter/).
+*   **VB-CABLE Virtual Audio Cable** installed. Get it from [vb-audio.com/Cable/](https://vb-audio.com/Cable/).
 *   **Restart your computer** after installing these.
 
 **Steps:**
 
 1.  **Route Desired Audio to Virtual Cable (Recommended for Browser/App Audio):**
     *   In Windows Sound settings ("Open Sound settings" -> "App volume and device preferences"):
-        *   Find your web browser.
+        *   Find your web browser (or the specific application whose audio you want to capture).
         *   Change its **Output** device to **"CABLE Input (VB-Audio Virtual Cable)"**.
     *   *Alternatively, for simpler system-wide audio capture (less granular), set "CABLE Input" as your Default Playback Device in Windows Sound settings (Playback tab).*
 
 2.  **Configure Voicemeeter:**
     *   Open Voicemeeter.
-    *   **Hardware Input 1 (Stereo Input 1 or 2):** Click its name and select **"CABLE Output (VB-Audio Virtual Cable)"**. This brings audio from the virtual cable *into* Voicemeeter.
-        *   Ensure this channel is active (fader up, not muted). Enable its output to A1 (or your main hardware out) if you want to monitor this source through Voicemeeter.
-    *   **Hardware Out (A1 is the MAIN OUT):** Click "A1" (last channel strip) and select your main speakers/headphones. Done.
+    *   **Hardware Input 1 (Stereo Input 1 or 2):** Click its name (e.g., "Hardware Input 1") and select **"CABLE Output (VB-Audio Virtual Cable)"**. This brings audio from the virtual cable *into* Voicemeeter.
+        *   Ensure this channel strip is active (fader is up, not muted - check A/B buttons if using Banana/Potato). Enable its output route to **A1** (your main hardware out) if you want to monitor this source through Voicemeeter.
+    *   **Hardware Out (A1):** Click "A1" (under Hardware Out section) and select your main speakers/headphones (e.g., "WDM: Speakers (Realtek Audio)").
 
-4.  **Browser Permissions for RADAR:**
-    *   When enabling Audio Reactivity in RADAR, your browser will ask for microphone permission.
-    *   Select **"Voicemeeter Output"** (from step 3) as the microphone source.
+3.  **Browser Permissions for RADAR:**
+    *   When enabling Audio Reactivity in RADAR for the first time, your browser will ask for microphone permission.
+    *   In the permission prompt, select **"Voicemeeter Output (VB-Audio Voicemeeter VAIO)"** (or similar, depending on Voicemeeter version) as the microphone source. **Do not select CABLE Output or your physical microphone here.**
 
-**How it Works:** Your application sends sound to "CABLE Input." "CABLE Output" feeds this into Voicemeeter. Voicemeeter processes it, sends it to your speakers (via A1) AND to its own virtual "Voicemeeter Output." RADAR listens to "Voicemeeter Output" as a microphone.
+**How it Works:** Your target application (e.g., browser) sends its sound output to the virtual "CABLE Input". The other end of this virtual cable, "CABLE Output", is selected as an *input* in Voicemeeter. Voicemeeter processes this audio and sends it to two places: your speakers/headphones (via Hardware Out A1) and its own internal virtual output, "Voicemeeter Output". RADAR then listens to this "Voicemeeter Output" as if it were a microphone, capturing the audio you routed into Voicemeeter.
 
-This method allows selective audio routing for the visualizer.
-
-Don't forget to manually add the application because you will need to allow following attributes:  <iframe src="https://radar725.netlify.app/" allow="microphone, midi, fullscreen"></iframe>
-
----
-**A DETAILED VIDEO DEMO WILL FOLLOW SHORTLY.**
----
+This method allows selective audio routing for the visualizer without needing to capture *all* system sound or use a physical loopback.
 ```
 
 ---
