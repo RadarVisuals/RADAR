@@ -55,6 +55,16 @@ class CanvasManager {
     /** @type {number} */
     continuousRotationAngle = 0; // Tracks angle changes from speed
 
+    // --- NEW: Audio Reactivity Properties ---
+    /** @type {number} */
+    audioFrequencyFactor = 1.0;
+    /** @type {number} */
+    beatPulseFactor = 1.0;
+    /** @type {number} */
+    beatPulseEndTime = 0;
+    // --- END NEW ---
+
+
     /**
      * Creates a CanvasManager instance.
      * @param {HTMLCanvasElement} canvas - The canvas element to manage.
@@ -68,7 +78,7 @@ class CanvasManager {
             this.ctx = canvas.getContext('2d', { alpha: true, willReadFrequently: false });
             if (!this.ctx) { throw new Error(`Failed to get 2D context for Layer ${layerId} (returned null)`); }
         } catch (e) {
-            console.error(`[CM L${layerId}] Error getting context:`, e); // Keep error
+            console.error(`[CM L${layerId}] Error getting context:`, e);
             throw new Error(`Failed to get 2D context for Layer ${layerId}: ${e.message}`);
         }
         this.layerId = layerId;
@@ -77,6 +87,11 @@ class CanvasManager {
         this.yInterpolator = new ValueInterpolator(this.config.yaxis, XY_INTERPOLATION_DURATION);
         this.angleInterpolator = new ValueInterpolator(this.config.angle, ANGLE_INTERPOLATION_DURATION);
         this.animationLoop = this.animationLoop.bind(this);
+
+        // Initialize audio reactivity properties
+        this.audioFrequencyFactor = 1.0;
+        this.beatPulseFactor = 1.0;
+        this.beatPulseEndTime = 0;
     }
 
     /** Returns the default configuration object for a layer. */
@@ -86,7 +101,7 @@ class CanvasManager {
             speed: 0.01, drift: 0, driftSpeed: 0.1, angle: 0,
             xaxis: 0, yaxis: 0, direction: 1,
             driftState: { x: 0, y: 0, phase: Math.random() * Math.PI * 2, enabled: false },
-            audioSource: 'level', // Example: Which audio data drives this (not fully implemented in draw)
+            audioSource: 'level',
         };
     }
 
@@ -161,8 +176,6 @@ class CanvasManager {
         this.xInterpolator?.snap(this.config.xaxis);
         this.yInterpolator?.snap(this.config.yaxis);
         this.angleInterpolator?.snap(this.config.angle);
-
-        // console.log(`${logPrefix} Setup SUCCESS (${logicalWidth}x${logicalHeight})`); // Can be noisy
         return true;
     }
 
@@ -321,7 +334,6 @@ class CanvasManager {
     /** Draws a single static frame, optionally using a provided config. */
     async drawStaticFrame(configToUse = null) {
          const logPrefix = `[CM L${this.layerId}] drawStaticFrame:`;
-         // --- ADDED LOGGING ---
          console.log(`${logPrefix} Initiated.`);
          try {
              if (!this.canvas || !this.ctx || this.isDestroyed) {
@@ -342,13 +354,12 @@ class CanvasManager {
              this.angleInterpolator?.snap(config.angle);
              this.continuousRotationAngle = 0;
              const drawSuccess = this.draw(performance.now(), config);
-             console.log(`${logPrefix} draw() call returned: ${drawSuccess}`); // Log draw result
+             console.log(`${logPrefix} draw() call returned: ${drawSuccess}`);
              return drawSuccess;
          } catch (e) {
              console.error(`${logPrefix} Error:`, e);
              return false;
          }
-         // --- END ADDED LOGGING ---
      };
 
     /**
@@ -360,43 +371,36 @@ class CanvasManager {
     async setImage(src) {
         if (this.isDestroyed) return Promise.reject("Manager destroyed");
         const logPrefix = `[CM L${this.layerId} setImage]`;
-        // Return the promise directly
         return new Promise((resolve, reject) => {
             if (!src || typeof src !== 'string') {
                 console.warn(`${logPrefix} Invalid source:`, src);
                 this.image = null;
                 this.lastImageSrc = null;
-                return reject(new Error("Invalid image source")); // Reject on invalid source
+                return reject(new Error("Invalid image source"));
             }
-            // Optimization: If the same image is already loaded and valid, resolve immediately
             if (src === this.lastImageSrc && this.image?.complete && this.image?.naturalWidth > 0) {
-                // console.log(`${logPrefix} Re-using already loaded image: ${src.substring(0,60)}...`); // Can be noisy
                 return resolve();
             }
-            // console.log(`${logPrefix} Starting load for: ${src.substring(0,100)}...`); // Can be noisy
-
             const img = new Image();
             if (src.startsWith('http') && !src.startsWith(window.location.origin)) {
                 img.crossOrigin = "anonymous";
             }
-
             img.onload = () => {
                 if (this.isDestroyed) {
                     console.log(`${logPrefix} Load finished but manager destroyed.`);
-                    return resolve(); // Resolve silently if destroyed
+                    return resolve();
                 }
                 if (img.naturalWidth === 0) {
                     const eMsg = `${logPrefix} Loaded image has zero dimensions! Source: ${src.substring(0, 100)}...`;
                     console.error(eMsg);
                     this.image = null;
                     this.lastImageSrc = null;
-                    reject(new Error(eMsg)); // Reject on zero dimensions
+                    reject(new Error(eMsg));
                     return;
                 }
-                // console.log(`${logPrefix} Load SUCCESS: ${src.substring(0,60)}...`); // Can be noisy
                 this.image = img;
                 this.lastImageSrc = src;
-                resolve(); // Resolve on successful load
+                resolve();
             };
             img.onerror = (error) => {
                 if (this.isDestroyed) {
@@ -405,7 +409,7 @@ class CanvasManager {
                 console.error(`${logPrefix} FAILED: ${img.src.substring(0, 60)}`, error);
                 this.image = null;
                 this.lastImageSrc = null;
-                reject(new Error(`Failed to load image: ${src.substring(0, 50)}...`)); // Reject on error
+                reject(new Error(`Failed to load image: ${src.substring(0, 50)}...`));
             };
             img.src = src;
         });
@@ -432,16 +436,33 @@ class CanvasManager {
     }
 
     /**
-     * Directly sets the size property, typically used for reactive audio input.
-     * @param {number} newSize - The desired size value.
+     * Sets the audio frequency-based size modification factor.
+     * @param {number} factor - The multiplier (e.g., 1.0 for no change, 1.2 for 20% larger).
      */
-    setReactiveSize(newSize) {
+    setAudioFrequencyFactor(factor) {
         if (this.isDestroyed) return;
-        const validatedSize = Number(newSize);
-        if (!isNaN(validatedSize)) {
-            this.config.size = Math.max(0.01, validatedSize);
-        } else { console.warn(`[CM L${this.layerId} setReactiveSize] Invalid size:`, newSize); }
+        this.audioFrequencyFactor = Number(factor) || 1.0;
     }
+
+    /**
+     * Triggers a temporary beat pulse size modification.
+     * @param {number} pulseFactor - The multiplier for the pulse.
+     * @param {number} duration - The duration of the pulse in milliseconds.
+     */
+    triggerBeatPulse(pulseFactor, duration) {
+        if (this.isDestroyed) return;
+        this.beatPulseFactor = Number(pulseFactor) || 1.0;
+        this.beatPulseEndTime = performance.now() + (Number(duration) || 0);
+    }
+
+    /** Resets all audio-driven size modifications to their default states. */
+    resetAudioModifications() {
+        if (this.isDestroyed) return;
+        this.audioFrequencyFactor = 1.0;
+        this.beatPulseFactor = 1.0;
+        this.beatPulseEndTime = 0;
+    }
+
 
     /** Returns a deep copy of the current configuration object. */
     getConfigData() { return JSON.parse(JSON.stringify(this.config)); }
@@ -449,45 +470,18 @@ class CanvasManager {
     /** The core drawing function, performs the 4-quadrant mirrored draw logic. */
     draw(timestamp, configToUse = null) {
         const config = configToUse || this.config;
-        const logPrefix = `[CM L${this.layerId} Draw]`; // Keep prefix consistent
+        const logPrefix = `[CM L${this.layerId} Draw]`;
 
-        // --- DETAILED FAILURE LOGGING ---
-        if (this.isDestroyed) {
-            // console.log(`${logPrefix} Aborted: Manager destroyed.`); // Usually not needed unless debugging destruction
-            return false;
-        }
-        if (!config?.enabled) {
-            console.warn(`${logPrefix} Aborted: Layer disabled.`); // Log this condition
-            return false;
-        }
-         if (this.isDrawing) {
-            // console.log(`${logPrefix} Aborted: Already drawing.`); // Can be noisy
-            return false;
-         }
-        if (!this.canvas || !this.ctx) {
-            console.error(`${logPrefix} Aborted: Canvas or Context is NULL.`); // Critical error
-            return false;
-        }
-        if (!this.image) {
-            console.error(`${logPrefix} Aborted: this.image is NULL.`); // Critical: Image object doesn't exist
-             return false;
-        }
-         if (!this.image.complete) {
-            console.warn(`${logPrefix} Aborted: Image not complete. Src: ${this.image.src.substring(0, 100)}...`); // Image loading likely issue
-            return false;
-         }
-         if (this.image.naturalWidth === 0) {
-            console.error(`${logPrefix} Aborted: Image naturalWidth is 0. Src: ${this.image.src.substring(0, 100)}...`); // Image loading failed or bad image
-            return false;
-         }
-        if (this.lastValidWidth <= 0 || this.lastValidHeight <= 0) {
-            console.error(`${logPrefix} Aborted: Invalid dimensions (${this.lastValidWidth}x${this.lastValidHeight}).`); // Layout issue
-            return false;
-        }
-        // --- END DETAILED FAILURE LOGGING ---
+        if (this.isDestroyed) return false;
+        if (!config?.enabled) { console.warn(`${logPrefix} Aborted: Layer disabled.`); return false; }
+        if (this.isDrawing) return false;
+        if (!this.canvas || !this.ctx) { console.error(`${logPrefix} Aborted: Canvas or Context is NULL.`); return false; }
+        if (!this.image) { console.error(`${logPrefix} Aborted: this.image is NULL.`); return false; }
+        if (!this.image.complete) { console.warn(`${logPrefix} Aborted: Image not complete. Src: ${this.image.src.substring(0, 100)}...`); return false; }
+        if (this.image.naturalWidth === 0) { console.error(`${logPrefix} Aborted: Image naturalWidth is 0. Src: ${this.image.src.substring(0, 100)}...`); return false; }
+        if (this.lastValidWidth <= 0 || this.lastValidHeight <= 0) { console.error(`${logPrefix} Aborted: Invalid dimensions (${this.lastValidWidth}x${this.lastValidHeight}).`); return false; }
 
         this.isDrawing = true;
-        // console.log(`${logPrefix} Starting draw cycle...`); // Can be noisy
 
         try {
             const width = this.lastValidWidth; const height = this.lastValidHeight;
@@ -497,15 +491,30 @@ class CanvasManager {
             const imgNaturalWidth = this.image.naturalWidth; const imgNaturalHeight = this.image.naturalHeight;
             const imgAspectRatio = (imgNaturalWidth > 0 && imgNaturalHeight > 0) ? imgNaturalWidth / imgNaturalHeight : 1;
 
-            let drawSize = config.size ?? 1.0;
-            let imgDrawWidth = halfWidth * drawSize;
+            // --- MODIFIED SIZE CALCULATION ---
+            let currentBaseSize = config.size ?? 1.0;
+            let finalDrawSize = currentBaseSize;
+
+            finalDrawSize *= this.audioFrequencyFactor;
+
+            const now = timestamp;
+            if (this.beatPulseEndTime && now < this.beatPulseEndTime) {
+                finalDrawSize *= this.beatPulseFactor;
+            } else if (this.beatPulseEndTime && now >= this.beatPulseEndTime) {
+                this.beatPulseFactor = 1.0;
+                this.beatPulseEndTime = 0;
+            }
+            finalDrawSize = Math.max(0.01, finalDrawSize);
+            // --- END MODIFIED SIZE CALCULATION ---
+
+            let imgDrawWidth = halfWidth * finalDrawSize;
             let imgDrawHeight = imgDrawWidth / imgAspectRatio;
-            if (imgAspectRatio > 0 && imgDrawHeight > halfHeight * drawSize) {
-                imgDrawHeight = halfHeight * drawSize;
+            if (imgAspectRatio > 0 && imgDrawHeight > halfHeight * finalDrawSize) {
+                imgDrawHeight = halfHeight * finalDrawSize;
                 imgDrawWidth = imgDrawHeight * imgAspectRatio;
             } else if (isNaN(imgDrawHeight) || imgAspectRatio <= 0) {
-                imgDrawWidth = halfWidth * drawSize;
-                imgDrawHeight = halfHeight * drawSize;
+                imgDrawWidth = halfWidth * finalDrawSize;
+                imgDrawHeight = halfHeight * finalDrawSize;
             }
             imgDrawWidth = Math.max(1, Math.floor(imgDrawWidth));
             imgDrawHeight = Math.max(1, Math.floor(imgDrawHeight));
@@ -536,11 +545,10 @@ class CanvasManager {
                  try {
                     this.ctx.save();
                     this.ctx.rotate(angleRad);
-                    // Add check again right before drawing
                     if (this.image?.complete && this.image?.naturalWidth > 0) {
                         this.ctx.drawImage( this.image, 0, 0, imgNaturalWidth, imgNaturalHeight, -imgDrawWidth / 2, -imgDrawHeight / 2, imgDrawWidth, imgDrawHeight );
                     } else {
-                         console.error(`${logPrefix} Image became invalid just before drawImage call!`); // Should not happen if checks above pass
+                         console.error(`${logPrefix} Image became invalid just before drawImage call!`);
                     }
                     this.ctx.restore();
                 } catch (e) {
@@ -549,28 +557,22 @@ class CanvasManager {
                 }
             };
 
-            // Q1: Top-Left
             this.ctx.save(); this.ctx.beginPath(); this.ctx.rect(0, 0, halfWidth, halfHeight); this.ctx.clip();
             this.ctx.translate(finalCenterX_TL, finalCenterY_TL); drawImageWithRotation(); this.ctx.restore();
-            // Q2: Top-Right
             this.ctx.save(); this.ctx.beginPath(); this.ctx.rect(halfWidth, 0, remainingWidth, halfHeight); this.ctx.clip();
             this.ctx.translate(width, 0); this.ctx.scale(-1, 1); this.ctx.translate(finalCenterX_TL, finalCenterY_TL); drawImageWithRotation(); this.ctx.restore();
-            // Q3: Bottom-Left
             this.ctx.save(); this.ctx.beginPath(); this.ctx.rect(0, halfHeight, halfWidth, remainingHeight); this.ctx.clip();
             this.ctx.translate(0, height); this.ctx.scale(1, -1); this.ctx.translate(finalCenterX_TL, finalCenterY_TL); drawImageWithRotation(); this.ctx.restore();
-            // Q4: Bottom-Right
             this.ctx.save(); this.ctx.beginPath(); this.ctx.rect(halfWidth, halfHeight, remainingWidth, remainingHeight); this.ctx.clip();
             this.ctx.translate(width, height); this.ctx.scale(-1, -1); this.ctx.translate(finalCenterX_TL, finalCenterY_TL); drawImageWithRotation(); this.ctx.restore();
 
-
             this.ctx.globalAlpha = 1.0;
             this.isDrawing = false;
-            // console.log(`${logPrefix} Draw cycle finished successfully.`); // Can be noisy
-            return true; // Success
+            return true;
         } catch (error) {
-            console.error(`${logPrefix} Error during draw cycle execution:`, error); // Catch errors within the try block
+            console.error(`${logPrefix} Error during draw cycle execution:`, error);
             this.isDrawing = false;
-            return false; // Indicate failure
+            return false;
         }
     }
 
@@ -634,7 +636,7 @@ class CanvasManager {
     /** Forces a redraw of the current frame, optionally applying new config. */
     async forceRedraw(configToUse = null) {
          if (this.isDestroyed) return false;
-         const logPrefix = `[CM L${this.layerId}] forceRedraw:`; // Keep prefix for warning
+         const logPrefix = `[CM L${this.layerId}] forceRedraw:`;
          if (this.isDrawing) { console.warn(`${logPrefix} Skipped: Draw in progress.`); return false; }
          const drawSuccess = await this.drawStaticFrame(configToUse || this.config);
          return drawSuccess;
@@ -652,7 +654,6 @@ class CanvasManager {
         this.yInterpolator = null;
         this.angleInterpolator = null;
     }
-
 }
 
 export default CanvasManager;

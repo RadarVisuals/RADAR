@@ -1,5 +1,5 @@
 // src/components/Audio/AudioAnalyzer.jsx
-import React, { useEffect, useRef, useCallback } from "react"; // Removed useState
+import React, { useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 
 // Default values for layer parameters
@@ -11,14 +11,13 @@ const DEFAULT_SMOOTHING = 0.6; // Default if not provided
 const AudioAnalyzer = ({
   onAudioData,
   isActive = false,
-  layerConfigs: layerConfigsProp,
-  audioSettings: audioSettingsProp, // Receive the full settings object
+  layerConfigs: layerConfigsProp, // This is the live config from context
+  audioSettings: audioSettingsProp,
   configLoadNonce,
   managerInstancesRef,
 }) => {
-  // --- Core Refs ---
-  const audioSettingsRef = useRef(audioSettingsProp); // Store the passed settings
-  const baseLayerValuesRef = useRef({
+  const audioSettingsRef = useRef(audioSettingsProp);
+  const baseLayerValuesRef = useRef({ // Stores original preset values, used for transition blending
       '1': { size: DEFAULT_LAYER_VALUES.size },
       '2': { size: DEFAULT_LAYER_VALUES.size },
       '3': { size: DEFAULT_LAYER_VALUES.size },
@@ -28,16 +27,13 @@ const AudioAnalyzer = ({
   const lastBandDataRef = useRef({ bass: 0, mid: 0, treble: 0 });
   const lastLevelRef = useRef(0);
 
-  // --- Audio Processing Refs ---
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
   const sourceRef = useRef(null);
   const animationFrameRef = useRef(null);
   const dataArrayRef = useRef(null);
   const streamRef = useRef(null);
-  const beatPulseTimeoutRefs = useRef({});
 
-  // --- Update Refs and Apply Smoothing ---
   useEffect(() => {
     audioSettingsRef.current = audioSettingsProp;
     if (analyserRef.current) {
@@ -49,8 +45,8 @@ const AudioAnalyzer = ({
     }
   }, [audioSettingsProp]);
 
-  // --- Capture Base Values ---
   useEffect(() => {
+    // This effect updates baseLayerValuesRef for transition blending.
     if (layerConfigsProp && configLoadNonce !== capturedNonceRef.current) {
         if (capturedNonceRef.current !== -1) {
             isTransitioningRef.current = true;
@@ -66,49 +62,45 @@ const AudioAnalyzer = ({
     }
   }, [configLoadNonce, layerConfigsProp]);
 
-  // --- Apply Audio To Layers (Enhanced with transition handling) ---
   const applyAudioToLayers = useCallback((bands, level) => {
     const managers = managerInstancesRef?.current;
     const currentSettings = audioSettingsRef.current;
-    const baseValues = baseLayerValuesRef.current;
+
     if (!managers) return;
     const transitionFactor = isTransitioningRef.current ? 0.2 : 1.0;
     const { bassIntensity = 1.0, midIntensity = 1.0, trebleIntensity = 1.0 } = currentSettings || {};
 
-    const setManagerSize = (layerId, size) => {
-        const manager = managers[layerId];
-        if (manager && typeof manager.setReactiveSize === 'function') { manager.setReactiveSize(size); }
-    };
+    // Apply frequency band factors
+    const bassEffectMagnitude = bands.bass * 0.8 * bassIntensity * transitionFactor;
+    const finalBassFactor = 1 + bassEffectMagnitude;
+    if (managers['1'] && typeof managers['1'].setAudioFrequencyFactor === 'function') {
+        managers['1'].setAudioFrequencyFactor(Math.max(0.1, finalBassFactor));
+    }
 
-    const baseSize1 = baseValues['1']?.size || DEFAULT_LAYER_VALUES.size;
-    const targetSize1 = Math.max(0.1, baseSize1 * (1 + bands.bass * 0.8 * bassIntensity * transitionFactor));
-    if (!beatPulseTimeoutRefs.current['1']) setManagerSize('1', targetSize1);
+    const midEffectMagnitude = bands.mid * 1.0 * midIntensity * transitionFactor;
+    const finalMidFactor = 1 + midEffectMagnitude;
+    if (managers['2'] && typeof managers['2'].setAudioFrequencyFactor === 'function') {
+        managers['2'].setAudioFrequencyFactor(Math.max(0.1, finalMidFactor));
+    }
 
-    const baseSize2 = baseValues['2']?.size || DEFAULT_LAYER_VALUES.size;
-    const targetSize2 = Math.max(0.1, baseSize2 * (1 + bands.mid * 1.0 * midIntensity * transitionFactor));
-    if (!beatPulseTimeoutRefs.current['2']) setManagerSize('2', targetSize2);
+    const trebleEffectMagnitude = bands.treble * 2.0 * trebleIntensity * transitionFactor;
+    const finalTrebleFactor = 1 + trebleEffectMagnitude;
+    if (managers['3'] && typeof managers['3'].setAudioFrequencyFactor === 'function') {
+        managers['3'].setAudioFrequencyFactor(Math.max(0.1, finalTrebleFactor));
+    }
 
-    const baseSize3 = baseValues['3']?.size || DEFAULT_LAYER_VALUES.size;
-    const targetSize3 = Math.max(0.1, baseSize3 * (1 + bands.treble * 2.0 * trebleIntensity * transitionFactor));
-    if (!beatPulseTimeoutRefs.current['3']) setManagerSize('3', targetSize3);
-
+    // Trigger beat pulse
     if (level > 0.4 && bands.bass > 0.6 && !isTransitioningRef.current) {
-      const pulseMultiplier = 1 + level * 0.8;
-      Object.keys(baseValues).forEach(layerIdStr => {
-        const layerBaseSize = baseValues[layerIdStr]?.size || DEFAULT_LAYER_VALUES.size;
-        const pulsedSize = Math.max(0.1, layerBaseSize * pulseMultiplier);
-        if (beatPulseTimeoutRefs.current[layerIdStr]) clearTimeout(beatPulseTimeoutRefs.current[layerIdStr]);
-        setManagerSize(layerIdStr, pulsedSize);
-        beatPulseTimeoutRefs.current[layerIdStr] = setTimeout(() => {
-          const currentBase = baseLayerValuesRef.current[layerIdStr]?.size || DEFAULT_LAYER_VALUES.size;
-          setManagerSize(layerIdStr, currentBase);
-          delete beatPulseTimeoutRefs.current[layerIdStr];
-        }, 80);
+      const pulseMultiplier = 1 + level * 0.8; // This is the factor for the pulse
+      Object.keys(managers).forEach(layerIdStr => {
+        const manager = managers[layerIdStr];
+        if (manager && typeof manager.triggerBeatPulse === 'function') {
+          manager.triggerBeatPulse(Math.max(0.1, pulseMultiplier), 80);
+        }
       });
     }
   }, [managerInstancesRef]);
 
-  // --- Process Audio Data ---
   const processAudioData = useCallback((dataArray) => {
     if (!dataArray || !analyserRef.current) return;
     const bufferLength = analyserRef.current.frequencyBinCount;
@@ -143,7 +135,6 @@ const AudioAnalyzer = ({
     }
   }, [onAudioData, applyAudioToLayers]);
 
-  // --- Audio Analysis Loop ---
   const analyzeAudio = useCallback(() => {
     if (!analyserRef.current || !dataArrayRef.current || !isActive || !audioContextRef.current) {
       if (animationFrameRef.current) { cancelAnimationFrame(animationFrameRef.current); animationFrameRef.current = null; }
@@ -154,7 +145,6 @@ const AudioAnalyzer = ({
     animationFrameRef.current = requestAnimationFrame(analyzeAudio);
   }, [isActive, processAudioData]);
 
-  // --- Setup Audio Analyzer ---
   const setupAudioAnalyzer = useCallback((stream) => {
     try {
       if (!audioContextRef.current) { const AudioContext = window.AudioContext || window.webkitAudioContext; audioContextRef.current = new AudioContext(); }
@@ -173,11 +163,9 @@ const AudioAnalyzer = ({
       if (!animationFrameRef.current) { animationFrameRef.current = requestAnimationFrame(analyzeAudio); }
     } catch (e) {
       console.error("Error setting up audio analyzer:", e);
-      // Error state was removed, so no need to set it
     }
   }, [analyzeAudio]);
 
-  // --- Request Mic Access ---
   const requestMicrophoneAccess = useCallback(() => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       console.error("Microphone access not supported.");
@@ -187,14 +175,21 @@ const AudioAnalyzer = ({
     .then((stream) => { streamRef.current = stream; setupAudioAnalyzer(stream); })
     .catch((err) => {
       console.error("Error accessing microphone:", err);
-      // Error state was removed, so no need to set it
     });
   }, [setupAudioAnalyzer]);
 
-  // --- Cleanup Audio ---
   const cleanupAudio = useCallback(() => {
     if (animationFrameRef.current) { cancelAnimationFrame(animationFrameRef.current); animationFrameRef.current = null; }
-    Object.values(beatPulseTimeoutRefs.current).forEach(clearTimeout); beatPulseTimeoutRefs.current = {};
+
+    const managers = managerInstancesRef?.current;
+    if (managers) {
+        Object.values(managers).forEach(manager => {
+            if (manager && typeof manager.resetAudioModifications === 'function') {
+                manager.resetAudioModifications();
+            }
+        });
+    }
+
     if (sourceRef.current) {
       try { sourceRef.current.disconnect(); sourceRef.current = null; }
       // eslint-disable-next-line no-unused-vars
@@ -204,16 +199,14 @@ const AudioAnalyzer = ({
     if (audioContextRef.current && audioContextRef.current.state === "running") {
       audioContextRef.current.suspend().catch((e) => console.error("Error suspending audio context:", e) );
     }
-  }, []);
+  }, [managerInstancesRef]);
 
-  // --- Effect for Audio Setup/Teardown ---
   useEffect(() => {
     if (isActive) { requestMicrophoneAccess(); }
     else { cleanupAudio(); }
     return cleanupAudio;
   }, [isActive, requestMicrophoneAccess, cleanupAudio]);
 
-  // --- Unmount Cleanup ---
   useEffect(() => {
     return () => {
       cleanupAudio();
@@ -224,7 +217,6 @@ const AudioAnalyzer = ({
     };
   }, [cleanupAudio]);
 
-  // --- Effect for Reset on Configuration Change ---
   useEffect(() => {
     if (configLoadNonce !== capturedNonceRef.current && capturedNonceRef.current !== -1) {
       console.log("[AudioAnalyzer] Configuration changed, enabling transition mode");
@@ -233,10 +225,9 @@ const AudioAnalyzer = ({
     }
   }, [configLoadNonce]);
 
-  return null; // This component doesn't render anything visible
+  return null;
 };
 
-// --- PropTypes ---
 AudioAnalyzer.propTypes = {
   onAudioData: PropTypes.func,
   isActive: PropTypes.bool,
