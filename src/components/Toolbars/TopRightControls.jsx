@@ -3,26 +3,40 @@ import PropTypes from "prop-types";
 import "./ToolbarStyles/TopRightControls.css";
 import {
   whitelistIcon,
-  enlargeIcon, // This will be used by the fullscreen toggle
+  enlargeIcon,
   learnIcon,
-  eyeIcon,      // Assuming this is the "closed eye" for "Show UI"
-  eyeopenIcon,  // Assuming this is the "open eye" for "Hide UI"
+  eyeIcon,
+  eyeopenIcon,
 } from "../../assets";
 
 /**
- * TopRightControls: Renders a set of control icons positioned at the top-right
- * of the screen. Includes buttons for Enhanced View (Fullscreen), Whitelist Management (conditional),
- * Information Overlay, and toggling the main UI visibility.
+ * TopRightControls component renders a set of control icons positioned at the top-right
+ * of the screen. It includes buttons for toggling fullscreen, managing whitelisted collections (admin-only),
+ * accessing an information overlay, and toggling the main UI visibility.
+ *
+ * @param {object} props - The component's props.
+ * @param {boolean} [props.showWhitelist=false] - Whether to show the whitelist management button. This is controlled by the parent.
+ * @param {boolean} [props.isProjectAdminForWhitelist=false] - Whether the current user is an admin eligible to see/use the whitelist button.
+ * @param {boolean} [props.showInfo=true] - Whether to show the information overlay button.
+ * @param {boolean} [props.showToggleUI=true] - Whether to show the UI visibility toggle button.
+ * @param {boolean} [props.showEnhancedView=true] - Whether to show the fullscreen toggle button.
+ * @param {Function} [props.onWhitelistClick] - Callback function when the whitelist button is clicked.
+ * @param {Function} [props.onInfoClick] - Callback function when the info button is clicked.
+ * @param {Function} [props.onToggleUI] - Callback function when the UI toggle button is clicked.
+ * @param {Function} [props.onEnhancedView] - Callback function when the fullscreen toggle button is clicked.
+ * @param {boolean} [props.isUiVisible=true] - Current visibility state of the main UI.
+ * @returns {JSX.Element} The rendered TopRightControls component.
  */
 const TopRightControls = ({
   showWhitelist = false,
-  showInfo = false,
+  isProjectAdminForWhitelist = false, // New prop to determine if admin can see it
+  showInfo = true,
   showToggleUI = true,
-  showEnhancedView = true, // This prop now controls the fullscreen toggle button
+  showEnhancedView = true,
   onWhitelistClick,
   onInfoClick,
   onToggleUI,
-  onEnhancedView, // This callback will now handle fullscreen toggling
+  onEnhancedView,
   isUiVisible = true,
 }) => {
   return (
@@ -30,18 +44,19 @@ const TopRightControls = ({
       {showEnhancedView && isUiVisible && (
         <button
           className="toolbar-icon"
-          onClick={onEnhancedView} // onEnhancedView now points to toggleFullscreen
-          title="Toggle Fullscreen" // Updated title
+          onClick={onEnhancedView}
+          title="Toggle Fullscreen"
         >
           <img
-            src={enlargeIcon} // Using enlargeIcon for fullscreen
-            alt="Toggle Fullscreen" // Updated alt text
+            src={enlargeIcon}
+            alt="Toggle Fullscreen"
             className="enhanced-view-icon icon-image"
           />
         </button>
       )}
 
-      {showWhitelist && isUiVisible && (
+      {/* Whitelist button: shown if showWhitelist is true AND user is admin */}
+      {showWhitelist && isProjectAdminForWhitelist && isUiVisible && (
         <button
           className="toolbar-icon"
           onClick={onWhitelistClick}
@@ -72,7 +87,7 @@ const TopRightControls = ({
           title={isUiVisible ? "Hide UI" : "Show UI"}
         >
           <img
-            src={isUiVisible ? eyeopenIcon : eyeIcon} // Corrected icon logic: open eye when UI visible, closed when hidden
+            src={isUiVisible ? eyeopenIcon : eyeIcon}
             alt={isUiVisible ? "Hide UI" : "Show UI"}
             className="icon-image"
           />
@@ -84,6 +99,7 @@ const TopRightControls = ({
 
 TopRightControls.propTypes = {
   showWhitelist: PropTypes.bool,
+  isProjectAdminForWhitelist: PropTypes.bool,
   showInfo: PropTypes.bool,
   showToggleUI: PropTypes.bool,
   showEnhancedView: PropTypes.bool,

@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useCallback } from "react";
 import PropTypes from "prop-types";
 import Panel from "./Panel";
-import { useConfig } from "../../context/ConfigContext";
+import { useUserSession } from "../../context/UserSessionContext"; // Import useUserSession
+import { useConfig } from "../../context/ConfigContext"; // Import useConfig for service access
 import { RADAR_WHITELIST_KEY } from "../../config/global-config";
 import { isAddress, stringToHex, hexToString } from "viem";
 import "./PanelStyles/WhitelistCollectionsPanel.css";
 
-// Helper to format address
 const formatAddress = (address, length = 4) => {
   if (!address || typeof address !== "string" || !address.startsWith("0x"))
     return "N/A";
@@ -14,19 +14,9 @@ const formatAddress = (address, length = 4) => {
   return `${address.substring(0, length + 2)}...${address.substring(address.length - length)}`;
 };
 
-/**
- * WhitelistCollectionsPanel: Displays the list of LSP7/LSP8 collections approved
- * for use within the application, loaded from the currently viewed profile's storage.
- * (Admin functionality for adding/removing collections is currently disabled).
- */
-
 const WhitelistCollectionsPanel = ({ isOpen, onClose }) => {
-  const {
-    isParentAdmin, // Kept for potential future re-enabling of admin features
-    currentProfileAddress,
-    configServiceReady,
-    configServiceRef,
-  } = useConfig();
+  const { hostProfileAddress, isAdminOfHostProfile } = useUserSession();
+  const { configServiceInstanceReady, configServiceRef } = useConfig();
 
   const [collections, setCollections] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -48,9 +38,8 @@ const WhitelistCollectionsPanel = ({ isOpen, onClose }) => {
     [],
   );
 
-  // Load whitelisted collections from the viewed profile's storage
   useEffect(() => {
-    if (!isOpen || !configServiceReady || !configServiceRef?.current || !currentProfileAddress) {
+    if (!isOpen || !configServiceInstanceReady || !configServiceRef?.current || !hostProfileAddress) {
       if (!isOpen) { setCollections([]); setError(""); setSuccess(""); }
       return;
     }
@@ -59,11 +48,11 @@ const WhitelistCollectionsPanel = ({ isOpen, onClose }) => {
       setIsLoading(true);
       setError("");
       setSuccess("");
-      const logPrefix = `[WhitelistPanel Load Addr:${currentProfileAddress.slice(0,6)}]`;
+      const logPrefix = `[WhitelistPanel Load Addr:${hostProfileAddress.slice(0,6)}]`;
 
       try {
         const service = configServiceRef.current;
-        const whitelistDataStringHex = await service.loadDataFromKey(currentProfileAddress, RADAR_WHITELIST_KEY);
+        const whitelistDataStringHex = await service.loadDataFromKey(hostProfileAddress, RADAR_WHITELIST_KEY);
 
         let parsedCollections = [];
         if (whitelistDataStringHex) {
@@ -76,14 +65,14 @@ const WhitelistCollectionsPanel = ({ isOpen, onClose }) => {
               parsedCollections = parsedCollections.map((c) => ({ ...c, id: c.id || c.address }));
             }
           } catch (decodeOrParseError) {
-            console.error(`${logPrefix} Error decoding/parsing whitelist hex/JSON:`, decodeOrParseError); // Keep error log
+            console.error(`${logPrefix} Error decoding/parsing whitelist hex/JSON:`, decodeOrParseError);
             setError("Failed to parse existing whitelist data.");
             parsedCollections = [];
           }
         }
         setCollections(parsedCollections);
       } catch (error) {
-        console.error(`${logPrefix} Error loading whitelist:`, error); // Keep error log
+        console.error(`${logPrefix} Error loading whitelist:`, error);
         setError(`Failed to load collections: ${error.message}`);
         setCollections([]);
       } finally {
@@ -92,7 +81,7 @@ const WhitelistCollectionsPanel = ({ isOpen, onClose }) => {
     };
 
     loadCollections();
-  }, [isOpen, configServiceReady, configServiceRef, currentProfileAddress, displayStatus]);
+  }, [isOpen, configServiceInstanceReady, configServiceRef, hostProfileAddress, displayStatus]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -100,11 +89,10 @@ const WhitelistCollectionsPanel = ({ isOpen, onClose }) => {
   };
 
   const handleAddCollection = async () => {
-    // Admin functionality currently disabled via isParentAdmin check
-    if (!isParentAdmin) return displayStatus("Permission Denied.", "error");
-    if (!configServiceReady || !configServiceRef.current) return displayStatus("Service not ready.", "error");
+    if (!isAdminOfHostProfile) return displayStatus("Permission Denied.", "error");
+    if (!configServiceInstanceReady || !configServiceRef.current) return displayStatus("Service not ready.", "error");
 
-    const targetSaveAddress = currentProfileAddress;
+    const targetSaveAddress = hostProfileAddress;
     if (!targetSaveAddress) return displayStatus("Cannot determine target profile.", "error");
 
     const addressToAdd = newCollection.address.trim();
@@ -131,7 +119,7 @@ const WhitelistCollectionsPanel = ({ isOpen, onClose }) => {
       setNewCollection({ address: "", name: "", description: "", imageUrl: "" });
       displayStatus("Collection added successfully!", "success");
     } catch (error) {
-      console.error("Error adding collection:", error); // Keep error log
+      console.error("Error adding collection:", error);
       displayStatus(`Failed to add collection: ${error.message}`, "error");
     } finally {
       setIsLoading(false);
@@ -139,11 +127,10 @@ const WhitelistCollectionsPanel = ({ isOpen, onClose }) => {
   };
 
   const handleRemoveCollection = async (collectionIdToRemove) => {
-    // Admin functionality currently disabled via isParentAdmin check
-    if (!isParentAdmin) return displayStatus("Permission Denied.", "error");
-    if (!configServiceReady || !configServiceRef.current) return displayStatus("Service not ready.", "error");
+    if (!isAdminOfHostProfile) return displayStatus("Permission Denied.", "error");
+    if (!configServiceInstanceReady || !configServiceRef.current) return displayStatus("Service not ready.", "error");
 
-    const targetSaveAddress = currentProfileAddress;
+    const targetSaveAddress = hostProfileAddress;
      if (!targetSaveAddress) return displayStatus("Cannot determine target profile.", "error");
 
     if (!collectionIdToRemove) return;
@@ -162,7 +149,7 @@ const WhitelistCollectionsPanel = ({ isOpen, onClose }) => {
       setCollections(updatedCollections);
       displayStatus("Collection removed successfully!", "success");
     } catch (error) {
-      console.error("Error removing collection:", error); // Keep error log
+      console.error("Error removing collection:", error);
       displayStatus(`Failed to remove collection: ${error.message}`, "error");
     } finally {
       setIsLoading(false);
@@ -173,13 +160,13 @@ const WhitelistCollectionsPanel = ({ isOpen, onClose }) => {
 
   return (
     <Panel
-      title={isParentAdmin ? "Manage Approved Collections" : "Approved Collections"}
+      title={isAdminOfHostProfile ? "Manage Approved Collections" : "Approved Collections"}
       onClose={onClose}
       className="whitelist-panel"
       width="450px"
     >
       <div className="whitelist-panel-content">
-        {isParentAdmin && (
+        {isAdminOfHostProfile && (
           <>
             <div className="admin-header">
               <div className="admin-badge">Admin Mode</div>
@@ -230,7 +217,7 @@ const WhitelistCollectionsPanel = ({ isOpen, onClose }) => {
                     <div className="collection-address" title={collection.address}> {formatAddress(collection.address)} </div>
                     {collection.description && ( <div className="collection-description"> {collection.description} </div> )}
                   </div>
-                  {isParentAdmin && (
+                  {isAdminOfHostProfile && (
                     <button className="remove-button" onClick={() => handleRemoveCollection( collection.id || collection.address )} title="Remove from Whitelist" disabled={isLoading}> ✕ </button>
                   )}
                 </div>

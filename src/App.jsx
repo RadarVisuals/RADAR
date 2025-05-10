@@ -1,28 +1,27 @@
 // src/App.jsx
 import React, { useEffect } from "react";
 import MainView from "./components/Main/Mainview";
-import { useConfig } from "./context/ConfigContext";
+import { useUserSession } from "./context/UserSessionContext"; // Import useUserSession
 
 // Component to handle URL parameters for pure visitor mode
 const URLParameterHandler = () => {
-  const { togglePureVisitorMode } = useConfig();
+  const { togglePreviewMode } = useUserSession(); // Use togglePreviewMode from UserSessionContext
 
   useEffect(
     () => {
       const urlParams = new URLSearchParams(window.location.search);
       const isPureFromUrl = urlParams.get("pure") === "true";
-      // Check if togglePureVisitorMode exists before calling
-      if (isPureFromUrl && typeof togglePureVisitorMode === "function") {
-        // NOTE: The actual call to togglePureVisitorMode() is currently disabled below.
-        // If re-enabled, add togglePureVisitorMode to the dependency array.
-        // togglePureVisitorMode();
+      if (isPureFromUrl && typeof togglePreviewMode === "function") {
+        // NOTE: The actual call to togglePreviewMode() is currently disabled below.
+        // If re-enabled, add togglePreviewMode to the dependency array.
+        // togglePreviewMode();
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [] // Empty deps because togglePureVisitorMode() call is commented out
+    [] // If togglePreviewMode() is re-enabled, add it to deps: [togglePreviewMode]
   );
 
-  return null; // This component doesn't render anything visible
+  return null;
 };
 
 function App() {
