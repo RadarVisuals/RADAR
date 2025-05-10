@@ -1,4 +1,4 @@
-import { ethers } from 'ethers';
+import { getAddress, hexToString, decodeAbiParameters, parseAbiParameters } from 'viem';
 import { ERC725YDataKeys } from '@lukso/lsp-smart-contracts';
 import { Buffer } from 'buffer';
 
@@ -26,33 +26,32 @@ export function decodeData(dataItems, schemaHint) {
             if (rawData && rawData !== '0x') {
                 try {
                     // Try ABI decoding first (assuming address[])
-                    const decoded = ethers.utils.defaultAbiCoder.decode(['address[]'], rawData);
+                    const types = parseAbiParameters('address[]'); // VIEM: Parse ABI string
+                    const decoded = decodeAbiParameters(types, rawData); // VIEM: Decode parameters
                     return decoded[0] || [];
                 } catch (abiError) {
-                    console.warn(`decodeData: Failed ABI decode for ${schemaHint}. Trying JSON decode...`, abiError); // Keep warn
+                    console.warn(`decodeData: Failed ABI decode for ${schemaHint}. Trying JSON decode...`, abiError);
                     try {
                         // Fallback to JSON decoding
-                        const jsonString = ethers.toUtf8String(rawData);
+                        const jsonString = hexToString(rawData); // VIEM: hexToString
                         const parsed = JSON.parse(jsonString);
                         if (Array.isArray(parsed)) {
-                            // Extract addresses if it's an array of objects
                             return parsed.map(item => item?.address).filter(Boolean);
                         } else {
-                             console.warn(`decodeData: Decoded JSON is not an array for ${schemaHint}.`); // Keep warn
+                             console.warn(`decodeData: Decoded JSON is not an array for ${schemaHint}.`);
                              return [];
                         }
                     } catch (jsonError) {
-                        console.error(`decodeData: Failed both ABI and JSON decoding for ${schemaHint}:`, jsonError, 'Data:', rawData); // Keep error
+                        console.error(`decodeData: Failed both ABI and JSON decoding for ${schemaHint}:`, jsonError, 'Data:', rawData);
                         return [];
                     }
                 }
             }
         }
-        // If no specific logic matches the hint
-        console.warn(`decodeData: No specific decoding logic for schemaHint: ${schemaHint}`); // Keep warn
-        return dataItems.map(item => ({ keyName: item.keyName, value: item.value })); // Return raw data
+        console.warn(`decodeData: No specific decoding logic for schemaHint: ${schemaHint}`);
+        return dataItems.map(item => ({ keyName: item.keyName, value: item.value }));
     } catch (error) {
-        console.error(`Error decoding data for schema ${schemaHint}:`, error, 'Data:', dataItems); // Keep error
+        console.error(`Error decoding data for schema ${schemaHint}:`, error, 'Data:', dataItems);
         return [];
     }
 }
@@ -70,61 +69,56 @@ export function decodeData(dataItems, schemaHint) {
 export async function resolveLsp4Metadata(configService, contractAddress) {
     let checksummedAddress;
     try {
-        checksummedAddress = ethers.getAddress(contractAddress);
+        checksummedAddress = getAddress(contractAddress); // VIEM: getAddress
     } catch (e) {
-        console.error(`[resolveLsp4Metadata Addr:${contractAddress}] Invalid address format. Error: ${e.message}`); // Keep error
+        console.error(`[resolveLsp4Metadata Addr:${contractAddress}] Invalid address format. Error: ${e.message}`);
         return null;
     }
     const logPrefix = `[resolveLsp4Metadata Addr:${checksummedAddress.slice(0, 6)}]`;
 
     if (!configService || !checksummedAddress) {
-        console.error(`${logPrefix} Missing configService or contractAddress`); // Keep error
+        console.error(`${logPrefix} Missing configService or contractAddress`);
         return null;
     }
 
     try {
         const lsp4Key = ERC725YDataKeys.LSP4.LSP4Metadata;
-        // console.log(`${logPrefix} Fetching data for key: ${lsp4Key}`); // Removed log
-
         const rawValue = await configService.loadDataFromKey(checksummedAddress, lsp4Key);
 
         if (!rawValue || rawValue === '0x') {
-            // console.log(`${logPrefix} No LSP4Metadata key found or value is empty.`); // Removed log
             return null;
         }
-
-        // console.log(`${logPrefix} Raw VerifiableURI bytes received: ${rawValue.substring(0, 150)}...`); // Removed log
 
         let potentialUrl = null;
         let extractedJsonDirectly = null;
         const HASH_FUNC_OFFSET = 2 + 2 * 2; // '0x' + 2 bytes for length
         const HASH_OFFSET = HASH_FUNC_OFFSET + 32 * 2; // + 32 bytes for hash func
-        const DATA_URI_HEX_PREFIX = '646174613a'; // Hex for "data:"
+        // Hex for "data:", ensure 0x prefix for viem's hexToString if used on this part
+        const DATA_URI_HEX_PREFIX_RAW = Buffer.from('data:').toString('hex');
 
-        // Attempt to decode as VerifiableURI or Data URI
-        if (rawValue.length >= HASH_OFFSET + 2) { // Minimal length for VerifiableURI
-             const urlBytes = '0x' + rawValue.substring(HASH_OFFSET);
-             const urlBytesHex = rawValue.substring(HASH_OFFSET);
-             // console.log(`${logPrefix} Attempting VerifiableURI decode...`); // Removed log
 
-             // Strategy 1: Try direct UTF-8 decode (strict then lenient) for prefixes
+        if (rawValue.length >= HASH_OFFSET + 2) {
+             const urlBytes = ('0x' + rawValue.substring(HASH_OFFSET)); // Ensure 0x prefix for viem hexToString
+             const urlBytesHexOnly = rawValue.substring(HASH_OFFSET); // Original hex string for prefix search
+
              try {
-                 let decodedString = ethers.toUtf8String(urlBytes);
+                 let decodedString = hexToString(urlBytes); // VIEM: hexToString (strict by default)
                  if (decodedString.startsWith('ipfs://') || decodedString.startsWith('http')) {
                       potentialUrl = decodedString;
                  } else {
-                      const ipfsIndex = decodedString.indexOf('ipfs://');
-                      const httpIndex = decodedString.indexOf('http://');
-                      const httpsIndex = decodedString.indexOf('https://');
-                      let foundIndex = [ipfsIndex, httpIndex, httpsIndex].filter(i => i !== -1).reduce((min, cur) => Math.min(min, cur), Infinity);
-                      if (foundIndex !== Infinity && foundIndex !== -1) {
-                         potentialUrl = decodedString.substring(foundIndex);
-                      }
+                     // Attempt to find prefix in potentially messy string
+                     const ipfsIndex = decodedString.indexOf('ipfs://');
+                     const httpIndex = decodedString.indexOf('http://');
+                     const httpsIndex = decodedString.indexOf('https://');
+                     let foundIndex = [ipfsIndex, httpIndex, httpsIndex].filter(i => i !== -1).reduce((min, cur) => Math.min(min, cur), Infinity);
+                     if (foundIndex !== Infinity && foundIndex !== -1) {
+                        potentialUrl = decodedString.substring(foundIndex);
+                     }
                  }
-             } catch {
-                 // If strict decode failed, try lenient for prefix search only
+             } catch { // If strict decode failed
                  try {
-                    let decodedStringLenient = ethers.toUtf8String(urlBytes, ethers.Utf8ErrorFuncs.ignore);
+                    // viem's hexToString with onError: 'replace' will replace invalid UTF-8 sequences.
+                    let decodedStringLenient = hexToString(urlBytes, { onError: 'replace' });
                     const ipfsIndex = decodedStringLenient.indexOf('ipfs://');
                     const httpIndex = decodedStringLenient.indexOf('http://');
                     const httpsIndex = decodedStringLenient.indexOf('https://');
@@ -133,121 +127,104 @@ export async function resolveLsp4Metadata(configService, contractAddress) {
                        potentialUrl = decodedStringLenient.substring(foundIndex);
                     }
                  } catch (lenientError){
-                    console.error(`${logPrefix} Error during lenient UTF-8 decode for search: ${lenientError.message}`); // Keep error
+                    console.error(`${logPrefix} Error during lenient UTF-8 decode for search: ${lenientError.message}`);
                  }
              }
 
-             // Strategy 2: Check for Data URI hex prefix if no URL found yet
-             if (!potentialUrl && urlBytesHex.length > DATA_URI_HEX_PREFIX.length) {
-                const dataUriStartIndex = urlBytesHex.indexOf(DATA_URI_HEX_PREFIX);
+             // Check for Data URI hex prefix if no URL found yet
+             if (!potentialUrl && urlBytesHexOnly.length > DATA_URI_HEX_PREFIX_RAW.length) {
+                const dataUriStartIndex = urlBytesHexOnly.indexOf(DATA_URI_HEX_PREFIX_RAW);
                 if (dataUriStartIndex !== -1) {
-                    const dataUriHex = urlBytesHex.substring(dataUriStartIndex);
-                    const dataUriBytes = '0x' + dataUriHex;
+                    const dataUriFullHex = '0x' + urlBytesHexOnly.substring(dataUriStartIndex); // Add '0x' for hexToString
                     try {
-                        const dataUriString = ethers.toUtf8String(dataUriBytes);
+                        const dataUriString = hexToString(dataUriFullHex);
                         const { mimeType, isBase64, data } = parseDataUri(dataUriString);
                         if (mimeType.includes('json')) {
                             let jsonDataString = isBase64 ? Buffer.from(data, 'base64').toString('utf8') : decodeURIComponent(data);
                             extractedJsonDirectly = JSON.parse(jsonDataString);
-                            // console.log(`${logPrefix} Successfully parsed JSON directly from Data URI.`); // Removed log
                         } else {
-                            console.warn(`${logPrefix} Data URI has non-JSON mime type: ${mimeType}.`); // Keep warn
+                            console.warn(`${logPrefix} Data URI has non-JSON mime type: ${mimeType}.`);
                         }
                     } catch(e) {
-                        console.error(`${logPrefix} Failed to decode/parse Data URI content: ${e.message}`); // Keep error
+                        console.error(`${logPrefix} Failed to decode/parse Data URI content: ${e.message}`);
                     }
                 }
              }
         } else if (rawValue.startsWith('0x') && rawValue.length > 2) {
              // Fallback: Try decoding entire value as plain URL
              try {
-                 const decodedEntireValue = ethers.toUtf8String(rawValue);
+                 const decodedEntireValue = hexToString(rawValue); // VIEM: hexToString
                   if (decodedEntireValue.startsWith('http') || decodedEntireValue.startsWith('ipfs')) {
                      potentialUrl = decodedEntireValue;
                  } else {
-                     console.warn(`${logPrefix} Direct decode of entire value is not a valid URL.`); // Keep warn
+                     console.warn(`${logPrefix} Direct decode of entire value is not a valid URL.`);
                  }
              } catch (e) {
-                 console.warn(`${logPrefix} Could not decode entire raw value directly. Raw: ${rawValue.substring(0, 50)}...`, e.message); // Keep warn
+                 console.warn(`${logPrefix} Could not decode entire raw value directly. Raw: ${rawValue.substring(0, 50)}...`, e.message);
              }
         } else {
-            console.warn(`${logPrefix} Raw value is too short or invalid: ${rawValue}`); // Keep warn
+            console.warn(`${logPrefix} Raw value is too short or invalid: ${rawValue}`);
         }
 
         // Process results: JSON from Data URI > Fetched JSON > null
         if (extractedJsonDirectly) {
-            // console.log(`${logPrefix} Processing JSON extracted directly from Data URI.`); // Removed log
             if (extractedJsonDirectly.LSP4Metadata) {
-                 // logLsp4IconExtraction(logPrefix, extractedJsonDirectly.LSP4Metadata); // Logging handled elsewhere now
-                 return extractedJsonDirectly; // Return the full object containing LSP4Metadata key
+                 return extractedJsonDirectly;
             } else if (extractedJsonDirectly.name || extractedJsonDirectly.icon || extractedJsonDirectly.images || extractedJsonDirectly.assets) {
-                 console.warn(`${logPrefix} Data URI JSON lacks 'LSP4Metadata' key, wrapping content.`); // Keep warn
-                 // logLsp4IconExtraction(logPrefix, extractedJsonDirectly); // Logging handled elsewhere now
-                 return { LSP4Metadata: extractedJsonDirectly }; // Wrap if it looks like the content
+                 console.warn(`${logPrefix} Data URI JSON lacks 'LSP4Metadata' key, wrapping content.`);
+                 return { LSP4Metadata: extractedJsonDirectly };
             } else {
-                 console.error(`${logPrefix} JSON from Data URI has unexpected structure.`, extractedJsonDirectly); // Keep error
+                 console.error(`${logPrefix} JSON from Data URI has unexpected structure.`, extractedJsonDirectly);
                  return null;
             }
         }
 
         if (potentialUrl) {
-            // console.log(`${logPrefix} Processing extracted URL: ${potentialUrl.substring(0,100)}...`); // Removed log
             let fetchUrl = potentialUrl;
             if (fetchUrl.startsWith('ipfs://')) {
                 fetchUrl = `${IPFS_GATEWAY}${fetchUrl.substring(7)}`;
-                // console.log(`${logPrefix} Converted IPFS URL to Gateway URL: ${fetchUrl}`); // Removed log
             }
 
             if (!fetchUrl.startsWith('http')) {
-                console.error(`${logPrefix} Invalid fetch URL derived: ${fetchUrl}`); // Keep error
+                console.error(`${logPrefix} Invalid fetch URL derived: ${fetchUrl}`);
                 return null;
             }
 
             try {
-                // console.log(`${logPrefix} Fetching LSP4 metadata JSON from URL: ${fetchUrl}`); // Removed log
                 const response = await fetch(fetchUrl);
-                // console.log(`${logPrefix} Fetch response status: ${response.status}`); // Removed log
-
                 if (!response.ok) {
                     const errorText = await response.text().catch(() => 'Could not read error response body');
                     throw new Error(`HTTP error! status: ${response.status} for ${fetchUrl}. Body: ${errorText.substring(0, 200)}`);
                 }
-
                 const rawResponseText = await response.text();
-                // console.log(`${logPrefix} Raw JSON response received (first 300 chars): ${rawResponseText.substring(0, 300)}...`); // Removed log
-
                 let metadata;
                 try {
                     metadata = JSON.parse(rawResponseText);
                 } catch (parseError) {
-                    console.error(`${logPrefix} Failed to parse JSON response from ${fetchUrl}. Error: ${parseError.message}.`); // Keep error
+                    console.error(`${logPrefix} Failed to parse JSON response from ${fetchUrl}. Error: ${parseError.message}.`);
                     throw new Error(`JSON Parse Error: ${parseError.message}`);
                 }
 
-                // console.log(`${logPrefix} Parsed JSON object from URL:`, JSON.parse(JSON.stringify(metadata))); // Removed log
-
                 if (metadata && metadata.LSP4Metadata) {
-                    // logLsp4IconExtraction(logPrefix, metadata.LSP4Metadata); // Logging handled elsewhere now
-                    return metadata; // Return the full object containing LSP4Metadata key
+                    return metadata;
                 } else if (metadata && (metadata.name || metadata.icon || metadata.images || metadata.assets)) {
-                    console.warn(`${logPrefix} Fetched JSON lacks 'LSP4Metadata' key, wrapping content.`); // Keep warn
-                    // logLsp4IconExtraction(logPrefix, metadata); // Logging handled elsewhere now
-                    return { LSP4Metadata: metadata }; // Wrap if it looks like the content
+                    console.warn(`${logPrefix} Fetched JSON lacks 'LSP4Metadata' key, wrapping content.`);
+                    return { LSP4Metadata: metadata };
                 } else {
-                    console.warn(`${logPrefix} Fetched JSON from URL has unexpected structure.`, metadata); // Keep warn
+                    console.warn(`${logPrefix} Fetched JSON from URL has unexpected structure.`, metadata);
                     return null;
                 }
             } catch (fetchError) {
-                console.error(`${logPrefix} Failed to fetch or parse LSP4 JSON from ${fetchUrl}:`, fetchError.message); // Keep error
+                console.error(`${logPrefix} Failed to fetch or parse LSP4 JSON from ${fetchUrl}:`, fetchError.message);
                 return null;
             }
         }
 
-        console.warn(`${logPrefix} Could not extract a valid JSON URL or parse JSON directly from LSP4Metadata.`); // Keep warn
+        console.warn(`${logPrefix} Could not extract a valid JSON URL or parse JSON directly from LSP4Metadata.`);
         return null;
 
     } catch (error) {
-        console.error(`${logPrefix} General error resolving LSP4 Metadata:`, error); // Keep error
+        console.error(`${logPrefix} General error resolving LSP4 Metadata:`, error);
         return null;
     }
 }

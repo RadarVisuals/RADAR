@@ -1,35 +1,15 @@
 // src/hooks/useAudioVisualizer.js
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import throttle from 'lodash-es/throttle';
 
-/**
- * @typedef {object} AudioAnalyzerData Raw data from the audio analysis process.
- * @property {number} level - Overall audio level (0-1).
- * @property {{bass: number, mid: number, treble: number}} frequencyBands - Normalized frequency band levels (0-1).
- */
+const UI_UPDATE_THROTTLE_MS = 100; // Update UI max 10 times per second (100ms)
 
-/**
- * @typedef {object} AudioSettings Configuration for how audio affects visuals.
- * @property {number} bassIntensity - Multiplier for bass impact on visuals.
- * @property {number} midIntensity - Multiplier for mid-range impact on visuals.
- * @property {number} trebleIntensity - Multiplier for treble impact on visuals.
- * @property {number} smoothingFactor - Smoothing factor for the audio analysis algorithm (0-1). Affects responsiveness vs smoothness.
- */
+// Helper to compare frequency band objects shallowly
+const areFrequencyBandsEqual = (bandsA, bandsB) => {
+  if (!bandsA || !bandsB) return bandsA === bandsB; // Handle null/undefined cases
+  return bandsA.bass === bandsB.bass && bandsA.mid === bandsB.mid && bandsA.treble === bandsB.treble;
+};
 
-/**
- * Manages the state related to the audio visualization feature.
- * This includes whether audio input is active, settings that control
- * how audio influences visuals (like frequency band intensity), and the
- * latest analyzed audio data (level, bass, mid, treble).
- *
- * @returns {{
- *   isAudioActive: boolean,
- *   setIsAudioActive: React.Dispatch<React.SetStateAction<boolean>>,
- *   audioSettings: AudioSettings,
- *   setAudioSettings: React.Dispatch<React.SetStateAction<AudioSettings>>,
- *   analyzerData: AudioAnalyzerData,
- *   handleAudioDataUpdate: (data: AudioAnalyzerData) => void
- * }} An object containing the audio visualizer state and functions to update it.
- */
 export function useAudioVisualizer() {
   const [isAudioActive, setIsAudioActive] = useState(false);
   const [audioSettings, setAudioSettings] = useState({
@@ -38,29 +18,74 @@ export function useAudioVisualizer() {
     trebleIntensity: 1.0,
     smoothingFactor: 0.6,
   });
-  const [analyzerData, setAnalyzerData] = useState({
+
+  // Internal state that is updated by the throttled function
+  const [internalAnalyzerData, setInternalAnalyzerData] = useState({
     level: 0,
     frequencyBands: { bass: 0, mid: 0, treble: 0 },
   });
 
-  /**
-   * Callback function designed to be passed to the AudioAnalyzer component.
-   * Updates the internal state with the latest audio level and frequency data.
-   * @param {AudioAnalyzerData} data - The latest audio data from the analyzer.
-   */
+  // Memoized version of analyzerData to be passed as props.
+  // This ensures the object reference only changes if the actual values change.
+  const uiPropAnalyzerData = useMemo(() => ({
+    level: internalAnalyzerData.level,
+    frequencyBands: { // Always create a new object for frequencyBands for immutability
+      bass: internalAnalyzerData.frequencyBands.bass,
+      mid: internalAnalyzerData.frequencyBands.mid,
+      treble: internalAnalyzerData.frequencyBands.treble,
+    }
+  }), [
+    internalAnalyzerData.level,
+    internalAnalyzerData.frequencyBands.bass, // Depend on individual primitive values
+    internalAnalyzerData.frequencyBands.mid,
+    internalAnalyzerData.frequencyBands.treble
+  ]);
+
+  const latestRawDataRef = useRef({
+    level: 0,
+    frequencyBands: { bass: 0, mid: 0, treble: 0 },
+  });
+
+  // Throttled function to update the internal state
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const throttledUpdateInternalState = useCallback(
+    throttle(() => {
+      // Read the latest data from the ref when the throttled function executes
+      const newDataFromRef = latestRawDataRef.current;
+      setInternalAnalyzerData(prevData => {
+        // Only update if the values have actually changed
+        if (prevData.level !== newDataFromRef.level || !areFrequencyBandsEqual(prevData.frequencyBands, newDataFromRef.frequencyBands)) {
+          return newDataFromRef; // Return new data, causing a state change
+        }
+        return prevData; // Return old data, preventing unnecessary state change & re-render
+      });
+    }, UI_UPDATE_THROTTLE_MS, { leading: true, trailing: true }),
+    [] // setInternalAnalyzerData is stable from useState
+  );
+
   const handleAudioDataUpdate = useCallback((data) => {
-    setAnalyzerData({
+    // Always update the ref with the absolute latest raw data
+    latestRawDataRef.current = {
       level: data.level ?? 0,
       frequencyBands: data.frequencyBands ?? { bass: 0, mid: 0, treble: 0 },
-    });
-  }, []);
+    };
+    // Call the throttled function, which will then decide whether to update state
+    throttledUpdateInternalState();
+  }, [throttledUpdateInternalState]);
+
+  useEffect(() => {
+    // Cleanup the throttle function on unmount
+    return () => {
+      throttledUpdateInternalState.cancel();
+    };
+  }, [throttledUpdateInternalState]);
 
   return {
     isAudioActive,
     setIsAudioActive,
     audioSettings,
     setAudioSettings,
-    analyzerData,
+    analyzerData: uiPropAnalyzerData, // Expose the memoized, more stable data for UI
     handleAudioDataUpdate,
   };
 }

@@ -1,30 +1,23 @@
-import React, { useEffect, useRef } from "react"; // Removed useCallback import
+import React, { useEffect, useRef } from "react";
 import PropTypes from "prop-types";
-import { useConfig } from "../../context/ConfigContext";
+import { useProfileSessionState } from "../../hooks/configSelectors"; // Use the selector
 import { useMIDI } from "../../context/MIDIContext";
 import { midiIcon, rotateIcon } from "../../assets";
 import "./LayerConfigurationStyles/LayerConfiguration.css";
 
-/**
- * LayerConfiguration: Renders controls for a single visual layer,
- * including sliders for parameters (speed, size, opacity, etc.),
- * blend mode selection, direction toggle, and MIDI mapping controls
- * for each parameter and layer selection. Also includes a MIDI monitor.
- */
 const LayerConfiguration = ({
   layerConfigs,
   onLayerConfigChange,
   blendModes = [],
   activeLayer = 1,
-  readOnly = false,
-  // onTabChange prop is handled by the parent component (e.g., EnhancedControlPanel)
+  readOnly: propReadOnly = false, // Rename prop to avoid conflict
   showMidiConnect = true,
 }) => {
-  const { isVisitor, isParentProfile } = useConfig();
+  const { isVisitor, isParentAdmin, isPreviewMode } = useProfileSessionState();
   const {
     isConnected: midiConnected,
     connectMIDI,
-    midiMappings,
+    midiMap, // Use midiMap from MIDIContext
     layerMappings,
     midiLearning,
     learningLayer,
@@ -43,12 +36,19 @@ const LayerConfiguration = ({
 
   const midiMonitorRef = useRef(null);
 
-  // Override readOnly if we're a visitor on a profile other than the parent/showcase
-  const effectiveReadOnly = isVisitor && !isParentProfile ? readOnly : false;
+  // Determine if controls should be effectively read-only
+  // Controls are read-only if:
+  // 1. isPreviewMode is true
+  // 2. OR (isVisitor is true AND the current host profile is NOT the special admin/parent one)
+  const effectiveReadOnly = useMemo(() => {
+    if (isPreviewMode) return true;
+    if (isVisitor && !isParentAdmin) return true;
+    return propReadOnly; // Fallback to prop if other conditions don't make it read-only
+  }, [isPreviewMode, isVisitor, isParentAdmin, propReadOnly]);
+
 
   const config = layerConfigs[activeLayer] || {};
 
-  // Auto-scroll the MIDI monitor to the bottom
   useEffect(() => {
     if (midiMonitorRef.current) {
       midiMonitorRef.current.scrollTop = midiMonitorRef.current.scrollHeight;
@@ -76,9 +76,7 @@ const LayerConfiguration = ({
   const enterMIDILearnMode = (paramName) => {
     if (effectiveReadOnly) return;
     if (!midiConnected) {
-      alert(
-        "Please connect your MIDI device first using the 'Connect MIDI' button.",
-      );
+      alert("Please connect your MIDI device first using the 'Connect MIDI' button.");
       return;
     }
     startMIDILearn(paramName, activeLayer);
@@ -87,9 +85,7 @@ const LayerConfiguration = ({
   const enterLayerMIDILearnMode = (layer) => {
     if (effectiveReadOnly) return;
     if (!midiConnected) {
-      alert(
-        "Please connect your MIDI device first using the 'Connect MIDI' button.",
-      );
+      alert("Please connect your MIDI device first using the 'Connect MIDI' button.");
       return;
     }
     startLayerMIDILearn(layer);
@@ -97,7 +93,6 @@ const LayerConfiguration = ({
 
   const connectMidi = () => {
     connectMIDI().catch((err) => {
-      // console.error removed, alert provides feedback
       alert("Failed to access MIDI devices: " + err.message);
     });
   };
@@ -111,18 +106,28 @@ const LayerConfiguration = ({
   };
 
   const resetAllMappingsData = () => {
+    if (effectiveReadOnly) return;
     clearAllMappings();
   };
 
   const formatMidiMapping = (mapping) => {
     if (!mapping) return "None";
-    const channel =
-      mapping.channel !== undefined ? ` (Ch ${mapping.channel + 1})` : "";
+    const channel = mapping.channel !== undefined ? ` (Ch ${mapping.channel + 1})` : "";
     if (mapping.type === "cc") return `CC ${mapping.number}${channel}`;
     if (mapping.type === "note") return `Note ${mapping.number}${channel}`;
     if (mapping.type === "pitchbend") return `Pitch${channel}`;
     return "Unknown";
   };
+  
+  const currentParamMidiMappings = midiMap[activeLayer] || {};
+
+  // Message for visitors on the showcase/admin profile
+  const visitorOnShowcaseMessage = isVisitor && isParentAdmin && !effectiveReadOnly && (
+    <div className="visitor-message">
+      As a visitor, you can experiment with all controls on this demo page.
+      Changes won't be saved permanently.
+    </div>
+  );
 
   return (
     <div className="layer-configuration">
@@ -147,6 +152,7 @@ const LayerConfiguration = ({
                   className="midi-reset-btn"
                   onClick={resetAllMappingsData}
                   title="Reset all MIDI mappings"
+                  disabled={effectiveReadOnly}
                 >
                   Reset Mappings
                 </button>
@@ -270,8 +276,8 @@ const LayerConfiguration = ({
           </span>
           <div className="midi-mapping-info">
             <span className="midi-mapping-text" title="Current MIDI mapping">
-              {midiMappings[activeLayer]?.speed
-                ? formatMidiMapping(midiMappings[activeLayer].speed)
+              {currentParamMidiMappings.speed
+                ? formatMidiMapping(currentParamMidiMappings.speed)
                 : "None"}
             </span>
             <button
@@ -304,8 +310,8 @@ const LayerConfiguration = ({
           </span>
           <div className="midi-mapping-info">
             <span className="midi-mapping-text" title="Current MIDI mapping">
-              {midiMappings[activeLayer]?.size
-                ? formatMidiMapping(midiMappings[activeLayer].size)
+              {currentParamMidiMappings.size
+                ? formatMidiMapping(currentParamMidiMappings.size)
                 : "None"}
             </span>
             <button
@@ -340,8 +346,8 @@ const LayerConfiguration = ({
           </span>
           <div className="midi-mapping-info">
             <span className="midi-mapping-text" title="Current MIDI mapping">
-              {midiMappings[activeLayer]?.opacity
-                ? formatMidiMapping(midiMappings[activeLayer].opacity)
+              {currentParamMidiMappings.opacity
+                ? formatMidiMapping(currentParamMidiMappings.opacity)
                 : "None"}
             </span>
             <button
@@ -374,8 +380,8 @@ const LayerConfiguration = ({
           </span>
           <div className="midi-mapping-info">
             <span className="midi-mapping-text" title="Current MIDI mapping">
-              {midiMappings[activeLayer]?.drift
-                ? formatMidiMapping(midiMappings[activeLayer].drift)
+              {currentParamMidiMappings.drift
+                ? formatMidiMapping(currentParamMidiMappings.drift)
                 : "None"}
             </span>
             <button
@@ -408,8 +414,8 @@ const LayerConfiguration = ({
           </span>
           <div className="midi-mapping-info">
             <span className="midi-mapping-text" title="Current MIDI mapping">
-              {midiMappings[activeLayer]?.driftSpeed
-                ? formatMidiMapping(midiMappings[activeLayer].driftSpeed)
+              {currentParamMidiMappings.driftSpeed
+                ? formatMidiMapping(currentParamMidiMappings.driftSpeed)
                 : "None"}
             </span>
             <button
@@ -440,8 +446,8 @@ const LayerConfiguration = ({
           <span className="slider-value">{Math.round(config.xaxis || 0)}</span>
           <div className="midi-mapping-info">
             <span className="midi-mapping-text" title="Current MIDI mapping">
-              {midiMappings[activeLayer]?.xaxis
-                ? formatMidiMapping(midiMappings[activeLayer].xaxis)
+              {currentParamMidiMappings.xaxis
+                ? formatMidiMapping(currentParamMidiMappings.xaxis)
                 : "None"}
             </span>
             <button
@@ -472,8 +478,8 @@ const LayerConfiguration = ({
           <span className="slider-value">{Math.round(config.yaxis || 0)}</span>
           <div className="midi-mapping-info">
             <span className="midi-mapping-text" title="Current MIDI mapping">
-              {midiMappings[activeLayer]?.yaxis
-                ? formatMidiMapping(midiMappings[activeLayer].yaxis)
+              {currentParamMidiMappings.yaxis
+                ? formatMidiMapping(currentParamMidiMappings.yaxis)
                 : "None"}
             </span>
             <button
@@ -531,13 +537,7 @@ const LayerConfiguration = ({
           className="direction-icon"
         />
       </button>
-
-      {isVisitor && isParentProfile && (
-        <div className="visitor-message">
-          As a visitor, you can experiment with all controls on this demo page.
-          Changes won't be saved permanently.
-        </div>
-      )}
+      {visitorOnShowcaseMessage}
     </div>
   );
 };
@@ -548,7 +548,6 @@ LayerConfiguration.propTypes = {
   blendModes: PropTypes.array,
   activeLayer: PropTypes.number,
   readOnly: PropTypes.bool,
-  onTabChange: PropTypes.func,
   showMidiConnect: PropTypes.bool,
 };
 

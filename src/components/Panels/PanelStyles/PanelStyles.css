@@ -66,4 +66,7 @@
   padding: 15px;
   overflow-y: auto;
   flex: 1;
+  /* --- ADDED: Prevent scroll chaining from panel content --- */
+  overscroll-behavior: contain;
+  /* --------------------------------------------------------- */
 }

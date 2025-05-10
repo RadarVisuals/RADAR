@@ -112,6 +112,9 @@
   min-height: 0;
   scrollbar-width: thin;
   scrollbar-color: var(--color-primary-a30) rgba(0, 0, 0, 0.1);
+  /* --- ADDED: Prevent scroll chaining from info overlay content --- */
+  overscroll-behavior: contain;
+  /* -------------------------------------------------------------- */
 }
 .tab-content::-webkit-scrollbar { width: 8px; height: 8px; }
 .tab-content::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius: 4px; }

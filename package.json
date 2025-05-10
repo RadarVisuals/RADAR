@@ -1,5 +1,5 @@
 {
-  "name": "entity-portals",
+  "name": "radar",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -20,12 +20,12 @@
     "@p5-wrapper/react": "^4.4.2",
     "buffer": "^6.0.3",
     "ethers": "^6.13.5",
+    "lodash-es": "^4.17.21",
     "pixi.js": "^8.8.1",
     "prop-types": "^15.8.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "viem": "^2.27.0",
-    "web3": "^4.16.0"
+    "viem": "^2.27.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.21.0",

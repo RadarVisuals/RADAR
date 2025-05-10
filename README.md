@@ -93,6 +93,23 @@ This interplay of personal creation, shared experiences, and on-chain identity o
 
 ---
 
+## Bonus: Creative Suite Extensions (Testable in Grid Tabs)
+
+Beyond the core visualizer, RADAR is expanding with tools that further empower your creative journey:
+
+*   **RADAR Layer Prep Tool:**
+    *   **Concept:** Don't just use your NFTs as-is; transform them! This experimental tool (available under the "Grid" -> "RADAR Layer Prep" tab) allows you to load your existing NFTs and deconstruct/reconstruct them into new visual components optimized for RADAR's layering engine.
+    *   **Become the Artist:** Manipulate, crop, and combine elements from your NFTs to create entirely new, unique assets ready to be fed back into the RADAR visualizer. This truly puts the power of asset creation into your hands.
+    *   *(See example outcomes in the "Room 725" tab after prepping an asset!)*
+
+*   **Room 725 - 3D Showroom:**
+    *   **Concept:** Experience your original NFTs and your newly created "prepped" assets in an immersive, first-person 3D environment.
+    *   **Walkable Gallery:** Navigate this virtual space (available under the "Grid" -> "Room 725" tab) to see your digital art come to life in a new dimension. It's a unique way to appreciate the transformation from original asset to RADAR-ready component and then to dynamic visual synthesis.
+
+These experimental features showcase the ongoing commitment to making RADAR a comprehensive platform for NFT interaction, creation, and exhibition. Dive into the "Grid" section of the app to explore these powerful additions!
+
+---
+
 ## Roadmap Highlights
 
 *   **Visual Effect Expansion:** More effects, parameter interpolation, "P-locking" concepts.

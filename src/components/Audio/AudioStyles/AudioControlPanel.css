@@ -184,6 +184,13 @@ input:checked + .toggle-slider:before {
   gap: var(--space-sm);
 }
 
+/* --- THIS RULE IS KEY FOR THE LEVEL METER BAR --- */
+.level-meter .meter-bar {
+  flex-grow: 1; 
+  min-width: 50px; 
+}
+/* --------------------------------------------- */
+
 .frequency-meters {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -205,13 +212,13 @@ input:checked + .toggle-slider:before {
 }
 
 .meter-bar {
-  width: 100%;
+  width: 100%; 
   height: 10px;
   background-color: var(--color-primary-a05);
   border-radius: var(--radius-xs);
   overflow: hidden;
   border: 1px solid var(--color-primary-a15);
-  position: relative;
+  position: relative; 
 }
 
 .meter-fill {
@@ -246,25 +253,17 @@ input:checked + .toggle-slider:before {
   color: var(--color-text);
 }
 
-.audio-settings-section h3 {
-  font-size: var(--font-size-md);
-  margin-bottom: var(--space-sm);
-  color: var(--color-primary);
-  border-bottom: 1px solid var(--color-primary-a15);
-  padding-bottom: var(--space-xs);
-}
-
 .slider-group {
   display: flex;
   flex-direction: column;
-  gap: var(--space-md);
+  gap: var(--space-xs); 
 }
 
 .slider-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--space-xs);
+  margin-bottom: 2px; 
 }
 .slider-label {
   font-size: var(--font-size-sm);
@@ -286,7 +285,7 @@ input:checked + .toggle-slider:before {
     font-size: var(--font-size-xs);
     color: var(--color-text-muted);
     padding: 0 2px;
-    margin-top: var(--space-xxs);
+    margin-top: 2px; 
 }
 
 .intensity-slider {
@@ -316,54 +315,6 @@ input:checked + .toggle-slider:before {
   cursor: pointer;
   border: none;
   box-shadow: 0 0 4px rgba(var(--color-primary-rgb), 0.5);
-}
-
-.mapping-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-}
-
-.mapping-item {
-  display: flex;
-  align-items: center;
-  padding: var(--space-xs);
-  background: var(--color-primary-a05);
-  border-radius: var(--radius-sm);
-  border: 1px solid transparent;
-}
-
-.mapping-badge {
-  padding: var(--space-xxs) var(--space-xs);
-  border-radius: var(--radius-sm);
-  font-size: var(--font-size-xs);
-  font-weight: bold;
-  min-width: 50px;
-  text-align: center;
-  margin-right: var(--space-sm);
-}
-
-.mapping-badge.bass { background: var(--color-bass-a20); color: var(--color-bass); }
-.mapping-badge.mid { background: var(--color-mid-a20); color: var(--color-mid); }
-.mapping-badge.treble { background: var(--color-treble-a20); color: var(--color-treble); }
-.mapping-badge.all { background: var(--color-accent-a20); color: var(--color-accent); }
-
-.mapping-arrow {
-  margin: 0 var(--space-xs);
-  color: var(--color-text-muted);
-}
-
-.mapping-effect {
-  font-size: var(--font-size-sm);
-  color: var(--color-text);
-}
-.mapping-detail {
-    font-size: var(--font-size-xs);
-    color: var(--color-text-muted);
-    margin-left: var(--space-xs);
 }
 
 .inactive-state {

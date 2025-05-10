@@ -1,3 +1,4 @@
+/* src/styles/variables.css */
 :root {
   --font-family-radar: "RadarFont", var(--font-family);
 
@@ -43,6 +44,14 @@
   --color-token-a20: rgba(0, 255, 128, 0.2);
   --color-contract: #0080ff;
   --color-contract-a20: rgba(0, 128, 255, 0.2);
+
+  /* --- ADDED/UPDATED DEFINITIONS FOR METER FILL COLORS --- */
+  --color-accent: #FFD700; /* Gold - for Level meter */
+  --color-bass: #FF5733;   /* Reddish-Orange - for Bass meter */
+  --color-mid: #FFC300;    /* Yellow-Orange - for Mid meter */
+  --color-treble: #33FFBD; /* Cyan-Green - for Treble meter */
+  /* --- END ADDED/UPDATED DEFINITIONS --- */
+
 
   --color-text: rgba(255, 255, 255, 0.9);
   --color-text-muted: rgba(255, 255, 255, 0.6);

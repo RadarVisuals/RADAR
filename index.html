@@ -16,6 +16,9 @@
         color: #00f3ff; /* Base text color */
         font-family: Arial, sans-serif;
         display: block; /* Explicitly block */
+        /* --- ADDED: Prevent scroll chaining to parent page --- */
+        overscroll-behavior: contain;
+        /* ---------------------------------------------------- */
       }
 
       /* Ensure #root takes full height of the body */

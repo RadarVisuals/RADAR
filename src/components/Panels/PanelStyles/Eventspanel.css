@@ -76,16 +76,22 @@
   box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.2);
 }
 
-.slider-group {
+/* UPDATED STYLES FOR SLIDER SPACING */
+.color-config-section .slider-group { /* Targets slider groups specifically within color-config-section */
   display: flex;
   flex-direction: column;
-  gap: var(--space-xs);
+  gap: 2px; /* Reduced gap between slider containers */
 }
-.slider-container {
-  margin-bottom: var(--space-xxs);
+.color-config-section .slider-container { /* Targets slider containers specifically within color-config-section */
+  margin-bottom: 0px; /* Removed bottom margin from individual slider containers */
 }
 
-input[type="range"].color-slider {
+.color-config-section .slider-header { /* Targets slider headers specifically within color-config-section */
+  /* This overrides the global .slider-header margin if needed, or complements it */
+  margin-bottom: 2px; /* Reduced space between header and the input */
+}
+
+.color-config-section input[type="range"].color-slider { /* Targets color sliders specifically */
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
@@ -93,8 +99,11 @@ input[type="range"].color-slider {
   border-radius: 3px;
   cursor: pointer;
   outline: none;
-  margin-top: var(--space-xxs);
+  margin-top: 2px; /* Reduced space above the slider input */
 }
+/* END UPDATED STYLES FOR SLIDER SPACING */
+
+
 input[type="range"].color-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
@@ -104,7 +113,7 @@ input[type="range"].color-slider::-webkit-slider-thumb {
   border-radius: 50%;
   cursor: pointer;
   box-shadow: 0 0 4px rgba(var(--color-primary-rgb), 0.5);
-  margin-top: -4px;
+  margin-top: -4px; /* This helps vertically center the thumb on the track */
 }
 input[type="range"].color-slider::-moz-range-thumb {
   width: 14px;
