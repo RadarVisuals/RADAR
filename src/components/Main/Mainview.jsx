@@ -1,13 +1,19 @@
+// src/components/Main/MainView.jsx
 import React, { useRef, useEffect, useCallback, useState, useMemo } from "react";
-import ReactDOM from "react-dom";
-import PropTypes from "prop-types"; // Import PropTypes
+import PropTypes from "prop-types";
 
 // Custom Hooks
 import { useCanvasOrchestrator } from "../../hooks/useCanvasOrchestrator";
 import { useNotifications } from "../../hooks/useNotifications";
 import { useVisualEffects } from "../../hooks/useVisualEffects";
 import { useUpProvider } from "../../context/UpProvider";
-import { useConfig } from "../../context/ConfigContext";
+import {
+  useVisualLayerState, // This will now source from VisualConfigContext
+  useInteractionSettingsState,
+  useProfileSessionState,
+  useConfigStatusState,
+  usePresetManagementState,
+} from "../../hooks/configSelectors";
 import { useMIDI } from "../../context/MIDIContext";
 import { useRenderLifecycle } from '../../hooks/useRenderLifecycle';
 import { useCanvasContainer } from '../../hooks/useCanvasContainer';
@@ -17,10 +23,15 @@ import { useLsp1Events } from '../../hooks/useLsp1Events';
 import { useAnimationLifecycleManager } from '../../hooks/useAnimationLifecycleManager';
 
 // Components
-import AudioAnalyzer from "../Audio/AudioAnalyzer";
 import ToastContainer from "../Notifications/ToastContainer";
 import UIOverlay from '../UI/UIOverlay';
-import { sliderParams } from '../Panels/EnhancedControlPanel'; // Keep if needed for MIDI scaling
+import { sliderParams } from '../Panels/EnhancedControlPanel'; // Assuming sliderParams is still relevant
+
+// New Child Components (assuming these are correctly structured)
+import CanvasContainerWrapper from '../MainViewParts/CanvasContainerWrapper';
+import FpsDisplay from '../MainViewParts/FpsDisplay';
+import StatusIndicator from '../MainViewParts/StatusIndicator';
+import AudioAnalyzerWrapper from '../MainViewParts/AudioAnalyzerWrapper';
 
 // Config & Assets
 import { BLEND_MODES } from "../../config/global-config";
@@ -33,61 +44,54 @@ import { scaleNormalizedValue } from "../../utils/helpers";
 
 // Styles
 import "./MainviewStyles/Mainview.css";
-import "./MainviewStyles/FpsCounter.css";
 
-const portalContainer = document.getElementById('portal-container');
+const portalContainerNode = document.getElementById('portal-container');
 
 /**
- * MainView component: The central orchestrator for the RADAR application.
- * It integrates context providers, manages UI state, handles user interactions,
- * orchestrates the canvas rendering lifecycle via custom hooks, and connects
- * services like LSP1 blockchain events.
+ * MainView component: The primary view of the RADAR application.
+ * It orchestrates various parts of the application including canvas rendering,
+ * UI overlays, state management hooks, and event handling.
+ * It now consumes `useVisualLayerState` which sources its data (`layerConfigs`, `tokenAssignments`,
+ * `updateLayerConfig`, `updateTokenAssignment`) from the new `VisualConfigContext`.
  *
- * @param {object} props - Component props.
- * @param {string[]} [props.blendModes=BLEND_MODES] - Available blend modes for layers.
+ * @param {object} props
+ * @param {Array<string>} [props.blendModes=BLEND_MODES] - Array of available blend mode strings.
+ * @returns {JSX.Element} The rendered MainView component.
  */
 const MainView = ({ blendModes = BLEND_MODES }) => {
-  useUpProvider(); // Initialize UP Provider context usage
-  const configContextData = useConfig(); // Get the whole context object
+  useUpProvider(); // Initialize UP Provider connection, consumed by UserSessionContext
 
-  // Destructure ONLY values directly used in MainView logic flow
+  // Consuming useVisualLayerState which now sources from VisualConfigContext
   const {
-    layerConfigs,
-    tokenAssignments,
-    savedReactions,
-    configLoadNonce,
-    isInitiallyResolved,
-    loadError,
-    currentProfileAddress,
-    currentConfigName,
-    updateLayerConfig: updateCentralConfig,
-    updateTokenAssignment,
-    updateSavedReaction,
-    deleteSavedReaction,
-    upInitializationError,
-    upFetchStateError,
-    loadNamedConfig,
-    configServiceRef,
-    // Variables like canSave, isVisitor etc. are accessed via configContextData in uiOverlayProps construction
-  } = configContextData;
+    layerConfigs, tokenAssignments, updateLayerConfig, updateTokenAssignment
+  } = useVisualLayerState();
+
+  // Other state hooks remain the same, sourcing from their respective contexts via selectors
+  const {
+    savedReactions, updateSavedReaction, deleteSavedReaction
+  } = useInteractionSettingsState();
+  const {
+    currentProfileAddress, // This is hostProfileAddress
+    isProfileOwner,        // This is isHostProfileOwner
+    canSave,               // This is canSaveToHostProfile
+    isPreviewMode,
+    isParentAdmin,         // This is isRadarProjectAdmin
+    isVisitor
+  } = useProfileSessionState();
+  const {
+    isInitiallyResolved, configLoadNonce, loadError, upInitializationError,
+    upFetchStateError, configServiceRef, isLoading: isConfigLoading
+  } = useConfigStatusState(); // Note: up...Error fields here are now null from the selector
+  const {
+    loadNamedConfig, currentConfigName, savedConfigList: presetSavedConfigList
+  } = usePresetManagementState();
 
   const { pendingLayerSelect, pendingParamUpdate, clearPendingActions } = useMIDI();
   const notificationData = useNotifications();
   const { addNotification } = notificationData;
-  const { processEffect, createDefaultEffect } = useVisualEffects(updateCentralConfig);
-  const audioState = useAudioVisualizer();
-  const { isAudioActive, audioSettings, handleAudioDataUpdate } = audioState;
-  const uiState = useUIState('tab1'); // Initialize UI state hook
-  const { setActiveLayerTab } = uiState; // Get UI state setters/getters as needed
 
-  const [currentFps, setCurrentFps] = useState(0);
-
-  // Refs
   const rootRef = useRef(null);
   const isMountedRef = useRef(false);
-  const fpsFrameCountRef = useRef(0);
-  const fpsLastTimeRef = useRef(performance.now());
-  const fpsRafId = useRef(null);
   const transitionInProgressRef = useRef(false);
   const resetLifecycleRef = useRef(null);
   const canvasRef1 = useRef(null);
@@ -95,15 +99,22 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   const canvasRef3 = useRef(null);
   const canvasRefs = useMemo(() => ({ 1: canvasRef1, 2: canvasRef2, 3: canvasRef3 }), []);
 
-  // Canvas Orchestration Hook
   const {
     managersReady, defaultImagesLoaded, managerInstancesRef,
     applyConfigurationsToManagers, applyTokenAssignmentsToManagers,
-    updateLayerConfigProperty, stopCanvasAnimations, restartCanvasAnimations,
+    updateLayerConfigProperty, // Direct manager update for performance-critical MIDI interpolation
+    stopCanvasAnimations, restartCanvasAnimations,
     redrawAllCanvases, handleCanvasResize, setCanvasLayerImage,
   } = useCanvasOrchestrator({ configServiceRef, canvasRefs });
 
-  // Stable callback for zero dimensions using the ref
+  // Pass updateLayerConfig (from VisualConfigContext via useVisualLayerState) to useVisualEffects
+  const { processEffect, createDefaultEffect } = useVisualEffects(updateLayerConfig);
+
+  const audioState = useAudioVisualizer();
+  const { isAudioActive, audioSettings, handleAudioDataUpdate } = audioState;
+  const uiState = useUIState('tab1'); // Manages active panel, overlays, UI visibility etc.
+  const { setActiveLayerTab } = uiState;
+
   const handleZeroDimensions = useCallback(() => {
     console.warn("[MainView onZeroDimensions Callback] Triggered.");
     if (resetLifecycleRef.current && typeof resetLifecycleRef.current === 'function') {
@@ -113,7 +124,6 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     }
   }, []);
 
-  // Canvas Container Hook
   const {
       containerRef, hasValidDimensions, isContainerObservedVisible,
       isFullscreenActive, enterFullscreen
@@ -135,11 +145,12 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
       onZeroDimensions: handleZeroDimensions,
   });
 
-  // Render Lifecycle Hook
+  // Render lifecycle now uses layerConfigs and tokenAssignments from VisualConfigContext
   const renderLifecycleData = useRenderLifecycle({
       managersReady, defaultImagesLoaded, isInitiallyResolved, hasValidDimensions,
       isContainerObservedVisible, configLoadNonce, currentConfigName, currentProfileAddress,
-      layerConfigs, tokenAssignments, loadError, upInitializationError, upFetchStateError,
+      layerConfigs, tokenAssignments, // These now come from VisualConfigContext via useVisualLayerState
+      loadError, upInitializationError, upFetchStateError,
       stopAllAnimations: stopCanvasAnimations, applyConfigurationsToManagers: applyConfigurationsToManagers,
       applyTokenAssignments: applyTokenAssignmentsToManagers, redrawAllCanvases: redrawAllCanvases,
       restartCanvasAnimations: restartCanvasAnimations,
@@ -150,35 +161,36 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
       resetLifecycle
   } = renderLifecycleData;
 
-  // Update the ref whenever resetLifecycle changes
-  useEffect(() => {
-    resetLifecycleRef.current = resetLifecycle;
-  }, [resetLifecycle]);
-
-  // Mount status tracking
+  useEffect(() => { resetLifecycleRef.current = resetLifecycle; }, [resetLifecycle]);
   useEffect(() => { isMountedRef.current = true; return () => { isMountedRef.current = false; }; }, []);
 
-  // Animation Lifecycle Hook
   useAnimationLifecycleManager({
       isMounted: isMountedRef.current, renderState, isContainerObservedVisible,
       isAnimating, isTransitioning, restartCanvasAnimations, stopCanvasAnimations,
   });
 
-  // Sync isTransitioning state
   useEffect(() => { transitionInProgressRef.current = isTransitioning; }, [isTransitioning]);
 
-  // Derived states for UI rendering
   const isBaseReady = useMemo(() => managersReady && defaultImagesLoaded && isInitiallyResolved && hasValidDimensions && isContainerObservedVisible, [managersReady, defaultImagesLoaded, isInitiallyResolved, hasValidDimensions, isContainerObservedVisible]);
-  const shouldShowUI = useMemo(() => isBaseReady || renderState === 'prompt_connect', [isBaseReady, renderState]);
+  const shouldShowUI = useMemo(() => isBaseReady || renderState === 'prompt_connect', [isBaseReady, renderState]); // prompt_connect might be obsolete
   const showFpsCounter = useMemo(() => renderState === 'rendered' && isContainerObservedVisible, [renderState, isContainerObservedVisible]);
 
-  // Callback to propagate layer config changes upwards and to managers
+  /**
+   * Handles changes to layer properties.
+   * Calls `updateLayerConfig` (from VisualConfigContext) to update the central state,
+   * and `updateLayerConfigProperty` (from useCanvasOrchestrator) for direct, potentially faster
+   * updates to CanvasManager instances, especially for interpolated MIDI parameters.
+   */
   const handleLayerPropChange = useCallback((layerId, key, value) => {
-    if (updateCentralConfig) { updateCentralConfig(layerId, key, value); }
-    if (updateLayerConfigProperty) { updateLayerConfigProperty(layerId, key, value); }
-  }, [updateCentralConfig, updateLayerConfigProperty]);
+    if (updateLayerConfig) {
+      updateLayerConfig(layerId, key, value); // Updates VisualConfigContext state
+    }
+    if (updateLayerConfigProperty) {
+      // For direct/immediate updates to canvas managers, e.g., for MIDI interpolation targets
+      updateLayerConfigProperty(layerId, key, value);
+    }
+  }, [updateLayerConfig, updateLayerConfigProperty]);
 
-  // Effect to handle pending MIDI actions (parameter updates, layer selects)
   useEffect(() => {
     let processed = false;
     const currentManagers = managerInstancesRef.current;
@@ -191,14 +203,15 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
         if (manager && INTERPOLATED_MIDI_PARAMS.includes(param)) {
             if (typeof manager.setTargetValue === 'function') {
                 manager.setTargetValue(param, scaledValue);
-                if (updateCentralConfig) { updateCentralConfig(layer, param, scaledValue); }
+                // Update context state as well, handleLayerPropChange does both
+                handleLayerPropChange(layer, param, scaledValue);
                 processed = true;
             } else {
-                handleLayerPropChange(layer, param, scaledValue); // Fallback
+                handleLayerPropChange(layer, param, scaledValue);
                 processed = true;
             }
         } else {
-             handleLayerPropChange(layer, param, scaledValue); // Direct update
+             handleLayerPropChange(layer, param, scaledValue);
              processed = true;
         }
       }
@@ -213,60 +226,55 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
       }
     }
     if (processed && clearPendingActions) { clearPendingActions(); }
-  }, [pendingParamUpdate, pendingLayerSelect, handleLayerPropChange, setActiveLayerTab, clearPendingActions, managerInstancesRef, updateCentralConfig]);
+  }, [pendingParamUpdate, pendingLayerSelect, handleLayerPropChange, setActiveLayerTab, clearPendingActions, managerInstancesRef]);
 
-  // Callback to handle token selection/application from UI
+  /**
+   * Handles applying a new token to a layer.
+   * Updates the token assignment in `VisualConfigContext` via `updateTokenAssignment`
+   * and instructs the `CanvasOrchestrator` to set the image on the canvas.
+   */
   const handleTokenApplied = useCallback((data, layerId) => {
     if (!isMountedRef.current || !setCanvasLayerImage) {
         console.warn(`[MainView] handleTokenApplied aborted: Not mounted or setCanvasLayerImage missing.`);
         return;
     }
-
-    let idToSave = null;
-    let srcToApply = null;
-
+    let idToSave = null; let srcToApply = null;
+    // Logic to determine idToSave and srcToApply (remains the same)
     if (data?.type === 'owned' && data.address && data.iconUrl) {
-        idToSave = data.address;
-        srcToApply = data.iconUrl;
+        idToSave = data.address; srcToApply = data.iconUrl;
     } else if (typeof data === 'string') {
-        if (Object.hasOwnProperty.call(demoAssetMap, data)) { // Demo Key
-            idToSave = data;
-            srcToApply = demoAssetMap[data];
-        } else if (Object.values(demoAssetMap).includes(data)) { // Demo Path
+        if (Object.hasOwnProperty.call(demoAssetMap, data)) {
+            idToSave = data; srcToApply = demoAssetMap[data];
+        } else if (Object.values(demoAssetMap).includes(data)) {
             const demoKey = Object.keys(demoAssetMap).find(key => demoAssetMap[key] === data);
-            idToSave = demoKey || data;
-            srcToApply = data;
-        } else if (data.startsWith('http')) { // URL
-            idToSave = data;
-            srcToApply = data;
-        } else if (data.startsWith('data:')) { // Data URI
-            idToSave = data.substring(0, 50) + '...';
-            srcToApply = data;
-        } else { // Fallback/Unknown
+            idToSave = demoKey || data; srcToApply = data;
+        } else if (data.startsWith('http')) {
+            idToSave = data; srcToApply = data;
+        } else if (data.startsWith('data:')) {
+            idToSave = data.substring(0, 50) + '...'; srcToApply = data;
+        } else {
             console.warn(`[MV handleTokenApplied L${layerId}] Unhandled string data type: ${data}`);
-            idToSave = data;
-            srcToApply = data;
+            idToSave = data; srcToApply = data;
         }
     } else {
         console.warn(`[MV handleTokenApplied L${layerId}] Invalid or undefined data type received:`, data);
     }
 
     if (srcToApply) {
-      // console.log(`[MV handleTokenApplied L${layerId}] Calling setCanvasLayerImage with src: ${srcToApply.substring(0,60)}...`); // Removed non-critical log
       setCanvasLayerImage(layerId, srcToApply)
         .catch(e => console.error(`[MV handleTokenApplied L${layerId}] setCanvasLayerImage failed for ${srcToApply.substring(0,60)}...:`, e));
     } else {
       console.warn(`[MV handleTokenApplied L${layerId}] No image source determined (srcToApply is null). ID to save was: ${idToSave}`);
     }
 
+    // Update token assignment in VisualConfigContext
     if (updateTokenAssignment && idToSave !== null) {
       updateTokenAssignment(layerId, idToSave);
     } else if (idToSave === null) {
       console.warn(`[MV handleTokenApplied L${layerId}] No ID determined, cannot save assignment.`);
     }
-  }, [updateTokenAssignment, setCanvasLayerImage]); // Removed demoAssetMap dependency
+  }, [updateTokenAssignment, setCanvasLayerImage]); // Added updateTokenAssignment
 
-  // Callback to handle LSP1 events
   const handleEventReceived = useCallback((event) => {
     if (!isMountedRef.current || !event?.type) return;
     if (addNotification) addNotification(event);
@@ -287,107 +295,51 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     }
   }, [addNotification, savedReactions, processEffect, createDefaultEffect]);
 
-  // LSP1 Event Listener Hook
   useLsp1Events(currentProfileAddress, handleEventReceived);
 
-  // Direct pass-through callbacks for UI actions
-  const handleSaveReactionConfig = updateSavedReaction;
-  const handleRemoveReactionConfig = deleteSavedReaction;
-
-  // Callback for canvas click effect
-  const handleCanvasClick = useCallback((event) => {
-    if (event.target.closest(NO_PING_SELECTORS)) return;
-    const containerElement = containerRef.current;
-    if (!containerElement) return;
-    const x = event.clientX; const y = event.clientY;
-    const pingContainer = document.createElement('div');
-    pingContainer.className = 'click-ping-svg-container';
-    pingContainer.style.left = `${x}px`; pingContainer.style.top = `${y}px`;
-    const svgNS = "http://www.w3.org/2000/svg";
-    const svg = document.createElementNS(svgNS, "svg");
-    svg.setAttribute("class", "click-ping-svg");
-    svg.setAttribute("viewBox", "0 0 20 20");
-    svg.style.overflow = "visible";
-    const circle = document.createElementNS(svgNS, "circle");
-    circle.setAttribute("cx", "10"); circle.setAttribute("cy", "10");
-    circle.setAttribute("r", "5"); circle.setAttribute("stroke", PING_COLOR);
-    circle.setAttribute("stroke-width", PING_STROKE_WIDTH.toString());
-    circle.setAttribute("fill", "none");
-    svg.appendChild(circle);
-    pingContainer.appendChild(svg);
-    try {
-      containerElement.appendChild(pingContainer);
-      requestAnimationFrame(() => pingContainer.classList.add('ping-svg-animation'));
-      pingContainer.addEventListener('animationend', () => pingContainer.remove(), { once: true });
-    } catch (e) { console.error("[CanvasClick Ping Error]:", e); }
-  }, [containerRef]); // Depends only on the ref
-
-  // FPS Counter Effect
-  useEffect(() => {
-    const updateFps = () => {
-      const now = performance.now(); const delta = now - fpsLastTimeRef.current;
-      fpsFrameCountRef.current++;
-      if (delta >= 1000) {
-        const fps = Math.round((fpsFrameCountRef.current * 1000) / delta);
-        setCurrentFps(fps); fpsFrameCountRef.current = 0; fpsLastTimeRef.current = now;
-      }
-      fpsRafId.current = requestAnimationFrame(updateFps);
-    };
-    if (showFpsCounter) {
-      if (!fpsRafId.current) { fpsLastTimeRef.current = performance.now(); fpsFrameCountRef.current = 0; fpsRafId.current = requestAnimationFrame(updateFps); }
-    } else {
-      if (fpsRafId.current) { cancelAnimationFrame(fpsRafId.current); fpsRafId.current = null; setCurrentFps(0); }
-    }
-    return () => { if (fpsRafId.current) cancelAnimationFrame(fpsRafId.current); };
-  }, [showFpsCounter]);
-
-  // Helper render functions
-  const renderFpsCounter = () => {
-    if (!showFpsCounter) return null;
-    return (<div className="fps-counter">FPS: {currentFps}</div>);
-  };
-  const renderStatusContent = () => {
-    if (showRetryButton) { return ( <> {loadingStatusMessage} <button onClick={handleManualRetry} className="retry-render-button"> Retry Render </button> </> ); }
-    return loadingStatusMessage;
-  };
-  const getStatusDisplayClass = () => {
-      if (renderState === 'error') return 'error-state';
-      if (renderState === 'prompt_connect') return 'prompt-connect-state';
-      return 'info-state';
-  };
-
-  // Memoized props for UIOverlay to prevent unnecessary re-renders
-  const uiOverlayProps = useMemo(() => ({
-    uiState: uiState,
-    audioState: audioState,
-    configData: { // Pass the whole context data object
-      ...configContextData,
-      blendModes: blendModes, // Add blendModes if not in context
-      notifications: notificationData.notifications, // Add notifications
-      unreadCount: notificationData.unreadCount, // Add unread count
-      isTransitioning: isTransitioning, // Pass derived state
-    },
-    actions: {
-      onEnhancedView: enterFullscreen,
-      onLayerConfigChange: handleLayerPropChange,
-      onMarkNotificationRead: notificationData.markAsRead,
-      onClearAllNotifications: notificationData.clearAll,
-      onSaveReaction: handleSaveReactionConfig,
-      onRemoveReaction: handleRemoveReactionConfig,
-      onPreviewEffect: processEffect,
-      onTokenApplied: handleTokenApplied,
-      onPresetSelect: loadNamedConfig,
-    },
-    shouldShowUI,
+  // layerConfigs for AudioAnalyzerWrapper and configDataForUIOverlay now comes from useVisualLayerState
+  const configDataForUIOverlay = useMemo(() => ({
+    layerConfigs, // From useVisualLayerState
+    savedReactions,
+    currentConfigName,
+    savedConfigList: presetSavedConfigList,
+    isLoading: isConfigLoading,
+    canSave,
+    isPreviewMode,
+    isParentAdmin,
+    isProfileOwner,
+    isVisitor,
+    currentProfileAddress, // This is hostProfileAddress
+    blendModes,
+    notifications: notificationData.notifications,
+    unreadCount: notificationData.unreadCount,
+    isTransitioning,
   }), [
-    uiState, audioState, configContextData, // Re-evaluate if these change
-    blendModes, notificationData, isTransitioning, enterFullscreen,
-    handleLayerPropChange, handleSaveReactionConfig, handleRemoveReactionConfig,
-    processEffect, handleTokenApplied, loadNamedConfig, shouldShowUI
+    layerConfigs, savedReactions, currentConfigName, presetSavedConfigList, isConfigLoading,
+    canSave, isPreviewMode, isParentAdmin, isProfileOwner, isVisitor, currentProfileAddress,
+    blendModes, notificationData.notifications, notificationData.unreadCount, isTransitioning
   ]);
 
-  // Handle critical UP Provider errors
+  // onLayerConfigChange for UIOverlay now uses handleLayerPropChange which correctly sources updateLayerConfig
+  const actionsForUIOverlay = useMemo(() => ({
+    onLayerConfigChange: handleLayerPropChange,
+    onSaveReaction: updateSavedReaction,
+    onRemoveReaction: deleteSavedReaction,
+    onPresetSelect: loadNamedConfig,
+    onEnhancedView: enterFullscreen,
+    onMarkNotificationRead: notificationData.markAsRead,
+    onClearAllNotifications: notificationData.clearAll,
+    onPreviewEffect: processEffect,
+    onTokenApplied: handleTokenApplied,
+  }), [
+    handleLayerPropChange,
+    updateSavedReaction, deleteSavedReaction, loadNamedConfig,
+    enterFullscreen, notificationData.markAsRead, notificationData.clearAll,
+    processEffect, handleTokenApplied
+  ]);
+
   if (upInitializationError || upFetchStateError) {
+    // This uses the raw errors from UpProvider, which is fine for critical failures.
     const msg = upInitializationError?.message || upFetchStateError?.message || "Unknown critical error initialising Universal Profile connection.";
     console.error("[MV Render] Halting due to UP error:", { upInitializationError, upFetchStateError });
     return (
@@ -401,55 +353,66 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     );
   }
 
-  // Determine dynamic CSS classes
   const canvas1Class = `canvas layer-1 ${isCanvasVisible ? 'visible' : ''}`;
   const canvas2Class = `canvas layer-2 ${isCanvasVisible ? 'visible' : ''}`;
   const canvas3Class = `canvas layer-3 ${isCanvasVisible ? 'visible' : ''}`;
   const containerClass = `canvas-container ${isTransitioning ? 'transitioning' : ''}`;
 
-  // Render the main component structure
   return (
     <>
       <div id="fullscreen-root" ref={rootRef} className="main-view radar-cursor">
-        {/* Canvas container */}
-        <div ref={containerRef} className={containerClass} onClick={handleCanvasClick}>
-          <div className="grid-overlay"></div>
-          <canvas ref={canvasRef1} className={canvas1Class} />
-          <canvas ref={canvasRef2} className={canvas2Class} />
-          <canvas ref={canvasRef3} className={canvas3Class} />
-        </div>
+        <CanvasContainerWrapper
+          containerRef={containerRef}
+          canvasRef1={canvasRef1}
+          canvasRef2={canvasRef2}
+          canvasRef3={canvasRef3}
+          containerClass={containerClass}
+          canvas1Class={canvas1Class}
+          canvas2Class={canvas2Class}
+          canvas3Class={canvas3Class}
+          pingColor={PING_COLOR}
+          pingStrokeWidth={PING_STROKE_WIDTH}
+          noPingSelectors={NO_PING_SELECTORS}
+        />
 
-        {/* Portaled FPS Counter for fullscreen */}
-        {portalContainer && isFullscreenActive ? ReactDOM.createPortal(renderFpsCounter(), portalContainer) : renderFpsCounter()}
+        <FpsDisplay
+          showFpsCounter={showFpsCounter}
+          isFullscreenActive={isFullscreenActive}
+          portalContainer={portalContainerNode}
+        />
 
-        {/* Toast Notifications */}
         <ToastContainer />
+        <UIOverlay
+            uiState={uiState}
+            audioState={audioState}
+            configData={configDataForUIOverlay} // Contains layerConfigs from useVisualLayerState
+            actions={actionsForUIOverlay}        // Contains onLayerConfigChange correctly wired
+            shouldShowUI={shouldShowUI}
+        />
 
-        {/* Main UI Overlay */}
-        <UIOverlay {...uiOverlayProps} />
+        <StatusIndicator
+          showStatusDisplay={showStatusDisplay}
+          isStatusFadingOut={isStatusFadingOut}
+          renderState={renderState}
+          loadingStatusMessage={loadingStatusMessage}
+          showRetryButton={showRetryButton}
+          onManualRetry={handleManualRetry}
+        />
 
-        {/* Status Display */}
-        {showStatusDisplay && ( <div className={`status-display ${getStatusDisplayClass()} ${isStatusFadingOut ? 'fade-out' : ''}`}> {renderStatusContent()} </div> )}
-
-        {/* Hidden Audio Analyzer */}
-        {isAudioActive && managersReady && (
-          <div className="hidden-audio-analyzer">
-            <AudioAnalyzer
-              isActive={isAudioActive}
-              onAudioData={handleAudioDataUpdate}
-              layerConfigs={layerConfigs}
-              audioSettings={audioSettings}
-              configLoadNonce={configLoadNonce}
-              managerInstancesRef={managerInstancesRef}
-            />
-          </div>
-        )}
+        <AudioAnalyzerWrapper
+            isAudioActive={isAudioActive}
+            managersReady={managersReady}
+            handleAudioDataUpdate={handleAudioDataUpdate}
+            layerConfigs={layerConfigs} // From useVisualLayerState
+            audioSettings={audioSettings}
+            configLoadNonce={configLoadNonce} // From useConfigStatusState (ConfigContext)
+            managerInstancesRef={managerInstancesRef}
+        />
       </div>
     </>
   );
 };
 
-// Define PropTypes
 MainView.propTypes = {
   blendModes: PropTypes.arrayOf(PropTypes.string),
 };

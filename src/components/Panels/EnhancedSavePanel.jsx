@@ -2,11 +2,17 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import PropTypes from "prop-types";
 import Panel from "./Panel";
-import { useConfig } from "../../context/ConfigContext";
-import { useMIDI } from "../../context/MIDIContext"; // Import useMIDI
+import {
+  useProfileSessionState,
+  usePresetManagementState,
+  useInteractionSettingsState,
+  usePendingChangesState,
+  useConfigStatusState,
+} from "../../hooks/configSelectors";
+import { useMIDI } from "../../context/MIDIContext";
+import { useVisualConfig } from "../../context/VisualConfigContext.jsx"; // Import useVisualConfig
 import "./PanelStyles/EnhancedSavePanel.css";
 
-// Helper to format address (optional)
 const formatAddress = (address, length = 6) => {
   if (!address || typeof address !== "string" || !address.startsWith("0x"))
     return "N/A";
@@ -15,21 +21,34 @@ const formatAddress = (address, length = 6) => {
 };
 
 /**
- * EnhancedSavePanel: Provides UI for saving the current visual configuration as a named preset,
- * updating global Reaction/MIDI settings, loading existing presets, setting a default preset,
- * and deleting presets. Manages interaction with the ConfigurationService via useConfig context.
+ * EnhancedSavePanel component allows users to save visual presets,
+ * global reactions, and global MIDI maps to their Universal Profile.
+ * It also lists existing presets for loading and deletion.
+ * This component now consumes `VisualConfigContext` to get the current
+ * `layerConfigs` and `tokenAssignments` when saving a visual preset.
+ *
+ * @param {object} props
+ * @param {() => void} props.onClose - Function to close the panel.
+ * @returns {JSX.Element} The rendered EnhancedSavePanel component.
  */
 const EnhancedSavePanel = ({ onClose }) => {
   const {
-    currentProfileAddress, isParentProfile, isPreviewMode, isProfileOwner, isPureVisitorMode,
-    currentConfigName, savedConfigList, isLoading: hookIsLoading,
-    configServiceInstanceReady,
-    hasPendingChanges,
-    saveVisualPreset, saveGlobalReactions, saveGlobalMidiMap,
-    loadNamedConfig, loadDefaultConfig, loadSavedConfigList, deleteNamedConfig,
-  } = useConfig();
+    currentProfileAddress, isParentProfile, isPreviewMode, isProfileOwner, canSave // isParentProfile might be unused now
+  } = useProfileSessionState();
 
-  const { isConnected: isMidiConnected } = useMIDI(); // Get MIDI connection status
+  const {
+    currentConfigName, savedConfigList, isLoading: hookIsLoading,
+    saveVisualPreset: actualSavePreset, // Renamed to avoid conflict in this component's scope
+    loadNamedConfig, loadDefaultConfig, loadSavedConfigList, deleteNamedConfig,
+  } = usePresetManagementState();
+
+  const { saveGlobalReactions, saveGlobalMidiMap } = useInteractionSettingsState();
+  const { hasPendingChanges } = usePendingChangesState();
+  const { configServiceInstanceReady } = useConfigStatusState();
+  const { isConnected: isMidiConnected } = useMIDI();
+
+  // Consume VisualConfigContext to get current visual state for saving
+  const { layerConfigs: currentLayerConfigs, tokenAssignments: currentTokenAssignments } = useVisualConfig();
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSavingPreset, setIsSavingPreset] = useState(false);
@@ -49,7 +68,7 @@ const EnhancedSavePanel = ({ onClose }) => {
   const [updateGlobalReactionsOnPresetSave, setUpdateGlobalReactionsOnPresetSave] = useState(false);
   const [updateGlobalMidiOnPresetSave, setUpdateGlobalMidiOnPresetSave] = useState(false);
 
-  const canEdit = isProfileOwner && !isPreviewMode && !isPureVisitorMode;
+  const canEdit = canSave; // Derived from useProfileSessionState
 
   useEffect(() => {
     const listLength = savedConfigList?.length ?? 0;
@@ -69,7 +88,7 @@ const EnhancedSavePanel = ({ onClose }) => {
     if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
     if (duration > 0) {
       statusTimerRef.current = setTimeout(() => {
-        setStatusMessage((prev) => (prev === message ? "" : prev));
+        setStatusMessage((prev) => (prev === message ? "" : prev)); // Clear only if message matches
         statusTimerRef.current = null;
       }, duration);
     }
@@ -109,11 +128,16 @@ const EnhancedSavePanel = ({ onClose }) => {
     }
   }, [displayStatus]);
 
+  /**
+   * Handles saving the current visual preset.
+   * It retrieves `currentLayerConfigs` and `currentTokenAssignments` from `VisualConfigContext`
+   * and passes them to the `actualSavePreset` function (from `usePresetManagementState`).
+   */
   const handleSavePreset = useCallback(async () => {
     const nameToSave = newConfigName.trim();
     const logPrefix = `[EnhancedSavePanel handleSavePreset Name:${nameToSave}]`;
     if (!canEdit) { displayStatus("Cannot save: Permissions missing.", "error"); return; }
-    if (typeof saveVisualPreset !== "function") { displayStatus("Save Preset function not available.", "error"); return; }
+    if (typeof actualSavePreset !== "function") { displayStatus("Save Preset function not available.", "error"); return; }
     if (!nameToSave) { displayStatus("Preset name cannot be empty.", "warning"); return; }
     if (nameToSave.length > 100) { displayStatus("Preset name is too long (max 100).", "warning"); return; }
 
@@ -126,7 +150,15 @@ const EnhancedSavePanel = ({ onClose }) => {
     setIsProcessing(true); setIsSavingPreset(true); displaySaveStatus('saving');
 
     try {
-      const result = await saveVisualPreset(nameToSave, setAsDefault, updateGlobalReactionsOnPresetSave, updateGlobalMidiOnPresetSave);
+      // Pass currentLayerConfigs and currentTokenAssignments to the save function
+      const result = await actualSavePreset(
+        nameToSave,
+        setAsDefault,
+        updateGlobalReactionsOnPresetSave,
+        updateGlobalMidiOnPresetSave,
+        currentLayerConfigs, // from useVisualConfig()
+        currentTokenAssignments // from useVisualConfig()
+      );
       if (result?.success) {
         let successMsg = `Preset "${nameToSave}" saved.`;
         if (updateGlobalReactionsOnPresetSave) successMsg += " Globals updated.";
@@ -143,7 +175,11 @@ const EnhancedSavePanel = ({ onClose }) => {
     } finally {
       setIsProcessing(false); setIsSavingPreset(false);
     }
-  }, [canEdit, saveVisualPreset, newConfigName, savedConfigList, displayStatus, displaySaveStatus, setAsDefault, updateGlobalReactionsOnPresetSave, updateGlobalMidiOnPresetSave]);
+  }, [
+      canEdit, actualSavePreset, newConfigName, savedConfigList, displayStatus, displaySaveStatus,
+      setAsDefault, updateGlobalReactionsOnPresetSave, updateGlobalMidiOnPresetSave,
+      currentLayerConfigs, currentTokenAssignments // Added dependencies
+  ]);
 
   const handleSaveGlobalReactions = useCallback(async () => {
     const logPrefix = `[EnhancedSavePanel handleSaveGlobalReactions]`;
@@ -152,9 +188,7 @@ const EnhancedSavePanel = ({ onClose }) => {
     if (!window.confirm("Save current Reaction settings globally? This overwrites previous global settings.")) {
        return;
     }
-
     setIsProcessing(true); setIsSavingReactions(true); displaySaveStatus('saving');
-
     try {
       const result = await saveGlobalReactions();
       if (result?.success) {
@@ -174,16 +208,12 @@ const EnhancedSavePanel = ({ onClose }) => {
   const handleSaveGlobalMidiMap = useCallback(async () => {
     const logPrefix = `[EnhancedSavePanel handleSaveGlobalMidiMap]`;
     if (!canEdit) { displayStatus("Cannot save: Permissions missing.", "error"); return; }
-    // --- ADDED CHECK for MIDI connection ---
     if (!isMidiConnected) { displayStatus("Cannot save MIDI Map: No MIDI device connected.", "warning"); return; }
-    // --- END ADDED CHECK ---
     if (typeof saveGlobalMidiMap !== "function") { displayStatus("Save MIDI Map function not available.", "error"); return; }
     if (!window.confirm("Save current MIDI Map settings globally? This overwrites previous global settings.")) {
        return;
     }
-
     setIsProcessing(true); setIsSavingMidi(true); displaySaveStatus('saving');
-
     try {
       const result = await saveGlobalMidiMap();
       if (result?.success) {
@@ -198,7 +228,7 @@ const EnhancedSavePanel = ({ onClose }) => {
     } finally {
       setIsProcessing(false); setIsSavingMidi(false);
     }
-  }, [canEdit, saveGlobalMidiMap, displayStatus, displaySaveStatus, isMidiConnected]); // Added isMidiConnected
+  }, [canEdit, saveGlobalMidiMap, displayStatus, displaySaveStatus, isMidiConnected]);
 
   const handleLoadByName = useCallback(async (name) => {
     const logPrefix = `[EnhancedSavePanel handleLoadByName Name:${name}]`;
@@ -208,9 +238,7 @@ const EnhancedSavePanel = ({ onClose }) => {
     if (hasPendingChanges && !window.confirm("You have unsaved changes that will be lost. Load preset anyway?")) {
        return;
     }
-
     setIsProcessing(true); displayStatus(`Loading preset "${name}"...`, "info", 0);
-
     try {
       const result = await loadNamedConfig(name);
       if (result?.success) {
@@ -235,9 +263,7 @@ const EnhancedSavePanel = ({ onClose }) => {
     if (hasPendingChanges && !window.confirm("You have unsaved changes that will be lost. Load default anyway?")) {
        return;
     }
-
     setIsProcessing(true); displayStatus(`Loading default configuration...`, "info", 0);
-
     try {
       const result = await loadDefaultConfig();
       if (result?.success) {
@@ -269,9 +295,7 @@ const EnhancedSavePanel = ({ onClose }) => {
     if (!window.confirm(`DELETE preset "${name}" permanently? This action cannot be undone.`)) {
        return;
     }
-
     setIsProcessing(true); setIsDeleting(true); displayStatus(`Deleting preset "${name}"...`, "info", 0);
-
     try {
       const result = await deleteNamedConfig(name);
       if (result?.success) {
@@ -295,18 +319,17 @@ const EnhancedSavePanel = ({ onClose }) => {
   const getPanelTitle = () => {
     if (isPreviewMode) return "VISITOR PREVIEW";
     if (!currentProfileAddress) return "CONNECT PROFILE";
-    if (isParentProfile) return "SHOWCASE VIEW (PARENT)";
+    // isParentProfile is likely not relevant/available from useProfileSessionState anymore after refactor
+    // if (isParentProfile) return "SHOWCASE VIEW (PARENT)"; 
     return canEdit ? "MY PROFILE - SAVE & MANAGE" : `VIEWING PROFILE (${formatAddress(currentProfileAddress)})`;
   };
 
   const isDisabledBase = isProcessing || hookIsLoading || !configServiceInstanceReady;
-  const isDisabledWrite = isDisabledBase || !canEdit; // Simplified write disable check
+  const isDisabledWrite = isDisabledBase || !canEdit;
 
   const isSavePresetDisabled = isDisabledWrite || !newConfigName.trim();
   const isSaveReactionsDisabled = isDisabledWrite;
-  // --- MODIFIED: Disable Save MIDI Map if not connected ---
   const isSaveMidiDisabled = isDisabledWrite || !isMidiConnected;
-  // --- END MODIFICATION ---
   const isLoadOrDeleteDisabled = isDisabledBase || isLoadingList;
 
   const renderStatusIndicator = () => {
@@ -369,7 +392,7 @@ const EnhancedSavePanel = ({ onClose }) => {
             Saves current visual layers & tokens. Optionally updates global Reactions/MIDI map too.
           </p>
 
-          {typeof saveVisualPreset === "function" ? (
+          {typeof actualSavePreset === "function" ? (
             <button className="btn btn-block btn-save btn-save-preset" onClick={handleSavePreset} disabled={isSavePresetDisabled} aria-live="polite">
               {isSavingPreset ? "SAVING PRESET..." : `SAVE PRESET "${newConfigName.trim() || "..."}"`}
             </button>
@@ -388,18 +411,18 @@ const EnhancedSavePanel = ({ onClose }) => {
               <button className="btn btn-secondary btn-save-global" onClick={handleSaveGlobalReactions} disabled={isSaveReactionsDisabled} aria-live="polite">
                 {isSavingReactions ? "SAVING..." : "Save Global Reactions"}
               </button>
-            ) : ( <p className="error">Save Reactions action unavailable.</p> )}
+            ) : ( <p className="error">Save Reactions action is unavailable.</p> )}
             {typeof saveGlobalMidiMap === "function" ? (
               <button
                 className="btn btn-secondary btn-save-global"
                 onClick={handleSaveGlobalMidiMap}
-                disabled={isSaveMidiDisabled} // Uses the updated disabled state
+                disabled={isSaveMidiDisabled}
                 aria-live="polite"
                 title={!isMidiConnected ? "Connect MIDI device to save map" : "Save current MIDI map globally"}
               >
                 {isSavingMidi ? "SAVING..." : "Save Global MIDI Map"}
               </button>
-            ) : ( <p className="error">Save MIDI Map action unavailable.</p> )}
+            ) : ( <p className="error">Save MIDI Map action is unavailable.</p> )}
           </div>
         </div>
       )}

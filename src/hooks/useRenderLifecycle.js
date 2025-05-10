@@ -228,8 +228,8 @@ export function useRenderLifecycle(options) {
         if (currentState !== 'initializing') logStateChange('initializing', 'Layout -> Init Wait Img');
     } else if (!isInitiallyResolved) {
         // This state means useConfigState is still waiting for the UP address or initial load.
-        // We should show a generic loading/resolving message.
-        setLoadingStatusMessage("Resolving config...");
+        // show a generic loading/resolving message.
+        setLoadingStatusMessage("Loading Configuration");
         if (currentState !== 'initializing') logStateChange('initializing', 'Layout -> Init Wait Res');
     } else { // All basic dependencies met (layout, managers, defaults), and config resolution has been attempted
         if (hasNewConfigToApply) {
