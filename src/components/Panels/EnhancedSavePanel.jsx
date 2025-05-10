@@ -33,12 +33,12 @@ const formatAddress = (address, length = 6) => {
  */
 const EnhancedSavePanel = ({ onClose }) => {
   const {
-    currentProfileAddress, isParentProfile, isPreviewMode, isProfileOwner, canSave // isParentProfile might be unused now
+    currentProfileAddress, isPreviewMode, isProfileOwner, canSave 
   } = useProfileSessionState();
 
   const {
     currentConfigName, savedConfigList, isLoading: hookIsLoading,
-    saveVisualPreset: actualSavePreset, // Renamed to avoid conflict in this component's scope
+    saveVisualPreset: actualSavePreset, 
     loadNamedConfig, loadDefaultConfig, loadSavedConfigList, deleteNamedConfig,
   } = usePresetManagementState();
 
@@ -47,7 +47,6 @@ const EnhancedSavePanel = ({ onClose }) => {
   const { configServiceInstanceReady } = useConfigStatusState();
   const { isConnected: isMidiConnected } = useMIDI();
 
-  // Consume VisualConfigContext to get current visual state for saving
   const { layerConfigs: currentLayerConfigs, tokenAssignments: currentTokenAssignments } = useVisualConfig();
 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -68,7 +67,7 @@ const EnhancedSavePanel = ({ onClose }) => {
   const [updateGlobalReactionsOnPresetSave, setUpdateGlobalReactionsOnPresetSave] = useState(false);
   const [updateGlobalMidiOnPresetSave, setUpdateGlobalMidiOnPresetSave] = useState(false);
 
-  const canEdit = canSave; // Derived from useProfileSessionState
+  const canEdit = canSave;
 
   useEffect(() => {
     const listLength = savedConfigList?.length ?? 0;
@@ -88,7 +87,7 @@ const EnhancedSavePanel = ({ onClose }) => {
     if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
     if (duration > 0) {
       statusTimerRef.current = setTimeout(() => {
-        setStatusMessage((prev) => (prev === message ? "" : prev)); // Clear only if message matches
+        setStatusMessage((prev) => (prev === message ? "" : prev)); 
         statusTimerRef.current = null;
       }, duration);
     }
@@ -128,11 +127,6 @@ const EnhancedSavePanel = ({ onClose }) => {
     }
   }, [displayStatus]);
 
-  /**
-   * Handles saving the current visual preset.
-   * It retrieves `currentLayerConfigs` and `currentTokenAssignments` from `VisualConfigContext`
-   * and passes them to the `actualSavePreset` function (from `usePresetManagementState`).
-   */
   const handleSavePreset = useCallback(async () => {
     const nameToSave = newConfigName.trim();
     const logPrefix = `[EnhancedSavePanel handleSavePreset Name:${nameToSave}]`;
@@ -147,17 +141,27 @@ const EnhancedSavePanel = ({ onClose }) => {
       }
     }
 
+    // --- ADD LOGGING HERE ---
+    console.log("[EnhancedSavePanel] Attempting to SAVE PRESET. Data passed to actualSavePreset:", {
+        name: nameToSave,
+        setAsDefault: setAsDefault,
+        includeReactions: updateGlobalReactionsOnPresetSave,
+        includeMidi: updateGlobalMidiOnPresetSave,
+        layerConfigs: JSON.parse(JSON.stringify(currentLayerConfigs)), // Deep copy for reliable logging
+        tokenAssignments: JSON.parse(JSON.stringify(currentTokenAssignments)) // Deep copy
+    });
+    // --- END LOGGING ---
+
     setIsProcessing(true); setIsSavingPreset(true); displaySaveStatus('saving');
 
     try {
-      // Pass currentLayerConfigs and currentTokenAssignments to the save function
       const result = await actualSavePreset(
         nameToSave,
         setAsDefault,
         updateGlobalReactionsOnPresetSave,
         updateGlobalMidiOnPresetSave,
-        currentLayerConfigs, // from useVisualConfig()
-        currentTokenAssignments // from useVisualConfig()
+        currentLayerConfigs, 
+        currentTokenAssignments 
       );
       if (result?.success) {
         let successMsg = `Preset "${nameToSave}" saved.`;
@@ -178,7 +182,7 @@ const EnhancedSavePanel = ({ onClose }) => {
   }, [
       canEdit, actualSavePreset, newConfigName, savedConfigList, displayStatus, displaySaveStatus,
       setAsDefault, updateGlobalReactionsOnPresetSave, updateGlobalMidiOnPresetSave,
-      currentLayerConfigs, currentTokenAssignments // Added dependencies
+      currentLayerConfigs, currentTokenAssignments
   ]);
 
   const handleSaveGlobalReactions = useCallback(async () => {
@@ -319,8 +323,6 @@ const EnhancedSavePanel = ({ onClose }) => {
   const getPanelTitle = () => {
     if (isPreviewMode) return "VISITOR PREVIEW";
     if (!currentProfileAddress) return "CONNECT PROFILE";
-    // isParentProfile is likely not relevant/available from useProfileSessionState anymore after refactor
-    // if (isParentProfile) return "SHOWCASE VIEW (PARENT)"; 
     return canEdit ? "MY PROFILE - SAVE & MANAGE" : `VIEWING PROFILE (${formatAddress(currentProfileAddress)})`;
   };
 

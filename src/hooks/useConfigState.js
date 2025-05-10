@@ -16,10 +16,8 @@ const transformStringListToObjects = (list) => {
     return list.filter(item => typeof item === 'string').map(name => ({ name }));
 };
 
-// This function is now primarily for ensuring the structure from loaded data is complete
-// The actual default template for new/empty visual configs will live in VisualConfigContext
 const ensureCompleteLayerConfigStructure = (layerConfig, defaultLayerConfigTemplate) => {
-    const completeConfig = { ...defaultLayerConfigTemplate }; // Start with a basic template
+    const completeConfig = { ...defaultLayerConfigTemplate }; 
     if (layerConfig && typeof layerConfig === 'object') {
         for (const key in layerConfig) {
             if (Object.hasOwnProperty.call(layerConfig, key) && layerConfig[key] !== null && layerConfig[key] !== undefined) {
@@ -36,7 +34,6 @@ const ensureCompleteLayerConfigStructure = (layerConfig, defaultLayerConfigTempl
     return completeConfig;
 };
 
-// Minimal template for structure checking, actual defaults are in VisualConfigContext
 const getMinimalLayerConfigTemplate = () => ({
   enabled: true, blendMode: 'normal', opacity: 1.0, size: 1.0, speed: 0.01,
   drift: 0, driftSpeed: 0.1, angle: 0, xaxis: 0, yaxis: 0, direction: 1,
@@ -96,9 +93,7 @@ const useConfigState = (currentProfileAddress) => {
   const initialLoadCompletedForRef = useRef(undefined);
   const prevProfileAddressRef = useRef(currentProfileAddress);
 
-  // --- State Variables ---
   const [currentConfigName, setCurrentConfigName] = useState(null);
-  // These two states will hold the data from the last loaded preset for VisualConfigProvider
   const [loadedLayerConfigsFromPreset, setLoadedLayerConfigsFromPreset] = useState(null);
   const [loadedTokenAssignmentsFromPreset, setLoadedTokenAssignmentsFromPreset] = useState(null);
 
@@ -138,20 +133,15 @@ const useConfigState = (currentProfileAddress) => {
       return !!configServiceRef.current && isUpProviderStableForRead;
   }, [isUpProviderStableForRead]);
 
-  /**
-   * Processes loaded data (from presets or fallback) and updates the relevant state variables.
-   * This function is responsible for setting `loadedLayerConfigsFromPreset` and `loadedTokenAssignmentsFromPreset`,
-   * which are then consumed by `VisualConfigProvider`.
-   */
   const applyLoadedData = useCallback(
     (loadedData, reason = "unknown", loadedForAddress, targetName = null) => {
       setLoadError(null);
       const completionMarker = loadedForAddress;
-      const minimalLayerTemplate = getMinimalLayerConfigTemplate(); // For structure check
+      const minimalLayerTemplate = getMinimalLayerConfigTemplate();
 
       let finalName = null;
-      let finalLayersForPreset = null; // Will be set to loaded data or fallback
-      let finalTokensForPreset = null; // Will be set to loaded data or fallback
+      let finalLayersForPreset = null; 
+      let finalTokensForPreset = null; 
       let finalReactions = {};
       let finalMidi = {};
       let appliedFallbackVisuals = false;
@@ -162,12 +152,12 @@ const useConfigState = (currentProfileAddress) => {
       if (loadedData?.error) {
         setLoadError(loadedData.error);
         addToast(`Error loading configuration: ${loadedData.error}`, 'error');
-        finalLayersForPreset = null; finalTokensForPreset = null; finalName = null; // Explicitly null for error
+        finalLayersForPreset = null; finalTokensForPreset = null; finalName = null; 
         finalReactions = {}; finalMidi = {};
       } else if (loadedData?.config) {
         finalName = loadedData.config.name ?? targetName ?? "Unnamed Preset";
         const loadedLayersData = loadedData.config.layers || {};
-        finalLayersForPreset = {}; // Initialize as object
+        finalLayersForPreset = {}; 
         for (const layerId of ['1', '2', '3']) {
             finalLayersForPreset[layerId] = ensureCompleteLayerConfigStructure(loadedLayersData[layerId], minimalLayerTemplate);
         }
@@ -176,29 +166,25 @@ const useConfigState = (currentProfileAddress) => {
         finalMidi = loadedData.midi || {};
         shouldIncrementNonce = true;
       } else if (reason === "address_cleared") {
-          // When address is cleared, reset all relevant states
           finalLayersForPreset = null; finalTokensForPreset = null; finalReactions = {}; finalMidi = {};
           finalName = null;
-          setLoadedLayerConfigsFromPreset(null); // Clear these specific states
+          setLoadedLayerConfigsFromPreset(null); 
           setLoadedTokenAssignmentsFromPreset(null);
           setConfigLoadNonce(0); setIsInitiallyResolved(false);
           initialLoadCompletedForRef.current = undefined; setIsLoading(true);
-          return; // Exit early as other state setters below are not needed
-      } else { // Fallback case
+          return; 
+      } else { 
         appliedFallbackVisuals = true;
         finalName = "Fallback";
         const fallbackLayersData = fallbackConfig.layers || {};
-        finalLayersForPreset = {}; // Initialize as object
+        finalLayersForPreset = {}; 
         for (const layerId of ['1', '2', '3']) {
             finalLayersForPreset[layerId] = ensureCompleteLayerConfigStructure(fallbackLayersData[layerId], minimalLayerTemplate);
         }
         finalTokensForPreset = fallbackConfig.tokenAssignments || {};
-        // Still try to load global reactions/midi even if visual config is fallback
         finalReactions = loadedData?.reactions || {}; 
         finalMidi = loadedData?.midi || {};
         console.log(`[useConfigState] Applying fallback visuals. Reason: ${reason}`);
-
-        // Increment nonce for fallback if it's a meaningful state change
         if ( (loadedForAddress && !isInitialDisplayFallbackReason) || (configLoadNonce === 0 && !isInitialDisplayFallbackReason) ) {
             shouldIncrementNonce = true;
         } else {
@@ -206,22 +192,19 @@ const useConfigState = (currentProfileAddress) => {
         }
       }
 
-      // Update states that provide data for VisualConfigProvider
       setLoadedLayerConfigsFromPreset(finalLayersForPreset);
       setLoadedTokenAssignmentsFromPreset(finalTokensForPreset);
 
-      // Update other states managed by this hook
       setSavedReactions(finalReactions);
       setMidiMap(finalMidi);
       if (finalName !== currentConfigName) setCurrentConfigName(finalName);
-      setHasPendingChanges(false); // Loading a preset clears pending changes
+      setHasPendingChanges(false); 
 
       if (shouldIncrementNonce) {
           setConfigLoadNonce(prevNonce => prevNonce + 1);
           console.log(`[useConfigState] Incremented configLoadNonce. Reason: ${loadedData?.config ? 'Loaded Config' : (appliedFallbackVisuals && shouldIncrementNonce) ? 'Applied Fallback (with nonce)' : 'No Change/Error'}`);
       }
 
-      // Manage initial resolution state
       if ((completionMarker !== undefined && completionMarker !== null) || reason === 'no_target_address_performLoad') {
           if (!isInitiallyResolved) {
             setIsInitiallyResolved(true);
@@ -230,12 +213,10 @@ const useConfigState = (currentProfileAddress) => {
             initialLoadCompletedForRef.current = completionMarker;
           }
       } else if (isInitialDisplayFallbackReason && !isInitiallyResolved) {
-          // For initial display fallbacks, we set isLoading to false but don't mark as fully resolved yet
-          // if an address is expected but not yet available.
           console.log("[useConfigState] Initial display fallback applied, isLoading=false, isInitiallyResolved remains false.");
       }
       setIsLoading(false);
-    }, [addToast, currentConfigName, isInitiallyResolved, configLoadNonce]); // Added configLoadNonce
+    }, [addToast, currentConfigName, isInitiallyResolved, configLoadNonce]); 
 
   const loadSavedConfigList = useCallback(async () => {
     const service = configServiceRef.current;
@@ -265,13 +246,13 @@ const useConfigState = (currentProfileAddress) => {
 
       if (!address) {
           console.warn("[useConfigState performLoad] No address provided. Applying fallback.");
-          setIsLoading(false); // Set loading false before apply
+          setIsLoading(false); 
           applyLoadedData(null, 'no_target_address_performLoad', null);
-          return { success: true, config: fallbackConfig }; // Return fallback structure
+          return { success: true, config: fallbackConfig }; 
       }
       if (!isReady) {
           addToast("Configuration service not ready. Applying fallback.", "warning");
-          setIsLoading(false); // Set loading false before apply
+          setIsLoading(false); 
           applyLoadedData(null, 'service_not_ready_performLoad', address);
           return { success: false, error: "Service not ready." };
       }
@@ -283,83 +264,79 @@ const useConfigState = (currentProfileAddress) => {
         applyLoadedData(loadedData, reason, address, targetName);
         const loadSuccessful = !loadedData?.error;
         if (loadSuccessful && loadedData.config) {
-            // Successfully loaded a specific config, refresh list
-            loadSavedConfigList().catch(() => {}); // Fire and forget list refresh
+            loadSavedConfigList().catch(() => {}); 
         }
         return { success: loadSuccessful, error: loadedData?.error, config: loadedData?.config };
       } catch (error) {
         const errorMsg = error.message || "Unknown load error";
-        applyLoadedData({ error: errorMsg }, reason, address, targetName); // Ensure error is passed to applyLoadedData
+        applyLoadedData({ error: errorMsg }, reason, address, targetName); 
         return { success: false, error: errorMsg };
       }
     },
-    [isUpProviderStableForRead, applyLoadedData, addToast, loadSavedConfigList, configServiceRef] // Added configServiceRef
+    [isUpProviderStableForRead, applyLoadedData, addToast, loadSavedConfigList, configServiceRef] 
   );
 
-  // Effect for initial load or when profile address changes
   useEffect(() => {
     const addressToLoad = currentProfileAddress;
-    const serviceReady = configServiceInstanceReady; // Use memoized ready state
+    const serviceReady = configServiceInstanceReady; 
 
     if (addressToLoad !== prevProfileAddressRef.current) {
         console.log(`[useConfigState] Profile address changed: ${prevProfileAddressRef.current?.slice(0,6) || 'none'} -> ${addressToLoad?.slice(0,6) || 'none'}. Resetting state.`);
         prevProfileAddressRef.current = addressToLoad;
-        initialLoadCompletedForRef.current = undefined; // Reset completion flag for new address
-        setIsInitiallyResolved(false); // New address means we are not initially resolved for it yet
+        initialLoadCompletedForRef.current = undefined; 
+        setIsInitiallyResolved(false); 
         setSavedConfigList([]);
         setCurrentConfigName(null);
-        setLoadedLayerConfigsFromPreset(null); // Reset loaded preset data
+        setLoadedLayerConfigsFromPreset(null); 
         setLoadedTokenAssignmentsFromPreset(null);
         setSavedReactions({});
         setMidiMap({});
-        setIsLoading(true); // Start loading for the new address or lack thereof
+        setIsLoading(true); 
         setLoadError(null);
-        // configLoadNonce is reset in applyLoadedData if reason is 'address_cleared'
     }
 
     const hasLoadCompletedForThisAddress = initialLoadCompletedForRef.current === addressToLoad;
 
-    if (isLoading) { // Only proceed if we are in a loading state
+    if (isLoading) { 
         if (serviceReady) {
             if (addressToLoad) {
                 if (!hasLoadCompletedForThisAddress) {
                     console.log(`[useConfigState Initial Load] Address ${addressToLoad.slice(0,6)} present, service ready. Performing initial load.`);
                     performLoad(addressToLoad, null, null, "initial");
                 } else {
-                    // Load already completed for this address, but we are still in isLoading state.
-                    // This might happen if an external factor set isLoading to true.
-                    // For safety, ensure isLoading is false if resolved.
                     if (isInitiallyResolved) setIsLoading(false);
                 }
-            } else { // No address to load
-                if (!isInitiallyResolved) { // And not yet resolved
+            } else { 
+                if (!isInitiallyResolved) { 
                     console.log("[useConfigState Initial Load] Service ready, no address, not resolved. Applying initial display fallback.");
                     applyLoadedData(null, 'initial_no_address_display_fallback', null);
                 } else {
-                     // No address, but already resolved (e.g. user disconnected after initial load)
-                     setIsLoading(false); // Ensure loading is false
+                     setIsLoading(false); 
                 }
             }
-        } else { // Service not ready
-            if (!isInitiallyResolved) { // And not yet resolved
+        } else { 
+            if (!isInitiallyResolved) { 
                 console.log("[useConfigState Initial Load] Service not ready, not resolved. Applying initial display fallback.");
                 applyLoadedData(null, 'initial_service_not_ready_display_fallback', null);
             } else {
-                 // Service not ready, but already resolved (shouldn't happen often)
                  setIsLoading(false);
             }
         }
     }
-  // Key dependencies for re-evaluating initial load logic
   }, [currentProfileAddress, configServiceInstanceReady, performLoad, applyLoadedData, addToast, isLoading, isInitiallyResolved]);
 
-
-  /**
-   * Saves the visual preset.
-   * Now accepts layerConfigsToSave and tokenAssignmentsToSave as arguments.
-   */
   const saveVisualPreset = useCallback(
     async (nameToSave, setAsDefault, includeReactions, includeMidi, layerConfigsToSave, tokenAssignmentsToSave) => {
+      // --- ADD LOGGING HERE ---
+      console.log("[useConfigState saveVisualPreset] RECEIVED DATA FOR SAVING:", {
+          name: nameToSave,
+          setAsDefault: setAsDefault,
+          includeReactions: includeReactions,
+          includeMidi: includeMidi,
+          layerConfigsArg: JSON.parse(JSON.stringify(layerConfigsToSave)), // Deep copy
+          tokenAssignmentsArg: JSON.parse(JSON.stringify(tokenAssignmentsToSave)) // Deep copy
+      });
+      // --- END LOGGING ---
       const service = configServiceRef.current;
       const addressToSave = currentProfileAddress;
       const isReady = !!service && isUpProviderStableForRead && service.checkReadyForWrite();
@@ -372,7 +349,6 @@ const useConfigState = (currentProfileAddress) => {
       }
       setIsSaving(true); setSaveError(null); setSaveSuccess(false);
 
-      // Ensure layerConfigsToSave and tokenAssignmentsToSave are valid objects
       const validLayerConfigs = (typeof layerConfigsToSave === 'object' && layerConfigsToSave !== null) ? layerConfigsToSave : {};
       const validTokenAssignments = (typeof tokenAssignmentsToSave === 'object' && tokenAssignmentsToSave !== null) ? tokenAssignmentsToSave : {};
       
@@ -385,7 +361,6 @@ const useConfigState = (currentProfileAddress) => {
       const dataToSave = {
         layers: completeLayerConfigsForSave,
         tokenAssignments: validTokenAssignments,
-        // These come from this hook's state as they are "global" settings
         reactions: includeReactions ? savedReactions : undefined, 
         midi: includeMidi ? midiMap : undefined,
       };
@@ -394,9 +369,9 @@ const useConfigState = (currentProfileAddress) => {
         const result = await service.saveConfiguration( addressToSave, dataToSave, nameToSave, setAsDefault, true, includeReactions, includeMidi, null );
         if (result.success) {
             addToast(`Preset '${nameToSave}' saved successfully!`, 'success');
-            setSaveSuccess(true); setHasPendingChanges(false); // Saving clears pending changes
-            setCurrentConfigName(nameToSave); // Update current config name
-            loadSavedConfigList().catch(() => {}); // Refresh list
+            setSaveSuccess(true); setHasPendingChanges(false); 
+            setCurrentConfigName(nameToSave); 
+            loadSavedConfigList().catch(() => {}); 
         } else { throw new Error(result.error || "Save configuration failed."); }
         setIsSaving(false); return result;
       } catch (error) {
@@ -405,8 +380,6 @@ const useConfigState = (currentProfileAddress) => {
         setSaveSuccess(false); return { success: false, error: errorMsg };
       }
     },
-    // Dependencies: currentProfileAddress and states managed by this hook (savedReactions, midiMap)
-    // and functions (addToast, loadSavedConfigList, isUpProviderStableForRead, configServiceRef)
     [currentProfileAddress, savedReactions, midiMap, addToast, loadSavedConfigList, isUpProviderStableForRead, configServiceRef]
   );
 
@@ -425,7 +398,7 @@ const useConfigState = (currentProfileAddress) => {
          const result = await service.saveDataToKey(addressToSave, dataKey, hexValue);
          if (result.success) {
             addToast(`Global reactions saved successfully!`, 'success');
-            setSaveSuccess(true); setHasPendingChanges(false); // Saving clears pending changes
+            setSaveSuccess(true); setHasPendingChanges(false); 
          } else { throw new Error(result.error || "Save reactions failed."); }
          setIsSaving(false); return result;
      } catch (error) {
@@ -450,7 +423,7 @@ const useConfigState = (currentProfileAddress) => {
         const result = await service.saveDataToKey(addressToSave, dataKey, hexValue);
         if (result.success) {
             addToast(`Global MIDI map saved successfully!`, 'success');
-            setSaveSuccess(true); setHasPendingChanges(false); // Saving clears pending changes
+            setSaveSuccess(true); setHasPendingChanges(false); 
          } else { throw new Error(result.error || "Save MIDI map failed."); }
          setIsSaving(false); return result;
      } catch (error) {
@@ -472,19 +445,18 @@ const useConfigState = (currentProfileAddress) => {
       if (!nameToDelete) {
           addToast("No preset name provided to delete.", "warning"); return { success: false, error: "No name provided." };
       }
-      setIsSaving(true); setSaveError(null); // Indicate processing
+      setIsSaving(true); setSaveError(null); 
       try {
           const result = await service.deleteConfiguration(addressToDeleteFrom, nameToDelete);
           if (result.success) {
               addToast(`Preset '${nameToDelete}' deleted.`, 'success');
-              setSaveSuccess(true); // Not strictly saveSuccess, but operation was successful
-              await loadSavedConfigList(); // Refresh list
+              setSaveSuccess(true); 
+              await loadSavedConfigList(); 
               if (currentConfigName === nameToDelete) {
-                // If deleted preset was active, load default (which applies fallback if no default)
                 await performLoad(addressToDeleteFrom, null, null, `delete_cleanup:${nameToDelete}`);
               }
           } else { throw new Error(result.error || "Delete operation failed."); }
-          setIsSaving(false); // Reset saving flag
+          setIsSaving(false); 
           return result;
       } catch (error) {
           const errorMsg = error.message || "Unknown delete error."; setSaveError(errorMsg);
@@ -492,10 +464,9 @@ const useConfigState = (currentProfileAddress) => {
           return { success: false, error: errorMsg };
       }
     },
-    [currentProfileAddress, performLoad, addToast, loadSavedConfigList, currentConfigName, isUpProviderStableForRead, configServiceRef], // Added configServiceRef
+    [currentProfileAddress, performLoad, addToast, loadSavedConfigList, currentConfigName, isUpProviderStableForRead, configServiceRef], 
   );
 
-  // --- State Update Callbacks for global settings managed here ---
   const updateSavedReaction = useCallback((eventType, reactionData) => {
       if (!eventType || !reactionData) return;
       setSavedReactions((prev) => ({ ...prev, [eventType]: reactionData }));
@@ -525,13 +496,12 @@ const useConfigState = (currentProfileAddress) => {
     [performLoad, currentProfileAddress]
   );
 
-  // --- Memoize the final context state ---
   const contextState = useMemo(() => ({
       configServiceInstanceReady,
       configServiceRef,
       currentConfigName,
-      loadedLayerConfigsFromPreset, // Expose loaded preset data for VisualConfigProvider
-      loadedTokenAssignmentsFromPreset, // Expose loaded preset data for VisualConfigProvider
+      loadedLayerConfigsFromPreset, 
+      loadedTokenAssignmentsFromPreset, 
       savedReactions,
       midiMap,
       isLoading,
@@ -543,7 +513,7 @@ const useConfigState = (currentProfileAddress) => {
       savedConfigList,
       isInitiallyResolved,
       configLoadNonce,
-      saveVisualPreset, // This function now expects layerConfigs and tokenAssignments
+      saveVisualPreset, 
       saveGlobalReactions,
       saveGlobalMidiMap,
       loadNamedConfig,

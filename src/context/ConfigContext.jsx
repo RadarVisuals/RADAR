@@ -3,15 +3,15 @@ import React, {
   createContext,
   useContext,
   useEffect,
-  useCallback, // Keep useCallback if used by configState
+  useCallback, // Keep useCallback if used by configStateHook
   useMemo,
 } from "react";
 import PropTypes from "prop-types";
 import useConfigState from "../hooks/useConfigState";
 import { useUserSession } from "./UserSessionContext";
-import { useVisualConfig } from "./VisualConfigContext"; // Import useVisualConfig
+// REMOVE: import { useVisualConfig } from "./VisualConfigContext"; // No longer needed here
 
-// Define the default shape and values for the context
+// JSDoc for the default context value shape
 /**
  * @typedef {object} ConfigContextValue
  * @property {boolean} isConfigLoading - True if any configuration aspect for the host profile is currently being fetched/processed.
@@ -31,7 +31,7 @@ import { useVisualConfig } from "./VisualConfigContext"; // Import useVisualConf
  * @property {boolean} hasPendingChanges - True if local configuration of the host profile differs from its last saved state. This flag is set by `VisualConfigProvider` or other parts of `ConfigContext` when changes occur.
  * @property {React.Dispatch<React.SetStateAction<boolean>>} setHasPendingChanges - Manually sets the pending changes flag.
  * @property {(newMap: object) => void} updateMidiMap - Replaces the entire MIDI map configuration for the host profile.
- * @property {(nameToSave: string, setAsDefault: boolean, includeReactions: boolean, includeMidi: boolean) => Promise<{success: boolean, error?: string}>} saveVisualPreset - Saves the current visual configuration as a preset to the host profile. This function now internally retrieves layerConfigs and tokenAssignments from VisualConfigContext.
+ * @property {(nameToSave: string, setAsDefault: boolean, includeReactions: boolean, includeMidi: boolean, layerConfigsToSave: object, tokenAssignmentsToSave: object) => Promise<{success: boolean, error?: string}>} saveVisualPreset - Saves the visual configuration (layers and tokens) along with optional global settings as a preset to the host profile. Layer configurations and token assignments must be passed as arguments.
  * @property {() => Promise<{success: boolean, error?: string}>} saveGlobalReactions - Saves only the global event reactions to the host profile.
  * @property {() => Promise<{success: boolean, error?: string}>} saveGlobalMidiMap - Saves only the global MIDI map to the host profile.
  * @property {(name: string) => Promise<{success: boolean, error?: string, config?: object | null}>} loadNamedConfig - Loads a specific named configuration from the host profile.
@@ -62,7 +62,8 @@ const defaultConfigContext = {
   hasPendingChanges: false,
   setHasPendingChanges: () => {},
   updateMidiMap: () => {},
-  saveVisualPreset: async () => ({ success: false, error: "Provider not initialized" }),
+  // Stub for saveVisualPreset, expecting 6 args matching the updated JSDoc
+  saveVisualPreset: async (_name, _default, _reactions, _midi, _layers, _tokens) => ({ success: false, error: "Provider not initialized" }),
   saveGlobalReactions: async () => ({ success: false, error: "Provider not initialized" }),
   saveGlobalMidiMap: async () => ({ success: false, error: "Provider not initialized" }),
   loadNamedConfig: async () => ({ success: false, error: "Provider not initialized" }),
@@ -81,18 +82,17 @@ const ConfigContext = createContext(defaultConfigContext);
  * global interaction settings (MIDI, Reactions), and service readiness.
  * It no longer directly manages visual layer configurations (layerConfigs, tokenAssignments)
  * but provides data from loaded presets for `VisualConfigProvider` to consume.
- * When saving visual presets, it now consumes `VisualConfigContext` to get the current
- * visual state (`layerConfigs`, `tokenAssignments`) to pass to `useConfigState`'s save function.
+ * When saving visual presets, it now relies on the caller (UI component) to pass
+ * the current visual state (`layerConfigs`, `tokenAssignments`) to its `saveVisualPreset` function.
  *
  * @param {object} props
  * @param {React.ReactNode} props.children - Child components.
  */
 export const ConfigProvider = ({ children }) => {
   const { hostProfileAddress, isPreviewMode } = useUserSession();
-  const { layerConfigs: currentLayerConfigs, tokenAssignments: currentTokenAssignments } = useVisualConfig(); // Consume VisualConfigContext
+  // REMOVE: The incorrect useVisualConfig() call.
+  // const { layerConfigs: currentLayerConfigs, tokenAssignments: currentTokenAssignments } = useVisualConfig();
 
-  // Pass hostProfileAddress to useConfigState.
-  // The saveVisualPreset function from useConfigState now expects layerConfigs and tokenAssignments as arguments.
   const configStateHook = useConfigState(hostProfileAddress);
   const { loadDefaultConfig } = configStateHook;
 
@@ -106,44 +106,18 @@ export const ConfigProvider = ({ children }) => {
     }
   }, [isPreviewMode, loadDefaultConfig]);
 
-  // Wrap the saveVisualPreset function from useConfigState to inject
-  // currentLayerConfigs and currentTokenAssignments from VisualConfigContext.
-  const saveVisualPresetWithVisuals = useCallback(
-    async (nameToSave, setAsDefault, includeReactions, includeMidi) => {
-      if (typeof configStateHook.saveVisualPreset !== 'function') {
-        console.error("ConfigState's saveVisualPreset is not a function");
-        return { success: false, error: "Save function unavailable" };
-      }
-      return configStateHook.saveVisualPreset(
-        nameToSave,
-        setAsDefault,
-        includeReactions,
-        includeMidi,
-        currentLayerConfigs, // Injected from VisualConfigContext
-        currentTokenAssignments // Injected from VisualConfigContext
-      );
-    },
-    [configStateHook.saveVisualPreset, currentLayerConfigs, currentTokenAssignments]
-  );
+  // REMOVE: The saveVisualPresetWithVisuals wrapper.
+  // The saveVisualPreset function from configStateHook already expects layerConfigs and tokenAssignments as arguments.
 
   const contextValue = useMemo(
     () => ({
-      // Spread all properties from the configState hook
+      // Spread all properties from the configStateHook
       ...configStateHook,
-      // Override saveVisualPreset with our wrapped version
-      saveVisualPreset: saveVisualPresetWithVisuals,
-      // Ensure isConfigLoading is explicitly passed if its name differs in configStateHook
-      isConfigLoading: configStateHook.isLoading,
-      // The following are already part of configStateHook and exposed by it:
-      // loadedLayerConfigsFromPreset, loadedTokenAssignmentsFromPreset,
-      // savedReactions, midiMap, currentConfigName, savedConfigList, configLoadNonce,
-      // loadError, saveError, isSaving, saveSuccess, hasPendingChanges, setHasPendingChanges,
-      // updateMidiMap, saveGlobalReactions, saveGlobalMidiMap, loadNamedConfig,
-      // loadDefaultConfig, loadSavedConfigList, deleteNamedConfig, updateSavedReaction,
-      // deleteSavedReaction, configServiceRef
+      // configStateHook.saveVisualPreset is now directly exposed.
+      // It expects layerConfigs and tokenAssignments as its 5th and 6th arguments.
+      isConfigLoading: configStateHook.isLoading, // Ensure consistent naming if needed
     }),
-    [configStateHook, saveVisualPresetWithVisuals] // Add currentLayerConfigs, currentTokenAssignments if they were direct deps of the memo
-                                                // but saveVisualPresetWithVisuals already depends on them.
+    [configStateHook] // Dependency is now just the configStateHook itself
   );
 
   return (
