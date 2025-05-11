@@ -8,7 +8,7 @@ import React, { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import "./PanelStyles/InfoOverlay.css";
 
-import radarWordmarkBlue from "../../assets/branding/radarwordmarkblue.svg"; 
+import radarWordmarkBlue from "../../assets/branding/radarwordmarkblue.svg";
 
 const InfoOverlay = ({ isOpen, onClose }) => {
   const [transitionState, setTransitionState] = useState("initial");
@@ -16,16 +16,16 @@ const InfoOverlay = ({ isOpen, onClose }) => {
 
   useEffect(() => {
     if (isOpen) {
-      setTransitionState("fadeToContent"); 
+      setTransitionState("fadeToContent");
     } else {
       setTransitionState("exiting");
-      setTimeout(() => setTransitionState("initial"), 300); 
+      setTimeout(() => setTransitionState("initial"), 300);
     }
   }, [isOpen]);
 
   const handleClose = () => {
     setTransitionState("exiting");
-    setTimeout(onClose, 300); 
+    setTimeout(onClose, 300);
   };
 
   const handleBackgroundClick = (e) => {
@@ -103,7 +103,6 @@ const InfoOverlay = ({ isOpen, onClose }) => {
                 profile because you have the most / coolest presets available. Tying this with the global MIDI key
                 that is loaded from your profile while browsing his presets opens another door to the imagination
                 how these keys can be used.
-
               </p>
             </div>
             <div className="info-card">
@@ -119,11 +118,10 @@ const InfoOverlay = ({ isOpen, onClose }) => {
             </div>
             <p style={{ marginTop: "var(--space-lg)", fontWeight: "bold" }}>
               While others are still figuring out profile pictures, LUKSO built
-              the operating system for the decentralized future. It's here so
+              the operating system for the decentralized future. It's here & fully operational so
               stop letting your assets gather virtual dust. Load 'em UP! Crank
               the knobs. RADAR is a statement against digital stagnation. It's
-              proof that the future of digital art is dynamic, interactive,
-              deeply personal and radically free.
+              proof that the future of digital art is dynamic, interactive, radically free & deeply embeded in your profile's DNA.
             </p>
           </div>
         );
@@ -133,8 +131,8 @@ const InfoOverlay = ({ isOpen, onClose }) => {
             <h3>What is RADAR?</h3>
             <p>
               RADAR is short for "Reactive Asset Driven Audio Receiver", it's way more than just an
-              NFT viewer; it's a high-performance, multi-layer visual
-              synthesizer built for the revolutionary architecture of the LUKSO
+              NFT viewer. It's a high-performance, multi-layer visual
+              synthesizer built for the architecture of the LUKSO
               ecosystem. It lives directly within your Universal Profile,
               transforming your static digital assets into dynamic, interactive
               art pieces you control.
@@ -158,8 +156,8 @@ const InfoOverlay = ({ isOpen, onClose }) => {
                 Universal Receiver standard, enabling visual reactions (for now custom color coded pulses) to
                 on-chain activity like receiving LYX, receiving and sending LSP7/8 tokens, Follower lost, Follower Gained.
                 You can fullsceen the RADAR application on a second screen, put on some good music, activate the responsive audio layers, pour in a coctail and get notified through these color coded pulses.
-                At a glance you can see what events are incoming. 
-                This makes blockchain events not only tied to just data driven notifications but actual visual experiences you have set up yourself, fully saved on chain.
+                At a glance you can see what events are incoming.
+                This makes blockchain events not only tied to just data driven notifications but actual visual experiences you have set up yourself, fully configurable.
               </p>
               <p>
                 <strong>Decentralized State (ERC725Y):</strong> All your
@@ -232,8 +230,7 @@ const InfoOverlay = ({ isOpen, onClose }) => {
                 <strong>one single entry</strong> (
                 <code>RADAR.MIDI.ParameterMap</code>) in your UP's ERC725Y
                 storage. Load any visual preset and your knobs always control the
-                same parameters. This persistent, global mapping is only possible
-                thanks to LUKSO's on-chain profile storage.
+                same parameters, for any profile you visit that has set up RADAR. Persistent & interoperable.
               </p>
             </div>
           </div>
@@ -243,12 +240,15 @@ const InfoOverlay = ({ isOpen, onClose }) => {
           <div className="tab-pane">
             <h3>Audio Reactivity Setup (Using Virtual Audio Cable & Voicemeeter)</h3>
             <p>
-              To make RADAR's visuals react to the audio playing on your computer (e.g., from your browser or music player), you can route your audio through Voicemeeter using a Virtual Audio Cable. This gives you fine-grained control.
+              To make RADAR's visuals react to the audio playing on your computer (e.g., from your browser, music player, voice stream, games,...), you can route your audio through Voicemeeter using a Virtual Audio Cable. This gives you fine-grained control.
             </p>
             <div className="info-card">
               <h4>Prerequisites:</h4>
               <p>
-                <strong>Voicemeeter (Standard version or Banana/Potato) installed.</strong> Get it from vb-audio.com/Voicemeeter/.
+                <strong>Voicemeeter (Standard version, Banana, or Potato) installed.</strong> Get it from vb-audio.com/Voicemeeter/.
+              </p>
+              <p>
+                <strong>Virtual Audio Cable installed.</strong> Also from vb-audio.com (VB-CABLE).
               </p>
               <p>
                 <strong>Restart your computer after installing these.</strong>
@@ -257,55 +257,59 @@ const InfoOverlay = ({ isOpen, onClose }) => {
             <div className="info-card">
               <h4>Steps:</h4>
               <p>
-                <strong>1. Route Desired Audio to Virtual Cable (Recommended for Browser/App Audio):</strong>
+                <strong>1. Route Desired Audio to the Virtual Cable:</strong>
               </p>
               <p style={{ paddingLeft: "var(--space-md)" }}>
-                In Windows Sound settings ("Open Sound settings" -{">"} "App volume and device preferences"):
-                Find your web browser.
-                Change its Output device to "CABLE Input (VB-Audio Virtual Cable)".
+                In Windows Sound settings ("Open Sound settings" → "App volume and device preferences"):
+                Find your web browser (or the app you want to capture).
+                Set its Output device to <strong>"CABLE Input (VB-Audio Virtual Cable)"</strong>.
               </p>
               <p style={{ paddingLeft: "var(--space-md)" }}>
-                Alternatively, for simpler system-wide audio capture (less granular), set "CABLE Input" as your Default Playback Device in Windows Sound settings (Playback tab).
+                This ensures the browser or app audio is sent into the virtual cable for further routing.
               </p>
               <p>
                 <strong>2. Configure Voicemeeter:</strong>
               </p>
               <p style={{ paddingLeft: "var(--space-md)" }}>
                 Open Voicemeeter.
-                Hardware Input 1 (Stereo Input 1 or 2): Click its name and select "CABLE Output (VB-Audio Virtual Cable)". This brings audio from the virtual cable into Voicemeeter.
-                Ensure this channel is active (fader up, not muted). Enable its output to A1 (or your main hardware out) if you want to monitor this source through Voicemeeter.
+                Under Hardware Input 1 (or an available stereo input strip): Click the name field and select <strong>"CABLE Output (VB-Audio Virtual Cable)"</strong>.
+                This brings the audio from the virtual cable into Voicemeeter.
+                Make sure this channel is active (fader up, not muted).
               </p>
               <p style={{ paddingLeft: "var(--space-md)" }}>
-                Hardware Out (A1 is the MAIN OUT): Click "A1" (last channel strip) and select your main speakers/headphones. Done.
+                For your main output (to hear the audio yourself): Click "A1" (typically the first hardware output selection button on the master section) and select your real speakers or headphones. Ensure the audio from the "CABLE Output" input strip is routed to A1 (usually by default or by pressing the 'A1' button on that input strip).
               </p>
               <p>
                 <strong>3. Browser Permissions for RADAR:</strong>
               </p>
               <p style={{ paddingLeft: "var(--space-md)" }}>
-                When enabling Audio Reactivity in RADAR, your browser will ask for microphone permission.
-                Select "Voicemeeter Output" (from step 3) as the microphone source.
+                When enabling Audio Reactivity in RADAR, your browser will ask for microphone permission. Click "Allow".
+                Ensure the microphone source selected in the browser (if it gives you a choice, or in browser settings) is set to <strong>"Voicemeeter Output (VB-Audio Voicemeeter VAIO)"</strong> or a similar name representing Voicemeeter's main virtual output.
               </p>
             </div>
             <div className="info-card">
               <h4>How it Works:</h4>
               <p>
-                Your application sends sound to "CABLE Input." "CABLE Output" feeds this into Voicemeeter. Voicemeeter processes it, sends it to your speakers (via A1) AND to its own virtual "Voicemeeter Output." RADAR listens to "Voicemeeter Output" as a microphone.
+                Your system audio (from the selected browser/app) is sent to <strong>"CABLE Input"</strong>.
+                The <strong>"CABLE Output"</strong> then carries this audio into a Voicemeeter input strip.
+                Voicemeeter processes this audio, sends it to your physical speakers/headphones (via A1, A2, etc.), and simultaneously makes it available through its own virtual output (e.g., <strong>"Voicemeeter Output VAIO"</strong>), which acts like a virtual microphone.
+                RADAR listens to this "Voicemeeter Output" as if it were a microphone input, capturing the audio you've routed.
               </p>
             </div>
             <p>
-              This method allows selective audio routing for the visualizer.
+              This method allows selective audio routing for the visualizer without capturing your real microphone or unwanted system sounds.
             </p>
             <div className="info-card">
-                <h4>Embedding RADAR with Permissions:</h4>
-                <p>
+              <h4>Embedding RADAR with Permissions:</h4>
+              <p>
                 If you are embedding RADAR (e.g., in an iframe), ensure you grant the necessary permissions for full functionality:
-                </p>
-                <p>
-                <code>{`<iframe src="https://radar725.netlify.app/" allow="microphone, midi, fullscreen"></iframe>`}</code>
-                </p>
-                <p>
+              </p>
+              <p>
+                <code>{`<iframe src="https://radar725.netlify.app/" allow="microphone; midi; fullscreen"></iframe>`}</code>
+              </p>
+              <p>
                 This allows RADAR to access the microphone (for audio reactivity), MIDI devices, and enter fullscreen mode.
-                </p>
+              </p>
             </div>
           </div>
         );
@@ -375,8 +379,7 @@ const InfoOverlay = ({ isOpen, onClose }) => {
               <p>
                 <strong>Designed for Interaction:</strong> While RADAR
                 primarily uses the visual aspect, LSP8 allows for richer data
-                and potential future interactions beyond what simple
-                ERC721/1155 offer.
+                and potential future interactions beyond what other standards offer.
               </p>
             </div>
             <div className="info-card">
@@ -600,7 +603,6 @@ const InfoOverlay = ({ isOpen, onClose }) => {
               found in locking your work away; it's unleashed when you set it
               free.
             </p>
-
             <div className="info-card">
               <h4>Signature as the New IP</h4>
               <p>
@@ -613,7 +615,6 @@ const InfoOverlay = ({ isOpen, onClose }) => {
                 fundamental.
               </p>
             </div>
-
             <div className="info-card">
               <h4>From Control to Ignition</h4>
               <p>
@@ -631,7 +632,6 @@ const InfoOverlay = ({ isOpen, onClose }) => {
                 eternally linked.
               </p>
             </div>
-
             <div className="info-card">
               <h4>Transparency for the AI Era</h4>
               <p>
@@ -646,7 +646,6 @@ const InfoOverlay = ({ isOpen, onClose }) => {
                 solves the attribution problem from the outset.
               </p>
             </div>
-
             <div className="info-card">
               <h4>Beyond Outdated Legal Frameworks</h4>
               <p>
@@ -657,7 +656,6 @@ const InfoOverlay = ({ isOpen, onClose }) => {
                 protect you.
               </p>
             </div>
-
             <p style={{ marginTop: "var(--space-lg)", fontWeight: "bold" }}>
               Don’t become a product. Become the protocol. Embrace the future
               where your art lives, breathes, and inspires, all while your
@@ -724,38 +722,99 @@ const InfoOverlay = ({ isOpen, onClose }) => {
     }
   };
 
-  // Main component render
+  if (!isOpen && transitionState === "initial") {
+    return null; // Don't render if closed and not transitioning
+  }
+
   return (
-    <div className={`overlay ${transitionState}`} onClick={handleBackgroundClick}>
-      {/* Main Content Container */}
+    <div
+      className={`overlay ${transitionState}`}
+      onClick={handleBackgroundClick}
+    >
       <div className="overlay-content">
         <div className="overlay-header">
           <h2 className="overlay-title">
-            {/* Use the imported SVG  */}
-            <img src={radarWordmarkBlue} alt="RADAR Logo" className="radar-logo-image"/>
+            <img
+              src={radarWordmarkBlue}
+              alt="RADAR Logo"
+              className="radar-logo-image"
+            />
           </h2>
-          <button className="close-button" onClick={handleClose}>✕</button>
+          <button className="close-button" onClick={handleClose}>
+            ✕
+          </button>
         </div>
         <div className="overlay-body">
-          {/* Tab Buttons - USE UNIQUE CLASS NAMES */}
           <div className="info-overlay-tab-navigation">
-            <button className={`info-overlay-tab-button ${activeTab === "philosophy" ? "active" : ""}`} onClick={() => setActiveTab("philosophy")}>Philosophy</button>
-            <button className={`info-overlay-tab-button ${activeTab === "general" ? "active" : ""}`} onClick={() => setActiveTab("general")}>About</button>
-            <button className={`info-overlay-tab-button ${activeTab === "layers" ? "active" : ""}`} onClick={() => setActiveTab("layers")}>Controls</button>
-            <button className={`info-overlay-tab-button ${activeTab === "audioReactivity" ? "active" : ""}`} onClick={() => setActiveTab("audioReactivity")}>Audio Reactivity</button>
-            <button className={`info-overlay-tab-button ${activeTab === "events" ? "active" : ""}`} onClick={() => setActiveTab("events")}>Universal Receiver</button>
-            <button className={`info-overlay-tab-button ${activeTab === "tokens" ? "active" : ""}`} onClick={() => setActiveTab("tokens")}>Tokens</button>
-            <button className={`info-overlay-tab-button ${activeTab === "configurations" ? "active" : ""}`} onClick={() => setActiveTab("configurations")}>Configurations</button>
-            <button className={`info-overlay-tab-button ${activeTab === "collections" ? "active" : ""}`} onClick={() => setActiveTab("collections")}>Collections</button>
-            <button className={`info-overlay-tab-button ${activeTab === "artists" ? "active" : ""}`} onClick={() => setActiveTab("artists")}>Artists</button>
-            <button className={`info-overlay-tab-button ${activeTab === "ipRights" ? "active" : ""}`} onClick={() => setActiveTab("ipRights")}>IP Rights</button>
-            <button className={`info-overlay-tab-button ${activeTab === "roadmap" ? "active" : ""}`} onClick={() => setActiveTab("roadmap")}>Roadmap</button>
+            <button
+              className={`info-overlay-tab-button ${activeTab === "philosophy" ? "active" : ""}`}
+              onClick={() => setActiveTab("philosophy")}
+            >
+              Philosophy
+            </button>
+            <button
+              className={`info-overlay-tab-button ${activeTab === "general" ? "active" : ""}`}
+              onClick={() => setActiveTab("general")}
+            >
+              About
+            </button>
+            <button
+              className={`info-overlay-tab-button ${activeTab === "layers" ? "active" : ""}`}
+              onClick={() => setActiveTab("layers")}
+            >
+              Controls
+            </button>
+            <button
+              className={`info-overlay-tab-button ${activeTab === "audioReactivity" ? "active" : ""}`}
+              onClick={() => setActiveTab("audioReactivity")}
+            >
+              Audio Reactivity
+            </button>
+            <button
+              className={`info-overlay-tab-button ${activeTab === "events" ? "active" : ""}`}
+              onClick={() => setActiveTab("events")}
+            >
+              Universal Receiver
+            </button>
+            <button
+              className={`info-overlay-tab-button ${activeTab === "tokens" ? "active" : ""}`}
+              onClick={() => setActiveTab("tokens")}
+            >
+              Tokens
+            </button>
+            <button
+              className={`info-overlay-tab-button ${activeTab === "configurations" ? "active" : ""}`}
+              onClick={() => setActiveTab("configurations")}
+            >
+              Configurations
+            </button>
+            <button
+              className={`info-overlay-tab-button ${activeTab === "collections" ? "active" : ""}`}
+              onClick={() => setActiveTab("collections")}
+            >
+              Collections
+            </button>
+            <button
+              className={`info-overlay-tab-button ${activeTab === "artists" ? "active" : ""}`}
+              onClick={() => setActiveTab("artists")}
+            >
+              Artists
+            </button>
+            <button
+              className={`info-overlay-tab-button ${activeTab === "ipRights" ? "active" : ""}`}
+              onClick={() => setActiveTab("ipRights")}
+            >
+              IP Rights
+            </button>
+            <button
+              className={`info-overlay-tab-button ${activeTab === "roadmap" ? "active" : ""}`}
+              onClick={() => setActiveTab("roadmap")}
+            >
+              Roadmap
+            </button>
           </div>
 
-          {/* Rendered Tab Content */}
-          <div className="tab-content">
-            {renderTabContent()}
-          </div>
+          <div className="tab-content">{renderTabContent()}</div>
         </div>
       </div>
     </div>
