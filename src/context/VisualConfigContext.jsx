@@ -8,13 +8,9 @@ import React, {
     useMemo,
   } from "react";
   import PropTypes from "prop-types";
-  import { useConfig } from "./ConfigContext"; // To listen for preset loads
+  import { useConfig } from "./ConfigContext"; 
+  import { usePresetManagement } from "./PresetManagementContext"; 
   
-  /**
-   * Generates a default configuration template for a single layer.
-   * This function is used to ensure that layer configurations always have a complete set of properties.
-   * @returns {object} Default layer configuration.
-   */
   const getDefaultLayerConfigTemplate = () => ({
     enabled: true,
     blendMode: "normal",
@@ -30,35 +26,17 @@ import React, {
     driftState: {
       x: 0,
       y: 0,
-      phase: Math.random() * Math.PI * 2, // Random initial phase for drift
-      enabled: false, // Drift is disabled by default if drift amount is 0
+      phase: Math.random() * Math.PI * 2,
+      enabled: false,
     },
   });
   
-  /**
-   * Generates the default structure for all layer configurations.
-   * Used as the initial state or when no preset data is available.
-   * @returns {object} Object with default configurations for layers '1', '2', '3'.
-   */
   const getDefaultLayerConfigs = () => ({
     1: getDefaultLayerConfigTemplate(),
     2: getDefaultLayerConfigTemplate(),
     3: getDefaultLayerConfigTemplate(),
   });
   
-  /**
-   * @typedef {object} VisualConfigContextValue
-   * @property {object} layerConfigs - Current configurations for visual layers (e.g., size, speed, opacity for layers '1', '2', '3').
-   * @property {object} tokenAssignments - Current mapping of layer IDs ('1', '2', '3') to token identifiers (e.g., asset addresses, demo token keys).
-   * @property {(layerId: string | number, key: string, value: any) => void} updateLayerConfig - Function to update a specific property (key) of a given layer's (layerId) configuration with a new value.
-   * @property {(layerId: string | number, tokenId: string | object | null) => void} updateTokenAssignment - Function to update the token assigned to a specific layer (layerId). `tokenId` can be a string identifier or null to clear.
-   */
-  
-  /**
-   * Default values for `VisualConfigContext`.
-   * Provides an initial state structure and stub functions.
-   * @type {VisualConfigContextValue}
-   */
   export const defaultVisualConfigContext = {
     layerConfigs: getDefaultLayerConfigs(),
     tokenAssignments: {},
@@ -72,62 +50,50 @@ import React, {
   
   const VisualConfigContext = createContext(defaultVisualConfigContext);
   
-  /**
-   * Provider component for managing the visual configuration state (layers and tokens).
-   * It listens to `ConfigContext` for loaded preset data and updates its internal state accordingly.
-   * It also signals pending changes to `ConfigContext` when its own state is modified.
-   * @param {object} props
-   * @param {React.ReactNode} props.children - Child components.
-   * @returns {JSX.Element} The `VisualConfigProvider` component.
-   */
   export const VisualConfigProvider = ({ children }) => {
+    const { setHasPendingChanges: setGlobalHasPendingChanges } = useConfig(); 
     const {
       configLoadNonce,
       loadedLayerConfigsFromPreset,
       loadedTokenAssignmentsFromPreset,
-      setHasPendingChanges: setGlobalHasPendingChanges,
-    } = useConfig();
+    } = usePresetManagement(); 
   
-    // Initialize state, attempting to use loaded preset data if available on mount,
-    // otherwise falling back to defaults.
     const [layerConfigs, setLayerConfigsInternal] = useState(() => {
+      // Initialize with data from PresetManagement if available on first render
       return loadedLayerConfigsFromPreset || getDefaultLayerConfigs();
     });
   
     const [tokenAssignments, setTokenAssignmentsInternal] = useState(() => {
+      // Initialize with data from PresetManagement if available on first render
       return loadedTokenAssignmentsFromPreset || {};
     });
   
-    // Effect to synchronize with loaded preset data from ConfigContext
     useEffect(() => {
-      // This effect runs when a preset is loaded (indicated by configLoadNonce change)
-      // or when the component mounts and ConfigContext provides initial preset data.
+      console.log(`[VisualConfigContext useEffect] Running. Nonce: ${configLoadNonce}.`);
+      console.log(`[VisualConfigContext useEffect] Received loadedLayerConfigsFromPreset:`, loadedLayerConfigsFromPreset ? JSON.parse(JSON.stringify(loadedLayerConfigsFromPreset)) : null);
+      console.log(`[VisualConfigContext useEffect] Received loadedTokenAssignmentsFromPreset:`, loadedTokenAssignmentsFromPreset ? JSON.parse(JSON.stringify(loadedTokenAssignmentsFromPreset)) : null);
+
       if (loadedLayerConfigsFromPreset) {
+        console.log("[VisualConfigContext useEffect] Setting layerConfigs from preset.");
         setLayerConfigsInternal(loadedLayerConfigsFromPreset);
       } else {
-        // Fallback to default if no preset layers are provided (e.g., initial state or error)
+        console.log("[VisualConfigContext useEffect] No loadedLayerConfigsFromPreset, setting to default layers.");
         setLayerConfigsInternal(getDefaultLayerConfigs());
       }
   
       if (loadedTokenAssignmentsFromPreset) {
+        console.log("[VisualConfigContext useEffect] Setting tokenAssignments from preset.");
         setTokenAssignmentsInternal(loadedTokenAssignmentsFromPreset);
       } else {
-        // Fallback to empty assignments if no preset tokens are provided
+        console.log("[VisualConfigContext useEffect] No loadedTokenAssignmentsFromPreset, setting to {}.");
         setTokenAssignmentsInternal({});
       }
-      // When a preset is loaded, any pending changes specific to visual config are effectively cleared
-      // because the state is reset to the loaded preset's state.
-      // The global `hasPendingChanges` flag in ConfigContext is reset by its own logic upon successful load.
     }, [
-      configLoadNonce,
-      loadedLayerConfigsFromPreset,
-      loadedTokenAssignmentsFromPreset,
+      configLoadNonce, // This is the primary trigger
+      loadedLayerConfigsFromPreset, // Dependency to get the latest value
+      loadedTokenAssignmentsFromPreset, // Dependency to get the latest value
     ]);
   
-    /**
-     * Updates a specific property of a layer's configuration.
-     * Also signals to `ConfigContext` that there are pending (unsaved) changes.
-     */
     const updateLayerConfig = useCallback(
       (layerId, key, value) => {
         setLayerConfigsInternal((prevConfigs) => ({
@@ -144,10 +110,6 @@ import React, {
       [setGlobalHasPendingChanges],
     );
   
-    /**
-     * Updates the token assigned to a specific layer.
-     * Also signals to `ConfigContext` that there are pending (unsaved) changes.
-     */
     const updateTokenAssignment = useCallback(
       (layerId, tokenId) => {
         setTokenAssignmentsInternal((prevAssignments) => ({
@@ -182,12 +144,6 @@ import React, {
     children: PropTypes.node.isRequired,
   };
   
-  /**
-   * Custom hook to consume the `VisualConfigContext`.
-   * Provides access to `layerConfigs`, `tokenAssignments`, and their respective update functions.
-   * @returns {VisualConfigContextValue} The visual configuration context value.
-   * @throws {Error} If used outside of a `VisualConfigProvider`.
-   */
   export const useVisualConfig = () => {
     const context = useContext(VisualConfigContext);
     if (context === undefined) {

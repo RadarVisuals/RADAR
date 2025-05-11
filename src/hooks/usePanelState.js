@@ -1,4 +1,18 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react"; // Added useMemo
+
+/**
+ * @typedef {object} PanelState
+ * @property {string | null} activePanel - The identifier of the currently active panel (e.g., 'controls', 'notifications'), or null if no panel is active.
+ * @property {boolean} tokenSelectorOpen - True if the token selector overlay should be open, typically when `activePanel` is 'tokens'.
+ * @property {string} activeLayerTab - The identifier of the currently active layer tab (e.g., 'tab1', 'tab2', 'tab3').
+ * @property {React.Dispatch<React.SetStateAction<string>>} setActiveLayerTab - Function to set the active layer tab.
+ * @property {(panelName: string | null) => void} togglePanel - Function to toggle a panel's visibility (opens if closed, closes if open).
+ * @property {(panelName: string) => void} openPanel - Function to open a specific panel.
+ * @property {() => void} closePanel - Function to close any currently active panel.
+ * @property {(panelName: string) => boolean} isPanelActive - Function to check if a specific panel is currently active.
+ * @property {() => number} getActiveLayerId - Function to get the numerical layer ID corresponding to the `activeLayerTab`.
+ * @property {Object.<string, number>} tabToLayer - A mapping from tab identifiers to their corresponding layer IDs.
+ */
 
 /**
  * Manages the state related to UI panels and layer tabs. It tracks which
@@ -9,18 +23,7 @@ import { useState, useCallback, useEffect } from "react";
  *
  * @param {string|null} [initialPanel=null] - The identifier of the panel to be initially active.
  * @param {string} [initialLayerTab='tab1'] - The identifier of the initially active layer tab.
- * @returns {{
- *   activePanel: string | null,
- *   tokenSelectorOpen: boolean,
- *   activeLayerTab: string,
- *   setActiveLayerTab: React.Dispatch<React.SetStateAction<string>>,
- *   togglePanel: (panelName: string | null) => void,
- *   openPanel: (panelName: string) => void,
- *   closePanel: () => void,
- *   isPanelActive: (panelName: string) => boolean,
- *   getActiveLayerId: () => number,
- *   tabToLayer: { [key: string]: number }
- * }} An object containing the panel and tab state, along with functions to manage them.
+ * @returns {PanelState} An object containing the panel and tab state, along with functions to manage them.
  */
 export function usePanelState(initialPanel = null, initialLayerTab = 'tab1') {
   const [activePanel, setActivePanel] = useState(initialPanel);
@@ -35,11 +38,10 @@ export function usePanelState(initialPanel = null, initialLayerTab = 'tab1') {
   /** Toggles a panel's visibility: opens if closed, closes if open. */
   const togglePanel = useCallback(
     (panelName) => {
-      // Normalize potential null string values
-      const cleanPanel = panelName === "null" ? null : panelName;
-      setActivePanel((current) => (current === cleanPanel ? null : cleanPanel));
+      const cleanPanelName = panelName === "null" ? null : panelName;
+      setActivePanel((current) => (current === cleanPanelName ? null : cleanPanelName));
     },
-    [], // No dependencies needed as it uses the functional update form of setActivePanel
+    [],
   );
 
   /** Opens a specific panel by its identifier. */
@@ -60,28 +62,32 @@ export function usePanelState(initialPanel = null, initialLayerTab = 'tab1') {
     [activePanel],
   );
 
-  /** Mapping from tab identifiers to layer IDs (e.g., 'tab1' -> layer 1). */
-  const tabToLayer = {
+  /**
+   * Memoized mapping from tab identifiers to layer IDs.
+   * This ensures the object reference is stable across renders unless its dependencies change (none in this case).
+   * @type {Object.<string, number>}
+   */
+  const tabToLayer = useMemo(() => ({
     tab1: 1,
     tab2: 2,
     tab3: 3,
-  };
+  }), []); // Empty dependency array means it's created once
 
   /** Gets the numerical layer ID corresponding to the currently active tab. */
   const getActiveLayerId = useCallback(() => {
     return tabToLayer[activeLayerTab] || 1; // Default to layer 1 if tab mapping is missing
-  }, [activeLayerTab]); // Added tabToLayer to dependency array for correctness, though it's constant
+  }, [activeLayerTab, tabToLayer]);
 
   return {
     activePanel,
     tokenSelectorOpen,
     activeLayerTab,
-    setActiveLayerTab, // Expose direct setter for flexibility
+    setActiveLayerTab,
     togglePanel,
     openPanel,
     closePanel,
     isPanelActive,
     getActiveLayerId,
-    tabToLayer, // Expose the map for potential external use
+    tabToLayer,
   };
 }

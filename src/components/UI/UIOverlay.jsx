@@ -12,90 +12,82 @@ import EnhancedSavePanel from '../Panels/EnhancedSavePanel';
 import AudioControlPanel from '../Audio/AudioControlPanel';
 import TokenSelectorOverlay from '../Panels/TokenSelectorOverlay';
 import InfoOverlay from '../Panels/InfoOverlay';
-// WhitelistCollectionsPanel import is removed as it's no longer rendered here directly
-// import WhitelistCollectionsPanel from '../Panels/WhitelistCollectionsPanel';
 import GlobalMIDIStatus from '../MIDI/GlobalMIDIStatus';
 import AudioStatusIcon from '../Audio/AudioStatusIcon';
 import PresetSelectorBar from './PresetSelectorBar';
-
-// Note: useVisualLayerState is not directly consumed here, as layerConfigs
-// is expected to be part of the configData prop passed from MainView.
 
 const MemoizedTopRightControls = React.memo(TopRightControls);
 const MemoizedVerticalToolbar = React.memo(VerticalToolbar);
 const MemoizedGlobalMIDIStatus = React.memo(GlobalMIDIStatus);
 const MemoizedAudioStatusIcon = React.memo(AudioStatusIcon);
-const MemoizedPresetSelectorBar = React.memo(PresetSelectorBar);
 
 /**
  * @typedef {object} UIStatePropTypes
- * @property {string|null} activePanel - Identifier of the currently active panel (e.g., 'controls', 'notifications').
- * @property {string|null} animatingPanel - Identifier of the panel currently undergoing an open/close animation.
- * @property {string} activeLayerTab - Identifier of the active layer control tab (e.g., 'tab1', 'tab2', 'tab3').
- * @property {boolean} infoOverlayOpen - Whether the informational overlay is currently open.
- * @property {boolean} whitelistPanelOpen - Whether the whitelist management panel is currently open (though its rendering is commented out).
- * @property {() => void} closePanel - Function to close the currently active side panel.
- * @property {(tabId: string) => void} setActiveLayerTab - Function to set the active layer control tab.
- * @property {() => void} toggleInfoOverlay - Function to toggle the visibility of the informational overlay.
- * @property {() => void} toggleWhitelistPanel - Function to toggle the visibility of the whitelist panel.
- * @property {(panelName: string) => void} openPanel - Function to open a specific side panel by its identifier.
- * @property {() => void} toggleUiVisibility - Function to toggle the visibility of the main UI elements.
- * @property {boolean} isUiVisible - Whether the main UI elements (toolbars, panels) are currently visible.
+ * @property {string|null} activePanel - Identifier of the currently active panel.
+ * @property {string|null} animatingPanel - Identifier of the panel currently animating.
+ * @property {string} activeLayerTab - Identifier of the active layer control tab.
+ * @property {boolean} infoOverlayOpen - Whether the info overlay is open.
+ * @property {boolean} whitelistPanelOpen - Whether the whitelist panel is open.
+ * @property {() => void} closePanel - Function to close the active panel.
+ * @property {(tabId: string) => void} setActiveLayerTab - Function to set the active layer tab.
+ * @property {() => void} toggleInfoOverlay - Function to toggle the info overlay.
+ * @property {() => void} toggleWhitelistPanel - Function to toggle the whitelist panel.
+ * @property {(panelName: string) => void} openPanel - Function to open a panel.
+ * @property {() => void} toggleUiVisibility - Function to toggle overall UI visibility.
+ * @property {boolean} isUiVisible - Whether the main UI elements are visible.
  */
 
 /**
  * @typedef {object} AudioStatePropTypes
  * @property {boolean} isAudioActive - Whether audio reactivity is active.
- * @property {object} audioSettings - Current settings for audio reactivity (e.g., intensity, smoothing).
- * @property {object} analyzerData - Data from the audio analyzer (e.g., level, frequencyBands).
- * @property {React.Dispatch<React.SetStateAction<boolean>>} setIsAudioActive - Function to set the audio reactivity state.
- * @property {React.Dispatch<React.SetStateAction<object>>} setAudioSettings - Function to set audio reactivity settings.
+ * @property {object} audioSettings - Current settings for audio reactivity.
+ * @property {object} analyzerData - Data from the audio analyzer.
+ * @property {React.Dispatch<React.SetStateAction<boolean>>} setIsAudioActive - Function to set audio reactivity state.
+ * @property {React.Dispatch<React.SetStateAction<object>>} setAudioSettings - Function to set audio settings.
  */
 
 /**
  * @typedef {object} ConfigDataPropTypes
- * @property {object} layerConfigs - Configurations for visual layers. Sourced from `VisualConfigContext` via `MainView`.
- * @property {Array<string>} blendModes - Array of available blend mode strings.
+ * @property {object} layerConfigs - Configurations for visual layers.
+ * @property {Array<string>} blendModes - Available blend modes.
  * @property {Array<object>} notifications - Array of notification objects.
  * @property {number} unreadCount - Number of unread notifications.
- * @property {object} savedReactions - Saved event reactions configurations for the host profile.
- * @property {boolean} canSave - Whether the current user has permissions to save configurations to the host profile.
- * @property {boolean} isPreviewMode - Whether the application is in a special preview/demo mode.
- * @property {boolean} isParentAdmin - Whether the current visitor is the RADAR project admin.
- * @property {Array<{name: string}>} savedConfigList - List of saved visual presets for the host profile.
- * @property {string|null} currentConfigName - Name of the currently loaded visual preset on the host profile.
- * @property {boolean} isTransitioning - Whether a preset transition is currently in progress.
+ * @property {object} savedReactions - Saved event reactions.
+ * @property {boolean} canSave - Whether the user can save configurations.
+ * @property {boolean} isPreviewMode - Whether the app is in preview mode.
+ * @property {boolean} isParentAdmin - Whether the current user is the project admin (isRadarProjectAdmin).
+ * @property {string|null} currentConfigName - Name of the current visual preset.
+ * @property {boolean} isTransitioning - Whether a preset transition is in progress.
+ * @property {boolean} isBaseReady - Whether base components are ready.
+ * @property {string} renderState - Current rendering lifecycle state.
  */
 
 /**
  * @typedef {object} ActionsPropTypes
  * @property {() => void} onEnhancedView - Callback for toggling fullscreen/enhanced view.
- * @property {(layerId: string | number, key: string, value: any) => void} onLayerConfigChange - Callback for layer configuration changes, originates from `VisualConfigContext`.
+ * @property {(layerId: string | number, key: string, value: any) => void} onLayerConfigChange - Callback for layer configuration changes.
  * @property {(id: string | number) => void} onMarkNotificationRead - Callback to mark a notification as read.
  * @property {() => void} onClearAllNotifications - Callback to clear all notifications.
  * @property {(eventType: string, reactionData: object) => void} onSaveReaction - Callback to save an event reaction.
- * @property {(eventType: string) => void} onRemoveReaction - Callback to remove an event reaction (currently unused in EventsPanel).
+ * @property {(eventType: string) => void} onRemoveReaction - Callback to remove an event reaction.
  * @property {(effectConfig: object) => Promise<string | null>} onPreviewEffect - Callback to preview a visual effect.
- * @property {(tokenId: string | object | null, layerId: string | number) => void} onTokenApplied - Callback when a token is applied to a layer. This will update `VisualConfigContext`.
- * @property {(presetName: string) => void} onPresetSelect - Callback when a preset is selected from the preset bar.
+ * @property {(tokenId: string | object | null, layerId: string | number) => void} onTokenApplied - Callback when a token is applied to a layer.
+ * @property {(presetName: string) => void} onPresetSelect - Callback when a preset is selected.
  */
 
 /**
- * Renders the active panel based on the UI state.
- * This component acts as a router for displaying the correct panel.
- * @param {object} props
+ * Renders the currently active panel based on UI state.
+ * @param {object} props - Component props.
  * @param {UIStatePropTypes} props.uiState - Current UI state.
  * @param {AudioStatePropTypes} props.audioState - Current audio state.
  * @param {ConfigDataPropTypes} props.configData - Current configuration data.
  * @param {ActionsPropTypes} props.actions - Action callbacks.
- * @returns {JSX.Element | null} The rendered active panel or null.
+ * @returns {JSX.Element|null} The rendered active panel or null.
  */
 const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
     const { activePanel, animatingPanel, activeLayerTab, closePanel, setActiveLayerTab } = uiState;
     const { isAudioActive, audioSettings, analyzerData, setIsAudioActive, setAudioSettings } = audioState;
-    // layerConfigs is part of configData, passed down from MainView, ultimately from VisualConfigContext
     const { blendModes, notifications, savedReactions, canSave, isPreviewMode } = configData;
-    
     const { onLayerConfigChange, onMarkNotificationRead, onClearAllNotifications, onSaveReaction, onPreviewEffect, onTokenApplied } = actions;
 
     const handleTokenSelectorClose = useCallback(() => {
@@ -107,12 +99,11 @@ const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
             return (
                 <PanelWrapper key="controls-panel" className={animatingPanel ? "animating" : ""}>
                     <EnhancedControlPanel
-                        onLayerConfigChange={onLayerConfigChange} // Propagated from MainView
+                        onLayerConfigChange={onLayerConfigChange}
                         blendModes={blendModes}
                         onToggleMinimize={closePanel}
                         activeTab={activeLayerTab}
                         onTabChange={setActiveLayerTab}
-                        // readOnly is derived inside EnhancedControlPanel
                     />
                 </PanelWrapper>
             );
@@ -164,7 +155,7 @@ const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
                     key="token-selector-overlay"
                     isOpen={activePanel === "tokens"}
                     onClose={handleTokenSelectorClose}
-                    onTokenApplied={onTokenApplied} // Propagated from MainView
+                    onTokenApplied={onTokenApplied}
                     readOnly={!canSave}
                 />
             ) : null;
@@ -173,62 +164,59 @@ const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
     }
 };
 ActivePanelRenderer.propTypes = {
-    uiState: PropTypes.object.isRequired, // Should be UIStatePropTypes
-    audioState: PropTypes.object.isRequired, // Should be AudioStatePropTypes
-    configData: PropTypes.object.isRequired, // Should be ConfigDataPropTypes
-    actions: PropTypes.object.isRequired, // Should be ActionsPropTypes
+    uiState: PropTypes.object.isRequired,
+    audioState: PropTypes.object.isRequired,
+    configData: PropTypes.object.isRequired,
+    actions: PropTypes.object.isRequired,
 };
 
-
 /**
- * Renders modal-like overlays (Info). The Whitelist panel rendering is currently commented out.
- * @param {object} props
+ * Renders overlays like the InfoOverlay.
+ * @param {object} props - Component props.
  * @param {UIStatePropTypes} props.uiState - Current UI state.
- * @param {ConfigDataPropTypes} props.configData - Current configuration data (specifically for isParentAdmin if WhitelistPanel were active).
  * @returns {JSX.Element} The rendered overlays.
  */
-const OverlayRenderer = ({ uiState, configData }) => {
-    const { infoOverlayOpen, whitelistPanelOpen, toggleInfoOverlay, toggleWhitelistPanel } = uiState;
-    const { isParentAdmin } = configData; // isParentAdmin from configData is isRadarProjectAdmin
-
+const OverlayRenderer = ({ uiState }) => {
+    const { infoOverlayOpen, toggleInfoOverlay } = uiState;
     return (
         <>
             {infoOverlayOpen && (
                 <InfoOverlay isOpen={infoOverlayOpen} onClose={toggleInfoOverlay} />
             )}
-            {/* Whitelist panel rendering is currently commented out as per instructions.
-                When active, it would be:
-            {whitelistPanelOpen && isParentAdmin && (
-                <WhitelistCollectionsPanel isOpen={whitelistPanelOpen} onClose={toggleWhitelistPanel} />
-            )}
-            */}
         </>
     );
 };
 OverlayRenderer.propTypes = {
-    uiState: PropTypes.object.isRequired, // Should be UIStatePropTypes
-    configData: PropTypes.object.isRequired, // Should be ConfigDataPropTypes
+    uiState: PropTypes.object.isRequired,
 };
 
 /**
- * UIOverlay component orchestrates the display of all UI elements including toolbars,
- * panels, and overlays based on the application state. It acts as a central hub for UI logic.
+ * UIOverlay is a top-level component responsible for rendering the entire user interface
+ * layer of the application. It orchestrates the display of various UI elements including
+ * toolbars (TopRightControls, VerticalToolbar), side panels (EnhancedControlPanel,
+ * NotificationPanel, etc.), modal-like overlays (TokenSelectorOverlay, InfoOverlay),
+ * and status indicators (GlobalMIDIStatus, AudioStatusIcon, PresetSelectorBar).
  *
- * @param {object} props - The component's props.
- * @param {boolean} props.shouldShowUI - Whether the UI should be rendered at all (e.g., after initial load and if not hidden by user).
- * @param {UIStatePropTypes} props.uiState - The current state of the UI (active panels, visibility, etc.).
- * @param {AudioStatePropTypes} props.audioState - The current state of audio processing and reactivity.
- * @param {ConfigDataPropTypes} props.configData - The current configuration data for the host profile (visuals, presets, session info).
- * @param {ActionsPropTypes} props.actions - Action callbacks for UI interactions (e.g., saving, loading, updating configs).
- * @returns {JSX.Element} The rendered UI overlay container with all its child UI elements.
+ * The visibility and content of these elements are determined by the `uiState`,
+ * `audioState`, and `configData` props, which are typically derived from context
+ * providers higher up in the component tree. Action callbacks are passed via the
+ * `actions` prop to handle user interactions.
+ *
+ * @param {object} props - Component props.
+ * @param {UIStatePropTypes} props.uiState - Current UI state, managing panel visibility, active tabs, etc.
+ * @param {AudioStatePropTypes} props.audioState - Current audio state, managing audio reactivity.
+ * @param {ConfigDataPropTypes} props.configData - Current configuration data, including layer settings, notifications, user permissions.
+ * @param {ActionsPropTypes} props.actions - Collection of callback functions for user interactions.
+ * @param {Array} props.passedSavedConfigList - List of saved configurations to be displayed in the PresetSelectorBar.
+ * @returns {JSX.Element} The rendered UI overlay structure.
  */
 function UIOverlay(props) {
   const {
-    shouldShowUI,
     uiState,
     audioState,
     configData,
     actions,
+    passedSavedConfigList,
   } = props;
 
   const {
@@ -237,26 +225,35 @@ function UIOverlay(props) {
   } = uiState;
   const { isAudioActive } = audioState;
   const {
-    isParentAdmin, // This is isRadarProjectAdmin, used for TopRightControls
+    isParentAdmin,
     isPreviewMode, unreadCount,
-    savedConfigList, currentConfigName, isTransitioning
-    // layerConfigs is part of configData, passed to ActivePanelRenderer if needed by a panel
+    currentConfigName,
+    isTransitioning,
+    isBaseReady,
+    renderState,
   } = configData;
   const { onEnhancedView, onPresetSelect } = actions;
 
-  const showPresetBar = useMemo(() => shouldShowUI && isUiVisible && !activePanel, [shouldShowUI, isUiVisible, activePanel]);
-  const mainUiContainerClass = `ui-elements-container ${shouldShowUI && isUiVisible ? "visible" : "hidden-by-opacity"}`;
+  const actualShouldShowUI = useMemo(() => {
+    return isBaseReady || renderState === 'prompt_connect';
+  } , [isBaseReady, renderState]);
+
+  const showPresetBar = useMemo(() => {
+    return actualShouldShowUI && isUiVisible && !activePanel;
+  }, [actualShouldShowUI, isUiVisible, activePanel]);
+
+  const mainUiContainerClass = `ui-elements-container ${actualShouldShowUI && isUiVisible ? "visible" : "hidden-by-opacity"}`;
 
   return (
     <>
-      {shouldShowUI && (
+      {actualShouldShowUI && (
         <MemoizedTopRightControls
-          showWhitelist={false} // Whitelist button remains hidden as per current instructions
-          isProjectAdminForWhitelist={isParentAdmin} // Pass the admin status for potential future use
+          showWhitelist={false}
+          isProjectAdminForWhitelist={isParentAdmin}
           showInfo={true}
           showToggleUI={true}
           showEnhancedView={true}
-          onWhitelistClick={toggleWhitelistPanel} // Prop still passed
+          onWhitelistClick={toggleWhitelistPanel}
           onInfoClick={toggleInfoOverlay}
           onToggleUI={toggleUiVisibility}
           onEnhancedView={onEnhancedView}
@@ -264,7 +261,7 @@ function UIOverlay(props) {
         />
       )}
       <div className={mainUiContainerClass}>
-        {shouldShowUI && isUiVisible && (
+        {actualShouldShowUI && isUiVisible && (
           <>
             <div className="bottom-right-icons">
               <MemoizedAudioStatusIcon isActive={isAudioActive} onClick={() => openPanel('audio')} />
@@ -283,12 +280,12 @@ function UIOverlay(props) {
             <ActivePanelRenderer
                 uiState={uiState}
                 audioState={audioState}
-                configData={configData} // configData (including layerConfigs) is passed through
-                actions={actions}        // actions (including onLayerConfigChange) is passed through
+                configData={configData}
+                actions={actions}
             />
             {showPresetBar && (
-              <MemoizedPresetSelectorBar
-                savedConfigList={savedConfigList}
+              <PresetSelectorBar
+                savedConfigList={passedSavedConfigList}
                 currentConfigName={currentConfigName}
                 onPresetSelect={onPresetSelect}
                 isLoading={isTransitioning}
@@ -297,19 +294,23 @@ function UIOverlay(props) {
           </>
         )}
       </div>
-      {shouldShowUI && (
-        <OverlayRenderer uiState={uiState} configData={configData} />
+      {actualShouldShowUI && (
+        <OverlayRenderer uiState={uiState} />
       )}
     </>
   );
 }
 
 UIOverlay.propTypes = {
-  shouldShowUI: PropTypes.bool.isRequired,
-  uiState: PropTypes.object.isRequired, // Ideally: PropTypes.shape(UIStatePropTypes)
-  audioState: PropTypes.object.isRequired, // Ideally: PropTypes.shape(AudioStatePropTypes)
-  configData: PropTypes.object.isRequired, // Ideally: PropTypes.shape(ConfigDataPropTypes)
-  actions: PropTypes.object.isRequired, // Ideally: PropTypes.shape(ActionsPropTypes)
+  uiState: PropTypes.object.isRequired,
+  audioState: PropTypes.object.isRequired,
+  configData: PropTypes.object.isRequired,
+  actions: PropTypes.object.isRequired,
+  passedSavedConfigList: PropTypes.array,
+};
+
+UIOverlay.defaultProps = {
+  passedSavedConfigList: [],
 };
 
 export default UIOverlay;

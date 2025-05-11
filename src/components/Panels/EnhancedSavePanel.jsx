@@ -20,25 +20,14 @@ const formatAddress = (address, length = 6) => {
   return `${address.substring(0, length + 2)}...${address.substring(address.length - length)}`;
 };
 
-/**
- * EnhancedSavePanel component allows users to save visual presets,
- * global reactions, and global MIDI maps to their Universal Profile.
- * It also lists existing presets for loading and deletion.
- * This component now consumes `VisualConfigContext` to get the current
- * `layerConfigs` and `tokenAssignments` when saving a visual preset.
- *
- * @param {object} props
- * @param {() => void} props.onClose - Function to close the panel.
- * @returns {JSX.Element} The rendered EnhancedSavePanel component.
- */
 const EnhancedSavePanel = ({ onClose }) => {
   const {
-    currentProfileAddress, isPreviewMode, isProfileOwner, canSave 
+    currentProfileAddress, isPreviewMode, isProfileOwner, canSave
   } = useProfileSessionState();
 
   const {
     currentConfigName, savedConfigList, isLoading: hookIsLoading,
-    saveVisualPreset: actualSavePreset, 
+    saveVisualPreset: actualSavePreset, // This is the function from PresetManagementContext
     loadNamedConfig, loadDefaultConfig, loadSavedConfigList, deleteNamedConfig,
   } = usePresetManagementState();
 
@@ -47,6 +36,7 @@ const EnhancedSavePanel = ({ onClose }) => {
   const { configServiceInstanceReady } = useConfigStatusState();
   const { isConnected: isMidiConnected } = useMIDI();
 
+  // Get live visual state from VisualConfigContext
   const { layerConfigs: currentLayerConfigs, tokenAssignments: currentTokenAssignments } = useVisualConfig();
 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -54,13 +44,14 @@ const EnhancedSavePanel = ({ onClose }) => {
   const [isSavingReactions, setIsSavingReactions] = useState(false);
   const [isSavingMidi, setIsSavingMidi] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isLoadingList, setIsLoadingList] = useState(false);
+  const [isLoadingListEffect, setIsLoadingListEffect] = useState(false);
 
   const [statusMessage, setStatusMessage] = useState("");
   const [statusType, setStatusType] = useState("info");
   const [saveStatus, setSaveStatus] = useState("idle");
   const statusTimerRef = useRef(null);
   const saveStatusTimerRef = useRef(null);
+  const isMountedRef = useRef(false);
 
   const [newConfigName, setNewConfigName] = useState("");
   const [setAsDefault, setSetAsDefault] = useState(false);
@@ -68,6 +59,15 @@ const EnhancedSavePanel = ({ onClose }) => {
   const [updateGlobalMidiOnPresetSave, setUpdateGlobalMidiOnPresetSave] = useState(false);
 
   const canEdit = canSave;
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+      if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     const listLength = savedConfigList?.length ?? 0;
@@ -82,46 +82,39 @@ const EnhancedSavePanel = ({ onClose }) => {
   }, [currentConfigName, savedConfigList]);
 
   const displayStatus = useCallback((message, type = "success", duration = 4000) => {
+    if (!isMountedRef.current) return;
     setStatusMessage(message);
     setStatusType(type);
     if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
     if (duration > 0) {
       statusTimerRef.current = setTimeout(() => {
-        setStatusMessage((prev) => (prev === message ? "" : prev)); 
+        if (isMountedRef.current) setStatusMessage((prev) => (prev === message ? "" : prev));
         statusTimerRef.current = null;
       }, duration);
     }
   }, []);
-
+  
   useEffect(() => {
-    let isMounted = true;
-    const logPrefix = `[EnhancedSavePanel ListLoad Addr:${currentProfileAddress?.slice(0, 6)}]`;
+    const logPrefix = `[EnhancedSavePanel ListLoadEffect Addr:${currentProfileAddress?.slice(0, 6)}]`;
     if (currentProfileAddress && configServiceInstanceReady && isProfileOwner && typeof loadSavedConfigList === "function") {
-      setIsLoadingList(true);
+      setIsLoadingListEffect(true);
       loadSavedConfigList()
-        .catch((err) => { if (isMounted) { console.error(`${logPrefix} Error loading configurations list:`, err); displayStatus("Failed to load configurations list", "error"); } })
-        .finally(() => { if (isMounted) setIsLoadingList(false); });
+        .catch((err) => { if (isMountedRef.current) { console.error(`${logPrefix} Error loading configurations list:`, err); displayStatus("Failed to load configurations list", "error"); } })
+        .finally(() => { if (isMountedRef.current) setIsLoadingListEffect(false); });
     } else {
-      if (isMounted) setIsLoadingList(false);
+      if (isMountedRef.current) setIsLoadingListEffect(false);
     }
-    return () => { isMounted = false; };
   }, [currentProfileAddress, configServiceInstanceReady, isProfileOwner, loadSavedConfigList, displayStatus]);
 
-  useEffect(() => {
-    return () => {
-      if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
-      if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
-    };
-  }, []);
-
   const displaySaveStatus = useCallback((status, message = null, duration = 3000) => {
+    if (!isMountedRef.current) return;
     setSaveStatus(status);
     if (message) displayStatus(message, status === 'success' ? 'success' : 'error', duration);
 
     if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
     if (status === 'success' || status === 'error') {
       saveStatusTimerRef.current = setTimeout(() => {
-        setSaveStatus('idle');
+        if (isMountedRef.current) setSaveStatus('idle');
         saveStatusTimerRef.current = null;
       }, duration);
     }
@@ -141,27 +134,17 @@ const EnhancedSavePanel = ({ onClose }) => {
       }
     }
 
-    // --- ADD LOGGING HERE ---
-    console.log("[EnhancedSavePanel] Attempting to SAVE PRESET. Data passed to actualSavePreset:", {
-        name: nameToSave,
-        setAsDefault: setAsDefault,
-        includeReactions: updateGlobalReactionsOnPresetSave,
-        includeMidi: updateGlobalMidiOnPresetSave,
-        layerConfigs: JSON.parse(JSON.stringify(currentLayerConfigs)), // Deep copy for reliable logging
-        tokenAssignments: JSON.parse(JSON.stringify(currentTokenAssignments)) // Deep copy
-    });
-    // --- END LOGGING ---
-
     setIsProcessing(true); setIsSavingPreset(true); displaySaveStatus('saving');
 
     try {
+      // Pass currentLayerConfigs and currentTokenAssignments to actualSavePreset
       const result = await actualSavePreset(
         nameToSave,
         setAsDefault,
         updateGlobalReactionsOnPresetSave,
         updateGlobalMidiOnPresetSave,
-        currentLayerConfigs, 
-        currentTokenAssignments 
+        currentLayerConfigs, // Pass live visual state
+        currentTokenAssignments // Pass live visual state
       );
       if (result?.success) {
         let successMsg = `Preset "${nameToSave}" saved.`;
@@ -177,14 +160,15 @@ const EnhancedSavePanel = ({ onClose }) => {
       console.error(`${logPrefix} Unexpected error during save preset call:`, e);
       displaySaveStatus('error', `Save Preset error: ${e?.message || "Client error occurred"}`);
     } finally {
-      setIsProcessing(false); setIsSavingPreset(false);
+      if (isMountedRef.current) { setIsProcessing(false); setIsSavingPreset(false); }
     }
   }, [
       canEdit, actualSavePreset, newConfigName, savedConfigList, displayStatus, displaySaveStatus,
       setAsDefault, updateGlobalReactionsOnPresetSave, updateGlobalMidiOnPresetSave,
-      currentLayerConfigs, currentTokenAssignments
+      currentLayerConfigs, currentTokenAssignments // Added dependencies
   ]);
 
+  // handleSaveGlobalReactions, handleSaveGlobalMidiMap, handleLoadByName, handleLoadDefault, handleDelete remain the same
   const handleSaveGlobalReactions = useCallback(async () => {
     const logPrefix = `[EnhancedSavePanel handleSaveGlobalReactions]`;
     if (!canEdit) { displayStatus("Cannot save: Permissions missing.", "error"); return; }
@@ -205,7 +189,7 @@ const EnhancedSavePanel = ({ onClose }) => {
       console.error(`${logPrefix} Unexpected error during save reactions call:`, e);
       displaySaveStatus('error', `Save Reactions error: ${e?.message || "Client error occurred"}`);
     } finally {
-      setIsProcessing(false); setIsSavingReactions(false);
+      if (isMountedRef.current) { setIsProcessing(false); setIsSavingReactions(false); }
     }
   }, [canEdit, saveGlobalReactions, displayStatus, displaySaveStatus]);
 
@@ -230,7 +214,7 @@ const EnhancedSavePanel = ({ onClose }) => {
       console.error(`${logPrefix} Unexpected error during save MIDI call:`, e);
       displaySaveStatus('error', `Save MIDI Map error: ${e?.message || "Client error occurred"}`);
     } finally {
-      setIsProcessing(false); setIsSavingMidi(false);
+      if (isMountedRef.current) { setIsProcessing(false); setIsSavingMidi(false); }
     }
   }, [canEdit, saveGlobalMidiMap, displayStatus, displaySaveStatus, isMidiConnected]);
 
@@ -256,7 +240,7 @@ const EnhancedSavePanel = ({ onClose }) => {
       console.error(`${logPrefix} Unexpected error during load call:`, e);
       displayStatus(`Load error: ${e?.message || "Client error occurred"}`, "error");
     } finally {
-      setIsProcessing(false);
+      if (isMountedRef.current) setIsProcessing(false);
     }
   }, [currentProfileAddress, loadNamedConfig, hasPendingChanges, displayStatus, onClose]);
 
@@ -287,7 +271,7 @@ const EnhancedSavePanel = ({ onClose }) => {
       console.error(`${logPrefix} Unexpected error during load default call:`, e);
       displayStatus(`Load default error: ${e?.message || "Client error occurred"}`, "error");
     } finally {
-      setIsProcessing(false);
+      if (isMountedRef.current) setIsProcessing(false);
     }
   }, [currentProfileAddress, loadDefaultConfig, hasPendingChanges, displayStatus, onClose]);
 
@@ -304,7 +288,6 @@ const EnhancedSavePanel = ({ onClose }) => {
       const result = await deleteNamedConfig(name);
       if (result?.success) {
         displayStatus(`Preset "${name}" deleted successfully`, "success");
-        if (loadSavedConfigList) await loadSavedConfigList();
         if (currentConfigName === name) {
             if (loadDefaultConfig) await loadDefaultConfig();
         }
@@ -316,9 +299,10 @@ const EnhancedSavePanel = ({ onClose }) => {
       console.error(`${logPrefix} Unexpected error during delete call:`, e);
       displayStatus(`Delete error: ${e?.message || "Client error occurred"}`, "error");
     } finally {
-      setIsProcessing(false); setIsDeleting(false);
+      if (isMountedRef.current) { setIsProcessing(false); setIsDeleting(false); }
     }
-  }, [canEdit, deleteNamedConfig, displayStatus, loadSavedConfigList, currentConfigName, loadDefaultConfig]);
+  }, [canEdit, deleteNamedConfig, displayStatus, currentConfigName, loadDefaultConfig]);
+
 
   const getPanelTitle = () => {
     if (isPreviewMode) return "VISITOR PREVIEW";
@@ -329,10 +313,10 @@ const EnhancedSavePanel = ({ onClose }) => {
   const isDisabledBase = isProcessing || hookIsLoading || !configServiceInstanceReady;
   const isDisabledWrite = isDisabledBase || !canEdit;
 
-  const isSavePresetDisabled = isDisabledWrite || !newConfigName.trim();
-  const isSaveReactionsDisabled = isDisabledWrite;
-  const isSaveMidiDisabled = isDisabledWrite || !isMidiConnected;
-  const isLoadOrDeleteDisabled = isDisabledBase || isLoadingList;
+  const isSavePresetDisabled = isDisabledWrite || !newConfigName.trim() || isSavingPreset;
+  const isSaveReactionsDisabled = isDisabledWrite || isSavingReactions;
+  const isSaveMidiDisabled = isDisabledWrite || !isMidiConnected || isSavingMidi;
+  const isLoadOrDeleteDisabled = isDisabledBase || isLoadingListEffect || isDeleting;
 
   const renderStatusIndicator = () => {
     if (saveStatus === 'success') return <div className="status-indicator success">Configuration Saved</div>;
@@ -366,7 +350,7 @@ const EnhancedSavePanel = ({ onClose }) => {
               onChange={(e) => setNewConfigName(e.target.value)}
               className="form-control"
               placeholder="Visual Preset Name"
-              disabled={isDisabledWrite}
+              disabled={isDisabledWrite || isSavingPreset}
               maxLength={100}
               aria-describedby="save-preset-help-text"
               required
@@ -375,17 +359,17 @@ const EnhancedSavePanel = ({ onClose }) => {
 
           <div className="checkbox-options-group">
             <div className="checkbox-group">
-              <input id="update-global-reactions" type="checkbox" checked={updateGlobalReactionsOnPresetSave} onChange={(e) => setUpdateGlobalReactionsOnPresetSave(e.target.checked)} disabled={isDisabledWrite} />
+              <input id="update-global-reactions" type="checkbox" checked={updateGlobalReactionsOnPresetSave} onChange={(e) => setUpdateGlobalReactionsOnPresetSave(e.target.checked)} disabled={isDisabledWrite || isSavingPreset} />
               <label htmlFor="update-global-reactions">Also update global Reactions?</label>
             </div>
             <div className="checkbox-group">
-              <input id="update-global-midi" type="checkbox" checked={updateGlobalMidiOnPresetSave} onChange={(e) => setUpdateGlobalMidiOnPresetSave(e.target.checked)} disabled={isDisabledWrite || !isMidiConnected} />
-              <label htmlFor="update-global-midi" className={(isDisabledWrite || !isMidiConnected) ? 'disabled-label' : ''}>
+              <input id="update-global-midi" type="checkbox" checked={updateGlobalMidiOnPresetSave} onChange={(e) => setUpdateGlobalMidiOnPresetSave(e.target.checked)} disabled={isDisabledWrite || !isMidiConnected || isSavingPreset} />
+              <label htmlFor="update-global-midi" className={(isDisabledWrite || !isMidiConnected || isSavingPreset) ? 'disabled-label' : ''}>
                 Also update global MIDI Map? { !isMidiConnected && "(MIDI Disconnected)"}
               </label>
             </div>
             <div className="checkbox-group">
-              <input id="set-default-preset" type="checkbox" checked={setAsDefault} onChange={(e) => setSetAsDefault(e.target.checked)} disabled={isDisabledWrite} />
+              <input id="set-default-preset" type="checkbox" checked={setAsDefault} onChange={(e) => setSetAsDefault(e.target.checked)} disabled={isDisabledWrite || isSavingPreset} />
               <label htmlFor="set-default-preset">Set as Default preset for this profile</label>
             </div>
           </div>
@@ -440,12 +424,12 @@ const EnhancedSavePanel = ({ onClose }) => {
             )}
             {typeof loadSavedConfigList === "function" && (
               <button className="btn btn-secondary btn-outline" onClick={() => { if (!isLoadOrDeleteDisabled) loadSavedConfigList(); }} disabled={isLoadOrDeleteDisabled} title={isLoadOrDeleteDisabled ? "Wait..." : "Refresh the list of saved presets"} aria-live="polite">
-                {isLoadingList ? "REFRESHING..." : "Refresh List"}
+                {hookIsLoading ? "REFRESHING..." : "Refresh List"}
               </button>
             )}
           </div>
 
-          {isLoadingList ? (
+          {isLoadingListEffect || (hookIsLoading && savedConfigList.length === 0) ? (
             <p className="loading-list-message">Loading presets...</p>
           ) : savedConfigList?.length > 0 ? (
             <ul className="config-list">

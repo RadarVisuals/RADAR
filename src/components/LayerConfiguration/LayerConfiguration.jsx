@@ -1,23 +1,39 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useMemo } from "react"; // Added useMemo
 import PropTypes from "prop-types";
-import { useProfileSessionState } from "../../hooks/configSelectors"; // Use the selector
+import { useProfileSessionState } from "../../hooks/configSelectors";
 import { useMIDI } from "../../context/MIDIContext";
 import { midiIcon, rotateIcon } from "../../assets";
 import "./LayerConfigurationStyles/LayerConfiguration.css";
 
+/**
+ * LayerConfiguration component provides UI controls for manipulating parameters
+ * of a single visual layer (e.g., speed, size, opacity, position, blend mode).
+ * It integrates with the MIDIContext to allow MIDI mapping for each parameter
+ * and for layer selection. The component's editability is determined by the
+ * user's session status (owner, visitor, admin) and preview mode.
+ *
+ * @param {object} props - Component props.
+ * @param {object} props.layerConfigs - An object containing configurations for all layers, keyed by layer ID.
+ * @param {(layerId: number, key: string, value: any) => void} props.onLayerConfigChange - Callback to update a layer's configuration.
+ * @param {string[]} [props.blendModes=[]] - Array of available blend mode strings.
+ * @param {number} [props.activeLayer=1] - The ID of the currently active layer being controlled.
+ * @param {boolean} [props.readOnly=false] - Prop to explicitly set read-only mode (overridden by session state).
+ * @param {boolean} [props.showMidiConnect=true] - Whether to show the MIDI connection status and controls.
+ * @returns {JSX.Element} The rendered LayerConfiguration panel.
+ */
 const LayerConfiguration = ({
   layerConfigs,
   onLayerConfigChange,
   blendModes = [],
   activeLayer = 1,
-  readOnly: propReadOnly = false, // Rename prop to avoid conflict
+  readOnly: propReadOnly = false,
   showMidiConnect = true,
 }) => {
   const { isVisitor, isParentAdmin, isPreviewMode } = useProfileSessionState();
   const {
     isConnected: midiConnected,
     connectMIDI,
-    midiMap, // Use midiMap from MIDIContext
+    midiMap,
     layerMappings,
     midiLearning,
     learningLayer,
@@ -37,13 +53,10 @@ const LayerConfiguration = ({
   const midiMonitorRef = useRef(null);
 
   // Determine if controls should be effectively read-only
-  // Controls are read-only if:
-  // 1. isPreviewMode is true
-  // 2. OR (isVisitor is true AND the current host profile is NOT the special admin/parent one)
   const effectiveReadOnly = useMemo(() => {
     if (isPreviewMode) return true;
     if (isVisitor && !isParentAdmin) return true;
-    return propReadOnly; // Fallback to prop if other conditions don't make it read-only
+    return propReadOnly;
   }, [isPreviewMode, isVisitor, isParentAdmin, propReadOnly]);
 
 
@@ -93,12 +106,12 @@ const LayerConfiguration = ({
 
   const connectMidi = () => {
     connectMIDI().catch((err) => {
-      alert("Failed to access MIDI devices: " + err.message);
+      alert(`Failed to access MIDI devices: ${err.message}`);
     });
   };
 
   const handleMidiChannelChange = (e) => {
-    setChannelFilter(parseInt(e.target.value));
+    setChannelFilter(parseInt(e.target.value, 10));
   };
 
   const clearMidiMonitorData = () => {
@@ -118,10 +131,9 @@ const LayerConfiguration = ({
     if (mapping.type === "pitchbend") return `Pitch${channel}`;
     return "Unknown";
   };
-  
+
   const currentParamMidiMappings = midiMap[activeLayer] || {};
 
-  // Message for visitors on the showcase/admin profile
   const visitorOnShowcaseMessage = isVisitor && isParentAdmin && !effectiveReadOnly && (
     <div className="visitor-message">
       As a visitor, you can experiment with all controls on this demo page.
@@ -136,19 +148,21 @@ const LayerConfiguration = ({
           <div className="midi-status-row">
             <span>MIDI: {midiConnected ? "Connected" : "Not Connected"}</span>
             {!midiConnected ? (
-              <button className="midi-connect-btn" onClick={connectMidi}>
+              <button type="button" className="midi-connect-btn" onClick={connectMidi}>
                 <img src={midiIcon} alt="MIDI Icon" className="midi-icon" />
                 Connect MIDI
               </button>
             ) : (
               <div className="midi-buttons">
                 <button
+                  type="button"
                   className="midi-monitor-btn"
                   onClick={() => setShowMidiMonitor(!displayMidiMonitor)}
                 >
                   {displayMidiMonitor ? "Hide Monitor" : "Show Monitor"}
                 </button>
                 <button
+                  type="button"
                   className="midi-reset-btn"
                   onClick={resetAllMappingsData}
                   title="Reset all MIDI mappings"
@@ -181,6 +195,7 @@ const LayerConfiguration = ({
               <div className="midi-learning-instructions">
                 Move a knob or press a button/pad on your MIDI controller
                 <button
+                  type="button"
                   className="midi-cancel-btn"
                   onClick={() => stopMIDILearn()}
                 >
@@ -198,6 +213,7 @@ const LayerConfiguration = ({
               <div className="midi-learning-instructions">
                 Press a key/pad on your MIDI controller
                 <button
+                  type="button"
                   className="midi-cancel-btn"
                   onClick={() => stopLayerMIDILearn()}
                 >
@@ -213,7 +229,7 @@ const LayerConfiguration = ({
         <div className="midi-monitor" ref={midiMonitorRef}>
           <div className="midi-monitor-header">
             <h4>MIDI Monitor</h4>
-            <button className="midi-clear-btn" onClick={clearMidiMonitorData}>
+            <button type="button" className="midi-clear-btn" onClick={clearMidiMonitorData}>
               Clear
             </button>
           </div>
@@ -256,6 +272,7 @@ const LayerConfiguration = ({
                     : "Not mapped"}
                 </span>
                 <button
+                  type="button"
                   className="midi-learn-btn"
                   onClick={() => enterLayerMIDILearnMode(layer)}
                   disabled={effectiveReadOnly || !midiConnected}
@@ -281,6 +298,7 @@ const LayerConfiguration = ({
                 : "None"}
             </span>
             <button
+              type="button"
               className="midi-learn-btn"
               onClick={() => enterMIDILearnMode("speed")}
               disabled={effectiveReadOnly || !midiConnected}
@@ -315,6 +333,7 @@ const LayerConfiguration = ({
                 : "None"}
             </span>
             <button
+              type="button"
               className="midi-learn-btn"
               onClick={() => enterMIDILearnMode("size")}
               disabled={effectiveReadOnly || !midiConnected}
@@ -351,6 +370,7 @@ const LayerConfiguration = ({
                 : "None"}
             </span>
             <button
+              type="button"
               className="midi-learn-btn"
               onClick={() => enterMIDILearnMode("opacity")}
               disabled={effectiveReadOnly || !midiConnected}
@@ -385,6 +405,7 @@ const LayerConfiguration = ({
                 : "None"}
             </span>
             <button
+              type="button"
               className="midi-learn-btn"
               onClick={() => enterMIDILearnMode("drift")}
               disabled={effectiveReadOnly || !midiConnected}
@@ -419,6 +440,7 @@ const LayerConfiguration = ({
                 : "None"}
             </span>
             <button
+              type="button"
               className="midi-learn-btn"
               onClick={() => enterMIDILearnMode("driftSpeed")}
               disabled={effectiveReadOnly || !midiConnected}
@@ -451,6 +473,7 @@ const LayerConfiguration = ({
                 : "None"}
             </span>
             <button
+              type="button"
               className="midi-learn-btn"
               onClick={() => enterMIDILearnMode("xaxis")}
               disabled={effectiveReadOnly || !midiConnected}
@@ -483,6 +506,7 @@ const LayerConfiguration = ({
                 : "None"}
             </span>
             <button
+              type="button"
               className="midi-learn-btn"
               onClick={() => enterMIDILearnMode("yaxis")}
               disabled={effectiveReadOnly || !midiConnected}
@@ -526,6 +550,7 @@ const LayerConfiguration = ({
       </div>
 
       <button
+        type="button"
         className="btn btn-block direction-toggle-btn"
         onClick={handleDirectionToggle}
         disabled={effectiveReadOnly}

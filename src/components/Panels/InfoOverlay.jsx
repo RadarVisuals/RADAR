@@ -37,7 +37,7 @@ const InfoOverlay = ({ isOpen, onClose }) => {
       case "philosophy":
         return (
           <div className="tab-pane">
-            <h3>Stop collecting Virtual Dust</h3>
+            <h3>Stop letting your assets gather virtual dust</h3>
             <p>
               Most NFTs are digital posters in expensive frames. Static.
               Lifeless. Collecting virtual dust in a wallet that's little more
@@ -45,20 +45,17 @@ const InfoOverlay = ({ isOpen, onClose }) => {
               thinking misses the entire point of true digital ownership, decentralization and the
               universe of possibility unlocked by LUKSO's Universal Profiles.
             </p>
-            <h4>Centralization Chokes. Decentralization Creates.</h4>
+            <h4>Decentralization Creates</h4>
             <p>
               Centralized platforms lure you in, then dictate exactly how you can
               interact with the stuff "you supposedly own". Their APIs, their
               features, their arbitrary limits. They build the playground, you
-              just get to use the swings they allow. That's not ownership; it's
-              glorified renting. It inherently suffocates what's possible.
+              just get to use the swings they allow.
             </p>
             <p>
-              LUKSO flips the script. Your Universal Profile isn't just another
-              account, it's your own sovereign space on the blockchain. Your
-              assets, your data, your configurations. They live with you, under
-              your control, accessible via open standards. No gatekeepers, no
-              permission slips needed.
+              LUKSO flips the script. Your Universal Profile is your own sovereign space on the blockchain. Your
+              assets, your data, your configurations. They all live with you, under
+              your control, accessible through open standards.
             </p>
             <div className="info-card">
               <h4>Your NFTs are an Engine</h4>
@@ -92,13 +89,21 @@ const InfoOverlay = ({ isOpen, onClose }) => {
               <h4>Composable & Open: Build Together</h4>
               <p>
                 Visual presets, MIDI maps, event reactions, they are all stored
-                on your profile, using ERC725Y keys. This isn't locked in a
+                on your profile, using ERC725Y keys. This isn't locked away in a
                 database; it's decentralized data YOU own. Imagine building a
                 collaborative and collective visual database. RADAR makes it
                 possible through the usage of a globally defined MIDI map key
-                tied to your profile. This make cross profile VJ'ing possible,
+                tied to your profile. This makes cross profile VJ'ing possible,
                 you can not only just check out another profile's presets, you
-                can also play them while you are browsing them.
+                can also play their owned assets while you are browsing them. Imagine it like this:
+                if the RADAR Genesis Collection happens to sell out, you can perceive it as a collection
+                that is now actually owned by the community. How? By setting up your owned assets
+                as presets through saved dynamic keys, you also make them available to others to play around with.
+                So, your profile not only looks good with your own presets, people now have a reason to visit your
+                profile because you have the most / coolest presets available. Tying this with the global MIDI key
+                that is loaded from your profile while browsing his presets opens another door to the imagination
+                how these keys can be used.
+
               </p>
             </div>
             <div className="info-card">
@@ -342,10 +347,8 @@ const InfoOverlay = ({ isOpen, onClose }) => {
               </p>
             </div>
             <p>
-              This isn't polling a block explorer; it's leveraging the core
-              architecture of LUKSO UPs to create a reactive, personalized
-              experience directly linked to your on-chain interactions. See your
-              digital life unfold visually.
+              Leveraging the core architecture of LUKSO UPs to create a reactive, personalized
+              experience directly linked to your on-chain interactions.
             </p>
           </div>
         );

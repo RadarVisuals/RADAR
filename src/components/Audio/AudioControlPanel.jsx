@@ -1,14 +1,27 @@
-// src/components/Audio/AudioControlPanel.jsx
 import React, { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import Panel from "../Panels/Panel";
 import "./AudioStyles/AudioControlPanel.css";
 
-// --- TUNABLE PARAMETERS FOR BASS / MID / TREBLE METER INTENSITY ---
-const DISPLAY_LEVEL_AMPLIFICATION = 1.8; 
+// Tunable parameters for meter display intensity
+const DISPLAY_LEVEL_AMPLIFICATION = 1.8;
 const DISPLAY_TREBLE_AMPLIFICATION = 2.5;
-// -----------------------------------------
 
+/**
+ * AudioControlPanel provides UI controls for managing audio reactivity.
+ * It allows users to toggle audio analysis, view detected audio input devices (display-only),
+ * observe real-time audio levels (overall, bass, mid, treble), and adjust
+ * parameters like intensity of audio impact on layers and smoothing algorithm.
+ *
+ * @param {object} props - Component props.
+ * @param {() => void} props.onClose - Callback function to close the panel.
+ * @param {boolean} props.isAudioActive - Whether audio analysis is currently active.
+ * @param {React.Dispatch<React.SetStateAction<boolean>>} props.setIsAudioActive - Function to toggle audio analysis state.
+ * @param {object} props.audioSettings - Current settings for audio reactivity (intensities, smoothing).
+ * @param {React.Dispatch<React.SetStateAction<object>>} props.setAudioSettings - Function to update audio settings.
+ * @param {object} props.analyzerData - Data from the audio analyzer (level, frequency bands).
+ * @returns {JSX.Element} The rendered AudioControlPanel component.
+ */
 const AudioControlPanel = React.memo(({
   onClose,
   isAudioActive,
@@ -28,7 +41,9 @@ const AudioControlPanel = React.memo(({
           const audioInputs = devices.filter((d) => d.kind === "audioinput");
           setAudioDevices(audioInputs);
         })
-        .catch((_) => {});
+        .catch(() => {
+          // Intentionally empty: Error fetching devices is not critical for this display-only list.
+        });
     }
     return () => { isMounted = false; };
   }, []);
@@ -49,7 +64,7 @@ const AudioControlPanel = React.memo(({
   const displayBass = analyzerData?.frequencyBands?.bass || 0;
   const displayMid = analyzerData?.frequencyBands?.mid || 0;
   const displayTreble = Math.min(1, (analyzerData?.frequencyBands?.treble || 0) * DISPLAY_TREBLE_AMPLIFICATION);
-  
+
   const currentSmoothing = audioSettings?.smoothingFactor ?? 0.6;
 
   return (
@@ -224,7 +239,7 @@ const AudioControlPanel = React.memo(({
       </div>
     </Panel>
   );
-}); 
+});
 
 AudioControlPanel.displayName = 'AudioControlPanel';
 
@@ -256,7 +271,7 @@ AudioControlPanel.defaultProps = {
     trebleIntensity: 1.0,
     smoothingFactor: 0.6,
   },
-  setAudioSettings: () => {},
+  setAudioSettings: () => {}, // Default to a no-op function
   analyzerData: { level: 0, frequencyBands: { bass: 0, mid: 0, treble: 0 } },
 };
 

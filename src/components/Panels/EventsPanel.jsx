@@ -17,7 +17,7 @@ const generateEventOptions = () => {
         }
     });
     const manualTypes = [
-        { value: "lyx_sent", label: "LYX Sent" },
+        { value: "lyx_sent", label: "$LYX Sent" },
         { value: "token_received", label: "Token Received" },
         { value: "token_sent", label: "Token Sent" },
         { value: "follower_gained", label: "Follower Gained" },

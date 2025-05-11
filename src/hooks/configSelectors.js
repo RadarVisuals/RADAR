@@ -2,7 +2,9 @@
 import { useMemo } from 'react';
 import { useConfig } from '../context/ConfigContext.jsx';
 import { useUserSession } from '../context/UserSessionContext.jsx';
-import { useVisualConfig } from '../context/VisualConfigContext.jsx'; // Import the new hook
+import { useVisualConfig } from '../context/VisualConfigContext.jsx';
+import { usePresetManagement } from '../context/PresetManagementContext.jsx';
+import { useUpProvider } from '../context/UpProvider.jsx'; // Import useUpProvider
 
 /**
  * @typedef {object} VisualLayerState
@@ -12,13 +14,8 @@ import { useVisualConfig } from '../context/VisualConfigContext.jsx'; // Import 
  * @property {(layerId: string | number, tokenId: string | object | null) => void} updateTokenAssignment - Updates the token assigned to a layer for the host profile. From `VisualConfigContext`.
  */
 
-/**
- * Hook to select visual layer configurations and related update functions for the host profile.
- * This now sources its data from `VisualConfigContext`.
- * @returns {VisualLayerState} The visual layer state and actions.
- */
 export const useVisualLayerState = () => {
-  const visualCtx = useVisualConfig(); // Consume the new VisualConfigContext
+  const visualCtx = useVisualConfig();
   return useMemo(() => ({
     layerConfigs: visualCtx.layerConfigs,
     tokenAssignments: visualCtx.tokenAssignments,
@@ -29,44 +26,39 @@ export const useVisualLayerState = () => {
 
 /**
  * @typedef {object} PresetManagementState
- * @property {string | null} currentConfigName - Name of the currently loaded visual preset for the host profile. Sourced from `ConfigContext`.
- * @property {Array<{name: string}>} savedConfigList - List of saved visual preset names for the host profile. Sourced from `ConfigContext`.
- * @property {boolean} isLoading - True if a configuration for the host profile is currently being loaded. Sourced from `ConfigContext`.
- * @property {Error | string | null} loadError - Error from the last configuration load attempt for the host profile. Sourced from `ConfigContext`.
- * @property {boolean} isSaving - True if a save operation to the host profile is in progress. Sourced from `ConfigContext`.
- * @property {Error | string | null} saveError - Error from the last configuration save attempt to the host profile. Sourced from `ConfigContext`.
- * @property {boolean} saveSuccess - True if the last save operation to the host profile was successful. Sourced from `ConfigContext`.
- * @property {(nameToSave: string, setAsDefault: boolean, includeReactions: boolean, includeMidi: boolean, layerConfigsToSave: object, tokenAssignmentsToSave: object) => Promise<{success: boolean, error?: string}>} saveVisualPreset - Saves the current visual configuration as a preset to the host profile. From `ConfigContext`.
- * @property {(name: string) => Promise<{success: boolean, error?: string, config?: object | null}>} loadNamedConfig - Loads a specific named configuration from the host profile. From `ConfigContext`.
- * @property {() => Promise<{success: boolean, error?: string, config?: object | null}>} loadDefaultConfig - Loads the default configuration for the host profile. From `ConfigContext`.
- * @property {() => Promise<{success: boolean, list?: Array<{name: string}>, error?: string}>} loadSavedConfigList - Reloads the list of saved configurations from the host profile. From `ConfigContext`.
- * @property {(nameToDelete: string) => Promise<{success: boolean, error?: string}>} deleteNamedConfig - Deletes a named configuration from the host profile. From `ConfigContext`.
+ * @property {string | null} currentConfigName - Name of the currently loaded visual preset for the host profile.
+ * @property {Array<{name: string}>} savedConfigList - List of saved visual preset names for the host profile.
+ * @property {boolean} isLoading - True when loading a preset or the list of presets.
+ * @property {Error | string | null} loadError - Error from the last preset load attempt.
+ * @property {boolean} isSaving - True when saving or deleting a preset.
+ * @property {Error | string | null} saveError - Error from the last preset save/delete attempt.
+ * @property {boolean} saveSuccess - True if the last save/delete operation was successful.
+ * @property {(nameToSave: string, setAsDefault: boolean, includeReactions: boolean, includeMidi: boolean, layerConfigsToSave: object, tokenAssignmentsToSave: object) => Promise<{success: boolean, error?: string}>} saveVisualPreset - Saves the current visual configuration as a preset to the host profile.
+ * @property {(name: string) => Promise<{success: boolean, error?: string, config?: object | null}>} loadNamedConfig - Loads a specific named configuration from the host profile.
+ * @property {() => Promise<{success: boolean, error?: string, config?: object | null}>} loadDefaultConfig - Loads the default configuration for the host profile.
+ * @property {() => Promise<{success: boolean, list?: Array<{name: string}>, error?: string}>} loadSavedConfigList - Reloads the list of saved configurations from the host profile.
+ * @property {(nameToDelete: string) => Promise<{success: boolean, error?: string}>} deleteNamedConfig - Deletes a named configuration from the host profile.
  */
 
-/**
- * Hook to select preset management state and related actions for the host profile.
- * Sourced from `ConfigContext`.
- * @returns {PresetManagementState} The preset management state and actions.
- */
 export const usePresetManagementState = () => {
-  const ctx = useConfig(); // Consumes ConfigContext
+  const presetCtx = usePresetManagement();
   return useMemo(() => ({
-    currentConfigName: ctx.currentConfigName,
-    savedConfigList: ctx.savedConfigList,
-    isLoading: ctx.isConfigLoading, // Use isConfigLoading from ConfigContext
-    loadError: ctx.loadError,
-    isSaving: ctx.isSaving,
-    saveError: ctx.saveError,
-    saveSuccess: ctx.saveSuccess,
-    saveVisualPreset: ctx.saveVisualPreset,
-    loadNamedConfig: ctx.loadNamedConfig,
-    loadDefaultConfig: ctx.loadDefaultConfig,
-    loadSavedConfigList: ctx.loadSavedConfigList,
-    deleteNamedConfig: ctx.deleteNamedConfig,
+    currentConfigName: presetCtx.currentConfigName,
+    savedConfigList: presetCtx.savedConfigList,
+    isLoading: presetCtx.isLoading,
+    loadError: presetCtx.loadError,
+    isSaving: presetCtx.isSaving,
+    saveError: presetCtx.saveError,
+    saveSuccess: presetCtx.saveSuccess,
+    saveVisualPreset: presetCtx.saveVisualPreset,
+    loadNamedConfig: presetCtx.loadNamedConfig,
+    loadDefaultConfig: presetCtx.loadDefaultConfig,
+    loadSavedConfigList: presetCtx.loadSavedConfigList,
+    deleteNamedConfig: presetCtx.deleteNamedConfig,
   }), [
-    ctx.currentConfigName, ctx.savedConfigList, ctx.isConfigLoading, ctx.loadError,
-    ctx.isSaving, ctx.saveError, ctx.saveSuccess, ctx.saveVisualPreset,
-    ctx.loadNamedConfig, ctx.loadDefaultConfig, ctx.loadSavedConfigList, ctx.deleteNamedConfig,
+    presetCtx.currentConfigName, presetCtx.savedConfigList, presetCtx.isLoading, presetCtx.loadError,
+    presetCtx.isSaving, presetCtx.saveError, presetCtx.saveSuccess, presetCtx.saveVisualPreset,
+    presetCtx.loadNamedConfig, presetCtx.loadDefaultConfig, presetCtx.loadSavedConfigList, presetCtx.deleteNamedConfig,
   ]);
 };
 
@@ -81,13 +73,8 @@ export const usePresetManagementState = () => {
  * @property {() => Promise<{success: boolean, error?: string}>} saveGlobalMidiMap - Saves only the global MIDI map to the host profile. From `ConfigContext`.
  */
 
-/**
- * Hook to select interaction settings (reactions, MIDI) state and related actions for the host profile.
- * Sourced from `ConfigContext`.
- * @returns {InteractionSettingsState} The interaction settings state and actions.
- */
 export const useInteractionSettingsState = () => {
-  const ctx = useConfig(); // Consumes ConfigContext
+  const ctx = useConfig();
   return useMemo(() => ({
     savedReactions: ctx.savedReactions,
     midiMap: ctx.midiMap,
@@ -115,13 +102,8 @@ export const useInteractionSettingsState = () => {
  * @property {boolean} isParentAdmin - True if the current visitor is the RADAR project admin. Sourced from `UserSessionContext`.
  */
 
-/**
- * Hook to select profile and session-related state.
- * This hook consumes `useUserSession` to get session information.
- * @returns {ProfileSessionState} The profile and session state.
- */
 export const useProfileSessionState = () => {
-  const sessionCtx = useUserSession(); // Consumes UserSessionContext
+  const sessionCtx = useUserSession();
   return useMemo(() => {
     const {
       hostProfileAddress,
@@ -144,7 +126,7 @@ export const useProfileSessionState = () => {
       canInteract,
       isPreviewMode: isPreviewMode,
       togglePreviewMode: togglePreviewMode,
-      isParentAdmin: isRadarProjectAdmin, // Map isRadarProjectAdmin to isParentAdmin for consumers
+      isParentAdmin: isRadarProjectAdmin,
     };
   }, [sessionCtx]);
 };
@@ -155,13 +137,8 @@ export const useProfileSessionState = () => {
  * @property {React.Dispatch<React.SetStateAction<boolean>>} setHasPendingChanges - Manually sets the pending changes flag. From `ConfigContext`.
  */
 
-/**
- * Hook to select pending changes state and its setter for the host profile's configuration.
- * Sourced from `ConfigContext`.
- * @returns {PendingChangesState} The pending changes state.
- */
 export const usePendingChangesState = () => {
-  const ctx = useConfig(); // Consumes ConfigContext
+  const ctx = useConfig();
   return useMemo(() => ({
     hasPendingChanges: ctx.hasPendingChanges,
     setHasPendingChanges: ctx.setHasPendingChanges,
@@ -170,44 +147,39 @@ export const usePendingChangesState = () => {
 
 /**
  * @typedef {object} ConfigStatusState
- * @property {boolean} isLoading - True if any configuration aspect for the host profile is currently being fetched/processed. Sourced from `ConfigContext`.
- * @property {boolean} isInitiallyResolved - True once the very first attempt to load the host profile's config (or fallback) is done. Sourced from `ConfigContext`.
+ * @property {boolean} isLoading - True if a preset for the host profile is currently being loaded or list is being fetched. Sourced from `PresetManagementContext`.
+ * @property {boolean} isInitiallyResolved - True once the very first attempt to load the host profile's preset (or fallback) is done. Sourced from `PresetManagementContext`.
  * @property {boolean} configServiceInstanceReady - True if ConfigurationService is instantiated and has its clients. Sourced from `ConfigContext`.
- * @property {number} configLoadNonce - Increments each time a new configuration for the host profile is successfully applied. Sourced from `ConfigContext`.
+ * @property {number} configLoadNonce - Increments each time a new configuration preset for the host profile is successfully applied. Sourced from `PresetManagementContext`.
  * @property {React.RefObject<import('../services/ConfigurationService.js').default | null>} configServiceRef - Ref to the ConfigurationService instance. Sourced from `ConfigContext`.
- * @property {Error | string | null} loadError - Error from the last configuration load attempt for the host profile. Sourced from `ConfigContext`.
- * @property {Error | null} upInitializationError - Error from UpProvider initialization (Note: This is not directly in ConfigContext, typically consumed where UpProvider is used).
- * @property {Error | null} upFetchStateError - Error from UpProvider client fetching (Note: Same as above).
+ * @property {Error | string | null} loadError - Error from the last preset load attempt for the host profile. Sourced from `PresetManagementContext`.
+ * @property {Error | null} upInitializationError - Error from UpProvider initialization. Sourced from `UpProvider`.
+ * @property {Error | null} upFetchStateError - Error from UpProvider client fetching. Sourced from `UpProvider`.
  */
 
-/**
- * Hook to select configuration loading status and related error states for the host profile.
- * Sourced from `ConfigContext`.
- * Note: `upInitializationError` and `upFetchStateError` are typically consumed directly from `useUpProvider`
- * where needed, rather than being passed through multiple contexts.
- * @returns {ConfigStatusState} The configuration status state.
- */
 export const useConfigStatusState = () => {
-  const ctx = useConfig(); // Consumes ConfigContext
-  // UpProvider errors are not directly part of ConfigContext's value.
-  // They are available via useUpProvider() in components/hooks that need them (like ConfigProvider itself).
-  // For this selector, we reflect what's available from ConfigContext.
-  return useMemo(() => ({
-    isLoading: ctx.isConfigLoading,
-    isInitiallyResolved: ctx.isInitiallyResolved,
-    configServiceInstanceReady: ctx.configServiceInstanceReady,
-    configLoadNonce: ctx.configLoadNonce,
-    configServiceRef: ctx.configServiceRef,
-    loadError: ctx.loadError,
-    // These are not directly passed through ConfigContext in the current refactor,
-    // as ConfigProvider consumes them from useUpProvider but doesn't re-expose them.
-    // If a component needs these, it should consume useUpProvider directly or
-    // ConfigContext would need to be explicitly designed to pass them through.
-    // For now, returning null as they are not part of ConfigContext's direct value.
-    upInitializationError: null,
-    upFetchStateError: null,
-  }), [
-    ctx.isConfigLoading, ctx.isInitiallyResolved, ctx.configServiceInstanceReady,
-    ctx.configLoadNonce, ctx.configServiceRef, ctx.loadError,
+  const configCtx = useConfig();
+  const presetCtx = usePresetManagement();
+  const upCtx = useUpProvider(); // Get UpProvider context
+
+  const memoizedValue = useMemo(() => {
+    const val = {
+      isLoading: presetCtx.isLoading,
+      isInitiallyResolved: presetCtx.isInitiallyResolved,
+      configServiceInstanceReady: configCtx.configServiceInstanceReady,
+      configLoadNonce: presetCtx.configLoadNonce,
+      configServiceRef: configCtx.configServiceRef,
+      loadError: presetCtx.loadError,
+      upInitializationError: upCtx.initializationError, // Source from upCtx
+      upFetchStateError: upCtx.fetchStateError,       // Source from upCtx
+    };
+    // console.log(`[DEBUG useConfigStatusState] Values from presetCtx -> isLoading: ${presetCtx.isLoading}, isInitiallyResolved: ${presetCtx.isInitiallyResolved}, configLoadNonce: ${presetCtx.configLoadNonce}. Returning: isLoading: ${val.isLoading}, isInitiallyResolved: ${val.isInitiallyResolved}`);
+    return val;
+  }, [
+    presetCtx.isLoading, presetCtx.isInitiallyResolved, presetCtx.configLoadNonce, presetCtx.loadError,
+    configCtx.configServiceInstanceReady, configCtx.configServiceRef,
+    upCtx.initializationError, upCtx.fetchStateError, // Add to dependencies
   ]);
+
+  return memoizedValue;
 };

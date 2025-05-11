@@ -7,79 +7,37 @@ import {
   RADAR_EVENT_REACTIONS_KEY,
   RADAR_MIDI_MAP_KEY,
 } from "../config/global-config";
-import { stringToHex } from "viem";
-import fallbackConfig from "../config/fallback-config.js";
-
-// Helper functions
-const transformStringListToObjects = (list) => {
-    if (!Array.isArray(list)) return [];
-    return list.filter(item => typeof item === 'string').map(name => ({ name }));
-};
-
-const ensureCompleteLayerConfigStructure = (layerConfig, defaultLayerConfigTemplate) => {
-    const completeConfig = { ...defaultLayerConfigTemplate }; 
-    if (layerConfig && typeof layerConfig === 'object') {
-        for (const key in layerConfig) {
-            if (Object.hasOwnProperty.call(layerConfig, key) && layerConfig[key] !== null && layerConfig[key] !== undefined) {
-                completeConfig[key] = layerConfig[key];
-            }
-            if (key === 'driftState' && typeof layerConfig[key] === 'object' && defaultLayerConfigTemplate.driftState) {
-                 completeConfig[key] = { ...defaultLayerConfigTemplate.driftState, ...layerConfig[key] };
-            }
-        }
-    }
-    if (typeof completeConfig.enabled !== 'boolean' && defaultLayerConfigTemplate.hasOwnProperty('enabled')) {
-        completeConfig.enabled = defaultLayerConfigTemplate.enabled;
-    }
-    return completeConfig;
-};
-
-const getMinimalLayerConfigTemplate = () => ({
-  enabled: true, blendMode: 'normal', opacity: 1.0, size: 1.0, speed: 0.01,
-  drift: 0, driftSpeed: 0.1, angle: 0, xaxis: 0, yaxis: 0, direction: 1,
-  driftState: { x: 0, y: 0, phase: 0, enabled: false },
-});
-
+import { stringToHex, hexToString } from "viem"; // Added hexToString
 
 /**
- * @typedef {object} ConfigStateAPI The interface returned by the useConfigState hook.
- * @property {boolean} configServiceInstanceReady - Indicates if the ConfigurationService is ready for reads.
+ * @typedef {object} ConfigStateAPI
+ * @property {boolean} configServiceInstanceReady - Indicates if the ConfigurationService is ready for reads and writes.
  * @property {React.RefObject<ConfigurationService | null>} configServiceRef - Ref to the ConfigurationService instance.
- * @property {string | null} currentConfigName - Name of the currently loaded preset.
- * @property {object | null} loadedLayerConfigsFromPreset - Layer configurations from the most recently loaded preset (or fallback). This is for VisualConfigProvider.
- * @property {object | null} loadedTokenAssignmentsFromPreset - Token assignments from the most recently loaded preset (or fallback). This is for VisualConfigProvider.
- * @property {object} savedReactions - Configuration object for event reactions.
- * @property {object} midiMap - Configuration object for MIDI mappings.
- * @property {boolean} isLoading - True if configuration is currently being loaded.
- * @property {Error | string | null} loadError - Error object or message from the last load attempt.
- * @property {boolean} isSaving - True if configuration is currently being saved.
- * @property {Error | string | null} saveError - Error object or message from the last save attempt.
- * @property {boolean} saveSuccess - True if the last save operation was successful.
- * @property {boolean} hasPendingChanges - True if the current configuration has unsaved modifications.
- * @property {Array<{name: string}>} savedConfigList - List of saved preset names.
- * @property {boolean} isInitiallyResolved - True once the initial configuration load attempt has completed (success or fail).
- * @property {number} configLoadNonce - A counter that increments upon successful configuration load/application.
- * @property {(nameToSave: string, setAsDefault: boolean, includeReactions: boolean, includeMidi: boolean, layerConfigsToSave: object, tokenAssignmentsToSave: object) => Promise<{success: boolean, error?: string}>} saveVisualPreset - Saves the current visual preset.
- * @property {() => Promise<{success: boolean, error?: string}>} saveGlobalReactions - Saves only the global event reactions.
- * @property {() => Promise<{success: boolean, error?: string}>} saveGlobalMidiMap - Saves only the global MIDI map.
- * @property {(name: string) => Promise<{success: boolean, error?: string, config?: object | null}>} loadNamedConfig - Loads a specific named preset.
- * @property {() => Promise<{success: boolean, error?: string, config?: object | null}>} loadDefaultConfig - Loads the default preset for the profile.
- * @property {() => Promise<{success: boolean, list?: Array<{name: string}>, error?: string}>} loadSavedConfigList - Reloads the list of saved presets.
- * @property {(nameToDelete: string) => Promise<{success: boolean, error?: string}>} deleteNamedConfig - Deletes a named preset.
- * @property {(eventType: string, reactionData: object) => void} updateSavedReaction - Adds or updates a specific event reaction configuration.
- * @property {(eventType: string) => void} deleteSavedReaction - Removes an event reaction configuration.
- * @property {(newMap: object) => void} updateMidiMap - Replaces the entire MIDI map configuration.
- * @property {React.Dispatch<React.SetStateAction<boolean>>} setHasPendingChanges - Manually sets the pending changes flag.
+ * @property {object} savedReactions - Configuration object for global event reactions stored on the host profile.
+ * @property {object} midiMap - Configuration object for global MIDI mappings stored on the host profile.
+ * @property {boolean} isSavingGlobal - True if global settings (reactions/MIDI) are currently being saved.
+ * @property {Error | string | null} globalSaveError - Error from the last global settings save attempt.
+ * @property {boolean} globalSaveSuccess - True if the last global settings save operation was successful.
+ * @property {boolean} hasPendingChanges - True if any configuration (visual, preset, reactions, MIDI) has unsaved modifications. This flag is typically set by other contexts.
+ * @property {React.Dispatch<React.SetStateAction<boolean>>} setHasPendingChanges - Manually sets the pending changes flag. Consumed by other contexts.
+ * @property {() => Promise<{success: boolean, error?: string}>} saveGlobalReactions - Saves only the global event reactions to the host profile.
+ * @property {() => Promise<{success: boolean, error?: string}>} saveGlobalMidiMap - Saves only the global MIDI map to the host profile.
+ * @property {(eventType: string, reactionData: object) => void} updateSavedReaction - Adds or updates a specific event reaction configuration in this hook's state.
+ * @property {(eventType: string) => void} deleteSavedReaction - Removes an event reaction configuration from this hook's state.
+ * @property {(newMap: object) => void} updateMidiMap - Replaces the entire MIDI map configuration in this hook's state.
+ * @property {boolean} isLoadingGlobals - True if global settings (reactions, MIDI map) are currently being loaded.
+ * @property {Error | string | null} globalLoadError - Error from the last attempt to load global settings.
  */
 
 /**
- * Custom hook to manage the application's configuration state, including loading from
- * and saving to a Universal Profile's ERC725Y storage via ConfigurationService.
- * This hook focuses on preset management, global settings (reactions, MIDI), and
- * providing loaded visual data for `VisualConfigContext`.
+ * Custom hook to manage global application settings (Reactions, MIDI map for the host profile),
+ * the `ConfigurationService` instance, and the `hasPendingChanges` status.
+ * It no longer handles preset management or live visual configurations, which have been
+ * delegated to `PresetManagementContext` and `VisualConfigContext` respectively.
+ * It loads global settings (reactions, MIDI map) when the profile address or service readiness changes.
  *
- * @param {string|null} currentProfileAddress The address of the profile being viewed/interacted with.
- * @returns {ConfigStateAPI} An object containing configuration state and management functions.
+ * @param {string|null} currentProfileAddress The address of the host profile to manage settings for.
+ * @returns {ConfigStateAPI} An object containing global configuration state and management functions.
  */
 const useConfigState = (currentProfileAddress) => {
   const {
@@ -90,34 +48,30 @@ const useConfigState = (currentProfileAddress) => {
 
   const { addToast } = useToast();
   const configServiceRef = useRef(null);
-  const initialLoadCompletedForRef = useRef(undefined);
-  const prevProfileAddressRef = useRef(currentProfileAddress);
+  const prevProfileAddressForGlobalsRef = useRef(null); // Track address for global loads
 
-  const [currentConfigName, setCurrentConfigName] = useState(null);
-  const [loadedLayerConfigsFromPreset, setLoadedLayerConfigsFromPreset] = useState(null);
-  const [loadedTokenAssignmentsFromPreset, setLoadedTokenAssignmentsFromPreset] = useState(null);
-
+  // State managed by this hook
   const [savedReactions, setSavedReactions] = useState({});
-  const [midiMap, setMidiMap] = useState({});
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState(null);
-  const [isInitiallyResolved, setIsInitiallyResolved] = useState(false);
-  const [configLoadNonce, setConfigLoadNonce] = useState(0);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState(null);
-  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [midiMap, setMidiMap] = useState({}); // This is the host profile's stored MIDI map
+  const [isSavingGlobal, setIsSavingGlobal] = useState(false);
+  const [globalSaveError, setGlobalSaveError] = useState(null);
+  const [globalSaveSuccess, setGlobalSaveSuccess] = useState(false);
   const [hasPendingChanges, setHasPendingChanges] = useState(false);
-  const [savedConfigList, setSavedConfigList] = useState([]);
+  const [isLoadingGlobals, setIsLoadingGlobals] = useState(false); // New state for loading globals
+  const [globalLoadError, setGlobalLoadError] = useState(null);   // New state for global load errors
+
 
   const isUpProviderStableForRead = useMemo(() => {
       return !!publicClient && !upIsConnecting && !upHasCriticalError;
   }, [publicClient, upIsConnecting, upHasCriticalError]);
 
+  // Effect to initialize and update ConfigurationService instance
   useEffect(() => {
     if (provider && !configServiceRef.current) {
         configServiceRef.current = new ConfigurationService(provider, walletClient, publicClient);
     }
     if (configServiceRef.current) {
+        // Update clients if they change (e.g., chain change)
         if (configServiceRef.current.publicClient !== publicClient) {
             configServiceRef.current.publicClient = publicClient;
         }
@@ -133,406 +87,192 @@ const useConfigState = (currentProfileAddress) => {
       return !!configServiceRef.current && isUpProviderStableForRead;
   }, [isUpProviderStableForRead]);
 
-  const applyLoadedData = useCallback(
-    (loadedData, reason = "unknown", loadedForAddress, targetName = null) => {
-      setLoadError(null);
-      const completionMarker = loadedForAddress;
-      const minimalLayerTemplate = getMinimalLayerConfigTemplate();
-
-      let finalName = null;
-      let finalLayersForPreset = null; 
-      let finalTokensForPreset = null; 
-      let finalReactions = {};
-      let finalMidi = {};
-      let appliedFallbackVisuals = false;
-      let shouldIncrementNonce = false;
-
-      const isInitialDisplayFallbackReason = reason === 'initial_no_address_display_fallback' || reason === 'initial_service_not_ready_display_fallback';
-
-      if (loadedData?.error) {
-        setLoadError(loadedData.error);
-        addToast(`Error loading configuration: ${loadedData.error}`, 'error');
-        finalLayersForPreset = null; finalTokensForPreset = null; finalName = null; 
-        finalReactions = {}; finalMidi = {};
-      } else if (loadedData?.config) {
-        finalName = loadedData.config.name ?? targetName ?? "Unnamed Preset";
-        const loadedLayersData = loadedData.config.layers || {};
-        finalLayersForPreset = {}; 
-        for (const layerId of ['1', '2', '3']) {
-            finalLayersForPreset[layerId] = ensureCompleteLayerConfigStructure(loadedLayersData[layerId], minimalLayerTemplate);
-        }
-        finalTokensForPreset = loadedData.config.tokenAssignments || {};
-        finalReactions = loadedData.reactions || {};
-        finalMidi = loadedData.midi || {};
-        shouldIncrementNonce = true;
-      } else if (reason === "address_cleared") {
-          finalLayersForPreset = null; finalTokensForPreset = null; finalReactions = {}; finalMidi = {};
-          finalName = null;
-          setLoadedLayerConfigsFromPreset(null); 
-          setLoadedTokenAssignmentsFromPreset(null);
-          setConfigLoadNonce(0); setIsInitiallyResolved(false);
-          initialLoadCompletedForRef.current = undefined; setIsLoading(true);
-          return; 
-      } else { 
-        appliedFallbackVisuals = true;
-        finalName = "Fallback";
-        const fallbackLayersData = fallbackConfig.layers || {};
-        finalLayersForPreset = {}; 
-        for (const layerId of ['1', '2', '3']) {
-            finalLayersForPreset[layerId] = ensureCompleteLayerConfigStructure(fallbackLayersData[layerId], minimalLayerTemplate);
-        }
-        finalTokensForPreset = fallbackConfig.tokenAssignments || {};
-        finalReactions = loadedData?.reactions || {}; 
-        finalMidi = loadedData?.midi || {};
-        console.log(`[useConfigState] Applying fallback visuals. Reason: ${reason}`);
-        if ( (loadedForAddress && !isInitialDisplayFallbackReason) || (configLoadNonce === 0 && !isInitialDisplayFallbackReason) ) {
-            shouldIncrementNonce = true;
-        } else {
-            console.log(`[useConfigState] Fallback applied but nonce not incremented. Reason: ${reason}, LoadedFor: ${loadedForAddress}, Nonce: ${configLoadNonce}`);
-        }
-      }
-
-      setLoadedLayerConfigsFromPreset(finalLayersForPreset);
-      setLoadedTokenAssignmentsFromPreset(finalTokensForPreset);
-
-      setSavedReactions(finalReactions);
-      setMidiMap(finalMidi);
-      if (finalName !== currentConfigName) setCurrentConfigName(finalName);
-      setHasPendingChanges(false); 
-
-      if (shouldIncrementNonce) {
-          setConfigLoadNonce(prevNonce => prevNonce + 1);
-          console.log(`[useConfigState] Incremented configLoadNonce. Reason: ${loadedData?.config ? 'Loaded Config' : (appliedFallbackVisuals && shouldIncrementNonce) ? 'Applied Fallback (with nonce)' : 'No Change/Error'}`);
-      }
-
-      if ((completionMarker !== undefined && completionMarker !== null) || reason === 'no_target_address_performLoad') {
-          if (!isInitiallyResolved) {
-            setIsInitiallyResolved(true);
-          }
-          if (completionMarker !== undefined) {
-            initialLoadCompletedForRef.current = completionMarker;
-          }
-      } else if (isInitialDisplayFallbackReason && !isInitiallyResolved) {
-          console.log("[useConfigState] Initial display fallback applied, isLoading=false, isInitiallyResolved remains false.");
-      }
-      setIsLoading(false);
-    }, [addToast, currentConfigName, isInitiallyResolved, configLoadNonce]); 
-
-  const loadSavedConfigList = useCallback(async () => {
-    const service = configServiceRef.current;
-    const addressToLoad = currentProfileAddress;
-    const isReady = !!service && isUpProviderStableForRead;
-    if (!isReady || !addressToLoad) {
-        const errorMsg = !isReady ? "Service not ready." : "No profile address.";
-        addToast(errorMsg, "warning"); setSavedConfigList([]);
-        return { success: false, error: errorMsg };
-    }
-    try {
-      const stringList = await service.loadSavedConfigurations(addressToLoad);
-      const objectList = transformStringListToObjects(stringList);
-      setSavedConfigList(objectList);
-      return { success: true, list: objectList };
-    } catch (error) {
-      addToast(`Failed to load preset list: ${error.message}`, 'error');
-      setSavedConfigList([]);
-      return { success: false, error: error.message || "Failed to load list." };
-    }
-  }, [currentProfileAddress, addToast, isUpProviderStableForRead, configServiceRef]);
-
-  const performLoad = useCallback(
-    async (address, configName = null, customKey = null, reason = "manual") => {
-      const service = configServiceRef.current;
-      const isReady = !!service && isUpProviderStableForRead;
-
-      if (!address) {
-          console.warn("[useConfigState performLoad] No address provided. Applying fallback.");
-          setIsLoading(false); 
-          applyLoadedData(null, 'no_target_address_performLoad', null);
-          return { success: true, config: fallbackConfig }; 
-      }
-      if (!isReady) {
-          addToast("Configuration service not ready. Applying fallback.", "warning");
-          setIsLoading(false); 
-          applyLoadedData(null, 'service_not_ready_performLoad', address);
-          return { success: false, error: "Service not ready." };
-      }
-
-      const targetName = configName || "Default";
-      setIsLoading(true); setLoadError(null);
-      try {
-        const loadedData = await service.loadConfiguration(address, configName, customKey);
-        applyLoadedData(loadedData, reason, address, targetName);
-        const loadSuccessful = !loadedData?.error;
-        if (loadSuccessful && loadedData.config) {
-            loadSavedConfigList().catch(() => {}); 
-        }
-        return { success: loadSuccessful, error: loadedData?.error, config: loadedData?.config };
-      } catch (error) {
-        const errorMsg = error.message || "Unknown load error";
-        applyLoadedData({ error: errorMsg }, reason, address, targetName); 
-        return { success: false, error: errorMsg };
-      }
-    },
-    [isUpProviderStableForRead, applyLoadedData, addToast, loadSavedConfigList, configServiceRef] 
-  );
-
+  // Effect to load global reactions and MIDI map when profile or service readiness changes
   useEffect(() => {
-    const addressToLoad = currentProfileAddress;
-    const serviceReady = configServiceInstanceReady; 
+    const loadGlobalSettings = async () => {
+        if (currentProfileAddress && configServiceInstanceReady && configServiceRef.current) {
+            const service = configServiceRef.current;
+            setIsLoadingGlobals(true);
+            setGlobalLoadError(null);
+            let reactionsLoaded = false;
+            let midiLoaded = false;
 
-    if (addressToLoad !== prevProfileAddressRef.current) {
-        console.log(`[useConfigState] Profile address changed: ${prevProfileAddressRef.current?.slice(0,6) || 'none'} -> ${addressToLoad?.slice(0,6) || 'none'}. Resetting state.`);
-        prevProfileAddressRef.current = addressToLoad;
-        initialLoadCompletedForRef.current = undefined; 
-        setIsInitiallyResolved(false); 
-        setSavedConfigList([]);
-        setCurrentConfigName(null);
-        setLoadedLayerConfigsFromPreset(null); 
-        setLoadedTokenAssignmentsFromPreset(null);
+            try {
+                const reactionsHex = await service.loadDataFromKey(currentProfileAddress, RADAR_EVENT_REACTIONS_KEY);
+                if (reactionsHex && reactionsHex !== '0x') {
+                    setSavedReactions(JSON.parse(hexToString(reactionsHex)));
+                } else {
+                    setSavedReactions({}); // Reset if no data
+                }
+                reactionsLoaded = true;
+            } catch (e) {
+                console.error("Error loading global reactions:", e);
+                setGlobalLoadError(prev => `${prev || ''} Reactions: ${e.message}`.trim());
+                setSavedReactions({}); // Reset on error
+            }
+
+            try {
+                const midiHex = await service.loadDataFromKey(currentProfileAddress, RADAR_MIDI_MAP_KEY);
+                if (midiHex && midiHex !== '0x') {
+                    setMidiMap(JSON.parse(hexToString(midiHex)));
+                } else {
+                    setMidiMap({}); // Reset if no data
+                }
+                midiLoaded = true;
+            } catch (e) {
+                console.error("Error loading global MIDI map:", e);
+                setGlobalLoadError(prev => `${prev || ''} MIDI: ${e.message}`.trim());
+                setMidiMap({}); // Reset on error
+            }
+            
+            if (reactionsLoaded && midiLoaded && !globalLoadError) {
+                // console.log("[useConfigState] Global settings (reactions, MIDI map) loaded successfully.");
+            }
+            setIsLoadingGlobals(false);
+        } else {
+            // Reset if no address or service not ready
+            setSavedReactions({});
+            setMidiMap({});
+            setIsLoadingGlobals(false); // Ensure loading is false if conditions aren't met
+            setGlobalLoadError(null);
+        }
+    };
+
+    // Load globals if address changes or if service becomes ready for a previously set address
+    if (currentProfileAddress !== prevProfileAddressForGlobalsRef.current || 
+        (currentProfileAddress && configServiceInstanceReady && !isLoadingGlobals && !globalLoadError && prevProfileAddressForGlobalsRef.current === null)
+    ) {
+        prevProfileAddressForGlobalsRef.current = currentProfileAddress;
+        loadGlobalSettings();
+    } else if (!currentProfileAddress) { // If address becomes null, reset
+        prevProfileAddressForGlobalsRef.current = null;
         setSavedReactions({});
         setMidiMap({});
-        setIsLoading(true); 
-        setLoadError(null);
+        setIsLoadingGlobals(false);
+        setGlobalLoadError(null);
     }
 
-    const hasLoadCompletedForThisAddress = initialLoadCompletedForRef.current === addressToLoad;
+  }, [currentProfileAddress, configServiceInstanceReady, isLoadingGlobals, globalLoadError]); // Added isLoadingGlobals and globalLoadError to prevent re-fetch loops on error
 
-    if (isLoading) { 
-        if (serviceReady) {
-            if (addressToLoad) {
-                if (!hasLoadCompletedForThisAddress) {
-                    console.log(`[useConfigState Initial Load] Address ${addressToLoad.slice(0,6)} present, service ready. Performing initial load.`);
-                    performLoad(addressToLoad, null, null, "initial");
-                } else {
-                    if (isInitiallyResolved) setIsLoading(false);
-                }
-            } else { 
-                if (!isInitiallyResolved) { 
-                    console.log("[useConfigState Initial Load] Service ready, no address, not resolved. Applying initial display fallback.");
-                    applyLoadedData(null, 'initial_no_address_display_fallback', null);
-                } else {
-                     setIsLoading(false); 
-                }
-            }
-        } else { 
-            if (!isInitiallyResolved) { 
-                console.log("[useConfigState Initial Load] Service not ready, not resolved. Applying initial display fallback.");
-                applyLoadedData(null, 'initial_service_not_ready_display_fallback', null);
-            } else {
-                 setIsLoading(false);
-            }
-        }
-    }
-  }, [currentProfileAddress, configServiceInstanceReady, performLoad, applyLoadedData, addToast, isLoading, isInitiallyResolved]);
 
-  const saveVisualPreset = useCallback(
-    async (nameToSave, setAsDefault, includeReactions, includeMidi, layerConfigsToSave, tokenAssignmentsToSave) => {
-      // --- ADD LOGGING HERE ---
-      console.log("[useConfigState saveVisualPreset] RECEIVED DATA FOR SAVING:", {
-          name: nameToSave,
-          setAsDefault: setAsDefault,
-          includeReactions: includeReactions,
-          includeMidi: includeMidi,
-          layerConfigsArg: JSON.parse(JSON.stringify(layerConfigsToSave)), // Deep copy
-          tokenAssignmentsArg: JSON.parse(JSON.stringify(tokenAssignmentsToSave)) // Deep copy
-      });
-      // --- END LOGGING ---
-      const service = configServiceRef.current;
-      const addressToSave = currentProfileAddress;
-      const isReady = !!service && isUpProviderStableForRead && service.checkReadyForWrite();
-      if (!isReady || !addressToSave) {
-          const errorMsg = !isReady ? "Write service not ready." : "No profile address.";
-          addToast(errorMsg, "error"); return { success: false, error: errorMsg };
-      }
-      if (!nameToSave?.trim()) {
-          addToast("Preset name cannot be empty.", "warning"); return { success: false, error: "Preset name required." };
-      }
-      setIsSaving(true); setSaveError(null); setSaveSuccess(false);
-
-      const validLayerConfigs = (typeof layerConfigsToSave === 'object' && layerConfigsToSave !== null) ? layerConfigsToSave : {};
-      const validTokenAssignments = (typeof tokenAssignmentsToSave === 'object' && tokenAssignmentsToSave !== null) ? tokenAssignmentsToSave : {};
-      
-      const minimalLayerTemplate = getMinimalLayerConfigTemplate();
-      const completeLayerConfigsForSave = {};
-      for (const layerId of ['1', '2', '3']) {
-          completeLayerConfigsForSave[layerId] = ensureCompleteLayerConfigStructure(validLayerConfigs[layerId] || {}, minimalLayerTemplate);
-      }
-
-      const dataToSave = {
-        layers: completeLayerConfigsForSave,
-        tokenAssignments: validTokenAssignments,
-        reactions: includeReactions ? savedReactions : undefined, 
-        midi: includeMidi ? midiMap : undefined,
-      };
-
-      try {
-        const result = await service.saveConfiguration( addressToSave, dataToSave, nameToSave, setAsDefault, true, includeReactions, includeMidi, null );
-        if (result.success) {
-            addToast(`Preset '${nameToSave}' saved successfully!`, 'success');
-            setSaveSuccess(true); setHasPendingChanges(false); 
-            setCurrentConfigName(nameToSave); 
-            loadSavedConfigList().catch(() => {}); 
-        } else { throw new Error(result.error || "Save configuration failed."); }
-        setIsSaving(false); return result;
-      } catch (error) {
-        const errorMsg = error.message || "Unknown save error."; setSaveError(errorMsg);
-        addToast(`Error saving preset: ${errorMsg}`, 'error'); setIsSaving(false);
-        setSaveSuccess(false); return { success: false, error: errorMsg };
-      }
-    },
-    [currentProfileAddress, savedReactions, midiMap, addToast, loadSavedConfigList, isUpProviderStableForRead, configServiceRef]
-  );
-
+  /**
+   * Saves the current global event reactions to the host profile.
+   */
   const saveGlobalReactions = useCallback(async () => {
      const service = configServiceRef.current;
      const addressToSave = currentProfileAddress;
-     const isReady = !!service && isUpProviderStableForRead && service.checkReadyForWrite();
+     const isReady = !!service && configServiceInstanceReady && service.checkReadyForWrite();
      if (!isReady || !addressToSave) {
          const errorMsg = !isReady ? "Write service not ready." : "No profile address.";
          addToast(errorMsg, "error"); return { success: false, error: errorMsg };
      }
-     setIsSaving(true); setSaveError(null); setSaveSuccess(false);
+     setIsSavingGlobal(true); setGlobalSaveError(null); setGlobalSaveSuccess(false);
      try {
          const dataKey = RADAR_EVENT_REACTIONS_KEY; const dataToSave = savedReactions || {};
          const jsonString = JSON.stringify(dataToSave); const hexValue = stringToHex(jsonString);
          const result = await service.saveDataToKey(addressToSave, dataKey, hexValue);
          if (result.success) {
             addToast(`Global reactions saved successfully!`, 'success');
-            setSaveSuccess(true); setHasPendingChanges(false); 
+            setGlobalSaveSuccess(true); setHasPendingChanges(false); // Saving clears pending changes
          } else { throw new Error(result.error || "Save reactions failed."); }
-         setIsSaving(false); return result;
+         return result;
      } catch (error) {
-        const errorMsg = error.message || `Unknown reactions save error.`; setSaveError(errorMsg);
-        addToast(`Error saving reactions: ${errorMsg}`, 'error'); setIsSaving(false);
-        setSaveSuccess(false); return { success: false, error: errorMsg };
+        const errorMsg = error.message || `Unknown reactions save error.`; setGlobalSaveError(errorMsg);
+        addToast(`Error saving reactions: ${errorMsg}`, 'error');
+        setGlobalSaveSuccess(false); return { success: false, error: errorMsg };
+     } finally {
+        setIsSavingGlobal(false);
      }
-  }, [currentProfileAddress, savedReactions, addToast, isUpProviderStableForRead, configServiceRef]); 
+  }, [currentProfileAddress, savedReactions, addToast, configServiceInstanceReady, configServiceRef, setHasPendingChanges]); // Added setHasPendingChanges
 
+  /**
+   * Saves the current global MIDI map (for the host profile) to the host profile.
+   */
   const saveGlobalMidiMap = useCallback(async () => {
      const service = configServiceRef.current;
      const addressToSave = currentProfileAddress;
-     const isReady = !!service && isUpProviderStableForRead && service.checkReadyForWrite();
+     const isReady = !!service && configServiceInstanceReady && service.checkReadyForWrite();
      if (!isReady || !addressToSave) {
          const errorMsg = !isReady ? "Write service not ready." : "No profile address.";
          addToast(errorMsg, "error"); return { success: false, error: errorMsg };
      }
-    setIsSaving(true); setSaveError(null); setSaveSuccess(false);
+    setIsSavingGlobal(true); setGlobalSaveError(null); setGlobalSaveSuccess(false);
      try {
-        const dataKey = RADAR_MIDI_MAP_KEY; const dataToSave = midiMap || {};
+        const dataKey = RADAR_MIDI_MAP_KEY; const dataToSave = midiMap || {}; // Use midiMap from this hook's state
         const jsonString = JSON.stringify(dataToSave); const hexValue = stringToHex(jsonString);
         const result = await service.saveDataToKey(addressToSave, dataKey, hexValue);
         if (result.success) {
             addToast(`Global MIDI map saved successfully!`, 'success');
-            setSaveSuccess(true); setHasPendingChanges(false); 
+            setGlobalSaveSuccess(true); setHasPendingChanges(false); // Saving clears pending changes
          } else { throw new Error(result.error || "Save MIDI map failed."); }
-         setIsSaving(false); return result;
+         return result;
      } catch (error) {
-        const errorMsg = error.message || `Unknown MIDI save error.`; setSaveError(errorMsg);
-        addToast(`Error saving MIDI map: ${errorMsg}`, 'error'); setIsSaving(false);
-        setSaveSuccess(false); return { success: false, error: errorMsg };
+        const errorMsg = error.message || `Unknown MIDI save error.`; setGlobalSaveError(errorMsg);
+        addToast(`Error saving MIDI map: ${errorMsg}`, 'error');
+        setGlobalSaveSuccess(false); return { success: false, error: errorMsg };
+     } finally {
+        setIsSavingGlobal(false);
      }
-  }, [currentProfileAddress, midiMap, addToast, isUpProviderStableForRead, configServiceRef]); 
+  }, [currentProfileAddress, midiMap, addToast, configServiceInstanceReady, configServiceRef, setHasPendingChanges]); // Added setHasPendingChanges
 
-  const deleteNamedConfig = useCallback(
-    async (nameToDelete) => {
-      const service = configServiceRef.current;
-      const addressToDeleteFrom = currentProfileAddress;
-      const isReady = !!service && isUpProviderStableForRead && service.checkReadyForWrite();
-      if (!isReady || !addressToDeleteFrom) {
-          const errorMsg = !isReady ? "Write service not ready." : "No profile address.";
-          addToast(errorMsg, "error"); return { success: false, error: errorMsg };
-      }
-      if (!nameToDelete) {
-          addToast("No preset name provided to delete.", "warning"); return { success: false, error: "No name provided." };
-      }
-      setIsSaving(true); setSaveError(null); 
-      try {
-          const result = await service.deleteConfiguration(addressToDeleteFrom, nameToDelete);
-          if (result.success) {
-              addToast(`Preset '${nameToDelete}' deleted.`, 'success');
-              setSaveSuccess(true); 
-              await loadSavedConfigList(); 
-              if (currentConfigName === nameToDelete) {
-                await performLoad(addressToDeleteFrom, null, null, `delete_cleanup:${nameToDelete}`);
-              }
-          } else { throw new Error(result.error || "Delete operation failed."); }
-          setIsSaving(false); 
-          return result;
-      } catch (error) {
-          const errorMsg = error.message || "Unknown delete error."; setSaveError(errorMsg);
-          addToast(`Error deleting preset: ${errorMsg}`, 'error'); setIsSaving(false);
-          return { success: false, error: errorMsg };
-      }
-    },
-    [currentProfileAddress, performLoad, addToast, loadSavedConfigList, currentConfigName, isUpProviderStableForRead, configServiceRef], 
-  );
-
+  /**
+   * Updates a specific event reaction configuration in the local state.
+   */
   const updateSavedReaction = useCallback((eventType, reactionData) => {
       if (!eventType || !reactionData) return;
       setSavedReactions((prev) => ({ ...prev, [eventType]: reactionData }));
       setHasPendingChanges(true);
-  }, []);
+  }, [setHasPendingChanges]); // Added setHasPendingChanges
 
+  /**
+   * Removes an event reaction configuration from the local state.
+   */
   const deleteSavedReaction = useCallback((eventType) => {
     if (!eventType) return;
     setSavedReactions((prev) => {
       const newState = { ...prev };
-      if (newState[eventType]) { delete newState[eventType]; setHasPendingChanges(true); return newState; }
+      if (newState[eventType]) { 
+        delete newState[eventType]; 
+        setHasPendingChanges(true); 
+        return newState; 
+      }
       return prev;
     });
-  }, []);
+  }, [setHasPendingChanges]); // Added setHasPendingChanges
 
+  /**
+   * Replaces the entire MIDI map configuration in the local state (for the host profile).
+   */
   const updateMidiMap = useCallback((newMap) => {
-    setMidiMap(newMap); setHasPendingChanges(true);
-  }, []);
+    setMidiMap(newMap); 
+    setHasPendingChanges(true);
+  }, [setHasPendingChanges]); // Added setHasPendingChanges
 
-  const loadNamedConfig = useCallback((name) =>
-    performLoad(currentProfileAddress, name, null, `load:${name}`),
-    [performLoad, currentProfileAddress]
-  );
-
-  const loadDefaultConfig = useCallback(() =>
-    performLoad(currentProfileAddress, null, null, "load:default"),
-    [performLoad, currentProfileAddress]
-  );
-
+  // Memoize the final context state provided by this hook
   const contextState = useMemo(() => ({
       configServiceInstanceReady,
       configServiceRef,
-      currentConfigName,
-      loadedLayerConfigsFromPreset, 
-      loadedTokenAssignmentsFromPreset, 
       savedReactions,
-      midiMap,
-      isLoading,
-      loadError,
-      isSaving,
-      saveError,
-      saveSuccess,
+      midiMap, // Host profile's MIDI map
+      isSavingGlobal,
+      globalSaveError,
+      globalSaveSuccess,
       hasPendingChanges,
-      savedConfigList,
-      isInitiallyResolved,
-      configLoadNonce,
-      saveVisualPreset, 
+      setHasPendingChanges, // Expose setter for other contexts/components
       saveGlobalReactions,
       saveGlobalMidiMap,
-      loadNamedConfig,
-      loadDefaultConfig,
-      loadSavedConfigList,
-      deleteNamedConfig,
       updateSavedReaction,
       deleteSavedReaction,
       updateMidiMap,
-      setHasPendingChanges,
+      isLoadingGlobals, // New
+      globalLoadError,   // New
+      // Removed preset-related state and functions
   }), [
-      configServiceInstanceReady, configServiceRef, currentConfigName,
-      loadedLayerConfigsFromPreset, loadedTokenAssignmentsFromPreset,
-      savedReactions, midiMap, isLoading, loadError, isSaving,
-      saveError, saveSuccess, hasPendingChanges, savedConfigList, isInitiallyResolved,
-      configLoadNonce, saveVisualPreset, saveGlobalReactions, saveGlobalMidiMap,
-      loadNamedConfig, loadDefaultConfig,
-      loadSavedConfigList, deleteNamedConfig, updateSavedReaction,
-      deleteSavedReaction, updateMidiMap, setHasPendingChanges
+      configServiceInstanceReady, configServiceRef,
+      savedReactions, midiMap, isSavingGlobal, globalSaveError, globalSaveSuccess,
+      hasPendingChanges, setHasPendingChanges, saveGlobalReactions, saveGlobalMidiMap,
+      updateSavedReaction, deleteSavedReaction, updateMidiMap,
+      isLoadingGlobals, globalLoadError // New
   ]);
 
   return contextState;
