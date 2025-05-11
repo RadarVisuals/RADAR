@@ -376,7 +376,13 @@ const TokenSelectorOverlay = ({ isOpen, onClose, onTokenApplied, readOnly = fals
                     {/* Visitor/Read-Only Banner */}
                     {readOnly && (
                         <div className="visitor-banner">
-                           Viewing Mode - Selecting tokens is disabled.
+                           Viewing Mode - Selecting tokens is disabled. Add RADAR with{' '}
+                           <span style={{ color: '#61dafb' /* Or your preferred blue, e.g., 'blue' */ }}>
+                               <code>
+                                   {'<iframe src="https://radar725.netlify.app/" allow="microphone; midi; fullscreen"></iframe>'}
+                               </code>
+                           </span>
+                           {' '}to your profile's grid for full functionality.
                         </div>
                     )}
 
