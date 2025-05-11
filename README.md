@@ -42,7 +42,7 @@ Following this hackathon and team feedback, the official **RADAR 1.0 Beta** will
 ---
 
 > **Important Note on Embedding/Permissions:**
-> If you plan to embed RADAR (e.g., within another site or application using an iframe), ensure you grant the necessary permissions for full functionality. You will need to allow the following attributes:
+> If you plan to embed RADAR ensure you grant the necessary permissions for full functionality. You will need to allow the following attributes:
 > ```html
 > <iframe src="https://radar725.netlify.app/" allow="microphone; midi; fullscreen"></iframe>
 > ```
@@ -106,7 +106,7 @@ Beyond the core visualizer, RADAR is expanding with tools that further empower y
     *   **Concept:** Experience your original NFTs and your newly created "prepped" assets in an immersive, first-person 3D environment.
     *   **Walkable Gallery:** Navigate this virtual space (available under the "Grid" -> "Room 725" tab) to see your digital art come to life in a new dimension. It's a unique way to appreciate the transformation from original asset to RADAR-ready component and then to dynamic visual synthesis.
 
-These experimental features showcase the ongoing commitment to making RADAR a comprehensive platform for NFT interaction, creation, and exhibition. Dive into the "Grid" section of the app to explore these powerful additions!
+These experimental features showcase the ongoing commitment to making RADAR the most comprehensive platform for NFT interaction, creation, and exhibition. Dive into the "Grid" section of the app to explore these powerful additions!
 
 ---
 
