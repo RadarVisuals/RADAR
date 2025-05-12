@@ -41,10 +41,14 @@ import React, {
     layerConfigs: getDefaultLayerConfigs(),
     tokenAssignments: {},
     updateLayerConfig: () => {
-      console.warn("VisualConfigContext: updateLayerConfig called on default context");
+      if (import.meta.env.DEV) {
+        console.warn("VisualConfigContext: updateLayerConfig called on default context");
+      }
     },
     updateTokenAssignment: () => {
-      console.warn("VisualConfigContext: updateTokenAssignment called on default context");
+      if (import.meta.env.DEV) {
+        console.warn("VisualConfigContext: updateTokenAssignment called on default context");
+      }
     },
   };
   
@@ -59,39 +63,39 @@ import React, {
     } = usePresetManagement(); 
   
     const [layerConfigs, setLayerConfigsInternal] = useState(() => {
-      // Initialize with data from PresetManagement if available on first render
       return loadedLayerConfigsFromPreset || getDefaultLayerConfigs();
     });
   
     const [tokenAssignments, setTokenAssignmentsInternal] = useState(() => {
-      // Initialize with data from PresetManagement if available on first render
       return loadedTokenAssignmentsFromPreset || {};
     });
   
     useEffect(() => {
-      console.log(`[VisualConfigContext useEffect] Running. Nonce: ${configLoadNonce}.`);
-      console.log(`[VisualConfigContext useEffect] Received loadedLayerConfigsFromPreset:`, loadedLayerConfigsFromPreset ? JSON.parse(JSON.stringify(loadedLayerConfigsFromPreset)) : null);
-      console.log(`[VisualConfigContext useEffect] Received loadedTokenAssignmentsFromPreset:`, loadedTokenAssignmentsFromPreset ? JSON.parse(JSON.stringify(loadedTokenAssignmentsFromPreset)) : null);
+      if (import.meta.env.DEV) {
+        console.log(`[VisualConfigContext useEffect] Nonce: ${configLoadNonce}. Syncing with PresetManagement.`);
+        // console.log(`[VisualConfigContext useEffect] Received loadedLayerConfigsFromPreset:`, loadedLayerConfigsFromPreset ? JSON.parse(JSON.stringify(loadedLayerConfigsFromPreset)) : null);
+        // console.log(`[VisualConfigContext useEffect] Received loadedTokenAssignmentsFromPreset:`, loadedTokenAssignmentsFromPreset ? JSON.parse(JSON.stringify(loadedTokenAssignmentsFromPreset)) : null);
+      }
 
       if (loadedLayerConfigsFromPreset) {
-        console.log("[VisualConfigContext useEffect] Setting layerConfigs from preset.");
+        if (import.meta.env.DEV) console.log("[VisualConfigContext useEffect] Setting layerConfigs from preset.");
         setLayerConfigsInternal(loadedLayerConfigsFromPreset);
       } else {
-        console.log("[VisualConfigContext useEffect] No loadedLayerConfigsFromPreset, setting to default layers.");
+        if (import.meta.env.DEV) console.log("[VisualConfigContext useEffect] No loadedLayerConfigsFromPreset, setting to default layers.");
         setLayerConfigsInternal(getDefaultLayerConfigs());
       }
   
       if (loadedTokenAssignmentsFromPreset) {
-        console.log("[VisualConfigContext useEffect] Setting tokenAssignments from preset.");
+        if (import.meta.env.DEV) console.log("[VisualConfigContext useEffect] Setting tokenAssignments from preset.");
         setTokenAssignmentsInternal(loadedTokenAssignmentsFromPreset);
       } else {
-        console.log("[VisualConfigContext useEffect] No loadedTokenAssignmentsFromPreset, setting to {}.");
+        if (import.meta.env.DEV) console.log("[VisualConfigContext useEffect] No loadedTokenAssignmentsFromPreset, setting to {}.");
         setTokenAssignmentsInternal({});
       }
     }, [
-      configLoadNonce, // This is the primary trigger
-      loadedLayerConfigsFromPreset, // Dependency to get the latest value
-      loadedTokenAssignmentsFromPreset, // Dependency to get the latest value
+      configLoadNonce, 
+      loadedLayerConfigsFromPreset, 
+      loadedTokenAssignmentsFromPreset, 
     ]);
   
     const updateLayerConfig = useCallback(

@@ -4,7 +4,7 @@ import { useConfig } from '../context/ConfigContext.jsx';
 import { useUserSession } from '../context/UserSessionContext.jsx';
 import { useVisualConfig } from '../context/VisualConfigContext.jsx';
 import { usePresetManagement } from '../context/PresetManagementContext.jsx';
-import { useUpProvider } from '../context/UpProvider.jsx'; // Import useUpProvider
+import { useUpProvider } from '../context/UpProvider.jsx'; 
 
 /**
  * @typedef {object} VisualLayerState
@@ -38,6 +38,8 @@ export const useVisualLayerState = () => {
  * @property {() => Promise<{success: boolean, error?: string, config?: object | null}>} loadDefaultConfig - Loads the default configuration for the host profile.
  * @property {() => Promise<{success: boolean, list?: Array<{name: string}>, error?: string}>} loadSavedConfigList - Reloads the list of saved configurations from the host profile.
  * @property {(nameToDelete: string) => Promise<{success: boolean, error?: string}>} deleteNamedConfig - Deletes a named configuration from the host profile.
+ * @property {object | null} loadedLayerConfigsFromPreset - The layer configurations loaded from the most recent preset.
+ * @property {object | null} loadedTokenAssignmentsFromPreset - The token assignments loaded from the most recent preset.
  */
 
 export const usePresetManagementState = () => {
@@ -55,10 +57,13 @@ export const usePresetManagementState = () => {
     loadDefaultConfig: presetCtx.loadDefaultConfig,
     loadSavedConfigList: presetCtx.loadSavedConfigList,
     deleteNamedConfig: presetCtx.deleteNamedConfig,
+    loadedLayerConfigsFromPreset: presetCtx.loadedLayerConfigsFromPreset,
+    loadedTokenAssignmentsFromPreset: presetCtx.loadedTokenAssignmentsFromPreset,
   }), [
     presetCtx.currentConfigName, presetCtx.savedConfigList, presetCtx.isLoading, presetCtx.loadError,
     presetCtx.isSaving, presetCtx.saveError, presetCtx.saveSuccess, presetCtx.saveVisualPreset,
     presetCtx.loadNamedConfig, presetCtx.loadDefaultConfig, presetCtx.loadSavedConfigList, presetCtx.deleteNamedConfig,
+    presetCtx.loadedLayerConfigsFromPreset, presetCtx.loadedTokenAssignmentsFromPreset,
   ]);
 };
 
@@ -104,6 +109,9 @@ export const useInteractionSettingsState = () => {
 
 export const useProfileSessionState = () => {
   const sessionCtx = useUserSession();
+  if (import.meta.env.DEV) {
+    // console.log("[useProfileSessionState] Consumed sessionCtx from useUserSession:", sessionCtx);
+  }
   return useMemo(() => {
     const {
       hostProfileAddress,
@@ -115,10 +123,14 @@ export const useProfileSessionState = () => {
       togglePreviewMode,
     } = sessionCtx;
 
-    const canInteract = !isPreviewMode && (isHostProfileOwner || isRadarProjectAdmin);
+    if (import.meta.env.DEV) {
+      // console.log("[useProfileSessionState useMemo] hostProfileAddress from sessionCtx:", hostProfileAddress);
+    }
 
-    return {
-      currentProfileAddress: hostProfileAddress,
+    const canInteract = !isPreviewMode && (isHostProfileOwner || isRadarProjectAdmin);
+    
+    const returnValue = {
+      currentProfileAddress: hostProfileAddress, 
       visitorUPAddress: visitorProfileAddress,
       isProfileOwner: isHostProfileOwner,
       isVisitor: !isHostProfileOwner,
@@ -128,6 +140,10 @@ export const useProfileSessionState = () => {
       togglePreviewMode: togglePreviewMode,
       isParentAdmin: isRadarProjectAdmin,
     };
+    if (import.meta.env.DEV) {
+      // console.log("[useProfileSessionState useMemo] Returning value:", returnValue);
+    }
+    return returnValue;
   }, [sessionCtx]);
 };
 
@@ -160,7 +176,7 @@ export const usePendingChangesState = () => {
 export const useConfigStatusState = () => {
   const configCtx = useConfig();
   const presetCtx = usePresetManagement();
-  const upCtx = useUpProvider(); // Get UpProvider context
+  const upCtx = useUpProvider(); 
 
   const memoizedValue = useMemo(() => {
     const val = {
@@ -170,15 +186,14 @@ export const useConfigStatusState = () => {
       configLoadNonce: presetCtx.configLoadNonce,
       configServiceRef: configCtx.configServiceRef,
       loadError: presetCtx.loadError,
-      upInitializationError: upCtx.initializationError, // Source from upCtx
-      upFetchStateError: upCtx.fetchStateError,       // Source from upCtx
+      upInitializationError: upCtx.initializationError, 
+      upFetchStateError: upCtx.fetchStateError,       
     };
-    // console.log(`[DEBUG useConfigStatusState] Values from presetCtx -> isLoading: ${presetCtx.isLoading}, isInitiallyResolved: ${presetCtx.isInitiallyResolved}, configLoadNonce: ${presetCtx.configLoadNonce}. Returning: isLoading: ${val.isLoading}, isInitiallyResolved: ${val.isInitiallyResolved}`);
     return val;
   }, [
     presetCtx.isLoading, presetCtx.isInitiallyResolved, presetCtx.configLoadNonce, presetCtx.loadError,
     configCtx.configServiceInstanceReady, configCtx.configServiceRef,
-    upCtx.initializationError, upCtx.fetchStateError, // Add to dependencies
+    upCtx.initializationError, upCtx.fetchStateError, 
   ]);
 
   return memoizedValue;

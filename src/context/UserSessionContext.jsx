@@ -3,9 +3,8 @@ import React, { createContext, useContext, useState, useMemo, useCallback } from
 import PropTypes from 'prop-types';
 import { useUpProvider } from './UpProvider';
 import { isAddress } from 'viem';
-import { RADAR_OFFICIAL_ADMIN_ADDRESS } from '../config/global-config.js'; // Import the admin address
+import { RADAR_OFFICIAL_ADMIN_ADDRESS } from '../config/global-config.js'; 
 
-// JSDoc for the default context value shape
 /**
  * @typedef {object} UserSessionContextValue
  * @property {string | null} hostProfileAddress - The Universal Profile address being viewed/configured (from contextAccounts[0]).
@@ -42,15 +41,23 @@ export const UserSessionProvider = ({ children }) => {
   const [isPreviewMode, setIsPreviewMode] = useState(false);
 
   const hostProfileAddress = useMemo(() => {
-    return contextAccounts && contextAccounts.length > 0 && isAddress(contextAccounts[0])
+    const address = contextAccounts && contextAccounts.length > 0 && isAddress(contextAccounts[0])
       ? contextAccounts[0]
       : null;
+    if (import.meta.env.DEV) {
+      // console.log("[UserSessionProvider] Calculated hostProfileAddress:", address, "from contextAccounts:", contextAccounts);
+    }
+    return address;
   }, [contextAccounts]);
 
   const visitorProfileAddress = useMemo(() => {
-    return accounts && accounts.length > 0 && isAddress(accounts[0])
+    const address = accounts && accounts.length > 0 && isAddress(accounts[0])
       ? accounts[0]
       : null;
+    if (import.meta.env.DEV) {
+      // console.log("[UserSessionProvider] Calculated visitorProfileAddress:", address, "from accounts:", accounts);
+    }
+    return address;
   }, [accounts]);
 
   const isHostProfileOwner = useMemo(() => {
@@ -62,20 +69,16 @@ export const UserSessionProvider = ({ children }) => {
 
   const isRadarProjectAdmin = useMemo(() => {
     if (!visitorProfileAddress || !RADAR_OFFICIAL_ADMIN_ADDRESS) return false;
-    // Ensure RADAR_OFFICIAL_ADMIN_ADDRESS is a valid address before comparison
     if (!isAddress(RADAR_OFFICIAL_ADMIN_ADDRESS)) {
-        console.warn("[UserSessionContext] RADAR_OFFICIAL_ADMIN_ADDRESS is not a valid address. isRadarProjectAdmin will be false.");
+        if (import.meta.env.DEV) {
+            console.warn("[UserSessionContext] RADAR_OFFICIAL_ADMIN_ADDRESS is not a valid address. isRadarProjectAdmin will be false.");
+        }
         return false;
     }
     return visitorProfileAddress.toLowerCase() === RADAR_OFFICIAL_ADMIN_ADDRESS.toLowerCase();
   }, [visitorProfileAddress]);
 
   const canSaveToHostProfile = useMemo(() => {
-    // A user can save if they are the host profile owner OR if they are the RADAR project admin
-    // (assuming admin can save to any profile, or specific ones - for now, let's assume admin can save to the host if they are also the owner,
-    // or if admin has special override, which is not implemented yet. Sticking to owner for now for `canSaveToHostProfile`)
-    // The prompt implies `canSaveToHostProfile` is primarily about ownership of the *host* profile.
-    // Admin rights for *other* profiles would be a separate concern.
     return isHostProfileOwner && !isPreviewMode;
   }, [isHostProfileOwner, isPreviewMode]);
 
@@ -83,15 +86,21 @@ export const UserSessionProvider = ({ children }) => {
     setIsPreviewMode(prev => !prev);
   }, []);
 
-  const contextValue = useMemo(() => ({
-    hostProfileAddress,
-    visitorProfileAddress,
-    isHostProfileOwner,
-    isRadarProjectAdmin,
-    isPreviewMode,
-    canSaveToHostProfile,
-    togglePreviewMode,
-  }), [
+  const contextValue = useMemo(() => {
+    const val = {
+      hostProfileAddress,
+      visitorProfileAddress,
+      isHostProfileOwner,
+      isRadarProjectAdmin,
+      isPreviewMode,
+      canSaveToHostProfile,
+      togglePreviewMode,
+    };
+    if (import.meta.env.DEV) {
+      // console.log("[UserSessionProvider] Providing contextValue:", val);
+    }
+    return val;
+  }, [
     hostProfileAddress,
     visitorProfileAddress,
     isHostProfileOwner,

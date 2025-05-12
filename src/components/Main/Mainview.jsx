@@ -1,3 +1,4 @@
+// src/components/Main/Mainview.jsx
 import React, { useRef, useEffect, useCallback, useMemo } from "react";
 import PropTypes from "prop-types";
 
@@ -46,18 +47,41 @@ import { isAddress } from 'viem';
 // Styles
 import "./MainviewStyles/Mainview.css";
 
+/**
+ * Portal container node for rendering elements outside the main React tree (e.g., fullscreen FPS counter).
+ * @type {HTMLElement | null}
+ */
 const portalContainerNode = document.getElementById('portal-container');
 
+/**
+ * MainView is the central orchestrating component for the RADAR application.
+ * It integrates various custom hooks and contexts to manage:
+ * - Universal Profile connection and session state (`useUpProvider`, `useProfileSessionState`).
+ * - Visual layer configurations and token assignments (`useVisualLayerState`).
+ * - Preset loading, saving, and management (`usePresetManagementState`).
+ * - MIDI input, mapping, and pending action processing (`useMIDI`).
+ * - Audio analysis and reactivity (`useAudioVisualizer`).
+ * - LSP1 event listening from the blockchain and triggering visual reactions (`useLsp1Events`, `useVisualEffects`).
+ * - Canvas rendering lifecycle, including initialization, transitions, and error states (`useRenderLifecycle`).
+ * - Canvas container management, including resize and visibility observation (`useCanvasContainer`).
+ * - Overall UI state including active panels, overlays, and general UI visibility (`useUIState`).
+ * - Animation control for canvas elements (`useAnimationLifecycleManager`).
+ *
+ * It renders the core canvas structure (`CanvasContainerWrapper`) and the main UI overlay (`UIOverlay`),
+ * passing down necessary state and action callbacks to these and other child components like status indicators and FPS displays.
+ *
+ * @param {object} props - Component props.
+ * @param {string[]} [props.blendModes=BLEND_MODES] - An array of available blend mode strings for visual layers.
+ * @returns {JSX.Element} The rendered MainView component.
+ */
 const MainView = ({ blendModes = BLEND_MODES }) => {
-  useUpProvider();
+  useUpProvider(); // Initializes UP provider connection logic
 
+  // --- State from various contexts and custom hooks ---
   const { layerConfigs, tokenAssignments, updateLayerConfig, updateTokenAssignment } = useVisualLayerState();
   const { savedReactions, updateSavedReaction, deleteSavedReaction } = useInteractionSettingsState();
-  const { currentProfileAddress, isProfileOwner, canSave, isPreviewMode, isParentAdmin, isVisitor } = useProfileSessionState();
-  
-  // configLoadNonce is now sourced from useConfigStatusState
+  const { currentProfileAddress, isProfileOwner, canSave, isPreviewMode, isParentAdmin, isVisitor } = useProfileSessionState(); 
   const { isInitiallyResolved, configLoadNonce, loadError, upInitializationError, upFetchStateError, configServiceRef, isLoading: isConfigLoading } = useConfigStatusState();
-  
   const { 
     loadNamedConfig, 
     currentConfigName, 
@@ -65,31 +89,41 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     loadedLayerConfigsFromPreset,      
     loadedTokenAssignmentsFromPreset,  
   } = usePresetManagementState();
-
   const { pendingLayerSelect, pendingParamUpdate, clearPendingActions } = useMIDI();
   const notificationData = useNotifications();
   const { addNotification } = notificationData;
 
+  // --- Refs for DOM elements and mutable values ---
+  /** @type {React.RefObject<HTMLDivElement>} Ref for the main root div, used for fullscreen targeting. */
   const rootRef = useRef(null);
+  /** @type {React.RefObject<boolean>} Ref indicating if the component is currently mounted. */
   const isMountedRef = useRef(false);
+  /** @type {React.RefObject<boolean>} Ref indicating if a visual transition (e.g., preset load) is in progress. */
   const transitionInProgressRef = useRef(false);
+  /** @type {React.RefObject<Function | null>} Ref to the `resetLifecycle` function from `useRenderLifecycle`. */
   const resetLifecycleRef = useRef(null);
-  const canvasRef1 = useRef(null); const canvasRef2 = useRef(null); const canvasRef3 = useRef(null);
+  /** @type {React.RefObject<HTMLCanvasElement>} Refs for the three visual layer canvases. */
+  const canvasRef1 = useRef(null); 
+  const canvasRef2 = useRef(null); 
+  const canvasRef3 = useRef(null);
+  /** Memoized object mapping layer IDs to their canvas refs. */
   const canvasRefs = useMemo(() => ({ 1: canvasRef1, 2: canvasRef2, 3: canvasRef3 }), []);
 
+  // --- Canvas and rendering orchestration hooks ---
   const {
     managersReady, defaultImagesLoaded, managerInstancesRef,
     applyConfigurationsToManagers, applyTokenAssignmentsToManagers,
     stopCanvasAnimations, restartCanvasAnimations,
     redrawAllCanvases, handleCanvasResize, setCanvasLayerImage,
-  } = useCanvasOrchestrator({ configServiceRef, canvasRefs, configLoadNonce }); // Pass configLoadNonce
+  } = useCanvasOrchestrator({ configServiceRef, canvasRefs, configLoadNonce });
 
   const { processEffect, createDefaultEffect } = useVisualEffects(updateLayerConfig);
   const audioState = useAudioVisualizer();
   const { isAudioActive, audioSettings, handleAudioDataUpdate } = audioState;
-  const uiStateHook = useUIState('tab1');
+  const uiStateHook = useUIState('tab1'); 
   const { setActiveLayerTab } = uiStateHook;
 
+  /** Callback triggered by `useCanvasContainer` if canvas dimensions become zero. */
   const handleZeroDimensions = useCallback(() => {
     if (resetLifecycleRef.current && typeof resetLifecycleRef.current === 'function') resetLifecycleRef.current();
   }, []);
@@ -101,13 +135,17 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
          const currentlyFullscreen = !!document.fullscreenElement;
          if (!isVisible) { if (!currentlyFullscreen && !transitionInProgressRef.current && stopCanvasAnimations) stopCanvasAnimations(); }
          else { if (restartCanvasAnimations) restartCanvasAnimations(); }
-      }, [stopCanvasAnimations, restartCanvasAnimations]),
+      }, [stopCanvasAnimations, restartCanvasAnimations]), // These are stable callbacks from useCanvasOrchestrator
       onZeroDimensions: handleZeroDimensions,
   });
 
+  /** 
+   * Data and state from `useRenderLifecycle`, managing the visual rendering pipeline.
+   * @type {import('../../hooks/useRenderLifecycle').RenderLifecycleData} 
+   */
   const renderLifecycleData = useRenderLifecycle({
       managersReady, defaultImagesLoaded, isInitiallyResolved, hasValidDimensions,
-      isContainerObservedVisible, configLoadNonce, currentConfigName, currentProfileAddress,
+      isContainerObservedVisible, configLoadNonce, currentConfigName, currentProfileAddress, 
       layerConfigs,                       
       tokenAssignments,                 
       targetLayerConfigsForPreset: loadedLayerConfigsFromPreset,         
@@ -122,22 +160,37 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   });
   const { renderState, loadingStatusMessage, isStatusFadingOut, showStatusDisplay, showRetryButton, isTransitioning, isCanvasVisible, isAnimating, handleManualRetry, resetLifecycle } = renderLifecycleData;
 
+  // --- Lifecycle and State Synchronization Effects ---
   useEffect(() => { resetLifecycleRef.current = resetLifecycle; }, [resetLifecycle]);
   useEffect(() => { isMountedRef.current = true; return () => { isMountedRef.current = false; }; }, []);
   useAnimationLifecycleManager({ isMounted: isMountedRef.current, renderState, isContainerObservedVisible, isAnimating, isTransitioning, restartCanvasAnimations, stopCanvasAnimations });
   useEffect(() => { transitionInProgressRef.current = isTransitioning; }, [isTransitioning]);
 
+  /** Memoized boolean indicating whether the FPS counter should be displayed. */
   const showFpsCounter = useMemo(() => renderState === 'rendered' && isContainerObservedVisible, [renderState, isContainerObservedVisible]);
 
+  /**
+   * Callback to update a specific property of a layer's configuration.
+   * Propagates the change to the VisualConfigContext.
+   * @param {string|number} layerId - The ID of the layer to update.
+   * @param {string} key - The configuration key (property name) to update.
+   * @param {any} value - The new value for the property.
+   */
   const handleLayerPropChange = useCallback((layerId, key, value) => {
     if (updateLayerConfig) updateLayerConfig(String(layerId), key, value);
   }, [updateLayerConfig]);
 
+  /**
+   * Effect to process pending MIDI parameter updates and layer selections.
+   * When a MIDI message results in a pending update (from `useMIDI`), this effect
+   * scales the MIDI value to the parameter's range and applies it to the
+   * appropriate layer configuration or UI state (active layer tab).
+   */
   useEffect(() => {
     let processed = false;
     if (pendingParamUpdate) {
         const { layer, param, value: normalizedMidiValue } = pendingParamUpdate;
-        const manager = managerInstancesRef.current?.[String(layer)];
+        const manager = managerInstancesRef.current?.[String(layer)]; // managerInstancesRef from useCanvasOrchestrator
 
         if (manager) {
             const sliderConfig = sliderParams.find(p => p.prop === param);
@@ -172,6 +225,14 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     if (processed && clearPendingActions) clearPendingActions();
   }, [pendingParamUpdate, pendingLayerSelect, handleLayerPropChange, setActiveLayerTab, clearPendingActions, managerInstancesRef]);
 
+  /**
+   * Callback to handle applying a selected token (demo or owned) to a visual layer.
+   * It resolves token metadata (e.g., image URL from IPFS via LSP4) if necessary
+   * and then updates the corresponding canvas via `setCanvasLayerImage` and updates
+   * the `tokenAssignments` state in `VisualConfigContext`.
+   * @param {string|object} data - The token data. Can be a string (demo token key or direct URL) or an object for owned tokens.
+   * @param {string|number} layerId - The ID of the layer to apply the token to.
+   */
   const handleTokenApplied = useCallback(async (data, layerId) => {
     if (!isMountedRef.current || !setCanvasLayerImage || !configServiceRef.current) return;
     let idToSave = null; let srcToApply = null;
@@ -218,7 +279,13 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     if (updateTokenAssignment && idToSave !== null) updateTokenAssignment(String(layerId), idToSave);
   }, [updateTokenAssignment, setCanvasLayerImage, configServiceRef]);
 
-
+  /**
+   * Callback to handle incoming LSP1 events from `useLsp1Events`.
+   * It adds a notification to the system and triggers either a user-configured
+   * visual effect (if a reaction is defined for the event type) or a default
+   * visual effect.
+   * @param {object} event - The LSP1 event object.
+   */
   const handleEventReceived = useCallback((event) => {
     if (!isMountedRef.current || !event?.type) return;
     if (addNotification) addNotification(event);
@@ -244,22 +311,24 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     }
   }, [addNotification, savedReactions, processEffect, createDefaultEffect]);
 
-  useLsp1Events(currentProfileAddress, handleEventReceived);
+  useLsp1Events(currentProfileAddress, handleEventReceived); 
 
+  /** Memoized data object passed to `UIOverlay`, containing various configuration states. */
   const configDataForUIOverlay = useMemo(() => ({
     layerConfigs, tokenAssignments, savedReactions, currentConfigName, isConfigLoading,
-    canSave, isPreviewMode, isParentAdmin, isProfileOwner, isVisitor, currentProfileAddress,
+    canSave, isPreviewMode, isParentAdmin, isProfileOwner, isVisitor, currentProfileAddress, 
     blendModes, notifications: notificationData.notifications, unreadCount: notificationData.unreadCount, isTransitioning,
     isBaseReady: (managersReady && defaultImagesLoaded && isInitiallyResolved && hasValidDimensions && isContainerObservedVisible), 
     renderState,
   }), [
     layerConfigs, tokenAssignments, savedReactions, currentConfigName, isConfigLoading,
-    canSave, isPreviewMode, isParentAdmin, isProfileOwner, isVisitor, currentProfileAddress,
+    canSave, isPreviewMode, isParentAdmin, isProfileOwner, isVisitor, currentProfileAddress, 
     blendModes, notificationData.notifications, notificationData.unreadCount, isTransitioning,
     managersReady, defaultImagesLoaded, isInitiallyResolved, hasValidDimensions, isContainerObservedVisible, 
     renderState,
   ]);
 
+  /** Memoized actions object passed to `UIOverlay`, containing various callback functions. */
   const actionsForUIOverlay = useMemo(() => ({
     onLayerConfigChange: handleLayerPropChange,
     onSaveReaction: updateSavedReaction, onRemoveReaction: deleteSavedReaction, onPresetSelect: loadNamedConfig,
@@ -270,6 +339,7 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     enterFullscreen, notificationData.markAsRead, notificationData.clearAll, processEffect, handleTokenApplied
   ]);
 
+  // Handle critical UP initialization or state fetch errors by showing an error message.
   if (upInitializationError || upFetchStateError) {
     const msg = upInitializationError?.message || upFetchStateError?.message || "Unknown critical error initialising Universal Profile connection.";
     return (
@@ -305,7 +375,15 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
           passedSavedConfigList={presetSavedConfigList}
         />
         <StatusIndicator showStatusDisplay={showStatusDisplay} isStatusFadingOut={isStatusFadingOut} renderState={renderState} loadingStatusMessage={loadingStatusMessage} showRetryButton={showRetryButton} onManualRetry={handleManualRetry} />
-        <AudioAnalyzerWrapper isAudioActive={isAudioActive} managersReady={managersReady} handleAudioDataUpdate={handleAudioDataUpdate} layerConfigs={layerConfigs} audioSettings={audioSettings} configLoadNonce={configLoadNonce} managerInstancesRef={managerInstancesRef} />
+        <AudioAnalyzerWrapper 
+            isAudioActive={isAudioActive} 
+            managersReady={managersReady} 
+            handleAudioDataUpdate={handleAudioDataUpdate} 
+            layerConfigs={layerConfigs} 
+            audioSettings={audioSettings} 
+            configLoadNonce={configLoadNonce} 
+            managerInstancesRef={managerInstancesRef} 
+        />
       </div>
     </>
   );
