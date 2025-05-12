@@ -11,7 +11,7 @@ import {
   useInteractionSettingsState,
   useProfileSessionState,
   useConfigStatusState,
-  usePresetManagementState,
+  usePresetManagementState, 
 } from "../../hooks/configSelectors";
 import { useMIDI } from "../../context/MIDIContext";
 import { useRenderLifecycle } from '../../hooks/useRenderLifecycle';
@@ -24,7 +24,7 @@ import { useAnimationLifecycleManager } from '../../hooks/useAnimationLifecycleM
 // Components
 import ToastContainer from "../Notifications/ToastContainer";
 import UIOverlay from '../UI/UIOverlay';
-import { sliderParams } from '../Panels/EnhancedControlPanel'; // For MIDI scaling
+import { sliderParams } from '../Panels/EnhancedControlPanel'; 
 
 // New Child Components
 import CanvasContainerWrapper from '../MainViewParts/CanvasContainerWrapper';
@@ -54,8 +54,18 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   const { layerConfigs, tokenAssignments, updateLayerConfig, updateTokenAssignment } = useVisualLayerState();
   const { savedReactions, updateSavedReaction, deleteSavedReaction } = useInteractionSettingsState();
   const { currentProfileAddress, isProfileOwner, canSave, isPreviewMode, isParentAdmin, isVisitor } = useProfileSessionState();
+  
+  // configLoadNonce is now sourced from useConfigStatusState
   const { isInitiallyResolved, configLoadNonce, loadError, upInitializationError, upFetchStateError, configServiceRef, isLoading: isConfigLoading } = useConfigStatusState();
-  const { loadNamedConfig, currentConfigName, savedConfigList: presetSavedConfigList } = usePresetManagementState();
+  
+  const { 
+    loadNamedConfig, 
+    currentConfigName, 
+    savedConfigList: presetSavedConfigList,
+    loadedLayerConfigsFromPreset,      
+    loadedTokenAssignmentsFromPreset,  
+  } = usePresetManagementState();
+
   const { pendingLayerSelect, pendingParamUpdate, clearPendingActions } = useMIDI();
   const notificationData = useNotifications();
   const { addNotification } = notificationData;
@@ -72,7 +82,7 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     applyConfigurationsToManagers, applyTokenAssignmentsToManagers,
     stopCanvasAnimations, restartCanvasAnimations,
     redrawAllCanvases, handleCanvasResize, setCanvasLayerImage,
-  } = useCanvasOrchestrator({ configServiceRef, canvasRefs });
+  } = useCanvasOrchestrator({ configServiceRef, canvasRefs, configLoadNonce }); // Pass configLoadNonce
 
   const { processEffect, createDefaultEffect } = useVisualEffects(updateLayerConfig);
   const audioState = useAudioVisualizer();
@@ -98,7 +108,11 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   const renderLifecycleData = useRenderLifecycle({
       managersReady, defaultImagesLoaded, isInitiallyResolved, hasValidDimensions,
       isContainerObservedVisible, configLoadNonce, currentConfigName, currentProfileAddress,
-      layerConfigs, tokenAssignments, loadError, upInitializationError, upFetchStateError,
+      layerConfigs,                       
+      tokenAssignments,                 
+      targetLayerConfigsForPreset: loadedLayerConfigsFromPreset,         
+      targetTokenAssignmentsForPreset: loadedTokenAssignmentsFromPreset, 
+      loadError, upInitializationError, upFetchStateError,
       stopAllAnimations: stopCanvasAnimations,
       applyConfigurationsToManagers: applyConfigurationsToManagers,
       applyTokenAssignments: applyTokenAssignmentsToManagers,
@@ -113,9 +127,6 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   useAnimationLifecycleManager({ isMounted: isMountedRef.current, renderState, isContainerObservedVisible, isAnimating, isTransitioning, restartCanvasAnimations, stopCanvasAnimations });
   useEffect(() => { transitionInProgressRef.current = isTransitioning; }, [isTransitioning]);
 
-  // const isBaseReady = useMemo(() => managersReady && defaultImagesLoaded && isInitiallyResolved && hasValidDimensions && isContainerObservedVisible, [managersReady, defaultImagesLoaded, isInitiallyResolved, hasValidDimensions, isContainerObservedVisible]);
-  // shouldShowUI is removed as UIOverlay calculates this itself from configData
-  // const shouldShowUI = useMemo(() => isBaseReady || renderState === 'prompt_connect', [isBaseReady, renderState]); 
   const showFpsCounter = useMemo(() => renderState === 'rendered' && isContainerObservedVisible, [renderState, isContainerObservedVisible]);
 
   const handleLayerPropChange = useCallback((layerId, key, value) => {
@@ -139,10 +150,14 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
                 handleLayerPropChange(String(layer), param, scaledValue);
                 processed = true;
             } else {
-                // console.warn(`[MainView MIDI] No sliderConfig found for param: ${param}`);
+                 if (import.meta.env.DEV) {
+                   console.warn(`[MainView MIDI] No sliderConfig found for param: ${param}`);
+                 }
             }
         } else {
-            // console.warn(`[MainView MIDI] No manager found for layer: ${layer}`);
+             if (import.meta.env.DEV) {
+               console.warn(`[MainView MIDI] No manager found for layer: ${layer}`);
+             }
         }
     }
     if (pendingLayerSelect) {
@@ -190,9 +205,15 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
 
     if (srcToApply) {
       setCanvasLayerImage(String(layerId), srcToApply)
-        .catch(e => console.error(`[MV handleTokenApplied L${layerId}] setCanvasLayerImage failed for ${String(srcToApply).substring(0,60)}...:`, e));
+        .catch(e => {
+          if (import.meta.env.DEV) {
+            console.error(`[MV handleTokenApplied L${layerId}] setCanvasLayerImage failed for ${String(srcToApply).substring(0,60)}...:`, e);
+          }
+        });
     } else {
-        // console.warn(`[MV handleTokenApplied L${layerId}] No valid srcToApply derived for data:`, data);
+        if (import.meta.env.DEV) {
+          console.warn(`[MV handleTokenApplied L${layerId}] No valid srcToApply derived for data:`, data);
+        }
     }
     if (updateTokenAssignment && idToSave !== null) updateTokenAssignment(String(layerId), idToSave);
   }, [updateTokenAssignment, setCanvasLayerImage, configServiceRef]);
@@ -207,11 +228,19 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     if (matchingReactions.length > 0) {
       matchingReactions.forEach(reactionConfig => {
         if (processEffect) processEffect({ ...reactionConfig, originEvent: event })
-            .catch(e => console.error("[MainView] Error processing configured reaction:", e));
+            .catch(e => {
+              if (import.meta.env.DEV) {
+                console.error("[MainView] Error processing configured reaction:", e);
+              }
+            });
       });
     } else if (createDefaultEffect) {
       createDefaultEffect(event.type)
-        .catch(e => console.error("[MainView] Error creating default effect:", e));
+        .catch(e => {
+          if (import.meta.env.DEV) {
+            console.error("[MainView] Error creating default effect:", e);
+          }
+        });
     }
   }, [addNotification, savedReactions, processEffect, createDefaultEffect]);
 
@@ -221,13 +250,13 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     layerConfigs, tokenAssignments, savedReactions, currentConfigName, isConfigLoading,
     canSave, isPreviewMode, isParentAdmin, isProfileOwner, isVisitor, currentProfileAddress,
     blendModes, notifications: notificationData.notifications, unreadCount: notificationData.unreadCount, isTransitioning,
-    isBaseReady: (managersReady && defaultImagesLoaded && isInitiallyResolved && hasValidDimensions && isContainerObservedVisible), // Pass the derived isBaseReady
+    isBaseReady: (managersReady && defaultImagesLoaded && isInitiallyResolved && hasValidDimensions && isContainerObservedVisible), 
     renderState,
   }), [
     layerConfigs, tokenAssignments, savedReactions, currentConfigName, isConfigLoading,
     canSave, isPreviewMode, isParentAdmin, isProfileOwner, isVisitor, currentProfileAddress,
     blendModes, notificationData.notifications, notificationData.unreadCount, isTransitioning,
-    managersReady, defaultImagesLoaded, isInitiallyResolved, hasValidDimensions, isContainerObservedVisible, // Dependencies for isBaseReady
+    managersReady, defaultImagesLoaded, isInitiallyResolved, hasValidDimensions, isContainerObservedVisible, 
     renderState,
   ]);
 
@@ -273,7 +302,6 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
           audioState={audioState}
           configData={configDataForUIOverlay}
           actions={actionsForUIOverlay}
-          // shouldShowUI prop is removed here
           passedSavedConfigList={presetSavedConfigList}
         />
         <StatusIndicator showStatusDisplay={showStatusDisplay} isStatusFadingOut={isStatusFadingOut} renderState={renderState} loadingStatusMessage={loadingStatusMessage} showRetryButton={showRetryButton} onManualRetry={handleManualRetry} />

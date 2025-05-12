@@ -1,5 +1,6 @@
 // src/hooks/useRenderLifecycle.js
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import fallbackConfig from '../config/fallback-config.js'; // Import fallback for safety
 
 // Constants for timing and display messages
 const LOADING_FADE_DURATION = 600;
@@ -16,8 +17,10 @@ export function useRenderLifecycle(options) {
   const {
     managersReady, defaultImagesLoaded, isInitiallyResolved, hasValidDimensions,
     isContainerObservedVisible, configLoadNonce, currentConfigName, currentProfileAddress,
-    layerConfigs, 
-    tokenAssignments, 
+    layerConfigs, // This is from VisualConfigContext
+    tokenAssignments, // This is from VisualConfigContext
+    targetLayerConfigsForPreset, // New: definitive from PresetManagementContext for preset loads
+    targetTokenAssignmentsForPreset, // New: definitive from PresetManagementContext for preset loads
     loadError, upInitializationError, upFetchStateError,
     stopAllAnimations, applyConfigurationsToManagers,
     applyTokenAssignments, 
@@ -25,11 +28,9 @@ export function useRenderLifecycle(options) {
     restartCanvasAnimations,
   } = options;
 
-  // isLoading from PresetManagementContext, true until isInitiallyResolved is true or specific load starts
   const currentIsLoading = options.isLoading === undefined ? true : options.isLoading;
 
   const [renderState, setRenderStateInternal] = useState('initializing');
-  // Start with CONNECTING_MESSAGE
   const [loadingStatusMessage, setLoadingStatusMessageState] = useState(CONNECTING_MESSAGE); 
   const [isStatusFadingOut, setIsStatusFadingOut] = useState(false);
   const [isTransitioningInternal, setIsTransitioningInternal] = useState(false);
@@ -48,7 +49,9 @@ export function useRenderLifecycle(options) {
   const logStateChange = useCallback((newState, reason) => {
     setRenderStateInternal(prevState => {
       if (prevState !== newState) {
-        console.log(`%c[DEBUG RenderLifecycle] State CHANGE: ${prevState} -> ${newState} (Reason: ${reason})`, 'color: blue; font-weight: bold;');
+        if (import.meta.env.DEV) {
+          console.log(`%c[DEBUG RenderLifecycle] State CHANGE: ${prevState} -> ${newState} (Reason: ${reason})`, 'color: blue; font-weight: bold;');
+        }
         return newState;
       }
       return prevState;
@@ -56,11 +59,15 @@ export function useRenderLifecycle(options) {
   }, []);
 
   const logAction = useCallback((actionName, details = '') => {
-    console.log(`%c[DEBUG RenderLifecycle] Action: ${actionName}`, 'color: purple;', details);
+    if (import.meta.env.DEV) {
+      console.log(`%c[DEBUG RenderLifecycle] Action: ${actionName}`, 'color: purple;', details);
+    }
   }, []);
 
   const logCheck = useCallback((currentState, conditions) => {
+    if (import.meta.env.DEV) {
      console.log(`%c[DEBUG RenderLifecycle] State Check (${currentState}):`, 'color: #888;', JSON.parse(JSON.stringify(conditions || {})));
+    }
   }, []);
 
   useEffect(() => {
@@ -108,11 +115,15 @@ export function useRenderLifecycle(options) {
   const resetLifecycle = useCallback(() => {
       if (!isMountedRef.current) return;
       logAction(`!!! Resetting Lifecycle Triggered !!!`);
-      try { throw new Error("Reset Trace"); } catch (e) { console.warn(e.stack); }
+      try { throw new Error("Reset Trace"); } catch (e) { 
+        if (import.meta.env.DEV) {
+          console.warn(e.stack); 
+        }
+      }
 
       animationStateRef.current = 'pending_stop';
       logStateChange("initializing", "External Reset");
-      setLoadingStatusMessage(CONNECTING_MESSAGE); // Reset to connecting message
+      setLoadingStatusMessage(CONNECTING_MESSAGE); 
       setIsStatusFadingOut(false);
       lastAppliedNonceRef.current = 0;
       setIsTransitioningInternal(false);
@@ -122,7 +133,11 @@ export function useRenderLifecycle(options) {
       setTimeout(() => {
         if (isMountedRef.current && animationStateRef.current === 'pending_stop') {
           logAction(`Executing delayed animation stop after reset`);
-          if (stopAllAnimations) stopAllAnimations(); else console.error("stopAllAnimations function is missing in resetLifecycle!");
+          if (stopAllAnimations) stopAllAnimations(); else {
+            if (import.meta.env.DEV) {
+              console.error("stopAllAnimations function is missing in resetLifecycle!");
+            }
+          }
           animationStateRef.current = 'stopped';
         }
       }, CANVAS_FADE_DURATION);
@@ -150,8 +165,6 @@ export function useRenderLifecycle(options) {
 
   useEffect(() => {
     const currentState = renderState;
-    // console.log(`[DEBUG useRenderLifecycle main useEffect] Current State: ${currentState}, isInitiallyResolved: ${isInitiallyResolved}, isLoading (from PresetManagement): ${currentIsLoading}`);
-
     logCheck(currentState, {
       managersReady, defaultImagesLoaded, isInitiallyResolved, hasValidDimensions,
       isContainerObservedVisible, configLoadNonce, currentProfileAddress,
@@ -177,12 +190,10 @@ export function useRenderLifecycle(options) {
     } else if (!defaultImagesLoaded) {
         setLoadingStatusMessage("Loading defaults...");
         if (currentState !== 'initializing') logStateChange('initializing', 'Layout -> Init Wait Img');
-    } else if (!isInitiallyResolved) { // This condition will now hold longer
-        // If still loading the initial preset, show LOADING_CONFIG_MESSAGE
-        // If not specifically loading (e.g., just waiting for address), show CONNECTING_MESSAGE
+    } else if (!isInitiallyResolved) { 
         setLoadingStatusMessage(currentIsLoading ? LOADING_CONFIG_MESSAGE : CONNECTING_MESSAGE);
         if (currentState !== 'initializing') logStateChange('initializing', `Layout -> Init Wait Res (isInitiallyResolved: ${isInitiallyResolved}, isLoading: ${currentIsLoading})`);
-    } else { // isInitiallyResolved is true
+    } else { 
         if (hasNewConfigToApply) {
             if (currentState === 'rendered') {
                 logAction(`Rendered -> FADING_OUT (New config Nonce ${configLoadNonce})`);
@@ -194,7 +205,7 @@ export function useRenderLifecycle(options) {
                 setLoadingStatusMessage(`Applying '${configNameDisplay}'...`);
                 logStateChange('applying_config', `${currentState} -> Apply New/Fallback`);
             }
-        } else if (currentState !== 'rendered') { // All ready, no new nonce, but not yet rendered
+        } else if (currentState !== 'rendered') { 
             logAction(`${currentState} -> RENDERED (All systems ready, no *new* nonce-driven config)`);
             logStateChange('rendered', `${currentState} -> Rendered (No New Conf / Initial Fallback)`);
         }
@@ -203,24 +214,24 @@ export function useRenderLifecycle(options) {
       renderState, managersReady, defaultImagesLoaded, isInitiallyResolved, hasValidDimensions,
       isContainerObservedVisible, configLoadNonce, currentConfigName, currentProfileAddress,
       setLoadingStatusMessage, logStateChange, logAction, logCheck, resetLifecycle,
-      currentIsLoading // This is options.isLoading from PresetManagementContext
+      currentIsLoading
     ]);
 
 
   const prevAddressRef = useRef(currentProfileAddress);
   useEffect(() => {
-    if (isMountedRef.current && isInitiallyResolved) { // Only reset if already resolved once
+    if (isMountedRef.current && isInitiallyResolved) { 
       const previousAddress = prevAddressRef.current;
       const currentAddress = currentProfileAddress;
       if (previousAddress !== currentAddress) {
          if ( (previousAddress && !currentAddress) || (previousAddress && currentAddress && previousAddress !== currentAddress) ) {
               logAction(`Address Change Detected: ${previousAddress || 'null'} -> ${currentAddress || 'null'}. Resetting Lifecycle.`);
-              resetLifecycle(); // This will set isInitiallyResolved to false via PresetManagementContext
+              resetLifecycle(); 
          }
          prevAddressRef.current = currentAddress;
       }
     }
-     else if (prevAddressRef.current !== currentProfileAddress) { // Update ref even if not resolved yet
+     else if (prevAddressRef.current !== currentProfileAddress) { 
          prevAddressRef.current = currentProfileAddress;
      }
   }, [currentProfileAddress, isInitiallyResolved, resetLifecycle, logAction]);
@@ -232,7 +243,11 @@ export function useRenderLifecycle(options) {
 
       if (!ANIMATION_CONTINUE_DURING_TRANSITION) {
         logAction("Fading Out: Stopping animations.");
-        if (stopAllAnimations) stopAllAnimations(); else console.error("stopAllAnimations function is missing!");
+        if (stopAllAnimations) stopAllAnimations(); else {
+          if (import.meta.env.DEV) {
+            console.error("stopAllAnimations function is missing!");
+          }
+        }
         animationStateRef.current = 'stopped';
       } else {
         logAction("Fading Out: Keeping animations running during transition.");
@@ -251,7 +266,11 @@ export function useRenderLifecycle(options) {
           logAction(`Fade out complete. -> APPLYING_CONFIG.`);
           if (ANIMATION_CONTINUE_DURING_TRANSITION && animationStateRef.current === 'running_during_transition') {
              logAction("Fade Out Complete: Stopping transition animations before apply.");
-             if (stopAllAnimations) stopAllAnimations(); else console.error("stopAllAnimations function is missing!");
+             if (stopAllAnimations) stopAllAnimations(); else {
+               if (import.meta.env.DEV) {
+                 console.error("stopAllAnimations function is missing!");
+               }
+             }
              animationStateRef.current = 'stopped';
           }
           logStateChange('applying_config', 'Fade Out Complete');
@@ -265,14 +284,41 @@ export function useRenderLifecycle(options) {
 
   useEffect(() => {
     if (renderState !== 'applying_config') return;
-    if (applyConfigPromiseRef.current) { logAction(`Apply config already in progress.`); return; }
+    if (applyConfigPromiseRef.current) { 
+      if (import.meta.env.DEV) {
+        logAction(`Apply config already in progress.`); 
+      }
+      return; 
+    }
 
     logAction(`Starting configuration application process.`);
     setLoadingStatusMessage(APPLYING_MESSAGE);
 
-    const capturedLayerConfigs = layerConfigs;
-    const capturedTokenAssignments = tokenAssignments;
-    const capturedConfigLoadNonce = configLoadNonce;
+    const isApplyingForNewNonce = configLoadNonce > lastAppliedNonceRef.current;
+    let capturedLayerConfigsToApply;
+    let capturedTokenAssignmentsToApply;
+
+    if (isApplyingForNewNonce) {
+        logAction(`Applying NEW preset (Nonce ${configLoadNonce} vs LastApplied ${lastAppliedNonceRef.current}). Prioritizing targetLayerConfigsForPreset and targetTokenAssignmentsForPreset.`);
+        // Prioritize definitive preset data. Fallback to VisualConfigContext data, then to empty/default.
+        capturedLayerConfigsToApply = targetLayerConfigsForPreset ?? layerConfigs ?? fallbackConfig.layers ?? {};
+        capturedTokenAssignmentsToApply = targetTokenAssignmentsForPreset ?? tokenAssignments ?? fallbackConfig.tokenAssignments ?? {};
+        
+        if (import.meta.env.DEV) {
+            if (!targetLayerConfigsForPreset) {
+                console.warn("[RenderLifecycle] targetLayerConfigsForPreset was null/undefined during new preset load. Used fallback chain (current VisualConfig or default).", { targetLayerConfigsForPreset, layerConfigs });
+            }
+            if (!targetTokenAssignmentsForPreset) {
+                console.warn("[RenderLifecycle] targetTokenAssignmentsForPreset was null/undefined during new preset load. Used fallback chain (current VisualConfig or default).", { targetTokenAssignmentsForPreset, tokenAssignments });
+            }
+        }
+    } else {
+        logAction(`Re-applying current config or manual retry (Nonce ${configLoadNonce} same as LastApplied ${lastAppliedNonceRef.current}). Using layerConfigs from VisualConfigContext.`);
+        capturedLayerConfigsToApply = layerConfigs ?? fallbackConfig.layers ?? {};
+        capturedTokenAssignmentsToApply = tokenAssignments ?? fallbackConfig.tokenAssignments ?? {};
+    }
+    
+    const nonceForThisApplicationCycle = configLoadNonce;
 
     const applyAndDrawLogic = async () => {
         if (!isMountedRef.current || renderState !== 'applying_config') { logAction(`Core apply/draw aborted (unmounted or state changed).`); return; }
@@ -280,24 +326,29 @@ export function useRenderLifecycle(options) {
         let configApplySuccess = true, tokenApplySuccess = true, redrawSuccess = false;
         
         try {
-            logAction(`APPLYING_CONFIG Nonce: ${capturedConfigLoadNonce}`);
+            logAction(`APPLYING_CONFIG based on Nonce: ${nonceForThisApplicationCycle}`);
+            if (import.meta.env.DEV) {
+                console.log(`[RenderLifecycle applyAndDrawLogic] Using layerConfigsToApply:`, JSON.parse(JSON.stringify(capturedLayerConfigsToApply)));
+                console.log(`[RenderLifecycle applyAndDrawLogic] Using tokenAssignmentsToApply:`, JSON.parse(JSON.stringify(capturedTokenAssignmentsToApply)));
+            }
+            
             logAction(`Calling applyConfigurationsToManagers...`);
             if (typeof applyConfigurationsToManagers !== 'function') throw new Error("applyConfigurationsToManagers is not a function");
-            applyConfigurationsToManagers(capturedLayerConfigs);
+            applyConfigurationsToManagers(capturedLayerConfigsToApply);
             logAction(`Visual configs applied to managers.`);
 
             logAction(`Calling applyTokenAssignments...`);
             if (typeof applyTokenAssignments !== 'function') throw new Error("applyTokenAssignments is not a function");
-            await applyTokenAssignments(capturedTokenAssignments); 
+            await applyTokenAssignments(capturedTokenAssignmentsToApply); 
             logAction(`Token assignment process completed.`);
             tokenApplySuccess = true;
 
             await new Promise(resolve => setTimeout(resolve, FORCE_REPAINT_DELAY));
             if (!isMountedRef.current || renderState !== 'applying_config') { logAction(`Redraw aborted after delay (unmounted or state changed).`); return; }
 
-            logAction(`Calling redrawAllCanvases with current layerConfigs...`);
+            logAction(`Calling redrawAllCanvases with (again) capturedLayerConfigsToApply...`);
             if (typeof redrawAllCanvases !== 'function') throw new Error("redrawAllCanvases is not a function");
-            redrawSuccess = await redrawAllCanvases(capturedLayerConfigs);
+            redrawSuccess = await redrawAllCanvases(capturedLayerConfigsToApply);
             logAction(`redrawAllCanvases finished. Success: ${redrawSuccess}.`);
             if (!redrawSuccess) throw new Error("Redraw after config/token application failed.");
 
@@ -305,21 +356,21 @@ export function useRenderLifecycle(options) {
             logAction(`Error during apply/redraw: ${error.message}`);
             setLoadingStatusMessage(`⚠ Error applying config: ${error.message}`);
             configApplySuccess = false;
-            redrawSuccess = false; // Ensure this is false on any error in try block
+            redrawSuccess = false; 
         } finally {
             applyConfigPromiseRef.current = null;
         }
 
         if (isMountedRef.current && renderState === 'applying_config') {
             if (configApplySuccess && tokenApplySuccess && redrawSuccess) {
-                logAction(`Apply & Redraw SUCCESS (Nonce ${capturedConfigLoadNonce}). Starting animations...`);
+                logAction(`Apply & Redraw SUCCESS (Nonce ${nonceForThisApplicationCycle}). Starting animations...`);
                 animationStateRef.current = 'running';
                 if (typeof restartCanvasAnimations === 'function') { restartCanvasAnimations(); logAction(`Animations restarted.`); }
                 else { logAction(`ERROR: restartCanvasAnimations function is missing!`); }
 
                 logAction(`Moving to RENDERED state.`);
                 logStateChange('rendered', 'Apply Success');
-                lastAppliedNonceRef.current = capturedConfigLoadNonce;
+                lastAppliedNonceRef.current = nonceForThisApplicationCycle; 
             } else {
                 logAction(`Apply or Redraw FAILED (Config: ${configApplySuccess}, Token: ${tokenApplySuccess}, Redraw: ${redrawSuccess}). Moving to 'error' state.`);
                 logStateChange('error', 'Apply/Redraw Failed');
@@ -333,7 +384,8 @@ export function useRenderLifecycle(options) {
 
     applyConfigPromiseRef.current = applyAndDrawLogic();
   }, [
-      renderState, configLoadNonce, layerConfigs, tokenAssignments,
+      renderState, 
+      configLoadNonce, layerConfigs, tokenAssignments, targetLayerConfigsForPreset, targetTokenAssignmentsForPreset,
       applyConfigurationsToManagers, applyTokenAssignments, redrawAllCanvases, 
       restartCanvasAnimations, setLoadingStatusMessage, logStateChange, logAction
     ]);
@@ -377,7 +429,7 @@ export function useRenderLifecycle(options) {
         }
         if (!isStatusFadingOut && !isTransitioningInternal) {
             logAction(`Starting status message fade out.`);
-            setLoadingStatusMessage("Render complete."); // Or a more generic success message
+            setLoadingStatusMessage("Render complete."); 
             setIsStatusFadingOut(true);
             statusDisplayFadeTimeoutRef.current = setTimeout(() => {
                 if (isMountedRef.current) {
@@ -390,11 +442,10 @@ export function useRenderLifecycle(options) {
             logAction(`Transition started during status fade. Cancelling fade out.`);
             setIsStatusFadingOut(false);
         }
-    } else { // Not 'rendered'
+    } else { 
         if (isStatusFadingOut) { setIsStatusFadingOut(false); }
         if (transitionEndTimeoutRef.current) { clearTimeout(transitionEndTimeoutRef.current); transitionEndTimeoutRef.current = null; }
         if (isTransitioningInternal) { setIsTransitioningInternal(false); }
-        // Only hide canvas and stop animations if not in a transition or applying config state
         if (renderState !== 'applying_config' && renderState !== 'fading_out') {
             if (isCanvasVisibleInternal) setIsCanvasVisibleInternal(false);
             if (animationStateRef.current !== 'stopped') {
@@ -411,7 +462,6 @@ export function useRenderLifecycle(options) {
   }, [renderState, isTransitioningInternal, isCanvasVisibleInternal, isStatusFadingOut, setLoadingStatusMessage, restartCanvasAnimations, stopAllAnimations, logStateChange, logAction]);
 
   const showStatusDisplay = useMemo(() => {
-    // Show status if not rendered, or if rendered but transitioning, or if status is fading out
     return renderState !== 'rendered' || isTransitioningInternal || isStatusFadingOut;
   }, [renderState, isTransitioningInternal, isStatusFadingOut]);
 
@@ -419,7 +469,7 @@ export function useRenderLifecycle(options) {
     const isRecoverableError = renderState === 'error' &&
                               !upInitializationError &&
                               !upFetchStateError &&
-                              !(loadError && !isInitiallyResolved); // Only show retry if initial resolution failed due to loadError
+                              !(loadError && !isInitiallyResolved); 
     return isRecoverableError;
   }, [renderState, upInitializationError, upFetchStateError, loadError, isInitiallyResolved]);
 

@@ -38,37 +38,37 @@ class ValueInterpolator {
     setTarget(newTargetValue) {
         // Check if newTargetValue is a valid number
         if (typeof newTargetValue !== 'number' || isNaN(newTargetValue)) {
-            // console.warn(`ValueInterpolator: Invalid newTargetValue (${newTargetValue}). Snapping to current value or default.`);
-            // Snap to current or a sensible default if initialValue was also invalid.
-            this.snap(this.currentValue || 0);
+            if (import.meta.env.DEV) {
+                console.warn(`ValueInterpolator: Invalid newTargetValue (${newTargetValue}). Snapping to current value or default.`);
+            }
+            this.snap(typeof this.currentValue === 'number' && !isNaN(this.currentValue) ? this.currentValue : 0);
             return;
         }
 
-        const targetIsEffectivelySameAsCurrentTarget = Math.abs(this.targetValue - newTargetValue) < this.epsilon;
-        const currentValueIsEffectivelyAtNewTarget = Math.abs(this.currentValue - newTargetValue) < this.epsilon;
-
-        if (this.isInterpolating) { // Currently moving/interpolating
-            if (targetIsEffectivelySameAsCurrentTarget) {
-                // Already interpolating to this same target (or very close). Let it continue.
-                return;
+        // If not currently interpolating and already at the new target, just snap and return.
+        if (!this.isInterpolating && Math.abs(this.currentValue - newTargetValue) < this.epsilon) {
+            if (this.currentValue !== newTargetValue) { // Only snap if not exactly identical, to ensure exactness
+                 this.snap(newTargetValue);
             }
-            // If target has changed significantly, fall through to restart interpolation.
-        } else { // Not currently interpolating
-            if (currentValueIsEffectivelyAtNewTarget) {
-                // Not interpolating, and current value is already at (or very close to) the new target.
-                // Snap values to ensure exactness and don't start a new interpolation.
-                this.currentValue = newTargetValue;
-                this.targetValue = newTargetValue;
-                this.startValue = newTargetValue;
-                // isInterpolating remains false.
-                return;
-            }
-            // Not interpolating, and current value is not at the new target. Must start. Fall through.
+            return;
         }
 
-        this.startValue = this.currentValue; // Always start from the current visually perceived value.
+        // If already interpolating towards this exact (or very close) target, let it continue.
+        if (this.isInterpolating && Math.abs(this.targetValue - newTargetValue) < this.epsilon) {
+            return;
+        }
+
+        // If current value is already effectively the new target, but we weren't interpolating (or target changed slightly but within epsilon)
+        // snap to ensure exactness and potentially stop an old interpolation if target changed.
+        if (Math.abs(this.currentValue - newTargetValue) < this.epsilon) {
+            this.snap(newTargetValue); // Snap ensures isInterpolating is false.
+            return; // No new interpolation needed if already at the target.
+        }
+        
+        // Otherwise, start a new interpolation
+        this.startValue = this.currentValue; 
         this.targetValue = newTargetValue;
-        this.startTime = performance.now(); // Record start time for duration calculation.
+        this.startTime = performance.now(); 
         this.isInterpolating = true;
     }
 
@@ -77,16 +77,34 @@ class ValueInterpolator {
      * @param {number} newValue - The value to snap to.
      */
     snap(newValue) {
-        // Check if newValue is a valid number
         if (typeof newValue !== 'number' || isNaN(newValue)) {
-            // console.warn(`ValueInterpolator: Invalid snap value (${newValue}). Current value or 0 will be used.`);
-             // Fallback to current value, or 0 if current value is also problematic
-            this.currentValue = (typeof this.currentValue === 'number' && !isNaN(this.currentValue)) ? this.currentValue : 0;
-            this.targetValue = this.currentValue;
-            this.startValue = this.currentValue;
-            this.isInterpolating = false;
+            if (import.meta.env.DEV) {
+                console.warn(`ValueInterpolator: Invalid snap value (${newValue}). Current value or 0 will be used.`);
+            }
+            const fallbackValue = (typeof this.currentValue === 'number' && !isNaN(this.currentValue)) ? this.currentValue : 0;
+            if (this.isInterpolating || this.currentValue !== fallbackValue || this.targetValue !== fallbackValue) {
+                this.currentValue = fallbackValue;
+                this.targetValue = fallbackValue;
+                this.startValue = fallbackValue;
+                this.isInterpolating = false;
+            }
             return;
         }
+
+        // If not currently interpolating and already at the snap value, do nothing.
+        if (!this.isInterpolating && Math.abs(this.currentValue - newValue) < this.epsilon && this.currentValue === this.targetValue) {
+            // If already at the value and target is also this value, no need to re-snap.
+            // This helps prevent redundant state updates if snap is called multiple times with the same value.
+            if (this.currentValue !== newValue) { // Ensure exactness if within epsilon but not identical
+                this.currentValue = newValue;
+                this.targetValue = newValue; // Also ensure target is aligned
+                this.startValue = newValue;  // And start value
+            }
+            return;
+        }
+        
+        // If we are here, it means either we are interpolating, or the value has changed significantly,
+        // or we need to force an exact snap.
         this.currentValue = newValue;
         this.targetValue = newValue;
         this.startValue = newValue;
@@ -100,23 +118,18 @@ class ValueInterpolator {
      */
     update(currentTime) {
         if (!this.isInterpolating) {
-            return this.currentValue; // No update needed if not interpolating.
+            return this.currentValue; 
         }
 
         const elapsed = currentTime - this.startTime;
-        // Calculate progress, ensuring it stays within [0, 1].
-        // If duration is 0 or less, progress becomes 1, effectively snapping.
         let progress = this.duration > 0 ? Math.min(1, Math.max(0, elapsed / this.duration)) : 1;
 
-        // Apply easing (currently linear). Future: Could add easing functions here.
-        const easedProgress = progress;
+        const easedProgress = progress; // Linear for now
 
-        // Calculate the interpolated value.
         this.currentValue = lerp(this.startValue, this.targetValue, easedProgress);
 
-        // Check if interpolation is complete.
         if (progress >= 1) {
-            this.currentValue = this.targetValue; // Ensure it ends exactly at the target.
+            this.currentValue = this.targetValue; 
             this.isInterpolating = false;
         }
         return this.currentValue;
