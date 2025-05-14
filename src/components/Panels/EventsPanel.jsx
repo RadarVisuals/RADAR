@@ -6,7 +6,7 @@ import Panel from "./Panel"; // Local component
 import { EVENT_TYPE_MAP } from "../../config/global-config"; // Local config
 import { useToast } from "../../context/ToastContext"; // Local context
 
-import "./PanelStyles/EventsPanel.css"; // Local styles
+import "./PanelStyles/Eventspanel.css"; // Local styles
 
 /**
  * Generates a sorted list of event type options for a dropdown selector.
