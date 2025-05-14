@@ -1,38 +1,79 @@
 // src/components/Panels/InfoOverlay.jsx
-// FINAL VERSION v7: Using blue wordmark, adjusted structure slightly for consistency
-// Extended with IP Rights Tab
-// Refactored to remove list structures (ul, ol, li) and replace with paragraphs
-// Added Audio Reactivity Tab
-
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react"; // Removed useMemo as it's not used
 import PropTypes from "prop-types";
-import "./PanelStyles/InfoOverlay.css";
 
-import radarWordmarkBlue from "../../assets/branding/radarwordmarkblue.svg";
+import "./PanelStyles/InfoOverlay.css"; // Local styles
+import radarWordmarkBlue from "../../assets/branding/radarwordmarkblue.svg"; // Local asset
 
+/**
+ * @typedef {'initial' | 'fadeToContent' | 'exiting'} TransitionState - Possible transition states for the overlay.
+ */
+
+/**
+ * @typedef {'philosophy' | 'general' | 'layers' | 'audioReactivity' | 'events' | 'tokens' | 'configurations' | 'collections' | 'artists' | 'ipRights' | 'roadmap'} InfoTabId - Valid identifiers for tabs within the info overlay.
+ */
+
+/**
+ * @typedef {object} InfoOverlayProps
+ * @property {boolean} isOpen - Controls whether the overlay is currently open or closed.
+ * @property {() => void} onClose - Callback function invoked when the overlay requests to be closed (e.g., by clicking the close button or background).
+ */
+
+/**
+ * InfoOverlay: A modal-like component that displays detailed information about the RADAR application.
+ * It features tabbed navigation to organize content into sections like Philosophy, About, Controls, etc.
+ * The overlay includes fade-in and fade-out transitions for a smoother user experience.
+ *
+ * @param {InfoOverlayProps} props - The component's props.
+ * @returns {JSX.Element | null} The rendered InfoOverlay component, or null if it's not open and not transitioning out.
+ */
 const InfoOverlay = ({ isOpen, onClose }) => {
+  /** @type {[TransitionState, React.Dispatch<React.SetStateAction<TransitionState>>]} */
   const [transitionState, setTransitionState] = useState("initial");
-  const [activeTab, setActiveTab] = useState("philosophy");
+  /** @type {[InfoTabId, React.Dispatch<React.SetStateAction<InfoTabId>>]} */
+  const [activeTab, setActiveTab] = useState("philosophy"); // Default active tab
 
+  // Effect to manage transition states based on the `isOpen` prop
   useEffect(() => {
     if (isOpen) {
+      // When isOpen becomes true, start the fade-in transition
       setTransitionState("fadeToContent");
     } else {
+      // When isOpen becomes false, start the fade-out transition
       setTransitionState("exiting");
-      setTimeout(() => setTransitionState("initial"), 300);
+      // After the fade-out duration, reset to initial state (fully hidden)
+      const timer = setTimeout(() => setTransitionState("initial"), 300); // Matches CSS transition duration
+      return () => clearTimeout(timer);
     }
   }, [isOpen]);
 
-  const handleClose = () => {
+  /**
+   * Handles the close action, initiating the fade-out transition and then calling the `onClose` prop.
+   */
+  const handleClose = useCallback(() => {
     setTransitionState("exiting");
+    // Call the parent's onClose after the CSS transition duration
     setTimeout(onClose, 300);
-  };
+  }, [onClose]);
 
-  const handleBackgroundClick = (e) => {
-    if (e.target === e.currentTarget) handleClose();
-  };
+  /**
+   * Handles clicks on the overlay background, triggering a close action.
+   * Ensures that clicks within the content area do not close the overlay.
+   * @param {React.MouseEvent<HTMLDivElement>} e - The mouse event.
+   */
+  const handleBackgroundClick = useCallback((e) => {
+    if (e.target === e.currentTarget) { // Only close if the click is directly on the background
+      handleClose();
+    }
+  }, [handleClose]);
 
-  const renderTabContent = () => {
+  /**
+   * Renders the content for the currently active tab.
+   * @returns {JSX.Element} The JSX content for the active tab.
+   */
+  const renderTabContent = useCallback(() => {
+    // Content for each tab is defined here.
+    // Using paragraphs and headings as per the refactoring of the original list structures.
     switch (activeTab) {
       case "philosophy":
         return (
@@ -720,101 +761,148 @@ const InfoOverlay = ({ isOpen, onClose }) => {
           </div>
         );
     }
-  };
+  }, [activeTab]); // Dependency on activeTab to re-render content when tab changes
 
+  // Do not render the overlay at all if it's closed and not in the process of exiting.
+  // This prevents an invisible DOM element from potentially interfering with interactions.
   if (!isOpen && transitionState === "initial") {
-    return null; // Don't render if closed and not transitioning
+    return null;
   }
 
   return (
     <div
-      className={`overlay ${transitionState}`}
+      className={`overlay ${transitionState}`} // CSS classes control visibility and transitions
       onClick={handleBackgroundClick}
+      role="dialog" // Accessibility: Indicate it's a dialog
+      aria-modal="true" // Accessibility: Indicate it's a modal dialog
+      aria-labelledby="info-overlay-title" // Accessibility: Link to title
     >
-      <div className="overlay-content">
+      <div className="overlay-content" role="document"> {/* Accessibility: Content container */}
         <div className="overlay-header">
-          <h2 className="overlay-title">
+          <h2 className="overlay-title" id="info-overlay-title">
             <img
               src={radarWordmarkBlue}
-              alt="RADAR Logo"
+              alt="RADAR Application Information" // More descriptive alt text
               className="radar-logo-image"
             />
           </h2>
-          <button className="close-button" onClick={handleClose}>
+          <button
+            className="close-button"
+            onClick={handleClose}
+            aria-label="Close Information Overlay" // Accessibility
+            title="Close" // Tooltip
+          >
             ✕
           </button>
         </div>
         <div className="overlay-body">
-          <div className="info-overlay-tab-navigation">
+          <div className="info-overlay-tab-navigation" role="tablist" aria-orientation="vertical">
+            {/* Tab buttons with ARIA roles and properties for accessibility */}
             <button
               className={`info-overlay-tab-button ${activeTab === "philosophy" ? "active" : ""}`}
               onClick={() => setActiveTab("philosophy")}
+              role="tab"
+              aria-selected={activeTab === "philosophy"}
+              aria-controls="tab-panel-philosophy" // Link to corresponding tab panel
             >
               Philosophy
             </button>
             <button
               className={`info-overlay-tab-button ${activeTab === "general" ? "active" : ""}`}
               onClick={() => setActiveTab("general")}
+              role="tab"
+              aria-selected={activeTab === "general"}
+              aria-controls="tab-panel-general"
             >
               About
             </button>
             <button
               className={`info-overlay-tab-button ${activeTab === "layers" ? "active" : ""}`}
               onClick={() => setActiveTab("layers")}
+              role="tab"
+              aria-selected={activeTab === "layers"}
+              aria-controls="tab-panel-layers"
             >
               Controls
             </button>
             <button
               className={`info-overlay-tab-button ${activeTab === "audioReactivity" ? "active" : ""}`}
               onClick={() => setActiveTab("audioReactivity")}
+              role="tab"
+              aria-selected={activeTab === "audioReactivity"}
+              aria-controls="tab-panel-audioReactivity"
             >
               Audio Reactivity
             </button>
             <button
               className={`info-overlay-tab-button ${activeTab === "events" ? "active" : ""}`}
               onClick={() => setActiveTab("events")}
+              role="tab"
+              aria-selected={activeTab === "events"}
+              aria-controls="tab-panel-events"
             >
               Universal Receiver
             </button>
             <button
               className={`info-overlay-tab-button ${activeTab === "tokens" ? "active" : ""}`}
               onClick={() => setActiveTab("tokens")}
+              role="tab"
+              aria-selected={activeTab === "tokens"}
+              aria-controls="tab-panel-tokens"
             >
               Tokens
             </button>
             <button
               className={`info-overlay-tab-button ${activeTab === "configurations" ? "active" : ""}`}
               onClick={() => setActiveTab("configurations")}
+              role="tab"
+              aria-selected={activeTab === "configurations"}
+              aria-controls="tab-panel-configurations"
             >
               Configurations
             </button>
             <button
               className={`info-overlay-tab-button ${activeTab === "collections" ? "active" : ""}`}
               onClick={() => setActiveTab("collections")}
+              role="tab"
+              aria-selected={activeTab === "collections"}
+              aria-controls="tab-panel-collections"
             >
               Collections
             </button>
             <button
               className={`info-overlay-tab-button ${activeTab === "artists" ? "active" : ""}`}
               onClick={() => setActiveTab("artists")}
+              role="tab"
+              aria-selected={activeTab === "artists"}
+              aria-controls="tab-panel-artists"
             >
               Artists
             </button>
             <button
               className={`info-overlay-tab-button ${activeTab === "ipRights" ? "active" : ""}`}
               onClick={() => setActiveTab("ipRights")}
+              role="tab"
+              aria-selected={activeTab === "ipRights"}
+              aria-controls="tab-panel-ipRights"
             >
               IP Rights
             </button>
             <button
               className={`info-overlay-tab-button ${activeTab === "roadmap" ? "active" : ""}`}
               onClick={() => setActiveTab("roadmap")}
+              role="tab"
+              aria-selected={activeTab === "roadmap"}
+              aria-controls="tab-panel-roadmap"
             >
               Roadmap
             </button>
           </div>
 
-          <div className="tab-content">{renderTabContent()}</div>
+          {/* Tab content panels with ARIA properties */}
+          <div className="tab-content" id={`tab-panel-${activeTab}`} role="tabpanel" aria-labelledby={`tab-button-${activeTab}`}>
+            {renderTabContent()}
+          </div>
         </div>
       </div>
     </div>
@@ -822,8 +910,10 @@ const InfoOverlay = ({ isOpen, onClose }) => {
 };
 
 InfoOverlay.propTypes = {
+  /** Controls whether the overlay is currently open or closed. */
   isOpen: PropTypes.bool.isRequired,
+  /** Callback function invoked when the overlay requests to be closed. */
   onClose: PropTypes.func.isRequired,
 };
 
-export default InfoOverlay;
+export default React.memo(InfoOverlay); // Memoize for performance if props are stable

@@ -1,11 +1,17 @@
+// src/utils/helpers.js
+
 /**
- * Scales a normalized value (0-1) to a specified min/max range.
- * Handles potential non-numeric inputs gracefully.
+ * Scales a normalized value (expected to be between 0 and 1) to a specified
+ * minimum and maximum range using linear interpolation.
+ * Handles potential non-numeric inputs gracefully by attempting to convert them
+ * to numbers and returning the minimum of the range if any input is invalid.
+ * The normalized input value is clamped to the [0, 1] range before scaling.
  *
- * @param {number|string} normalizedValue - The input value (0-1).
+ * @param {number|string} normalizedValue - The input value, ideally between 0 and 1.
  * @param {number|string} min - The minimum value of the target range.
  * @param {number|string} max - The maximum value of the target range.
- * @returns {number} The scaled value, clamped within the range. Returns min on invalid input.
+ * @returns {number} The scaled value, clamped to be within the [min, max] range.
+ *                   Returns `min` (or 0 if `min` is also NaN) if any input is non-numeric.
  */
 export const scaleNormalizedValue = (normalizedValue, min, max) => {
   const norm = Number(normalizedValue);
@@ -14,14 +20,25 @@ export const scaleNormalizedValue = (normalizedValue, min, max) => {
 
   // Check for invalid inputs
   if (isNaN(norm) || isNaN(minimum) || isNaN(maximum)) {
-    console.warn(`[scaleNormalizedValue] Invalid input: n=${normalizedValue}, min=${min}, max=${max}. Returning minimum.`);
-    // Return minimum if any input is NaN, or default to 0 if minimum is also NaN
+    if (import.meta.env.DEV) {
+      console.warn(`[scaleNormalizedValue] Invalid input: normalizedValue=${normalizedValue}, min=${min}, max=${max}. Returning minimum.`);
+    }
+    // Return the numerical minimum if valid, otherwise 0 as a fallback.
     return isNaN(minimum) ? 0 : minimum;
   }
 
-  // Clamp the normalized value to the 0-1 range
+  // Clamp the normalized value to the 0-1 range to ensure correct scaling
   const clampedNorm = Math.max(0, Math.min(1, norm));
 
-  // Perform the linear interpolation
-  return minimum + clampedNorm * (maximum - minimum);
+  // Perform the linear interpolation: result = min + (normalized_clamped * (max - min))
+  const scaledValue = minimum + clampedNorm * (maximum - minimum);
+
+  // Ensure the final result is also clamped within the min/max of the target range,
+  // especially if min > max was provided (though logically incorrect, this handles it).
+  if (minimum <= maximum) {
+    return Math.max(minimum, Math.min(maximum, scaledValue));
+  } else {
+    // If min > max, the range is inverted. Clamp accordingly.
+    return Math.max(maximum, Math.min(minimum, scaledValue));
+  }
 };

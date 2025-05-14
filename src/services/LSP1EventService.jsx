@@ -1,3 +1,4 @@
+// src/services/LSP1EventService.js
 import {
   createPublicClient,
   webSocket,
@@ -9,6 +10,7 @@ import {
   parseAbiParameters,
 } from "viem";
 import { lukso } from "viem/chains";
+
 import { EVENT_TYPE_MAP, TYPE_ID_TO_EVENT_MAP } from "../config/global-config";
 
 // LSP1 ABI definition for UniversalReceiver event
@@ -36,6 +38,29 @@ const WSS_RPC_URL = import.meta.env.VITE_LUKSO_WSS_RPC_URL || DEFAULT_LUKSO_WSS_
 const MAX_RECENT_EVENTS = 10; // For duplicate detection
 
 /**
+ * @typedef {object} DecodedLsp1EventArgs
+ * @property {string} from - Address of the sender of the transaction.
+ * @property {bigint} value - Value sent with the transaction (in Wei).
+ * @property {string} typeId - Bytes32 type identifier of the received data.
+ * @property {string} receivedData - Bytes data received by the Universal Profile.
+ * @property {string} returnedValue - Bytes data returned by the Universal Profile.
+ */
+
+/**
+ * @typedef {object} ProcessedLsp1Event
+ * @property {string} id - Unique identifier for the processed event.
+ * @property {number} timestamp - Timestamp when the event was processed.
+ * @property {string} type - Human-readable event type name (e.g., 'lsp7_received', 'follower_gained').
+ * @property {string} typeId - The original bytes32 typeId of the event.
+ * @property {string} data - The raw `receivedData` from the event.
+ * @property {string} sender - The actual sender address, potentially decoded from `receivedData`.
+ * @property {string} value - The value from the event, converted to a string.
+ * @property {boolean} read - Read status, defaults to false.
+ * @property {object} decodedPayload - Additional decoded data, e.g., `followerAddress`.
+ */
+
+
+/**
  * Service class responsible for connecting to the LUKSO network via WebSocket,
  * listening for `UniversalReceiver` events on a specific profile address using
  * Viem's `watchContractEvent`, decoding the event arguments, and notifying
@@ -44,11 +69,11 @@ const MAX_RECENT_EVENTS = 10; // For duplicate detection
  * Also provides basic duplicate event detection and event simulation.
  */
 class LSP1EventService {
-  /** @type {Array<Function>} */
+  /** @type {Array<(event: ProcessedLsp1Event) => void>} */
   eventCallbacks = [];
   /** @type {import('viem').PublicClient | null} */
   viemClient = null;
-  /** @type {Function | null} Function returned by watchContractEvent to stop watching */
+  /** @type {(() => void) | null} Function returned by watchContractEvent to stop watching */
   unwatchEvent = null;
   /** @type {string | null} The address currently being listened to */
   listeningAddress = null;
@@ -74,6 +99,7 @@ class LSP1EventService {
 
   /**
    * Initializes the service (currently just sets a flag).
+   * @async
    * @returns {Promise<boolean>} True if initialized.
    */
   async initialize() {
@@ -91,80 +117,107 @@ class LSP1EventService {
   async setupEventListeners(address) {
     const logPrefix = `[LSP1 viem setup Addr:${address?.slice(0, 6)}]`;
     if (this.isSettingUp) {
-      console.warn(`${logPrefix} Setup already in progress. Aborting.`);
+      if (import.meta.env.DEV) {
+        console.warn(`${logPrefix} Setup already in progress. Aborting.`);
+      }
       return false;
     }
     if (!address || !isAddress(address)) {
-      console.warn(`${logPrefix} Invalid address provided. Aborting setup.`);
+      if (import.meta.env.DEV) {
+        console.warn(`${logPrefix} Invalid address provided. Aborting setup.`);
+      }
       this.shouldBeConnected = false;
       return false;
     }
 
+    // If already listening to the same address and watcher exists, consider it setup.
     if (this.listeningAddress?.toLowerCase() === address.toLowerCase() && this.unwatchEvent) {
       this.shouldBeConnected = true;
       return true;
     }
 
     this.isSettingUp = true;
-    this.shouldBeConnected = true;
-    this.cleanupListeners();
+    this.shouldBeConnected = true; // Assume connection will be successful until proven otherwise
+    this.cleanupListeners(); // Clean up previous before setting up new
     this.listeningAddress = address;
 
     try {
       const client = createPublicClient({
         chain: lukso,
-        transport: webSocket(WSS_RPC_URL),
+        transport: webSocket(WSS_RPC_URL, {
+            // Optional: Add retry logic or other WebSocket options here if needed
+            // e.g., retryCount: 5, retryDelay: 2000
+        }),
       });
       this.viemClient = client;
 
       this.unwatchEvent = this.viemClient.watchContractEvent({
-        address: this.listeningAddress,
+        address: this.listeningAddress, // Viem expects checksummed address or will checksum it
         abi: LSP1_ABI,
         eventName: "UniversalReceiver",
         onLogs: (logs) => {
-          console.log(`%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%`);
-          console.log(`%%% VIEM watchContractEvent RECEIVED ${logs.length} LOG(S)! %%%`);
-          console.log(`%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%`);
+          if (import.meta.env.DEV) {
+            console.log(`%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%`);
+            console.log(`%%% VIEM watchContractEvent RECEIVED ${logs.length} LOG(S)! %%%`);
+            console.log(`%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%`);
+          }
           logs.forEach((log) => {
-            console.log(`--- Processing Log ---`);
-            console.log(`  TX Hash: ${log.transactionHash}`);
-            console.log(`  Block: ${log.blockNumber}`);
-            console.log(`  Removed: ${log.removed}`);
-            console.log(`  Raw Data: ${log.data}`);
-            console.log(`  Raw Topics:`, log.topics);
+            if (import.meta.env.DEV) {
+                console.log(`--- Processing Log ---`);
+                console.log(`  TX Hash: ${log.transactionHash}`);
+                console.log(`  Block: ${log.blockNumber}`);
+                console.log(`  Removed: ${log.removed}`);
+                // console.log(`  Raw Data: ${log.data}`); // Usually very long
+                // console.log(`  Raw Topics:`, log.topics);
+            }
 
             if (log.removed) {
-              console.warn(`${logPrefix} Log marked as removed (reorg), skipping processing.`);
+              if (import.meta.env.DEV) {
+                console.warn(`${logPrefix} Log marked as removed (reorg), skipping processing.`);
+              }
               return;
             }
 
             try {
               const decodedLog = decodeEventLog({ abi: LSP1_ABI, data: log.data, topics: log.topics });
-              console.log(`  Decoded Event Name: ${decodedLog.eventName}`);
-              console.log(`  Decoded Args Object:`, decodedLog.args);
+              if (import.meta.env.DEV) {
+                console.log(`  Decoded Event Name: ${decodedLog.eventName}`);
+                // console.log(`  Decoded Args Object:`, decodedLog.args);
+              }
 
               if (decodedLog.eventName === "UniversalReceiver" && decodedLog.args) {
-                this.handleUniversalReceiver(decodedLog.args);
-              } else {
+                this.handleUniversalReceiver(/** @type {DecodedLsp1EventArgs} */ (decodedLog.args));
+              } else if (import.meta.env.DEV) {
                 console.warn(`${logPrefix} Decoded log name mismatch or args missing.`);
               }
             } catch (e) {
-              console.error(`%%% Error decoding filter log:`, e);
+              if (import.meta.env.DEV) {
+                console.error(`%%% Error decoding filter log:`, e);
+              }
             }
-            console.log(`--- End Log ---`);
+            if (import.meta.env.DEV) {
+                console.log(`--- End Log ---`);
+            }
           });
         },
         onError: (error) => {
-          console.error(`❌ [LSP1 viem watchContractEvent] Error:`, error);
+          if (import.meta.env.DEV) {
+            console.error(`❌ [LSP1 viem watchContractEvent] Error on address ${this.listeningAddress}:`, error);
+          }
           this.shouldBeConnected = false;
+          // Consider attempting to re-establish listener after a delay, or notify higher level
         },
       });
-
+      if (import.meta.env.DEV) {
+        console.log(`${logPrefix} Successfully started watching events.`);
+      }
       this.isSettingUp = false;
       return true;
     } catch (error) {
-      console.error(`${logPrefix} Error during viem client creation or watch setup:`, error);
-      this.cleanupListeners();
+      if (import.meta.env.DEV) {
+        console.error(`${logPrefix} Error during viem client creation or watch setup:`, error);
+      }
+      this.cleanupListeners(); // Ensure cleanup on error
       this.isSettingUp = false;
       this.shouldBeConnected = false;
       return false;
@@ -174,77 +227,108 @@ class LSP1EventService {
   /** Cleans up the Viem client and event listener. */
   cleanupListeners() {
     const logPrefix = "[LSP1 viem cleanup]";
-    this.shouldBeConnected = false;
-    this.isSettingUp = false;
+    this.shouldBeConnected = false; // Mark as not intended to be connected
+    this.isSettingUp = false; // Reset setup flag
 
     if (this.unwatchEvent) {
       try {
         this.unwatchEvent();
-        this.unwatchEvent = null;
+        if (import.meta.env.DEV) {
+            // console.log(`${logPrefix} Called unwatch function.`);
+        }
       } catch (e) {
-        console.error(`${logPrefix} Error calling unwatch function:`, e);
+        if (import.meta.env.DEV) {
+            console.error(`${logPrefix} Error calling unwatch function:`, e);
+        }
       }
+      this.unwatchEvent = null;
     }
+    // Note: Viem's public client does not have an explicit close/disconnect for WebSocket transport.
+    // It should be garbage collected when no longer referenced.
     this.viemClient = null;
     this.listeningAddress = null;
-    this.recentEvents = [];
+    this.recentEvents = []; // Clear recent events on cleanup
+    if (import.meta.env.DEV) {
+        // console.log(`${logPrefix} Listeners cleaned up.`);
+    }
   }
 
   /**
    * Handles decoded UniversalReceiver event arguments, decodes additional data if necessary,
    * checks for duplicates, and notifies listeners.
-   * @param {object} eventArgs - The decoded arguments from the UniversalReceiver event.
+   * @param {DecodedLsp1EventArgs} eventArgs - The decoded arguments from the UniversalReceiver event.
    */
   handleUniversalReceiver(eventArgs) {
     if (!eventArgs || typeof eventArgs !== "object" || !eventArgs.typeId) {
-      console.warn("‼️ [LSP1 handleUniversalReceiver - viem] Invalid or incomplete args received:", eventArgs);
+      if (import.meta.env.DEV) {
+        console.warn("‼️ [LSP1 handleUniversalReceiver - viem] Invalid or incomplete args received:", eventArgs);
+      }
       return;
     }
     const { from, value, typeId, receivedData } = eventArgs;
     const lowerCaseTypeId = typeId?.toLowerCase();
+
     if (!lowerCaseTypeId) {
-      console.warn("‼️ [LSP1 handleUniversalReceiver - viem] Missing typeId in args:", eventArgs);
+      if (import.meta.env.DEV) {
+        console.warn("‼️ [LSP1 handleUniversalReceiver - viem] Missing typeId in args:", eventArgs);
+      }
       return;
     }
+
     const stringValue = value?.toString() ?? "0";
     const eventTypeName = TYPE_ID_TO_EVENT_MAP[lowerCaseTypeId] || "unknown_event";
 
+    // Use a more robust identifier for duplicate checking if possible (e.g., tx hash + log index)
+    // For now, using the provided fields.
     if (this.isDuplicateEvent(typeId, from, stringValue, receivedData)) {
-      console.warn(`[LSP1 handleUniversalReceiver - viem] Duplicate event detected, ignoring: Type=${eventTypeName}`);
+      if (import.meta.env.DEV) {
+        console.warn(`[LSP1 handleUniversalReceiver - viem] Duplicate event detected, ignoring: Type=${eventTypeName}`);
+      }
       return;
     }
+    if (import.meta.env.DEV) {
+        console.log(`✅ [LSP1 handleUniversalReceiver - viem] Processing Unique Event: Type=${eventTypeName}, From=${from?.slice(0, 6)}, Value=${stringValue}, TypeId=${lowerCaseTypeId.slice(0, 8)}...`);
+    }
 
-    console.log(`✅ [LSP1 handleUniversalReceiver - viem] Processing Unique Event: Type=${eventTypeName}, From=${from?.slice(0, 6)}, Value=${stringValue}, TypeId=${lowerCaseTypeId.slice(0, 8)}...`);
-
-    let actualSender = from || "0xUNKNOWN";
+    let actualSender = from || "0xUNKNOWN"; // Default to 'from' field
     let decodedPayload = {};
 
     if ((eventTypeName === "lsp7_received" || eventTypeName === "lsp8_received") && typeof receivedData === "string" && receivedData !== "0x") {
         const abiToUse = eventTypeName === "lsp7_received" ? LSP7_RECEIVED_DATA_ABI : LSP8_RECEIVED_DATA_ABI;
         try {
-            const decodedData = decodeAbiParameters(abiToUse, receivedData);
-            if (decodedData && decodedData.length > 1 && isAddress(decodedData[1])) {
-                actualSender = getAddress(decodedData[1]);
-                console.log(`   Decoded actual sender from receivedData (${eventTypeName}): ${actualSender}`);
-            } else {
+            const decodedDataArray = decodeAbiParameters(abiToUse, receivedData);
+            // decodedDataArray[0] is caller, decodedDataArray[1] is 'from' (actual sender for token)
+            if (decodedDataArray && decodedDataArray.length > 1 && typeof decodedDataArray[1] === 'string' && isAddress(decodedDataArray[1])) {
+                actualSender = getAddress(decodedDataArray[1]); // Ensure checksummed
+                if (import.meta.env.DEV) {
+                    console.log(`   Decoded actual sender from receivedData (${eventTypeName}): ${actualSender}`);
+                }
+            } else if (import.meta.env.DEV) {
                 console.warn(`[LSP1 viem] Failed to decode sender from receivedData or decoded data invalid for ${eventTypeName}. Data: ${receivedData}`);
             }
         } catch (decodeError) {
-            console.error(`[LSP1 viem] Error decoding receivedData for ${eventTypeName}:`, decodeError, `Data: ${receivedData}`);
+            if (import.meta.env.DEV) {
+                console.error(`[LSP1 viem] Error decoding receivedData for ${eventTypeName}:`, decodeError, `Data: ${receivedData}`);
+            }
         }
     }
 
-    if ((eventTypeName === "follower_gained" || eventTypeName === "follower_lost") && typeof receivedData === "string" && receivedData.length >= 42) {
+    if ((eventTypeName === "follower_gained" || eventTypeName === "follower_lost") && typeof receivedData === "string" && receivedData.length >= 42) { // "0x" + 40 hex chars for address
       try {
-        const followerAddr = getAddress(slice(receivedData, -20));
-        if (isAddress(followerAddr)) {
+        // Assuming follower address is the last 20 bytes of receivedData
+        const followerAddr = getAddress(slice(receivedData, -20)); // getAddress will checksum
+        if (isAddress(followerAddr)) { // Redundant check as getAddress throws, but safe
           decodedPayload.followerAddress = followerAddr;
-          console.log(`   Decoded follower/unfollower address: ${followerAddr}`);
-        } else {
+          if (import.meta.env.DEV) {
+            console.log(`   Decoded follower/unfollower address: ${followerAddr}`);
+          }
+        } else if (import.meta.env.DEV) { // Should not be reached if getAddress works
           console.warn("[LSP1 viem] Follower event data format invalid or address extraction failed:", receivedData);
         }
       } catch (e) {
-        console.error("[LSP1 viem] Follower address decode/checksum error:", e, "Data:", receivedData);
+        if (import.meta.env.DEV) {
+            console.error("[LSP1 viem] Follower address decode/checksum error:", e, "Data:", receivedData);
+        }
       }
     }
 
@@ -262,7 +346,14 @@ class LSP1EventService {
     this.notifyEventListeners(eventObj);
   }
 
-  /** Basic duplicate event detection based on recent event identifiers. */
+  /**
+   * Basic duplicate event detection based on recent event identifiers.
+   * @param {string} typeId - The typeId of the event.
+   * @param {string} from - The 'from' address of the event.
+   * @param {string} value - The 'value' of the event.
+   * @param {string} data - The 'receivedData' of the event.
+   * @returns {boolean} True if the event is considered a duplicate, false otherwise.
+   */
   isDuplicateEvent(typeId, from, value, data) {
     const eventIdentifier = `${typeId}-${from}-${value}-${data || "0x"}`;
     if (this.recentEvents.includes(eventIdentifier)) {
@@ -270,24 +361,24 @@ class LSP1EventService {
     }
     this.recentEvents.push(eventIdentifier);
     if (this.recentEvents.length > MAX_RECENT_EVENTS) {
-      this.recentEvents.shift();
+      this.recentEvents.shift(); // Keep the list bounded
     }
     return false;
   }
 
   /**
    * Registers a callback function to be executed when an event is received.
-   * @param {Function} callback - The function to register.
-   * @returns {Function} An unsubscribe function.
+   * @param {(event: ProcessedLsp1Event) => void} callback - The function to register.
+   * @returns {() => void} An unsubscribe function.
    */
   onEvent(callback) {
     if (typeof callback === "function") {
       if (!this.eventCallbacks.includes(callback)) {
         this.eventCallbacks.push(callback);
-      } else {
+      } else if (import.meta.env.DEV) {
         console.warn("[LSP1 viem] Attempted duplicate event callback registration.");
       }
-    } else {
+    } else if (import.meta.env.DEV) {
       console.error("[LSP1 viem] Invalid callback type passed to onEvent:", typeof callback);
     }
     return () => {
@@ -295,65 +386,105 @@ class LSP1EventService {
     };
   }
 
-  /** Notifies all registered listeners about a new event. */
+  /**
+   * Notifies all registered listeners about a new event.
+   * @param {ProcessedLsp1Event} event - The processed event object.
+   */
   notifyEventListeners(event) {
     if (!event || !event.type) {
-      console.error("[LSP1 viem notifyEventListeners] Attempted to notify with invalid event object:", event);
+      if (import.meta.env.DEV) {
+        console.error("[LSP1 viem notifyEventListeners] Attempted to notify with invalid event object:", event);
+      }
       return;
     }
-    if (this.eventCallbacks.length === 0) {
+    if (this.eventCallbacks.length === 0 && import.meta.env.DEV) {
       console.warn(`[LSP1 viem] No listeners registered to notify about event type '${event.type}'.`);
-      return;
+      // return; // Allow to proceed even if no listeners, for consistency
     }
-    console.log(`[LSP1 viem] Notifying ${this.eventCallbacks.length} listeners about event type '${event.type}'. Event ID: ${event.id}`);
+    if (import.meta.env.DEV) {
+        console.log(`[LSP1 viem] Notifying ${this.eventCallbacks.length} listeners about event type '${event.type}'. Event ID: ${event.id}`);
+    }
+    // Iterate over a copy in case a callback modifies the array (e.g., unsubscribes)
     this.eventCallbacks.slice().forEach((callback) => {
       try {
         callback(event);
       } catch (e) {
-        console.error(`[LSP1 viem] Error executing callback for event type ${event.type} (ID: ${event.id}):`, e);
+        if (import.meta.env.DEV) {
+            console.error(`[LSP1 viem] Error executing callback for event type ${event.type} (ID: ${event.id}):`, e);
+        }
       }
     });
   }
 
-  /** Simulates receiving an event for testing purposes. */
+  /**
+   * Simulates receiving an event for testing purposes.
+   * @async
+   * @param {string} eventType - The human-readable event type or typeId to simulate.
+   * @returns {Promise<boolean>} True if simulation was processed, false on error.
+   */
   async simulateEvent(eventType) {
     if (!eventType || typeof eventType !== "string") {
-      console.error("[LSP1 Sim - viem] Invalid eventType:", eventType);
+      if (import.meta.env.DEV) {
+        console.error("[LSP1 Sim - viem] Invalid eventType:", eventType);
+      }
       return false;
     }
     const normalizedEventType = eventType.toLowerCase().replace(/[-_\s]/g, "");
-    let typeIdEntry = Object.entries(EVENT_TYPE_MAP).find(
-      ([key]) => key.toLowerCase().replace(/[-_\s]/g, "") === normalizedEventType // Fixed: Only need key here
+
+    let typeId;
+    let readableName;
+
+    // Try to find by human-readable name first
+    const typeIdEntryByName = Object.entries(EVENT_TYPE_MAP).find(
+      ([key]) => key.toLowerCase().replace(/[-_\s]/g, "") === normalizedEventType
     );
-    if (!typeIdEntry) {
-      const foundByTypeId = Object.entries(TYPE_ID_TO_EVENT_MAP).find(
-        ([id]) => id.toLowerCase() === normalizedEventType // Fixed: Only need id here
+
+    if (typeIdEntryByName) {
+      readableName = typeIdEntryByName[0];
+      typeId = typeIdEntryByName[1];
+    } else {
+      // Try to find by typeId
+      const typeIdEntryById = Object.entries(TYPE_ID_TO_EVENT_MAP).find(
+        ([id]) => id.toLowerCase() === normalizedEventType // Assuming normalizedEventType could be a typeId
       );
-      if (foundByTypeId) {
-        typeIdEntry = [foundByTypeId[1], foundByTypeId[0]];
+      if (typeIdEntryById) {
+        typeId = typeIdEntryById[0];
+        readableName = typeIdEntryById[1];
       } else {
-        console.error("[LSP1 Sim - viem] Unknown event type/ID:", eventType);
+        if (import.meta.env.DEV) {
+            console.error("[LSP1 Sim - viem] Unknown event type/ID:", eventType);
+        }
         return false;
       }
     }
-    const typeId = typeIdEntry[1];
-    const readableName = typeIdEntry[0];
-    const mockValue = readableName.includes("lyx") ? 1000000000000000000n : 0n;
-    const mockSender = "0xSimulationSender0000000000000000000000";
+
+    const mockValue = readableName.includes("lyx") ? 1000000000000000000n : 0n; // 1 LYX or 0
+    const mockSender = "0xSimulationSender0000000000000000000000"; // Placeholder
     let mockReceivedData = "0x";
+
     if (readableName === "follower_gained" || readableName === "follower_lost") {
+      // Example follower address
       const mockFollowerAddress = "0xd8dA6Bf26964AF9D7eed9e03e53415D37aA96045";
+      // Simulate raw bytes data for follower events (address directly)
       mockReceivedData = mockFollowerAddress.toLowerCase();
     }
+    // Add more specific mockReceivedData for LSP7/LSP8 if needed for thorough simulation
 
     const simulatedArgs = {
-      from: mockSender, value: mockValue, typeId: typeId, receivedData: mockReceivedData, returnedValue: "0x",
+      from: mockSender,
+      value: mockValue,
+      typeId: typeId,
+      receivedData: mockReceivedData,
+      returnedValue: "0x", // Typically not used for notifications
     };
+
     try {
       this.handleUniversalReceiver(simulatedArgs);
       return true;
     } catch (error) {
-      console.error(`[LSP1 Sim - viem] Error during handleUniversalReceiver call:`, error);
+      if (import.meta.env.DEV) {
+        console.error(`[LSP1 Sim - viem] Error during handleUniversalReceiver call:`, error);
+      }
       return false;
     }
   }

@@ -1,24 +1,64 @@
-import React, { useEffect, useRef, useMemo } from "react"; // Added useMemo
+// src/components/LayerConfiguration.jsx
+import React, { useEffect, useRef, useMemo, useCallback } from "react";
 import PropTypes from "prop-types";
-import { useProfileSessionState } from "../../hooks/configSelectors";
-import { useMIDI } from "../../context/MIDIContext";
-import { midiIcon, rotateIcon } from "../../assets";
-import "./LayerConfigurationStyles/LayerConfiguration.css";
+
+import { useProfileSessionState } from "../../hooks/configSelectors"; // Local hook
+import { useMIDI } from "../../context/MIDIContext"; // Local context
+
+// Import sliderParams from EnhancedControlPanel or a shared constants file
+import { sliderParams } from "./EnhancedControlPanel"; // Assuming it's exported from here or a shared util
+
+import { midiIcon, rotateIcon } from "../../assets"; // Local assets
+
+import "./LayerConfigurationStyles/LayerConfiguration.css"; // Local styles
+
+/**
+ * Formats a numerical value to a string with a specified number of decimal places.
+ * Returns a default string if the input is not a valid number.
+ * @param {number|string|null|undefined} value - The value to format.
+ * @param {number} [decimals=1] - The number of decimal places to use.
+ * @returns {string} The formatted string representation of the value.
+ */
+const formatValue = (value, decimals = 1) => {
+  const numValue = Number(value);
+  if (value === undefined || value === null || isNaN(numValue)) {
+    return "0".padEnd(decimals > 0 ? decimals + 2 : 1, "0");
+  }
+  return numValue.toFixed(decimals);
+};
+
+
+/**
+ * @typedef {object} LayerConfigValue
+ * @property {number|string|boolean|object} [enabled] - Whether the layer is enabled.
+ * @property {string} [blendMode] - CSS mix-blend-mode.
+ * @property {number} [opacity] - Layer opacity (0-1).
+ * @property {number} [size] - Size multiplier.
+ * @property {number} [speed] - Animation speed.
+ * @property {number} [drift] - Drift magnitude.
+ * @property {number} [driftSpeed] - Drift oscillation speed.
+ * @property {number} [angle] - Rotation angle in degrees.
+ * @property {number} [xaxis] - X-axis offset.
+ * @property {number} [yaxis] - Y-axis offset.
+ * @property {number} [direction] - Animation direction (-1 or 1).
+ * @property {object} [driftState] - Internal state for drift effect.
+ */
+
+/**
+ * @typedef {object} LayerConfigurationProps
+ * @property {Object.<string|number, LayerConfigValue>} layerConfigs - An object containing configurations for all layers, keyed by layer ID.
+ * @property {(layerId: number, key: string, value: any) => void} onLayerConfigChange - Callback to update a layer's configuration property.
+ * @property {string[]} [blendModes=[]] - Array of available blend mode strings for the blend mode selector.
+ * @property {number} [activeLayer=1] - The ID of the currently active layer being controlled (e.g., 1, 2, or 3).
+ * @property {boolean} [readOnly=false] - Prop to explicitly set read-only mode. This can be overridden by session state (e.g., if user is not owner or in preview mode).
+ * @property {boolean} [showMidiConnect=true] - Whether to show the MIDI connection status and related controls.
+ */
 
 /**
  * LayerConfiguration component provides UI controls for manipulating parameters
- * of a single visual layer (e.g., speed, size, opacity, position, blend mode).
- * It integrates with the MIDIContext to allow MIDI mapping for each parameter
- * and for layer selection. The component's editability is determined by the
- * user's session status (owner, visitor, admin) and preview mode.
+ * of a single visual layer.
  *
- * @param {object} props - Component props.
- * @param {object} props.layerConfigs - An object containing configurations for all layers, keyed by layer ID.
- * @param {(layerId: number, key: string, value: any) => void} props.onLayerConfigChange - Callback to update a layer's configuration.
- * @param {string[]} [props.blendModes=[]] - Array of available blend mode strings.
- * @param {number} [props.activeLayer=1] - The ID of the currently active layer being controlled.
- * @param {boolean} [props.readOnly=false] - Prop to explicitly set read-only mode (overridden by session state).
- * @param {boolean} [props.showMidiConnect=true] - Whether to show the MIDI connection status and controls.
+ * @param {LayerConfigurationProps} props - Component props.
  * @returns {JSX.Element} The rendered LayerConfiguration panel.
  */
 const LayerConfiguration = ({
@@ -29,7 +69,8 @@ const LayerConfiguration = ({
   readOnly: propReadOnly = false,
   showMidiConnect = true,
 }) => {
-  const { isVisitor, isParentAdmin, isPreviewMode } = useProfileSessionState();
+  // isPreviewMode is not directly used, canInteract already considers it.
+  const { isVisitor, isParentAdmin, canInteract } = useProfileSessionState();
   const {
     isConnected: midiConnected,
     connectMIDI,
@@ -50,93 +91,115 @@ const LayerConfiguration = ({
     clearAllMappings,
   } = useMIDI();
 
+  /** @type {React.RefObject<HTMLDivElement | null>} */
   const midiMonitorRef = useRef(null);
 
-  // Determine if controls should be effectively read-only
   const effectiveReadOnly = useMemo(() => {
-    if (isPreviewMode) return true;
-    if (isVisitor && !isParentAdmin) return true;
+    if (!canInteract) return true;
     return propReadOnly;
-  }, [isPreviewMode, isVisitor, isParentAdmin, propReadOnly]);
+  }, [canInteract, propReadOnly]);
 
-
-  const config = layerConfigs[activeLayer] || {};
+  const config = useMemo(() => layerConfigs[activeLayer] || {}, [layerConfigs, activeLayer]);
 
   useEffect(() => {
-    if (midiMonitorRef.current) {
+    if (midiMonitorRef.current && displayMidiMonitor) {
       midiMonitorRef.current.scrollTop = midiMonitorRef.current.scrollHeight;
     }
-  }, [midiMonitorData]);
+  }, [midiMonitorData, displayMidiMonitor]);
 
-  const handleSliderChange = (e) => {
+  const handleSliderChange = useCallback((e) => {
     if (effectiveReadOnly) return;
     const { name, value } = e.target;
-    onLayerConfigChange(activeLayer, name, parseFloat(value));
-  };
+    if (typeof onLayerConfigChange === 'function') {
+      onLayerConfigChange(activeLayer, name, parseFloat(value));
+    } else if (import.meta.env.DEV) {
+      console.warn("[LayerConfiguration] onLayerConfigChange is not a function.");
+    }
+  }, [effectiveReadOnly, onLayerConfigChange, activeLayer]);
 
-  const handleBlendModeChange = (e) => {
+  const handleBlendModeChange = useCallback((e) => {
     if (effectiveReadOnly) return;
     const { value } = e.target;
-    onLayerConfigChange(activeLayer, "blendMode", value);
-  };
+    if (typeof onLayerConfigChange === 'function') {
+      onLayerConfigChange(activeLayer, "blendMode", value);
+    } else if (import.meta.env.DEV) {
+      console.warn("[LayerConfiguration] onLayerConfigChange is not a function.");
+    }
+  }, [effectiveReadOnly, onLayerConfigChange, activeLayer]);
 
-  const handleDirectionToggle = () => {
+  const handleDirectionToggle = useCallback(() => {
     if (effectiveReadOnly) return;
     const currentDirection = config.direction || 1;
-    onLayerConfigChange(activeLayer, "direction", -currentDirection);
-  };
+    if (typeof onLayerConfigChange === 'function') {
+      onLayerConfigChange(activeLayer, "direction", -currentDirection);
+    } else if (import.meta.env.DEV) {
+      console.warn("[LayerConfiguration] onLayerConfigChange is not a function.");
+    }
+  }, [effectiveReadOnly, config.direction, onLayerConfigChange, activeLayer]);
 
-  const enterMIDILearnMode = (paramName) => {
+  const enterMIDILearnMode = useCallback((paramName) => {
     if (effectiveReadOnly) return;
     if (!midiConnected) {
       alert("Please connect your MIDI device first using the 'Connect MIDI' button.");
       return;
     }
-    startMIDILearn(paramName, activeLayer);
-  };
+    if (typeof startMIDILearn === 'function') {
+      startMIDILearn(paramName, activeLayer);
+    }
+  }, [effectiveReadOnly, midiConnected, startMIDILearn, activeLayer]);
 
-  const enterLayerMIDILearnMode = (layer) => {
+  const enterLayerMIDILearnMode = useCallback((layer) => {
     if (effectiveReadOnly) return;
     if (!midiConnected) {
       alert("Please connect your MIDI device first using the 'Connect MIDI' button.");
       return;
     }
-    startLayerMIDILearn(layer);
-  };
+    if (typeof startLayerMIDILearn === 'function') {
+      startLayerMIDILearn(layer);
+    }
+  }, [effectiveReadOnly, midiConnected, startLayerMIDILearn]);
 
-  const connectMidi = () => {
-    connectMIDI().catch((err) => {
-      alert(`Failed to access MIDI devices: ${err.message}`);
-    });
-  };
+  const connectMidiCb = useCallback(() => {
+    if (typeof connectMIDI === 'function') {
+      connectMIDI().catch((err) => {
+        alert(`Failed to access MIDI devices: ${err.message}`);
+      });
+    }
+  }, [connectMIDI]);
 
-  const handleMidiChannelChange = (e) => {
-    setChannelFilter(parseInt(e.target.value, 10));
-  };
+  const handleMidiChannelChangeCb = useCallback((e) => {
+    if (typeof setChannelFilter === 'function') {
+      setChannelFilter(parseInt(e.target.value, 10));
+    }
+  }, [setChannelFilter]);
 
-  const clearMidiMonitorData = () => {
-    clearMIDIMonitor();
-  };
+  const clearMidiMonitorDataCb = useCallback(() => {
+    if (typeof clearMIDIMonitor === 'function') {
+      clearMIDIMonitor();
+    }
+  }, [clearMIDIMonitor]);
 
-  const resetAllMappingsData = () => {
+  const resetAllMappingsDataCb = useCallback(() => {
     if (effectiveReadOnly) return;
-    clearAllMappings();
-  };
+    if (typeof clearAllMappings === 'function') {
+      clearAllMappings();
+    }
+  }, [effectiveReadOnly, clearAllMappings]);
 
-  const formatMidiMapping = (mapping) => {
+  const formatMidiMappingDisplay = useCallback((mapping) => {
     if (!mapping) return "None";
-    const channel = mapping.channel !== undefined ? ` (Ch ${mapping.channel + 1})` : "";
-    if (mapping.type === "cc") return `CC ${mapping.number}${channel}`;
-    if (mapping.type === "note") return `Note ${mapping.number}${channel}`;
-    if (mapping.type === "pitchbend") return `Pitch${channel}`;
+    const channelText = mapping.channel !== undefined ? ` (Ch ${mapping.channel + 1})` : "";
+    if (mapping.type === "cc") return `CC ${mapping.number}${channelText}`;
+    if (mapping.type === "note") return `Note ${mapping.number}${channelText}`;
+    if (mapping.type === "pitchbend") return `Pitch${channelText}`;
     return "Unknown";
-  };
+  }, []);
 
-  const currentParamMidiMappings = midiMap[activeLayer] || {};
+  const currentParamMidiMappings = useMemo(() => midiMap[activeLayer] || {}, [midiMap, activeLayer]);
 
   const visitorOnShowcaseMessage = isVisitor && isParentAdmin && !effectiveReadOnly && (
-    <div className="visitor-message">
-      As a visitor, you can experiment with all controls on this demo page.
+    <div className="visitor-message info">
+      As an admin visitor, you can experiment with all controls on this demo page.
       Changes won't be saved permanently.
     </div>
   );
@@ -144,37 +207,39 @@ const LayerConfiguration = ({
   return (
     <div className="layer-configuration">
       {showMidiConnect && (
-        <div className="midi-status">
+        <div className="midi-status-section">
           <div className="midi-status-row">
             <span>MIDI: {midiConnected ? "Connected" : "Not Connected"}</span>
             {!midiConnected ? (
-              <button type="button" className="midi-connect-btn" onClick={connectMidi}>
-                <img src={midiIcon} alt="MIDI Icon" className="midi-icon" />
+              <button type="button" className="midi-connect-btn" onClick={connectMidiCb} aria-label="Connect MIDI device">
+                <img src={midiIcon} alt="" className="midi-icon" />
                 Connect MIDI
               </button>
             ) : (
               <div className="midi-buttons">
                 <button
                   type="button"
-                  className="midi-monitor-btn"
-                  onClick={() => setShowMidiMonitor(!displayMidiMonitor)}
+                  className="midi-tool-button"
+                  onClick={() => setShowMidiMonitor && setShowMidiMonitor(!displayMidiMonitor)}
                 >
                   {displayMidiMonitor ? "Hide Monitor" : "Show Monitor"}
                 </button>
                 <button
                   type="button"
-                  className="midi-reset-btn"
-                  onClick={resetAllMappingsData}
-                  title="Reset all MIDI mappings"
+                  className="midi-tool-button midi-reset-btn"
+                  onClick={resetAllMappingsDataCb}
+                  title="Reset all MIDI mappings for current controller"
                   disabled={effectiveReadOnly}
+                  aria-label="Reset all MIDI mappings"
                 >
                   Reset Mappings
                 </button>
                 <select
-                  className="midi-channel-select"
+                  className="midi-channel-select custom-select"
                   value={selectedChannel}
-                  onChange={handleMidiChannelChange}
+                  onChange={handleMidiChannelChangeCb}
                   title="Filter MIDI messages by channel"
+                  aria-label="Select MIDI channel filter"
                 >
                   <option value="0">All Channels</option>
                   {[...Array(16)].map((_, i) => (
@@ -189,7 +254,7 @@ const LayerConfiguration = ({
 
           {midiLearning && midiLearning.layer === activeLayer && (
             <div className="midi-learning-container">
-              <span className="midi-learning">
+              <span className="midi-learning-text">
                 Mapping: {midiLearning.param.toUpperCase()}
               </span>
               <div className="midi-learning-instructions">
@@ -197,7 +262,8 @@ const LayerConfiguration = ({
                 <button
                   type="button"
                   className="midi-cancel-btn"
-                  onClick={() => stopMIDILearn()}
+                  onClick={() => stopMIDILearn && stopMIDILearn()}
+                  aria-label="Cancel MIDI learning for parameter"
                 >
                   Cancel
                 </button>
@@ -207,7 +273,7 @@ const LayerConfiguration = ({
 
           {learningLayer !== null && (
             <div className="midi-learning-container layer-learning">
-              <span className="midi-learning">
+              <span className="midi-learning-text">
                 Mapping: LAYER {learningLayer}
               </span>
               <div className="midi-learning-instructions">
@@ -215,7 +281,8 @@ const LayerConfiguration = ({
                 <button
                   type="button"
                   className="midi-cancel-btn"
-                  onClick={() => stopLayerMIDILearn()}
+                  onClick={() => stopLayerMIDILearn && stopLayerMIDILearn()}
+                  aria-label="Cancel MIDI learning for layer selection"
                 >
                   Cancel
                 </button>
@@ -225,30 +292,27 @@ const LayerConfiguration = ({
         </div>
       )}
 
-      {displayMidiMonitor && (
+      {displayMidiMonitor && midiConnected && (
         <div className="midi-monitor" ref={midiMonitorRef}>
           <div className="midi-monitor-header">
             <h4>MIDI Monitor</h4>
-            <button type="button" className="midi-clear-btn" onClick={clearMidiMonitorData}>
+            <button type="button" className="midi-clear-btn small-action-button" onClick={clearMidiMonitorDataCb} aria-label="Clear MIDI Monitor">
               Clear
             </button>
           </div>
           <div className="midi-monitor-content">
             {midiMonitorData.length === 0 ? (
               <div className="midi-monitor-empty">
-                No MIDI messages received yet. Try moving controls on your MIDI
-                device.
+                No MIDI messages received yet. Try moving controls on your MIDI device.
               </div>
             ) : (
               midiMonitorData.map((msg, index) => (
-                <div key={index} className="midi-monitor-msg">
+                <div key={`${msg.timestamp}-${index}`} className="midi-monitor-msg">
                   <span className="midi-monitor-time">{msg.timestamp}</span>
                   <span className="midi-monitor-type">{msg.type}</span>
-                  <span className="midi-monitor-channel">
-                    Ch {msg.channel + 1}
-                  </span>
-                  <span className="midi-monitor-data">{msg.data1}</span>
-                  <span className="midi-monitor-data">{msg.data2}</span>
+                  <span className="midi-monitor-channel">Ch{msg.channel}</span>
+                  <span className="midi-monitor-data">D1:{msg.data1}</span>
+                  <span className="midi-monitor-data">D2:{msg.data2}</span>
                 </div>
               ))
             )}
@@ -257,27 +321,28 @@ const LayerConfiguration = ({
       )}
 
       <div className="layer-mappings">
-        <h4 className="section-title">LAYER MAPPINGS</h4>
+        <h4 className="section-title">LAYER SELECTION MAPPINGS</h4>
         <div className="layer-mapping-grid">
-          {[1, 2, 3].map((layer) => (
+          {[1, 2, 3].map((layerNum) => (
             <div
-              key={`layer_${layer}`}
-              className={`layer-mapping-item ${activeLayer === layer ? "active" : ""}`}
+              key={`layer_select_mapping_${layerNum}`}
+              className={`layer-mapping-item ${learningLayer === layerNum ? "learning-active" : ""}`}
             >
-              <div className="layer-mapping-label">Layer {layer}</div>
+              <div className="layer-mapping-label">Layer {layerNum}</div>
               <div className="layer-mapping-controls">
-                <span className="layer-mapping-text">
-                  {layerMappings[layer]?.layerSelect
-                    ? formatMidiMapping(layerMappings[layer].layerSelect)
+                <span className="layer-mapping-text" title={`Current MIDI mapping for Layer ${layerNum} selection`}>
+                  {layerMappings[layerNum]?.layerSelect
+                    ? formatMidiMappingDisplay(layerMappings[layerNum].layerSelect)
                     : "Not mapped"}
                 </span>
                 <button
                   type="button"
-                  className="midi-learn-btn"
-                  onClick={() => enterLayerMIDILearnMode(layer)}
-                  disabled={effectiveReadOnly || !midiConnected}
+                  className={`midi-learn-btn small-action-button ${learningLayer === layerNum ? "learning" : ""}`}
+                  onClick={() => enterLayerMIDILearnMode(layerNum)}
+                  disabled={effectiveReadOnly || !midiConnected || (learningLayer !== null && learningLayer !== layerNum)}
+                  aria-label={`Map MIDI to select Layer ${layerNum}`}
                 >
-                  {learningLayer === layer ? "Cancel" : "Map"}
+                  {learningLayer === layerNum ? "..." : "Map"}
                 </button>
               </div>
             </div>
@@ -285,283 +350,84 @@ const LayerConfiguration = ({
         </div>
       </div>
 
-      <div className="slider-container">
-        <div className="slider-header">
-          <span className="slider-label">SPEED</span>
-          <span className="slider-value">
-            {Number(config.speed || 0).toFixed(3)}
-          </span>
-          <div className="midi-mapping-info">
-            <span className="midi-mapping-text" title="Current MIDI mapping">
-              {currentParamMidiMappings.speed
-                ? formatMidiMapping(currentParamMidiMappings.speed)
-                : "None"}
-            </span>
-            <button
-              type="button"
-              className="midi-learn-btn"
-              onClick={() => enterMIDILearnMode("speed")}
-              disabled={effectiveReadOnly || !midiConnected}
-              title="Click to map a MIDI controller"
-            >
-              MIDI
-            </button>
-          </div>
-        </div>
-        <input
-          type="range"
-          name="speed"
-          min="0.001"
-          max="0.5"
-          step="0.001"
-          value={config.speed || 0}
-          onChange={handleSliderChange}
-          disabled={effectiveReadOnly}
-        />
+      <div className="slider-group-container">
+        {sliderParams.map(({prop, label, min, max, step, formatDecimals, defaultValue = 0}) => (
+            <div className="slider-container" key={`${activeLayer}-${prop}`}>
+                <div className="slider-header">
+                    <span className="slider-label">{label}</span>
+                    <span className="slider-value">
+                        {formatValue(config[prop] !== undefined ? config[prop] : defaultValue, formatDecimals)}
+                    </span>
+                    {showMidiConnect && midiConnected && (
+                        <div className="midi-mapping-info">
+                            <span className="midi-mapping-text" title={`Current MIDI mapping for ${label}`}>
+                                {formatMidiMappingDisplay(currentParamMidiMappings[prop])}
+                            </span>
+                            <button
+                                type="button"
+                                className={`midi-learn-btn small-action-button ${midiLearning?.param === prop && midiLearning?.layer === activeLayer ? "learning" : ""}`}
+                                onClick={() => enterMIDILearnMode(prop)}
+                                disabled={effectiveReadOnly || !midiConnected || (midiLearning !== null && !(midiLearning?.param === prop && midiLearning?.layer === activeLayer))}
+                                title={`Click to map ${label} to a MIDI controller`}
+                                aria-label={`Map MIDI to ${label}`}
+                            >
+                                {midiLearning?.param === prop && midiLearning?.layer === activeLayer ? "..." : "Map"}
+                            </button>
+                        </div>
+                    )}
+                </div>
+                <input
+                    type="range"
+                    name={prop}
+                    min={min}
+                    max={max}
+                    step={step}
+                    value={config[prop] !== undefined ? config[prop] : defaultValue}
+                    onChange={handleSliderChange}
+                    disabled={effectiveReadOnly || (midiLearning?.param === prop && midiLearning?.layer === activeLayer)}
+                    className="horizontal-slider"
+                    aria-label={`${label} slider`}
+                />
+            </div>
+        ))}
       </div>
 
-      <div className="slider-container">
-        <div className="slider-header">
-          <span className="slider-label">SIZE</span>
-          <span className="slider-value">
-            {Number(config.size || 0).toFixed(1)}
-          </span>
-          <div className="midi-mapping-info">
-            <span className="midi-mapping-text" title="Current MIDI mapping">
-              {currentParamMidiMappings.size
-                ? formatMidiMapping(currentParamMidiMappings.size)
-                : "None"}
-            </span>
-            <button
-              type="button"
-              className="midi-learn-btn"
-              onClick={() => enterMIDILearnMode("size")}
-              disabled={effectiveReadOnly || !midiConnected}
-              title="Click to map a MIDI controller"
-            >
-              MIDI
-            </button>
-          </div>
-        </div>
-        <input
-          type="range"
-          name="size"
-          min="0.1"
-          max="8.0"
-          step="0.0001"
-          value={config.size || 0}
-          onChange={handleSliderChange}
-          disabled={effectiveReadOnly}
-        />
-      </div>
 
-      <div className="slider-container">
-        <div className="slider-header">
-          <span className="slider-label">OPACITY</span>
-          <span className="slider-value">
-            {Number(config.opacity !== undefined ? config.opacity : 1).toFixed(
-              2,
-            )}
-          </span>
-          <div className="midi-mapping-info">
-            <span className="midi-mapping-text" title="Current MIDI mapping">
-              {currentParamMidiMappings.opacity
-                ? formatMidiMapping(currentParamMidiMappings.opacity)
-                : "None"}
-            </span>
-            <button
-              type="button"
-              className="midi-learn-btn"
-              onClick={() => enterMIDILearnMode("opacity")}
-              disabled={effectiveReadOnly || !midiConnected}
-              title="Click to map a MIDI controller"
-            >
-              MIDI
-            </button>
-          </div>
+      <div className="controls-footer">
+        <div className="blendmode-container">
+          <label htmlFor={`blendMode-${activeLayer}`}>BLEND MODE</label>
+          <select
+            id={`blendMode-${activeLayer}`}
+            className="custom-select blend-mode-select"
+            name="blendMode"
+            value={config.blendMode || "normal"}
+            onChange={handleBlendModeChange}
+            disabled={effectiveReadOnly}
+            aria-label="Select Blend Mode"
+          >
+            {blendModes.map((mode) => (
+              <option key={mode} value={mode}>
+                {mode.split("-").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ")}
+              </option>
+            ))}
+          </select>
         </div>
-        <input
-          type="range"
-          name="opacity"
-          min="0"
-          max="1"
-          step="0.01"
-          value={config.opacity !== undefined ? config.opacity : 1}
-          onChange={handleSliderChange}
-          disabled={effectiveReadOnly}
-        />
-      </div>
 
-      <div className="slider-container">
-        <div className="slider-header">
-          <span className="slider-label">DRIFT</span>
-          <span className="slider-value">
-            {Number(config.drift || 0).toFixed(1)}
-          </span>
-          <div className="midi-mapping-info">
-            <span className="midi-mapping-text" title="Current MIDI mapping">
-              {currentParamMidiMappings.drift
-                ? formatMidiMapping(currentParamMidiMappings.drift)
-                : "None"}
-            </span>
-            <button
-              type="button"
-              className="midi-learn-btn"
-              onClick={() => enterMIDILearnMode("drift")}
-              disabled={effectiveReadOnly || !midiConnected}
-              title="Click to map a MIDI controller"
-            >
-              MIDI
-            </button>
-          </div>
-        </div>
-        <input
-          type="range"
-          name="drift"
-          min="0"
-          max="100"
-          step="0.0001"
-          value={config.drift || 0}
-          onChange={handleSliderChange}
+        <button
+          type="button"
+          className="changerotation-btn icon-button"
+          onClick={handleDirectionToggle}
           disabled={effectiveReadOnly}
-        />
-      </div>
-
-      <div className="slider-container">
-        <div className="slider-header">
-          <span className="slider-label">DRIFT SPEED</span>
-          <span className="slider-value">
-            {Number(config.driftSpeed || 0).toFixed(1)}
-          </span>
-          <div className="midi-mapping-info">
-            <span className="midi-mapping-text" title="Current MIDI mapping">
-              {currentParamMidiMappings.driftSpeed
-                ? formatMidiMapping(currentParamMidiMappings.driftSpeed)
-                : "None"}
-            </span>
-            <button
-              type="button"
-              className="midi-learn-btn"
-              onClick={() => enterMIDILearnMode("driftSpeed")}
-              disabled={effectiveReadOnly || !midiConnected}
-              title="Click to map a MIDI controller"
-            >
-              MIDI
-            </button>
-          </div>
-        </div>
-        <input
-          type="range"
-          name="driftSpeed"
-          min="0"
-          max="1"
-          step="0.0001"
-          value={config.driftSpeed || 0}
-          onChange={handleSliderChange}
-          disabled={effectiveReadOnly}
-        />
-      </div>
-
-      <div className="slider-container">
-        <div className="slider-header">
-          <span className="slider-label">X POSITION</span>
-          <span className="slider-value">{Math.round(config.xaxis || 0)}</span>
-          <div className="midi-mapping-info">
-            <span className="midi-mapping-text" title="Current MIDI mapping">
-              {currentParamMidiMappings.xaxis
-                ? formatMidiMapping(currentParamMidiMappings.xaxis)
-                : "None"}
-            </span>
-            <button
-              type="button"
-              className="midi-learn-btn"
-              onClick={() => enterMIDILearnMode("xaxis")}
-              disabled={effectiveReadOnly || !midiConnected}
-              title="Click to map a MIDI controller"
-            >
-              MIDI
-            </button>
-          </div>
-        </div>
-        <input
-          type="range"
-          name="xaxis"
-          min="-10000"
-          max="10000"
-          step="0.001"
-          value={config.xaxis || 0}
-          onChange={handleSliderChange}
-          disabled={effectiveReadOnly}
-        />
-      </div>
-
-      <div className="slider-container">
-        <div className="slider-header">
-          <span className="slider-label">Y POSITION</span>
-          <span className="slider-value">{Math.round(config.yaxis || 0)}</span>
-          <div className="midi-mapping-info">
-            <span className="midi-mapping-text" title="Current MIDI mapping">
-              {currentParamMidiMappings.yaxis
-                ? formatMidiMapping(currentParamMidiMappings.yaxis)
-                : "None"}
-            </span>
-            <button
-              type="button"
-              className="midi-learn-btn"
-              onClick={() => enterMIDILearnMode("yaxis")}
-              disabled={effectiveReadOnly || !midiConnected}
-              title="Click to map a MIDI controller"
-            >
-              MIDI
-            </button>
-          </div>
-        </div>
-        <input
-          type="range"
-          name="yaxis"
-          min="-10000"
-          max="10000"
-          step="0.001"
-          value={config.yaxis || 0}
-          onChange={handleSliderChange}
-          disabled={effectiveReadOnly}
-        />
-      </div>
-
-      <div className="form-group">
-        <label htmlFor="blendMode">BLEND MODE</label>
-        <select
-          id="blendMode"
-          className="custom-select"
-          name="blendMode"
-          value={config.blendMode || "normal"}
-          onChange={handleBlendModeChange}
-          disabled={effectiveReadOnly}
+          title="Change Rotation Direction"
+          aria-label="Change Rotation Direction"
         >
-          {blendModes.map((mode) => (
-            <option key={mode} value={mode}>
-              {mode
-                .split("-")
-                .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-                .join(" ")}
-            </option>
-          ))}
-        </select>
+          <img
+            src={rotateIcon}
+            alt="Change Rotation Direction"
+            className="direction-icon"
+          />
+        </button>
       </div>
-
-      <button
-        type="button"
-        className="btn btn-block direction-toggle-btn"
-        onClick={handleDirectionToggle}
-        disabled={effectiveReadOnly}
-        title="Change Direction"
-      >
-        <img
-          src={rotateIcon}
-          alt="Change Direction"
-          className="direction-icon"
-        />
-      </button>
       {visitorOnShowcaseMessage}
     </div>
   );

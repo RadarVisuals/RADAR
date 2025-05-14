@@ -1,8 +1,10 @@
-import { useState, useCallback } from 'react';
-import { usePanelManager } from './usePanelManager';
+// src/hooks/useUIState.js
+import { useState, useCallback, useMemo } from 'react';
+
+import { usePanelManager } from './usePanelManager'; // Local hook
 
 /**
- * @typedef {object} UIState Represents the overall state of the user interface.
+ * @typedef {object} UIState
  * @property {boolean} isUiVisible - Whether the main UI elements (toolbars, panels) are visible.
  * @property {boolean} infoOverlayOpen - Whether the informational overlay is currently open.
  * @property {boolean} whitelistPanelOpen - Whether the whitelist management panel is currently open.
@@ -12,8 +14,9 @@ import { usePanelManager } from './usePanelManager';
  * @property {() => void} toggleUiVisibility - Function to toggle the visibility of the main UI elements.
  * @property {() => void} toggleInfoOverlay - Function to toggle the visibility of the informational overlay.
  * @property {() => void} toggleWhitelistPanel - Function to toggle the visibility of the whitelist panel.
- * @property {(panelName: string) => void} openPanel - Function to open a specific side panel by its identifier.
- * @property {() => void} closePanel - Function to close the currently active side panel.
+ * @property {(panelName: string) => void} openPanel - Function to open a specific side panel by its identifier. This is sourced from `usePanelManager`.
+ * @property {() => void} closePanel - Function to close the currently active side panel. This is sourced from `usePanelManager`.
+ * @property {(panelName: string) => void} toggleSidePanel - Function to toggle a specific side panel's visibility. This is sourced from `usePanelManager`.
  * @property {React.Dispatch<React.SetStateAction<string>>} setActiveLayerTab - Function to directly set the active layer control tab identifier.
  */
 
@@ -35,26 +38,27 @@ export function useUIState(initialLayerTab = 'tab1') {
   const {
     activePanel,
     animatingPanel,
-    openPanel,
-    closePanel,
+    openPanel,    // Renamed from openPanelInternal for clarity
+    closePanel,   // Renamed from closePanelInternal for clarity
+    togglePanel: toggleSidePanel // Renamed to avoid conflict if a general togglePanel was added here
   } = usePanelManager(null); // Start with no active panel
 
   /** Toggles the visibility of the main UI elements. */
   const toggleUiVisibility = useCallback(() => {
     setIsUiVisible((prev) => !prev);
-  }, []);
+  }, []); // setIsUiVisible is stable
 
   /** Toggles the visibility of the informational overlay. */
   const toggleInfoOverlay = useCallback(() => {
     setInfoOverlayOpen((prev) => !prev);
-  }, []);
+  }, []); // setInfoOverlayOpen is stable
 
   /** Toggles the visibility of the whitelist panel. */
   const toggleWhitelistPanel = useCallback(() => {
     setWhitelistPanelOpen((prev) => !prev);
-  }, []);
+  }, []); // setWhitelistPanelOpen is stable
 
-  return {
+  return useMemo(() => ({
     isUiVisible,
     infoOverlayOpen,
     whitelistPanelOpen,
@@ -66,6 +70,12 @@ export function useUIState(initialLayerTab = 'tab1') {
     toggleWhitelistPanel,
     openPanel,
     closePanel,
-    setActiveLayerTab,
-  };
+    toggleSidePanel,
+    setActiveLayerTab, // Direct state setter from useState
+  }), [
+    isUiVisible, infoOverlayOpen, whitelistPanelOpen,
+    activePanel, animatingPanel, activeLayerTab,
+    toggleUiVisibility, toggleInfoOverlay, toggleWhitelistPanel,
+    openPanel, closePanel, toggleSidePanel, setActiveLayerTab
+  ]);
 }

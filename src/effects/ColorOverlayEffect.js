@@ -1,4 +1,15 @@
-import VisualEffect from "./VisualEffect";
+// src/effects/ColorOverlayEffect.js
+import VisualEffect from "./VisualEffect"; // Local base class
+
+/**
+ * @typedef {object} ColorOverlayConfig
+ * @property {string} [color='rgba(255, 0, 0, 0.3)'] - The color of the overlay (CSS color string).
+ * @property {number} [pulseCount=3] - The number of times the overlay will pulse (fade in and out).
+ * @property {number} [duration=3000] - The total duration of the effect in milliseconds.
+ * @property {number} [fadeOutDuration] - Duration for the final fade out of the overlay. Defaults to 40% of `duration`.
+ * @property {string} [easing='cubic-bezier(0.4, 0, 0.2, 1)'] - CSS easing function for the pulse transitions.
+ * @property {string} [mixBlendMode='overlay'] - CSS mix-blend-mode for the overlay.
+ */
 
 /**
  * Creates a pulsating color overlay effect on a target canvas layer
@@ -11,65 +22,68 @@ import VisualEffect from "./VisualEffect";
 class ColorOverlayEffect extends VisualEffect {
   /**
    * Applies the color overlay effect by creating and animating a DOM element.
-   * The `_updateLayerConfig` parameter is present to maintain interface consistency
-   * with the base `VisualEffect` class, but it is not used by this specific effect.
    *
-   * @param {Function} _updateLayerConfig - Function to update layer config (unused in this effect).
-   * @returns {object} A control object including `effectId`, `layer`, and a `clear` method to stop and remove the effect.
+   * @returns {import('../utils/VisualEffectsProcessor').EffectControlAPI} A control object including `effectId`, `layer`, and a `clear` method to stop and remove the effect.
    */
-  apply(_updateLayerConfig) {
+  apply() { // Removed _updateLayerConfig as it's unused in this specific effect
     const { layer } = this;
+    /** @type {ColorOverlayConfig} */
+    const effectSpecificConfig = this.config || {};
+
     const {
-      color = "rgba(255, 0, 0, 0.3)", // Default pulse color
-      pulseCount = 3, // Default number of pulses
-      duration = 3000, // Default total duration of the effect in ms
-      fadeOutDuration = duration * 0.4, // Duration for the final fade out
-      easing = "cubic-bezier(0.4, 0, 0.2, 1)", // Default CSS easing function
-    } = this.config;
+      color = "rgba(255, 0, 0, 0.3)",
+      pulseCount = 3,
+      duration = 3000,
+      fadeOutDuration = duration * 0.4,
+      easing = "cubic-bezier(0.4, 0, 0.2, 1)",
+      mixBlendMode = "overlay",
+    } = effectSpecificConfig;
 
     const logPrefix = `[ColorOverlayEffect ${this.effectId}]`;
+    /** @type {HTMLElement | null} */
     let targetElement = null;
     let zIndexBase = 1;
 
-    // Determine the target DOM element for the overlay
     if (layer === 'global') {
         targetElement = document.querySelector('.canvas-container');
         if (targetElement) {
-            zIndexBase = 10; // Higher z-index for global overlay
-        } else {
-            console.error(`${logPrefix} Failed to find .canvas-container element!`);
+            zIndexBase = 10;
+        } else if (import.meta.env.DEV) {
+            console.error(`${logPrefix} Failed to find .canvas-container element for global overlay!`);
         }
     } else {
         const layerSelector = `.canvas.layer-${layer}`;
         targetElement = document.querySelector(layerSelector);
         if (targetElement) {
-            // Base z-index on the target canvas layer's z-index
-            zIndexBase = parseInt(targetElement.style.zIndex || (parseInt(layer, 10) + 2), 10);
-        } else {
+            const targetZIndex = parseInt(targetElement.style.zIndex || '', 10);
+            zIndexBase = isNaN(targetZIndex) ? (parseInt(String(layer), 10) + 2) : targetZIndex;
+        } else if (import.meta.env.DEV) {
              console.warn(`${logPrefix} Canvas element not found using selector: ${layerSelector}`);
         }
     }
 
     if (!targetElement) {
-      console.error(`${logPrefix} No target element found to apply overlay.`);
+      if (import.meta.env.DEV) {
+        console.error(`${logPrefix} No target element found to apply overlay.`);
+      }
       return {
         effectId: this.effectId,
         layer: layer,
-        clear: () => this.cleanup(), // Provide a cleanup function even on failure
+        type: this.type,
+        config: this.config,
+        clear: () => this.cleanup(),
       };
     }
 
-    // Remove any existing overlay with the same effect ID
     const existingOverlay = document.getElementById(`color-overlay-${this.effectId}`);
     if (existingOverlay) {
       existingOverlay.remove();
     }
 
-    // Create and style the new overlay element
     const overlayId = `color-overlay-${this.effectId}`;
     const overlay = document.createElement("div");
     overlay.id = overlayId;
-    overlay.classList.add("color-overlay-effect"); // For potential CSS targeting
+    overlay.classList.add("color-overlay-effect");
     Object.assign(overlay.style, {
         position: "absolute",
         top: "0",
@@ -78,52 +92,50 @@ class ColorOverlayEffect extends VisualEffect {
         height: "100%",
         background: color,
         pointerEvents: "none",
-        zIndex: (zIndexBase + 10).toString(), // Ensure overlay is on top
-        opacity: "0", // Start transparent
+        zIndex: (zIndexBase + 10).toString(),
+        opacity: "0",
         transition: `opacity ${duration / (pulseCount * 2)}ms ${easing}`,
-        mixBlendMode: "overlay", // Example blend mode
+        mixBlendMode: mixBlendMode,
     });
 
     targetElement.appendChild(overlay);
 
     let currentPulse = 0;
     let isVisible = false;
-    let isCleanedUp = false; // Flag to prevent multiple cleanup calls
+    let isCleanedUp = false;
 
-    // Recursive pulse function
     const pulse = () => {
-      if (isCleanedUp || !overlay) return; // Stop if cleaned up or overlay removed
+      if (isCleanedUp || !overlay || !overlay.isConnected) return;
 
-      isVisible = !isVisible; // Toggle visibility state
-      overlay.style.opacity = isVisible ? "1" : "0"; // Apply opacity change
+      isVisible = !isVisible;
+      overlay.style.opacity = isVisible ? "1" : "0";
 
-      if (!isVisible) { // Increment pulse count when fading out
+      if (!isVisible) {
         currentPulse++;
       }
 
-      if (currentPulse >= pulseCount) { // All pulses completed
+      if (currentPulse >= pulseCount) {
         this.addTimeout(
-          "cleanup", // Unique ID for this timeout
+          "final_fade_out",
           () => {
-            if (isCleanedUp || !overlay) return;
+            if (isCleanedUp || !overlay || !overlay.isConnected) return;
             overlay.style.transition = `opacity ${fadeOutDuration}ms ease-out`;
-            overlay.style.opacity = "0"; // Final fade out
+            overlay.style.opacity = "0";
             this.addTimeout(
-              "remove",
+              "remove_element",
               () => {
-                if (overlay?.parentNode) { // Check if still in DOM
+                if (overlay?.parentNode) {
                    overlay.remove();
                 }
               },
-              fadeOutDuration + 100, // Delay removal after fade out
+              fadeOutDuration + 100,
             );
           },
-          duration / (pulseCount * 2), // Time for one phase of the pulse
+          duration / (pulseCount * 2),
         );
         return;
       }
 
-      // Schedule next phase of the pulse
       this.addTimeout(
         `pulse-${currentPulse}-${isVisible ? "on" : "off"}`,
         pulse,
@@ -131,14 +143,17 @@ class ColorOverlayEffect extends VisualEffect {
       );
     };
 
-    this.addTimeout("start", pulse, 50); // Start the first pulse shortly after creation
+    this.addTimeout("start_pulse", pulse, 50);
 
     return {
       effectId: this.effectId,
       layer: layer,
+      type: this.type,
+      config: this.config,
       clear: () => {
-        isCleanedUp = true; // Set flag to prevent further pulses/cleanup
-        this.cleanup(); // Call the main cleanup method
+        if (isCleanedUp) return;
+        isCleanedUp = true;
+        this.cleanup();
       },
     };
   }
@@ -148,18 +163,23 @@ class ColorOverlayEffect extends VisualEffect {
    * of the DOM element created by this effect.
    */
   cleanup() {
-    super.cleanup(); // Call base class cleanup (clears timeouts)
+    super.cleanup();
+
     const overlayId = `color-overlay-${this.effectId}`;
     const overlayElement = document.getElementById(overlayId);
+
     if (overlayElement) {
-      // Smoothly fade out before removing, in case it's cleared mid-animation
-      overlayElement.style.transition = "opacity 150ms ease-out";
-      overlayElement.style.opacity = "0";
-      setTimeout(() => {
-        if (overlayElement.parentNode) {
-          overlayElement.remove();
-        }
-      }, 150); // Delay removal to allow fade out
+      if (overlayElement.style.opacity !== "0") {
+        overlayElement.style.transition = "opacity 150ms ease-out";
+        overlayElement.style.opacity = "0";
+        setTimeout(() => {
+          if (overlayElement.parentNode) {
+            overlayElement.remove();
+          }
+        }, 150);
+      } else if (overlayElement.parentNode) {
+        overlayElement.remove();
+      }
     }
   }
 }

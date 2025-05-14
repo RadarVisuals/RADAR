@@ -1,14 +1,14 @@
 // src/utils/CanvasManager.js
-import { BLEND_MODES } from '../config/global-config';
-import ValueInterpolator from './ValueInterpolator';
+import { BLEND_MODES } from '../config/global-config'; // Local config
+import ValueInterpolator from './ValueInterpolator'; // Local utility
 
-const SETUP_CANVAS_POLL_INTERVAL = 100;
-const SETUP_CANVAS_POLL_TIMEOUT = 3000;
-const MAX_TOTAL_OFFSET = 10000;
-const DELTA_TIME_BUFFER_SIZE = 5;
+const SETUP_CANVAS_POLL_INTERVAL = 100; // ms, for polling parent dimensions if initially zero
+const SETUP_CANVAS_POLL_TIMEOUT = 3000; // ms, max time to poll for dimensions
+const MAX_TOTAL_OFFSET = 10000; // Max pixel offset for drift/positioning to prevent extreme values
+const DELTA_TIME_BUFFER_SIZE = 5; // Number of frames to average for smoothedDeltaTime
 
-const MIDI_XY_INTERPOLATION_DURATION = 80;
-const MIDI_ANGLE_INTERPOLATION_DURATION = 60;
+const MIDI_XY_INTERPOLATION_DURATION = 80; // ms, duration for X/Y position interpolation
+const MIDI_ANGLE_INTERPOLATION_DURATION = 60; // ms, duration for angle interpolation
 
 /**
  * @file Manages an individual HTML5 Canvas for a visual layer.
@@ -27,51 +27,52 @@ class CanvasManager {
     canvas = null;
     /** @type {CanvasRenderingContext2D | null} The 2D rendering context. */
     ctx = null;
-    /** @type {string} Identifier for this layer. */
+    /** @type {string} Identifier for this layer (e.g., '1', '2', '3'). */
     layerId;
-    /** @type {HTMLImageElement | null} The current image object. */
+    /** @type {HTMLImageElement | null} The current image object being rendered. */
     image = null;
-    /** @type {object} Current layer visual configuration. */
+    /** @type {object} Current layer visual configuration. See `getDefaultConfig` for structure. */
     config;
-    /** @type {number | null} ID of the animation frame request. */
+    /** @type {number | null} ID of the animation frame request, null if not animating. */
     animationFrameId = null;
-    /** @type {number} Timestamp of the last animation frame. */
+    /** @type {number} Timestamp of the last animation frame, used for delta time calculation. */
     lastTimestamp = 0;
-    /** @type {boolean} Prevents concurrent drawing operations. */
+    /** @type {boolean} Flag to prevent concurrent drawing operations, ensuring draw calls are serialized. */
     isDrawing = false;
-    /** @type {boolean} Indicates if the manager has been destroyed. */
+    /** @type {boolean} Indicates if the manager instance has been destroyed and should not operate. */
     isDestroyed = false;
-    /** @type {string | null} Source URL of the last loaded image. */
+    /** @type {string | null} Source URL of the last successfully loaded image. */
     lastImageSrc = null;
-    /** @type {number} Last known valid logical width (CSS pixels). */
+    /** @type {number} Last known valid logical width of the canvas (CSS pixels). */
     lastValidWidth = 0;
-    /** @type {number} Last known valid logical height (CSS pixels). */
+    /** @type {number} Last known valid logical height of the canvas (CSS pixels). */
     lastValidHeight = 0;
-    /** @type {number} Last DPR used for setup (forced to 1). */
+    /** @type {number} Last Device Pixel Ratio used for setup (forced to 1 for 1:1 buffer). */
     lastDPR = 1;
-    /** @type {number[]} Buffer for smoothing delta time. */
+    /** @type {number[]} Buffer for smoothing delta time values across recent frames. */
     deltaTimeBuffer = [];
-    /** @type {number} Smoothed delta time (seconds) for animations. */
-    smoothedDeltaTime = 1 / 60;
-    /** @type {ValueInterpolator} Interpolator for x-axis position. */
+    /** @type {number} Smoothed delta time in seconds, used for consistent animation speed. */
+    smoothedDeltaTime = 1 / 60; // Default to 60 FPS
+    /** @type {ValueInterpolator | null} Interpolator for x-axis position. */
     xInterpolator;
-    /** @type {ValueInterpolator} Interpolator for y-axis position. */
+    /** @type {ValueInterpolator | null} Interpolator for y-axis position. */
     yInterpolator;
-    /** @type {ValueInterpolator} Interpolator for angle. */
+    /** @type {ValueInterpolator | null} Interpolator for angle. */
     angleInterpolator;
-    /** @type {number} Continuously accumulating angle for rotation. */
+    /** @type {number} Continuously accumulating angle for rotation effects (degrees). */
     continuousRotationAngle = 0;
-    /** @type {number} Size multiplier from audio frequency. */
+    /** @type {number} Size multiplier derived from audio frequency analysis. */
     audioFrequencyFactor = 1.0;
-    /** @type {number} Size multiplier for audio beat pulse. */
+    /** @type {number} Temporary size multiplier for audio beat pulse effects. */
     beatPulseFactor = 1.0;
-    /** @type {number} End time for current audio beat pulse. */
+    /** @type {number} Timestamp (performance.now()) when the current audio beat pulse effect should end. */
     beatPulseEndTime = 0;
 
     /**
      * Creates an instance of CanvasManager.
      * @param {HTMLCanvasElement} canvas - The canvas element to manage.
      * @param {string} layerId - Identifier for this layer.
+     * @throws {Error} If an invalid canvas element is provided or context cannot be obtained.
      */
     constructor(canvas, layerId) {
         if (!canvas || !(canvas instanceof HTMLCanvasElement)) {
@@ -79,7 +80,7 @@ class CanvasManager {
         }
         this.canvas = canvas;
         try {
-            this.ctx = canvas.getContext('2d', { alpha: true, willReadFrequently: false });
+            this.ctx = canvas.getContext('2d', { alpha: true, willReadFrequently: false }); // willReadFrequently false for potential perf gain
             if (!this.ctx) {
                 throw new Error(`Failed to get 2D context for Layer ${layerId} (returned null)`);
             }
@@ -91,13 +92,13 @@ class CanvasManager {
         }
         this.layerId = layerId;
         this.config = this.getDefaultConfig();
-        this.lastDPR = 1; // Force DPR 1 for buffer
+        this.lastDPR = 1; // Force DPR 1 for buffer to match CSS pixels
 
         this.xInterpolator = new ValueInterpolator(this.config.xaxis, MIDI_XY_INTERPOLATION_DURATION);
         this.yInterpolator = new ValueInterpolator(this.config.yaxis, MIDI_XY_INTERPOLATION_DURATION);
         this.angleInterpolator = new ValueInterpolator(this.config.angle, MIDI_ANGLE_INTERPOLATION_DURATION);
 
-        this.animationLoop = this.animationLoop.bind(this);
+        this.animationLoop = this.animationLoop.bind(this); // Bind for requestAnimationFrame
     }
 
     /**
@@ -110,22 +111,21 @@ class CanvasManager {
             blendMode: 'normal',
             opacity: 1.0,
             size: 1.0,
-            speed: 0.01,
-            drift: 0,
-            driftSpeed: 0.1,
-            angle: 0,
-            xaxis: 0,
-            yaxis: 0,
-            direction: 1,
+            speed: 0.01, // Speed for continuous rotation
+            drift: 0, // Magnitude of drift
+            driftSpeed: 0.1, // Speed of drift oscillation
+            angle: 0, // Base angle (degrees)
+            xaxis: 0, // Base X offset
+            yaxis: 0, // Base Y offset
+            direction: 1, // Direction multiplier for speed (-1 or 1)
             driftState: { x: 0, y: 0, phase: Math.random() * Math.PI * 2, enabled: false },
-            audioSource: 'level', // Example: 'level', 'frequency', 'beat'
+            audioSource: 'level', // Example: 'level', 'frequency', 'beat' (for future audio reactivity)
         };
     }
 
     /**
      * Sets up canvas dimensions (1:1 with CSS pixels) and context transform.
-     * This method is crucial for ensuring the canvas is correctly sized and scaled,
-     * especially when dealing with browser zoom or dynamic layout changes.
+     * This method is crucial for ensuring the canvas is correctly sized and scaled.
      * It polls briefly if initial dimensions are zero.
      * @async
      * @returns {Promise<boolean>} True if setup was successful or if no changes were needed.
@@ -147,7 +147,7 @@ class CanvasManager {
             this.lastValidWidth = 0; this.lastValidHeight = 0; this.lastDPR = 0; return false;
         }
 
-        const dprForBuffer = 1; // Force DPR 1 for buffer size calculation
+        const dprForBuffer = 1; // Force DPR 1 for buffer size calculation (1:1 with CSS pixels)
 
         const parentRectImmediate = parent.getBoundingClientRect();
         const currentLogicalWidth = Math.floor(parentRectImmediate.width);
@@ -161,10 +161,10 @@ class CanvasManager {
         if (
             currentLogicalWidth === this.lastValidWidth &&
             currentLogicalHeight === this.lastValidHeight &&
-            this.canvas.width === currentLogicalWidth && // Buffer size matches logical size (DPR=1)
+            this.canvas.width === currentLogicalWidth &&
             this.canvas.height === currentLogicalHeight &&
             currentLogicalWidth > 0 && currentLogicalHeight > 0 &&
-            this.lastDPR === dprForBuffer // DPR hasn't changed (always 1 here)
+            this.lastDPR === dprForBuffer
         ) {
             return true; // No changes needed
         }
@@ -172,7 +172,7 @@ class CanvasManager {
         let logicalWidth = currentLogicalWidth;
         let logicalHeight = currentLogicalHeight;
 
-        // Poll if dimensions are initially zero
+        // Poll if dimensions are initially zero (e.g., due to layout shifts)
         if (logicalWidth <= 0 || logicalHeight <= 0) {
             if (import.meta.env.DEV) {
                 console.log(`${logPrefix} Zero/Invalid initial dimensions. Starting poll...`);
@@ -181,7 +181,7 @@ class CanvasManager {
             const maxAttempts = SETUP_CANVAS_POLL_TIMEOUT / SETUP_CANVAS_POLL_INTERVAL;
             while (attempts < maxAttempts) {
                 attempts++;
-                if (!parent.isConnected) {
+                if (!parent.isConnected) { // Check if parent is still in DOM
                     if (import.meta.env.DEV) {
                         console.warn(`${logPrefix} Parent disconnected during poll.`);
                     }
@@ -190,7 +190,7 @@ class CanvasManager {
                 const rect = parent.getBoundingClientRect();
                 logicalWidth = Math.floor(rect.width);
                 logicalHeight = Math.floor(rect.height);
-                if (logicalWidth > 0 && logicalHeight > 0) break;
+                if (logicalWidth > 0 && logicalHeight > 0) break; // Valid dimensions found
                 await new Promise(resolve => setTimeout(resolve, SETUP_CANVAS_POLL_INTERVAL));
             }
         }
@@ -201,7 +201,7 @@ class CanvasManager {
                  console.error(`${logPrefix} FAILED - Zero Dimensions after timeout/check (${logicalWidth}x${logicalHeight}).`);
              }
              this.lastValidWidth = 0; this.lastValidHeight = 0; this.lastDPR = 0;
-             if (this.canvas && (this.canvas.width > 0 || this.canvas.height > 0)) {
+             if (this.canvas && (this.canvas.width > 0 || this.canvas.height > 0)) { // Attempt to clear canvas if it had dimensions
                  try { this.canvas.width = 0; this.canvas.height = 0; } catch(e) {
                     if (import.meta.env.DEV) {
                         console.error(`${logPrefix} Error zeroing canvas w/h during failed setup:`, e);
@@ -211,19 +211,17 @@ class CanvasManager {
              return false;
         }
 
-        // Calculate target buffer size (always logical size because DPR=1)
-        const targetRenderWidth = logicalWidth;
-        const targetRenderHeight = logicalHeight;
+        const targetRenderWidth = logicalWidth; // Buffer width = logical width (DPR 1)
+        const targetRenderHeight = logicalHeight; // Buffer height = logical height (DPR 1)
 
-        if (!this.canvas) { // Should not happen, but check defensively
+        if (!this.canvas) { // Should not happen if initial check passed, but defensive
             if (import.meta.env.DEV) {
-                console.error(`${logPrefix} Canvas became null unexpectedly.`);
+                console.error(`${logPrefix} Canvas became null unexpectedly during setup.`);
             }
             this.lastValidWidth = 0; this.lastValidHeight = 0; this.lastDPR = 0; return false;
         }
 
         let resized = false;
-        // Resize the canvas buffer if needed
         if (this.canvas.width !== targetRenderWidth || this.canvas.height !== targetRenderHeight) {
             try {
                 this.canvas.width = targetRenderWidth;
@@ -236,11 +234,10 @@ class CanvasManager {
                 if (import.meta.env.DEV) {
                     console.error(`${logPrefix} Error setting canvas buffer w/h:`, e);
                 }
-                return false; // Critical error
+                return false; // Critical error if buffer cannot be set
             }
         }
 
-        // Set the CSS style size to match the logical dimensions
         if (this.canvas.style.width !== `${logicalWidth}px` || this.canvas.style.height !== `${logicalHeight}px`) {
              try {
                  this.canvas.style.width = `${logicalWidth}px`;
@@ -249,35 +246,29 @@ class CanvasManager {
                      console.log(`${logPrefix} Canvas style set to: ${this.canvas.style.width}x${this.canvas.style.height}`);
                  }
              } catch (e) {
-                 // Non-critical, might happen in weird edge cases
                  if (import.meta.env.DEV) {
                      console.warn(`${logPrefix} Error setting canvas style w/h:`, e);
                  }
              }
         }
 
-        // Apply context transform if resized or context exists
-        if ((resized || this.ctx) && this.ctx) { // Ensure ctx exists before transforming
+        if ((resized || this.ctx) && this.ctx) { // Ensure ctx exists
             try {
-                // Reset transform and apply scaling based on forced DPR (which is 1)
-                this.ctx.setTransform(dprForBuffer, 0, 0, dprForBuffer, 0, 0);
+                this.ctx.setTransform(dprForBuffer, 0, 0, dprForBuffer, 0, 0); // Apply forced DPR
                 if (import.meta.env.DEV) {
                     console.log(`${logPrefix} Context transform set with dprForBuffer (FORCED): ${dprForBuffer}`);
                 }
             } catch (e) {
-                 // Log error but continue if possible
                  if (import.meta.env.DEV) {
                      console.error(`${logPrefix} Context transform error:`, e);
                  }
             }
         }
 
-        // Update last known valid dimensions and DPR
         this.lastValidWidth = logicalWidth;
         this.lastValidHeight = logicalHeight;
-        this.lastDPR = dprForBuffer; // Store the forced DPR used
+        this.lastDPR = dprForBuffer;
 
-        // Snap interpolators to current config values after resize
         this.xInterpolator?.snap(this.config.xaxis);
         this.yInterpolator?.snap(this.config.yaxis);
         this.angleInterpolator?.snap(this.config.angle);
@@ -297,14 +288,11 @@ class CanvasManager {
         const defaultConfig = this.getDefaultConfig();
         const mergedConfig = { ...defaultConfig };
 
-        // Merge provided config with defaults, validating types
         for (const key in defaultConfig) {
             if (Object.prototype.hasOwnProperty.call(defaultConfig, key)) {
                 if (newConfig && Object.prototype.hasOwnProperty.call(newConfig, key) && newConfig[key] !== undefined && newConfig[key] !== null) {
-                    // Special handling for nested driftState
                     if (key === 'driftState' && typeof newConfig[key] === 'object' && defaultConfig[key] && typeof defaultConfig[key] === 'object') {
                         mergedConfig.driftState = { ...(defaultConfig.driftState || {}), ...(newConfig[key] || {}), };
-                        // Ensure driftState properties have correct types
                         mergedConfig.driftState.x = typeof mergedConfig.driftState.x === 'number' ? mergedConfig.driftState.x : 0;
                         mergedConfig.driftState.y = typeof mergedConfig.driftState.y === 'number' ? mergedConfig.driftState.y : 0;
                         mergedConfig.driftState.phase = typeof mergedConfig.driftState.phase === 'number' ? mergedConfig.driftState.phase : Math.random() * Math.PI * 2;
@@ -313,15 +301,12 @@ class CanvasManager {
                         mergedConfig[key] = this.validateValue(key, newConfig[key], defaultConfig[key]);
                     }
                 } else {
-                    // Use default if not provided in newConfig
                     mergedConfig[key] = defaultConfig[key];
                 }
             }
         }
-        // Ensure blend mode is valid
         if (!BLEND_MODES.includes(mergedConfig.blendMode)) { mergedConfig.blendMode = 'normal'; }
 
-        // Ensure driftState exists and is properly configured based on drift value
         if (!mergedConfig.driftState || typeof mergedConfig.driftState !== 'object') {
             mergedConfig.driftState = { x:0,y:0,phase:Math.random()*Math.PI*2,enabled:false };
         }
@@ -333,24 +318,21 @@ class CanvasManager {
 
         this.config = mergedConfig;
 
-        // Apply blend mode to canvas style
         if (this.canvas?.style) {
             this.canvas.style.mixBlendMode = this.config.blendMode || "normal";
         }
 
-        // Snap interpolators to the new values
         this.xInterpolator?.snap(this.config.xaxis);
         this.yInterpolator?.snap(this.config.yaxis);
         this.angleInterpolator?.snap(this.config.angle);
-        this.continuousRotationAngle = 0; // Reset continuous rotation on full config apply
+        this.continuousRotationAngle = 0;
 
-        // Start/stop animation loop based on enabled state
         this.handleEnabledToggle(this.config.enabled);
     }
 
     /**
      * Validates a configuration value against its expected type and constraints.
-     * @param {string} key - The configuration key (e.g., 'opacity', 'size').
+     * @param {string} key - The configuration key.
      * @param {*} value - The value to validate.
      * @param {*} defaultValue - The default value to infer type and use as fallback.
      * @returns {*} The validated value, or the default value if validation fails.
@@ -358,22 +340,20 @@ class CanvasManager {
     validateValue(key, value, defaultValue) {
         let validated = value;
         const defaultValueType = typeof defaultValue;
+
         if (defaultValueType === 'number') {
             validated = Number(value);
             if (isNaN(validated)) validated = defaultValue;
-            // Apply constraints
             if (key === 'opacity') validated = Math.max(0, Math.min(1, validated));
-            if (key === 'size') validated = Math.max(0.01, validated); // Ensure size is positive
+            if (key === 'size') validated = Math.max(0.01, validated);
         } else if (defaultValueType === 'string') {
             validated = String(value);
-            // Validate blend mode
             if (key === 'blendMode' && !BLEND_MODES.includes(validated)) {
                 validated = defaultValue;
             }
         } else if (defaultValueType === 'boolean') {
             validated = Boolean(value);
         }
-        // Note: Does not validate object types like driftState here, handled in applyFullConfig
         return validated;
     }
 
@@ -387,7 +367,6 @@ class CanvasManager {
             this.startAnimationLoop();
         } else if (!isEnabled && this.animationFrameId) {
             this.stopAnimationLoop();
-            // Clear canvas when disabling
             if (this.ctx && this.canvas?.width > 0 && this.canvas?.height > 0) {
                 try { this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height); }
                 catch (e) {
@@ -400,8 +379,7 @@ class CanvasManager {
     }
 
     /**
-     * Immediately sets a visual property's value in the config and snaps its interpolator (if applicable).
-     * Use this for immediate changes that shouldn't be interpolated (e.g., direct user input).
+     * Immediately sets a visual property's value in the config and snaps its interpolator.
      * @param {string} key - The configuration key (e.g., 'xaxis', 'opacity').
      * @param {*} value - The new value to set.
      */
@@ -418,23 +396,19 @@ class CanvasManager {
         const validatedValue = this.validateValue(key, value, defaultConfig[key]);
         this.config[key] = validatedValue;
 
-        // Snap corresponding interpolator or apply direct style
         if (key === 'xaxis' && this.xInterpolator) this.xInterpolator.snap(validatedValue);
         else if (key === 'yaxis' && this.yInterpolator) this.yInterpolator.snap(validatedValue);
         else if (key === 'angle' && this.angleInterpolator) this.angleInterpolator.snap(validatedValue);
         else if (key === 'blendMode' && this.canvas?.style) this.canvas.style.mixBlendMode = validatedValue || 'normal';
         else if (key === 'drift') {
-            // Update drift state based on new drift value
             if (!this.config.driftState) this.config.driftState = { x:0,y:0,phase:Math.random()*Math.PI*2,enabled:false };
             this.config.driftState.enabled = validatedValue > 0;
             if (!this.config.driftState.enabled) { this.config.driftState.x = 0; this.config.driftState.y = 0; }
         } else if (key === 'enabled') this.handleEnabledToggle(validatedValue);
-        // Other properties like opacity, size, speed, direction are used directly in the draw/animation loop
     }
 
     /**
      * Updates a non-interpolated configuration property directly.
-     * For properties like 'opacity', 'speed', 'blendMode', 'enabled', etc.
      * For 'xaxis', 'yaxis', 'angle', this behaves like snapVisualProperty.
      * @param {string} key - The configuration key.
      * @param {*} value - The new value.
@@ -443,20 +417,17 @@ class CanvasManager {
         if (this.isDestroyed) return;
         const defaultConfig = this.getDefaultConfig();
 
-        // Use snap for interpolated properties even when called via updateConfigProperty
         if (key === 'xaxis' || key === 'yaxis' || key === 'angle') {
             this.snapVisualProperty(key, value);
             return;
         }
 
         if (!Object.prototype.hasOwnProperty.call(defaultConfig, key)) {
-            // Silently ignore unknown properties
-            return;
+            return; // Silently ignore unknown properties
         }
         const validatedValue = this.validateValue(key, value, defaultConfig[key]);
         this.config[key] = validatedValue;
 
-        // Apply direct effects for specific properties
         if (key === 'blendMode' && this.canvas?.style) this.canvas.style.mixBlendMode = validatedValue || 'normal';
         else if (key === 'drift') {
              if (!this.config.driftState) this.config.driftState = { x:0,y:0,phase:Math.random()*Math.PI*2,enabled:false };
@@ -465,58 +436,51 @@ class CanvasManager {
         } else if (key === 'enabled') this.handleEnabledToggle(validatedValue);
     }
 
-    /**
-     * Starts the animation loop if not already running and the layer is enabled.
-     */
+    /** Starts the animation loop if not already running and the layer is enabled. */
     startAnimationLoop() {
         if (this.isDestroyed || this.animationFrameId !== null || !this.config.enabled) return;
         this.lastTimestamp = performance.now();
-        this.deltaTimeBuffer = []; // Reset buffer on start
-        this.smoothedDeltaTime = 1 / 60; // Reset smoothed delta time
+        this.deltaTimeBuffer = [];
+        this.smoothedDeltaTime = 1 / 60;
         this.animationFrameId = requestAnimationFrame(this.animationLoop);
     }
 
-    /**
-     * Stops the animation loop.
-     */
+    /** Stops the animation loop. */
     stopAnimationLoop() {
         if (this.animationFrameId !== null) {
             cancelAnimationFrame(this.animationFrameId);
             this.animationFrameId = null;
         }
-        this.isDrawing = false; // Ensure drawing flag is reset
+        this.isDrawing = false;
     }
 
     /**
      * Performs a single static draw operation using the current or provided configuration.
-     * Ensures canvas is set up before drawing. Snaps interpolators for the static frame.
      * @async
-     * @param {object | null} [configToUse=null] - Optional config object to use for this draw call. Defaults to the current config.
-     * @returns {Promise<boolean>} True if the draw was successfully initiated, false otherwise.
+     * @param {object | null} [configToUse=null] - Optional config object. Defaults to current config.
+     * @returns {Promise<boolean>} True if draw was successfully initiated.
      */
     async drawStaticFrame(configToUse = null) {
         if (this.isDestroyed || this.isDrawing) return false;
         const setupSuccess = await this.setupCanvas();
         if (!setupSuccess) return false;
 
-        this.smoothedDeltaTime = 1 / 60; // Use a default delta time for static draw calculations if needed
-        const config = configToUse || this.config;
+        this.smoothedDeltaTime = 1 / 60;
+        const currentConfig = configToUse || this.config;
 
-        // Snap interpolators to the target values for this static frame
-        this.xInterpolator?.snap(config.xaxis);
-        this.yInterpolator?.snap(config.yaxis);
-        this.angleInterpolator?.snap(config.angle);
-        this.continuousRotationAngle = 0; // Reset continuous rotation for static frame
+        this.xInterpolator?.snap(currentConfig.xaxis);
+        this.yInterpolator?.snap(currentConfig.yaxis);
+        this.angleInterpolator?.snap(currentConfig.angle);
+        this.continuousRotationAngle = 0;
 
-        return this.draw(performance.now(), config); // Pass current time and config
+        return this.draw(performance.now(), currentConfig);
     }
 
     /**
-     * Loads an image from the given source URL. Handles CORS for external URLs.
-     * Rejects if the source is invalid or the image fails to load or has zero dimensions.
+     * Loads an image from the given source URL.
      * @async
      * @param {string} src - The source URL of the image.
-     * @returns {Promise<void>} Resolves when the image is loaded and valid, rejects on error.
+     * @returns {Promise<void>} Resolves when image is loaded, rejects on error.
      */
     async setImage(src) {
         if (this.isDestroyed) return Promise.reject(new Error("Manager destroyed"));
@@ -525,18 +489,16 @@ class CanvasManager {
                 this.image = null; this.lastImageSrc = null;
                 return reject(new Error("Invalid image source"));
             }
-            // Avoid reloading if the source is the same and the image is already loaded and valid
             if (src === this.lastImageSrc && this.image?.complete && this.image?.naturalWidth > 0) {
                 return resolve();
             }
 
             const img = new Image();
-            // Handle potential CORS issues for external images
             if (src.startsWith('http') && !src.startsWith(window.location.origin)) {
                 img.crossOrigin = "anonymous";
             }
             img.onload = () => {
-                if (this.isDestroyed) return resolve(); // Resolve silently if destroyed during load
+                if (this.isDestroyed) return resolve();
                 if (img.naturalWidth === 0 || img.naturalHeight === 0) {
                     this.image = null; this.lastImageSrc = null;
                     reject(new Error(`Loaded image has zero dimensions: ${src.substring(0, 100)}`)); return;
@@ -544,10 +506,11 @@ class CanvasManager {
                 this.image = img; this.lastImageSrc = src;
                 resolve();
             };
-            img.onerror = (err) => {
+            img.onerror = (errEvent) => { // errEvent is an Event, not Error directly
                 if (this.isDestroyed) return reject(new Error("Manager destroyed during image load error"));
                 this.image = null; this.lastImageSrc = null;
-                reject(new Error(`Failed to load image: ${src.substring(0, 50)}... Error: ${err}`));
+                const errorMsg = typeof errEvent === 'string' ? errEvent : (errEvent?.type || 'Unknown image load error');
+                reject(new Error(`Failed to load image: ${src.substring(0, 50)}... Error: ${errorMsg}`));
             };
             img.src = src;
         });
@@ -555,8 +518,6 @@ class CanvasManager {
 
     /**
      * Sets the target value for an interpolated parameter (e.g., from MIDI input).
-     * The value will be smoothly interpolated towards by the corresponding ValueInterpolator.
-     * Also updates the config value immediately.
      * @param {string} param - The parameter key ('xaxis', 'yaxis', 'angle').
      * @param {number} targetValue - The new target value.
      */
@@ -569,17 +530,15 @@ class CanvasManager {
             }
             return;
         }
-        // Update the config value directly as well
         if (Object.prototype.hasOwnProperty.call(this.config, param)) {
             this.config[param] = validatedValue;
         } else {
             if (import.meta.env.DEV) {
                 console.warn(`[CM L${this.layerId}] Unknown MIDI parameter '${param}' for setTargetValue.`);
             }
-            return; // Don't try to set target on unknown param
+            return;
         }
 
-        // Set the target for the appropriate interpolator
         if (param === 'xaxis' && this.xInterpolator) this.xInterpolator.setTarget(validatedValue);
         else if (param === 'yaxis' && this.yInterpolator) this.yInterpolator.setTarget(validatedValue);
         else if (param === 'angle' && this.angleInterpolator) this.angleInterpolator.setTarget(validatedValue);
@@ -598,9 +557,7 @@ class CanvasManager {
      */
     triggerBeatPulse(pulseFactor, duration) { if (this.isDestroyed) return; this.beatPulseFactor = Number(pulseFactor) || 1.0; this.beatPulseEndTime = performance.now() + (Number(duration) || 0); }
 
-    /**
-     * Resets any active audio-driven modifications (frequency factor, beat pulse) to their defaults.
-     */
+    /** Resets any active audio-driven modifications to their defaults. */
     resetAudioModifications() { if (this.isDestroyed) return; this.audioFrequencyFactor = 1.0; this.beatPulseFactor = 1.0; this.beatPulseEndTime = 0; }
 
     /**
@@ -611,21 +568,18 @@ class CanvasManager {
 
     /**
      * The core drawing function, called within the animation loop or for static frames.
-     * Calculates positions, sizes, angles based on config, interpolators, and audio mods,
-     * then draws the image tiled/reflected across four quadrants.
-     * @param {number} timestamp - The current timestamp (e.g., from performance.now() or requestAnimationFrame).
-     * @param {object | null} [configToUse=null] - The configuration object to use for this draw call. Defaults to the current config.
-     * @returns {boolean} True if drawing was performed, false if skipped due to conditions (disabled, no image, etc.).
+     * @param {number} timestamp - The current timestamp.
+     * @param {object | null} [configToUse=null] - The configuration object to use. Defaults to current config.
+     * @returns {boolean} True if drawing was performed.
      */
     draw(timestamp, configToUse = null) {
         const currentConfig = configToUse || this.config;
         const logPrefix = `[CM L${this.layerId}] draw:`;
 
-        // Pre-conditions check
         if (this.isDestroyed || !currentConfig?.enabled || this.isDrawing ||
             !this.canvas || !this.ctx || !this.image || !this.image.complete ||
             this.image.naturalWidth === 0 || this.lastValidWidth <= 0 || this.lastValidHeight <= 0) {
-            this.isDrawing = false; // Ensure flag is reset if we exit early
+            this.isDrawing = false;
             return false;
         }
         this.isDrawing = true;
@@ -633,115 +587,94 @@ class CanvasManager {
         try {
             const width = this.lastValidWidth; const height = this.lastValidHeight;
             const halfWidth = Math.floor(width / 2); const halfHeight = Math.floor(height / 2);
-            const remainingWidth = width - halfWidth; const remainingHeight = height - halfHeight; // Handle odd dimensions
+            const remainingWidth = width - halfWidth; const remainingHeight = height - halfHeight;
 
             const imgNaturalWidth = this.image.naturalWidth; const imgNaturalHeight = this.image.naturalHeight;
             const imgAspectRatio = (imgNaturalWidth > 0 && imgNaturalHeight > 0) ? imgNaturalWidth / imgNaturalHeight : 1;
 
-            // Calculate base size incorporating audio factors
             let currentBaseSize = currentConfig.size ?? 1.0;
             let finalDrawSize = currentBaseSize * this.audioFrequencyFactor;
-            // Apply beat pulse if active
             if (this.beatPulseEndTime && timestamp < this.beatPulseEndTime) {
                 finalDrawSize *= this.beatPulseFactor;
             } else if (this.beatPulseEndTime && timestamp >= this.beatPulseEndTime) {
-                // Reset beat pulse state after it ends
                 this.beatPulseFactor = 1.0; this.beatPulseEndTime = 0;
             }
-            finalDrawSize = Math.max(0.01, finalDrawSize); // Ensure minimum size
+            finalDrawSize = Math.max(0.01, finalDrawSize);
 
-            // Calculate image draw dimensions based on aspect ratio and final size
-            // Fit within half the canvas dimensions multiplied by the size factor
             let imgDrawWidth = halfWidth * finalDrawSize;
             let imgDrawHeight = imgDrawWidth / imgAspectRatio;
-            // Adjust if height exceeds bounds based on aspect ratio
             if (imgAspectRatio > 0 && imgDrawHeight > halfHeight * finalDrawSize) {
                 imgDrawHeight = halfHeight * finalDrawSize; imgDrawWidth = imgDrawHeight * imgAspectRatio;
-            } else if (isNaN(imgDrawHeight) || imgAspectRatio <= 0) { // Fallback for invalid aspect ratio
+            } else if (isNaN(imgDrawHeight) || imgAspectRatio <= 0) {
                 imgDrawWidth = halfWidth * finalDrawSize; imgDrawHeight = halfHeight * finalDrawSize;
             }
-            imgDrawWidth = Math.max(1, Math.floor(imgDrawWidth)); // Ensure minimum pixel dimensions
+            imgDrawWidth = Math.max(1, Math.floor(imgDrawWidth));
             imgDrawHeight = Math.max(1, Math.floor(imgDrawHeight));
 
-            // Update drift position
             this.updateDrift(currentConfig, this.smoothedDeltaTime);
             const driftX = currentConfig.driftState?.x ?? 0;
             const driftY = currentConfig.driftState?.y ?? 0;
 
-            // Get current interpolated values or config values if not interpolating
             const currentX = this.xInterpolator?.isCurrentlyInterpolating() ? this.xInterpolator.getCurrentValue() : this.config.xaxis;
             const currentY = this.yInterpolator?.isCurrentlyInterpolating() ? this.yInterpolator.getCurrentValue() : this.config.yaxis;
             const baseAngle = this.angleInterpolator?.isCurrentlyInterpolating() ? this.angleInterpolator.getCurrentValue() : this.config.angle;
 
-            // Calculate final offsets and angle
-            const offsetX = currentX / 10; // Scale MIDI/config value to pixel offset
+            const offsetX = currentX / 10;
             const offsetY = currentY / 10;
-            const finalAngle = baseAngle + this.continuousRotationAngle; // Combine interpolated/config angle with continuous rotation
-            const angleRad = (finalAngle % 360) * Math.PI / 180; // Convert degrees to radians
+            const finalAngle = baseAngle + this.continuousRotationAngle;
+            const angleRad = (finalAngle % 360) * Math.PI / 180;
 
-            // Calculate the center point for the top-left quadrant's drawing, clamping to avoid excessive offsets
             const finalCenterX_TL = Math.max(-MAX_TOTAL_OFFSET, Math.min(MAX_TOTAL_OFFSET, halfWidth / 2 + offsetX + driftX));
             const finalCenterY_TL = Math.max(-MAX_TOTAL_OFFSET, Math.min(MAX_TOTAL_OFFSET, halfHeight / 2 + offsetY + driftY));
 
-            // Debug log for small dimensions or draw sizes
             if (import.meta.env.DEV && (width < 100 || height < 100 || imgDrawWidth < 10 || imgDrawHeight < 10)) {
-                console.log(`${logPrefix} Draw Params - LogicalWH: ${width}x${height}, ImgDrawWH: ${imgDrawWidth}x${imgDrawHeight}, FinalCenterTL: ${finalCenterX_TL.toFixed(1)}x${finalCenterY_TL.toFixed(1)}, Angle: ${finalAngle.toFixed(1)}, Opacity: ${currentConfig.opacity}, ImageSrc: ${this.image.src.substring(0,50)}...`);
+                // console.log(`${logPrefix} Draw Params - LogicalWH: ${width}x${height}, ImgDrawWH: ${imgDrawWidth}x${imgDrawHeight}, FinalCenterTL: ${finalCenterX_TL.toFixed(1)}x${finalCenterY_TL.toFixed(1)}, Angle: ${finalAngle.toFixed(1)}, Opacity: ${currentConfig.opacity}, ImageSrc: ${this.image.src.substring(0,50)}...`);
             }
 
-            // Clear the entire canvas (using buffer dimensions)
             try { this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height); }
             catch (e) {
                 if (import.meta.env.DEV) {
                     console.error(`${logPrefix} Error clearing canvas:`, e);
                 }
-                this.isDrawing = false; return false; // Cannot proceed if clear fails
+                this.isDrawing = false; return false;
             }
 
-            // Set global alpha for the layer
             this.ctx.globalAlpha = currentConfig.opacity ?? 1.0;
 
-            // Helper function to draw the image centered and rotated
             const drawImageWithRotation = () => {
                  try {
-                    this.ctx.save(); // Save context state before rotation
-                    this.ctx.rotate(angleRad); // Apply rotation
+                    this.ctx.save();
+                    this.ctx.rotate(angleRad);
                     if (this.image?.complete && this.image?.naturalWidth > 0) {
-                        // Draw image centered at the translated origin (0,0)
                         this.ctx.drawImage(this.image, 0, 0, imgNaturalWidth, imgNaturalHeight, -imgDrawWidth / 2, -imgDrawHeight / 2, imgDrawWidth, imgDrawHeight);
                     }
-                    this.ctx.restore(); // Restore context state
+                    this.ctx.restore();
                 } catch (e) { if (import.meta.env.DEV) console.error(`${logPrefix} drawImage error:`, e); }
             };
 
-            // Draw four quadrants with appropriate clipping, translation, and scaling for reflection
-            // Top-Left (Normal)
             this.ctx.save(); this.ctx.beginPath(); this.ctx.rect(0,0,halfWidth,halfHeight); this.ctx.clip();
             this.ctx.translate(finalCenterX_TL, finalCenterY_TL); drawImageWithRotation(); this.ctx.restore();
 
-            // Top-Right (Horizontal Reflection)
             this.ctx.save(); this.ctx.beginPath(); this.ctx.rect(halfWidth,0,remainingWidth,halfHeight); this.ctx.clip();
-            this.ctx.translate(width,0); this.ctx.scale(-1,1); // Reflect horizontally
+            this.ctx.translate(width,0); this.ctx.scale(-1,1);
             this.ctx.translate(finalCenterX_TL, finalCenterY_TL); drawImageWithRotation(); this.ctx.restore();
 
-            // Bottom-Left (Vertical Reflection)
             this.ctx.save(); this.ctx.beginPath(); this.ctx.rect(0,halfHeight,halfWidth,remainingHeight); this.ctx.clip();
-            this.ctx.translate(0,height); this.ctx.scale(1,-1); // Reflect vertically
+            this.ctx.translate(0,height); this.ctx.scale(1,-1);
             this.ctx.translate(finalCenterX_TL, finalCenterY_TL); drawImageWithRotation(); this.ctx.restore();
 
-            // Bottom-Right (Horizontal & Vertical Reflection)
             this.ctx.save(); this.ctx.beginPath(); this.ctx.rect(halfWidth,halfHeight,remainingWidth,remainingHeight); this.ctx.clip();
-            this.ctx.translate(width,height); this.ctx.scale(-1,-1); // Reflect both
+            this.ctx.translate(width,height); this.ctx.scale(-1,-1);
             this.ctx.translate(finalCenterX_TL, finalCenterY_TL); drawImageWithRotation(); this.ctx.restore();
 
-            // Reset global alpha
             this.ctx.globalAlpha = 1.0;
-            this.isDrawing = false; // Release drawing flag
+            this.isDrawing = false;
             return true;
         } catch (e) {
             if (import.meta.env.DEV) {
                 console.error(`${logPrefix} Unexpected draw error:`, e);
             }
-            this.isDrawing = false; // Ensure flag is released on error
+            this.isDrawing = false;
             return false;
         }
     }
@@ -752,26 +685,21 @@ class CanvasManager {
      * @param {number} deltaTime - The smoothed time elapsed since the last frame in seconds.
      */
     updateDrift(config, deltaTime) {
-        if (!config?.driftState) return; // No drift state configured
+        if (!config?.driftState) return;
         const {driftState} = config;
         const driftAmount = config.drift ?? 0;
         const driftSpeed = config.driftSpeed ?? 0.1;
 
         if(driftAmount > 0 && driftState.enabled){
-            // Initialize phase if invalid
             if(typeof driftState.phase !== "number" || isNaN(driftState.phase)) {
                 driftState.phase = Math.random() * Math.PI * 2;
             }
-            // Update phase based on time and speed
-            driftState.phase += deltaTime * driftSpeed * 1.0; // Multiplier can adjust drift pattern speed
-            // Calculate X/Y drift using sine/cosine for smooth oscillation
-            const calculatedX = Math.sin(driftState.phase) * driftAmount * 1.5; // Multiplier adjusts drift range
-            const calculatedY = Math.cos(driftState.phase * 0.7 + Math.PI / 4) * driftAmount * 1.5; // Different phase/multiplier for Y
-            // Clamp drift values to prevent excessive offsets
+            driftState.phase += deltaTime * driftSpeed * 1.0;
+            const calculatedX = Math.sin(driftState.phase) * driftAmount * 1.5;
+            const calculatedY = Math.cos(driftState.phase * 0.7 + Math.PI / 4) * driftAmount * 1.5;
             driftState.x = Math.max(-MAX_TOTAL_OFFSET / 2, Math.min(MAX_TOTAL_OFFSET / 2, calculatedX));
             driftState.y = Math.max(-MAX_TOTAL_OFFSET / 2, Math.min(MAX_TOTAL_OFFSET / 2, calculatedY));
         } else {
-            // Reset drift position if disabled or amount is zero
             driftState.x = 0;
             driftState.y = 0;
         }
@@ -779,76 +707,65 @@ class CanvasManager {
 
     /**
      * The main animation loop callback function.
-     * Calculates delta time, updates interpolators, updates continuous rotation,
-     * handles canvas setup checks, and triggers the draw function.
      * @param {number} timestamp - The timestamp provided by requestAnimationFrame.
      */
     animationLoop(timestamp) {
-        if (this.isDestroyed || this.animationFrameId === null) return; // Exit if destroyed or loop stopped
-        this.animationFrameId = requestAnimationFrame(this.animationLoop); // Request next frame
+        if (this.isDestroyed || this.animationFrameId === null) return;
+        this.animationFrameId = requestAnimationFrame(this.animationLoop);
 
-        if (!this.config.enabled) { return; } // Skip updates and drawing if disabled
+        if (!this.config.enabled) { return; }
 
-        // Calculate smoothed delta time
-        if (!this.lastTimestamp) this.lastTimestamp = timestamp; // Initialize timestamp on first frame
+        if (!this.lastTimestamp) this.lastTimestamp = timestamp;
         const elapsed = timestamp - this.lastTimestamp;
         this.lastTimestamp = timestamp;
-        const rawDeltaTime = Math.max(0.001, elapsed / 1000.0); // Clamp minimum delta time
+        const rawDeltaTime = Math.max(0.001, elapsed / 1000.0);
 
         this.deltaTimeBuffer.push(rawDeltaTime);
         if (this.deltaTimeBuffer.length > DELTA_TIME_BUFFER_SIZE) { this.deltaTimeBuffer.shift(); }
         this.smoothedDeltaTime = this.deltaTimeBuffer.reduce((a,b) => a+b,0) / this.deltaTimeBuffer.length;
 
-        // Check if canvas setup is needed (e.g., initial load, resize)
         if (this.lastValidWidth <= 0 || this.lastValidHeight <= 0 || !this.canvas || !this.ctx) {
-            // Attempt setup, then draw if successful and still enabled
             this.setupCanvas().then(setupOk => {
                 if (setupOk && this.config.enabled) this.draw(timestamp, this.config);
             });
-            return; // Don't proceed with drawing this frame if setup was needed
+            return;
         }
 
-        // Don't draw if image isn't ready
         if (!this.image?.complete || this.image?.naturalWidth === 0) { return; }
 
-        const now = performance.now(); // Use consistent time for updates
-
-        // Update interpolators
+        const now = performance.now();
         this.xInterpolator?.update(now);
         this.yInterpolator?.update(now);
         this.angleInterpolator?.update(now);
 
-        // Update continuous rotation based on speed and delta time
         const speed = this.config.speed ?? 0;
         const direction = this.config.direction ?? 1;
-        const angleDelta = speed * direction * this.smoothedDeltaTime * 600; // Scale speed factor
-        this.continuousRotationAngle = (this.continuousRotationAngle + angleDelta) % 360; // Keep angle within 0-360
+        const angleDelta = speed * direction * this.smoothedDeltaTime * 600;
+        this.continuousRotationAngle = (this.continuousRotationAngle + angleDelta) % 360;
 
-        // Perform the draw operation for this frame
         this.draw(timestamp, this.config);
     }
 
     /**
      * Forces a single redraw of the canvas using the current or provided configuration.
-     * Useful for updating the view after non-animated changes.
      * @async
-     * @param {object | null} [configToUse=null] - Optional config object to use for this redraw. Defaults to the current config.
+     * @param {object | null} [configToUse=null] - Optional config object. Defaults to current config.
      * @returns {Promise<boolean>} True if the redraw was successfully initiated.
      */
     async forceRedraw(configToUse = null) {
-        if (this.isDestroyed || this.isDrawing) return false; // Don't redraw if destroyed or already drawing
+        if (this.isDestroyed || this.isDrawing) return false;
         return this.drawStaticFrame(configToUse || this.config);
     }
 
     /**
-     * Cleans up resources: stops the animation loop, releases references to canvas, context, and image.
+     * Cleans up resources: stops animation loop, releases references.
      */
     destroy() {
         this.isDestroyed = true;
         this.stopAnimationLoop();
         this.image = null;
         this.ctx = null;
-        this.canvas = null; // Release reference
+        this.canvas = null;
         this.deltaTimeBuffer = [];
         this.xInterpolator = null;
         this.yInterpolator = null;

@@ -1,3 +1,4 @@
+// src/utils/erc725.js
 import { getAddress, hexToString, decodeAbiParameters, parseAbiParameters } from 'viem';
 import { ERC725YDataKeys } from '@lukso/lsp-smart-contracts';
 import { Buffer } from 'buffer';
@@ -11,16 +12,22 @@ if (typeof window !== 'undefined' && typeof window.Buffer === 'undefined') {
 const IPFS_GATEWAY = import.meta.env.VITE_IPFS_GATEWAY || 'https://api.universalprofile.cloud/ipfs/';
 
 /**
+ * @typedef {object} DecodedDataItem
+ * @property {string} keyName - The original key name from the input.
+ * @property {string} value - The original hex value from the input.
+ */
+
+/**
  * Decodes ERC725Y data items based on a schema hint.
  * Currently supports decoding the RadarWhitelist address array (both ABI-encoded and legacy JSON format).
  * Falls back to returning raw data items (keyName, value) for unknown schema hints or if decoding fails.
  *
  * @param {Array<{keyName: string, value: string}>} dataItems - Array of data items fetched from ERC725Y storage. Expected to contain the relevant key for the schemaHint.
  * @param {string} schemaHint - A hint indicating the expected schema (e.g., 'SupportedStandards:RadarWhitelist').
- * @returns {Array<string> | Array<{keyName: string, value: string}>} Decoded data (e.g., array of addresses for RadarWhitelist) or the original items if decoding fails or hint is unknown. Returns an empty array if input is invalid or decoding yields no results.
+ * @returns {Array<string> | Array<DecodedDataItem>} Decoded data (e.g., array of addresses for RadarWhitelist) or the original items if decoding fails or hint is unknown. Returns an empty array if input is invalid or decoding yields no results.
  */
 export function decodeData(dataItems, schemaHint) {
-    if (!dataItems || dataItems.length === 0) return [];
+    if (!dataItems || !Array.isArray(dataItems) || dataItems.length === 0) return [];
 
     try {
         if (schemaHint === 'SupportedStandards:RadarWhitelist' && dataItems[0]?.value) {
@@ -29,28 +36,28 @@ export function decodeData(dataItems, schemaHint) {
                 try {
                     // Try ABI decoding first (assuming address[])
                     const types = parseAbiParameters('address[]');
-                    const decoded = decodeAbiParameters(types, rawData);
+                    const decoded = decodeAbiParameters(types, /** @type {`0x${string}`} */ (rawData)); // Cast to satisfy viem
                     return decoded[0] || []; // Return the decoded array or empty if null/undefined
                 } catch (abiError) {
                     if (import.meta.env.DEV) {
-                        console.warn(`decodeData: Failed ABI decode for ${schemaHint}. Trying JSON decode...`, abiError);
+                        console.warn(`[decodeData] Failed ABI decode for ${schemaHint}. Trying JSON decode...`, abiError);
                     }
                     try {
                         // Fallback to JSON decoding for legacy format
-                        const jsonString = hexToString(rawData);
+                        const jsonString = hexToString(/** @type {`0x${string}`} */ (rawData)); // Cast to satisfy viem
                         const parsed = JSON.parse(jsonString);
                         if (Array.isArray(parsed)) {
-                            // Assuming legacy format was [{address: '0x...'}, ...]
-                            return parsed.map(item => item?.address).filter(Boolean);
+                            // Assuming legacy format was [{address: '0x...'}, ...] or string array
+                            return parsed.map(item => typeof item === 'string' ? item : item?.address).filter(Boolean);
                         } else {
                              if (import.meta.env.DEV) {
-                                 console.warn(`decodeData: Decoded JSON is not an array for ${schemaHint}.`);
+                                 console.warn(`[decodeData] Decoded JSON is not an array for ${schemaHint}.`);
                              }
                              return [];
                         }
                     } catch (jsonError) {
                         if (import.meta.env.DEV) {
-                            console.error(`decodeData: Failed both ABI and JSON decoding for ${schemaHint}:`, jsonError, 'Data:', rawData);
+                            console.error(`[decodeData] Failed both ABI and JSON decoding for ${schemaHint}:`, jsonError, 'Data:', rawData);
                         }
                         return []; // Return empty array on double failure
                     }
@@ -61,16 +68,54 @@ export function decodeData(dataItems, schemaHint) {
         }
         // If no specific logic for the schemaHint, return the raw items
         if (import.meta.env.DEV) {
-            console.warn(`decodeData: No specific decoding logic for schemaHint: ${schemaHint}. Returning raw items.`);
+            console.warn(`[decodeData] No specific decoding logic for schemaHint: ${schemaHint}. Returning raw items.`);
         }
         return dataItems.map(item => ({ keyName: item.keyName, value: item.value }));
     } catch (error) {
         if (import.meta.env.DEV) {
-            console.error(`Error decoding data for schema ${schemaHint}:`, error, 'Data:', dataItems);
+            console.error(`[decodeData] Error decoding data for schema ${schemaHint}:`, error, 'Data:', dataItems);
         }
         return []; // Return empty array on general error
     }
 }
+
+/**
+ * @typedef {object} ParsedDataUri
+ * @property {string} mimeType - The MIME type of the data.
+ * @property {boolean} isBase64 - True if the data is base64 encoded.
+ * @property {string} data - The actual data payload.
+ */
+
+/**
+ * Parses a Data URI string into its components: mime type, base64 encoding status, and data payload.
+ * Follows the standard Data URI format (RFC 2397).
+ *
+ * @param {string} uri - The Data URI string (e.g., "data:application/json;base64,eyJ...").
+ * @returns {ParsedDataUri} An object containing the parsed components.
+ * @throws {Error} If the input string is not a valid Data URI format.
+ */
+function parseDataUri(uri) {
+    if (typeof uri !== 'string' || !uri.startsWith('data:')) {
+        throw new Error('Invalid Data URI: input is not a string or does not start with "data:"');
+    }
+    const commaIndex = uri.indexOf(',');
+    if (commaIndex === -1) {
+        throw new Error('Invalid Data URI: missing comma separator');
+    }
+    // Extract the part between "data:" and ","
+    const metaPart = uri.substring(5, commaIndex).trim();
+    // Extract the part after ","
+    const dataPart = uri.substring(commaIndex + 1);
+
+    const metaParts = metaPart.split(';');
+    // The first part is the mime type, default if empty
+    const mimeType = metaParts[0] || 'text/plain;charset=US-ASCII';
+    // Check if "base64" is present in the other parts
+    const isBase64 = metaParts.slice(1).includes('base64');
+
+    return { mimeType, isBase64, data: dataPart };
+}
+
 
 /**
  * Fetches and resolves LSP4 Metadata for a given asset contract address.
@@ -96,9 +141,9 @@ export async function resolveLsp4Metadata(configService, contractAddress) {
     }
     const logPrefix = `[resolveLsp4Metadata Addr:${checksummedAddress.slice(0, 6)}]`;
 
-    if (!configService || !checksummedAddress) {
+    if (!configService || typeof configService.loadDataFromKey !== 'function') {
         if (import.meta.env.DEV) {
-            console.error(`${logPrefix} Missing configService or contractAddress`);
+            console.error(`${logPrefix} Invalid or missing configService.`);
         }
         return null;
     }
@@ -108,119 +153,77 @@ export async function resolveLsp4Metadata(configService, contractAddress) {
         const rawValue = await configService.loadDataFromKey(checksummedAddress, lsp4Key);
 
         if (!rawValue || rawValue === '0x') {
-            // No metadata key set
-            return null;
+            return null; // No metadata key set or empty
         }
 
         let potentialUrl = null;
         let extractedJsonDirectly = null;
-        const HASH_FUNC_OFFSET = 2 + 2 * 2; // '0x' + 2 bytes for length prefix of hash function
-        const HASH_OFFSET = HASH_FUNC_OFFSET + 32 * 2; // + 32 bytes for hash function itself
-        // Hex representation of "data:" prefix
-        const DATA_URI_HEX_PREFIX_RAW = Buffer.from('data:').toString('hex');
+        const VERIFIABLE_URI_PREFIX = "0x0000";
+        const HASH_FUNCTION_ID_LENGTH_BYTES = 4;
+        const HASH_LENGTH_BYTES_LENGTH = 2;
 
-        // Check if it looks like a VerifiableURI (has hash function and hash)
-        if (rawValue.length >= HASH_OFFSET + 2) { // +2 for at least one byte of URL
-             const urlBytesHexWithPrefix = ('0x' + rawValue.substring(HASH_OFFSET)); // Ensure 0x prefix for viem hexToString
-             const urlBytesHexOnly = rawValue.substring(HASH_OFFSET); // Original hex string for prefix search
+        // const DATA_URI_HEX_PREFIX_RAW = Buffer.from('data:').toString('hex'); // Not used in this revised logic
 
-             // Try decoding the URL part strictly first
-             try {
-                 let decodedString = hexToString(urlBytesHexWithPrefix); // Strict UTF-8 decoding
-                 // Check for standard URL prefixes
-                 if (decodedString.startsWith('ipfs://') || decodedString.startsWith('http')) {
-                      potentialUrl = decodedString;
-                 } else {
-                     // Sometimes the URL might be embedded within junk bytes, try finding known prefixes
-                     const ipfsIndex = decodedString.indexOf('ipfs://');
-                     const httpIndex = decodedString.indexOf('http://');
-                     const httpsIndex = decodedString.indexOf('https://');
-                     // Find the earliest occurrence of any valid prefix
-                     let foundIndex = [ipfsIndex, httpIndex, httpsIndex].filter(i => i !== -1).reduce((min, cur) => Math.min(min, cur), Infinity);
-                     if (foundIndex !== Infinity && foundIndex !== -1) {
-                        potentialUrl = decodedString.substring(foundIndex);
-                     }
-                 }
-             } catch { // If strict decode failed, try lenient decoding for prefix search
-                 try {
-                    // Use lenient decoding (replace invalid sequences) just for finding the prefix
-                    let decodedStringLenient = hexToString(urlBytesHexWithPrefix, { onError: 'replace' });
-                    const ipfsIndex = decodedStringLenient.indexOf('ipfs://');
-                    const httpIndex = decodedStringLenient.indexOf('http://');
-                    const httpsIndex = decodedStringLenient.indexOf('https://');
-                    let foundIndex = [ipfsIndex, httpIndex, httpsIndex].filter(i => i !== -1).reduce((min, cur) => Math.min(min, cur), Infinity);
-                    if (foundIndex !== Infinity && foundIndex !== -1) {
-                       potentialUrl = decodedStringLenient.substring(foundIndex);
-                       // Note: We found the start, but the rest might still be messy. Fetching handles this.
-                    }
-                 } catch (lenientError){
+        if (rawValue.startsWith(VERIFIABLE_URI_PREFIX)) {
+            const valueWithoutPrefix = rawValue.substring(VERIFIABLE_URI_PREFIX.length);
+            // const hashFunctionIdHex = `0x${valueWithoutPrefix.substring(0, HASH_FUNCTION_ID_LENGTH_BYTES * 2)}`; // This was unused
+            const hashLengthHex = `0x${valueWithoutPrefix.substring(HASH_FUNCTION_ID_LENGTH_BYTES * 2, (HASH_FUNCTION_ID_LENGTH_BYTES + HASH_LENGTH_BYTES_LENGTH) * 2)}`;
+            const hashLength = parseInt(hashLengthHex, 16);
+
+            if (!isNaN(hashLength)) {
+                const hashStart = (HASH_FUNCTION_ID_LENGTH_BYTES + HASH_LENGTH_BYTES_LENGTH) * 2;
+                const hashEnd = hashStart + hashLength * 2;
+                const urlBytesHex = `0x${valueWithoutPrefix.substring(hashEnd)}`;
+
+                try {
+                    potentialUrl = hexToString(/** @type {`0x${string}`} */ (urlBytesHex));
+                } catch (e) {
                     if (import.meta.env.DEV) {
-                        console.error(`${logPrefix} Error during lenient UTF-8 decode for search: ${lenientError.message}`);
-                    }
-                 }
-             }
-
-             // Check for Data URI hex prefix if no standard URL was found
-             if (!potentialUrl && urlBytesHexOnly.length > DATA_URI_HEX_PREFIX_RAW.length) {
-                const dataUriStartIndex = urlBytesHexOnly.indexOf(DATA_URI_HEX_PREFIX_RAW);
-                if (dataUriStartIndex !== -1) {
-                    // Found "data:" hex prefix within the URL bytes
-                    const dataUriFullHex = '0x' + urlBytesHexOnly.substring(dataUriStartIndex); // Add '0x' for hexToString
-                    try {
-                        const dataUriString = hexToString(dataUriFullHex); // Decode the data URI string
-                        const { mimeType, isBase64, data } = parseDataUri(dataUriString);
-                        if (mimeType.includes('json')) {
-                            // Decode JSON data based on encoding (base64 or URL-encoded)
-                            let jsonDataString = isBase64 ? Buffer.from(data, 'base64').toString('utf8') : decodeURIComponent(data);
-                            extractedJsonDirectly = JSON.parse(jsonDataString);
-                        } else {
-                            if (import.meta.env.DEV) {
-                                console.warn(`${logPrefix} Data URI has non-JSON mime type: ${mimeType}. Ignoring content.`);
-                            }
-                        }
-                    } catch(e) {
-                        if (import.meta.env.DEV) {
-                            console.error(`${logPrefix} Failed to decode/parse Data URI content: ${e.message}`);
-                        }
+                        console.warn(`${logPrefix} Failed to decode URL part of VerifiableURI: ${e.message}. Raw URL bytes: ${urlBytesHex}`);
                     }
                 }
-             }
-        } else if (rawValue.startsWith('0x') && rawValue.length > 2) {
-             // Fallback: Value doesn't look like VerifiableURI, try decoding entire value as a plain URL
-             try {
-                 const decodedEntireValue = hexToString(rawValue);
-                  if (decodedEntireValue.startsWith('http') || decodedEntireValue.startsWith('ipfs')) {
-                     potentialUrl = decodedEntireValue; // Treat the whole thing as a URL
-                 } else {
-                     if (import.meta.env.DEV) {
-                         console.warn(`${logPrefix} Direct decode of entire value is not a valid URL.`);
-                     }
-                 }
-             } catch (e) {
-                 if (import.meta.env.DEV) {
-                     console.warn(`${logPrefix} Could not decode entire raw value directly as URL. Raw: ${rawValue.substring(0, 50)}... Error: ${e.message}`);
-                 }
-             }
+            } else if (import.meta.env.DEV) {
+                console.warn(`${logPrefix} Invalid hash length in VerifiableURI.`);
+            }
         } else {
-            // Raw value is too short or invalid format
-            if (import.meta.env.DEV) {
-                console.warn(`${logPrefix} Raw value is too short or invalid to be VerifiableURI or direct URL: ${rawValue}`);
+            try {
+                const decodedEntireValue = hexToString(/** @type {`0x${string}`} */ (rawValue));
+                if (decodedEntireValue.startsWith('ipfs://') || decodedEntireValue.startsWith('http')) {
+                    potentialUrl = decodedEntireValue;
+                } else if (decodedEntireValue.startsWith('data:')) {
+                    try {
+                        const { mimeType, isBase64, data } = parseDataUri(decodedEntireValue);
+                        if (mimeType.includes('json')) {
+                            const jsonDataString = isBase64 ? Buffer.from(data, 'base64').toString('utf8') : decodeURIComponent(data);
+                            extractedJsonDirectly = JSON.parse(jsonDataString);
+                        } else if (import.meta.env.DEV) {
+                            console.warn(`${logPrefix} Data URI has non-JSON mime type: ${mimeType}. Ignoring content.`);
+                        }
+                    } catch (e) {
+                        if (import.meta.env.DEV) {
+                            console.error(`${logPrefix} Failed to decode/parse Data URI content from direct value: ${e.message}`);
+                        }
+                    }
+                } else if (import.meta.env.DEV) {
+                    console.warn(`${logPrefix} Direct decode of raw value is not a standard URL or Data URI.`);
+                }
+            } catch (e) {
+                if (import.meta.env.DEV) {
+                    console.warn(`${logPrefix} Could not decode entire raw value as string. Raw: ${rawValue.substring(0, 50)}... Error: ${e.message}`);
+                }
             }
         }
 
-        // --- Process results: Prioritize directly extracted JSON, then fetched URL ---
+
         if (extractedJsonDirectly) {
-            // Check if the JSON is already wrapped or needs wrapping
             if (extractedJsonDirectly.LSP4Metadata) {
-                 return extractedJsonDirectly; // Already has the standard top-level key
+                 return extractedJsonDirectly;
             } else if (extractedJsonDirectly.name || extractedJsonDirectly.icon || extractedJsonDirectly.images || extractedJsonDirectly.assets) {
-                 // Contains expected metadata fields but lacks the wrapper key
                  if (import.meta.env.DEV) {
                      console.warn(`${logPrefix} JSON from Data URI lacks 'LSP4Metadata' key, wrapping content.`);
                  }
                  return { LSP4Metadata: extractedJsonDirectly };
             } else {
-                 // JSON structure is unexpected
                  if (import.meta.env.DEV) {
                      console.error(`${logPrefix} JSON from Data URI has unexpected structure.`, extractedJsonDirectly);
                  }
@@ -230,15 +233,13 @@ export async function resolveLsp4Metadata(configService, contractAddress) {
 
         if (potentialUrl) {
             let fetchUrl = potentialUrl;
-            // Resolve IPFS URLs using the configured gateway
             if (fetchUrl.startsWith('ipfs://')) {
-                fetchUrl = `${IPFS_GATEWAY}${fetchUrl.substring(7)}`;
+                fetchUrl = `${IPFS_GATEWAY.endsWith('/') ? IPFS_GATEWAY : IPFS_GATEWAY + '/'}${fetchUrl.substring(7)}`;
             }
 
             if (!fetchUrl.startsWith('http')) {
-                // Should only happen if IPFS gateway is misconfigured or URL is invalid
                 if (import.meta.env.DEV) {
-                    console.error(`${logPrefix} Invalid fetch URL derived after potential IPFS resolution: ${fetchUrl}`);
+                    console.error(`${logPrefix} Invalid fetch URL derived: ${fetchUrl}`);
                 }
                 return null;
             }
@@ -255,22 +256,19 @@ export async function resolveLsp4Metadata(configService, contractAddress) {
                     metadata = JSON.parse(rawResponseText);
                 } catch (parseError) {
                     if (import.meta.env.DEV) {
-                        console.error(`${logPrefix} Failed to parse JSON response from ${fetchUrl}. Error: ${parseError.message}. Response text: ${rawResponseText.substring(0, 200)}...`);
+                        console.error(`${logPrefix} Failed to parse JSON response from ${fetchUrl}. Error: ${parseError.message}. Response text (truncated): ${rawResponseText.substring(0, 200)}...`);
                     }
                     throw new Error(`JSON Parse Error: ${parseError.message}`);
                 }
 
-                // Check if the fetched JSON is already wrapped or needs wrapping
                 if (metadata && metadata.LSP4Metadata) {
-                    return metadata; // Already has the standard top-level key
+                    return metadata;
                 } else if (metadata && (metadata.name || metadata.icon || metadata.images || metadata.assets)) {
-                    // Contains expected metadata fields but lacks the wrapper key
                     if (import.meta.env.DEV) {
                         console.warn(`${logPrefix} Fetched JSON lacks 'LSP4Metadata' key, wrapping content.`);
                     }
                     return { LSP4Metadata: metadata };
                 } else {
-                    // Fetched JSON structure is unexpected
                     if (import.meta.env.DEV) {
                         console.warn(`${logPrefix} Fetched JSON from URL has unexpected structure.`, metadata);
                     }
@@ -284,7 +282,6 @@ export async function resolveLsp4Metadata(configService, contractAddress) {
             }
         }
 
-        // If we reach here, no valid URL or direct JSON was found
         if (import.meta.env.DEV) {
             console.warn(`${logPrefix} Could not extract a valid JSON URL or parse JSON directly from LSP4Metadata value.`);
         }
@@ -296,34 +293,4 @@ export async function resolveLsp4Metadata(configService, contractAddress) {
         }
         return null;
     }
-}
-
-/**
- * Parses a Data URI string into its components: mime type, base64 encoding status, and data payload.
- * Follows the standard Data URI format (RFC 2397).
- *
- * @param {string} uri - The Data URI string (e.g., "data:application/json;base64,eyJ...").
- * @returns {{ mimeType: string, isBase64: boolean, data: string }} An object containing the parsed components.
- * @throws {Error} If the input string is not a valid Data URI format.
- */
-function parseDataUri(uri) {
-    if (typeof uri !== 'string' || !uri.startsWith('data:')) {
-        throw new Error('Invalid Data URI: input is not a string or does not start with "data:"');
-    }
-    const commaIndex = uri.indexOf(',');
-    if (commaIndex === -1) {
-        throw new Error('Invalid Data URI: missing comma separator');
-    }
-    // Extract the part between "data:" and ","
-    const metaPart = uri.substring(5, commaIndex).trim();
-    // Extract the part after ","
-    const dataPart = uri.substring(commaIndex + 1);
-
-    const metaParts = metaPart.split(';');
-    // The first part is the mime type, default if empty
-    const mimeType = metaParts[0] || 'text/plain;charset=US-ASCII';
-    // Check if "base64" is present in the other parts
-    const isBase64 = metaParts.slice(1).includes('base64');
-
-    return { mimeType, isBase64, data: dataPart };
 }

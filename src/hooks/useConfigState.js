@@ -1,3 +1,4 @@
+// src/hooks/useConfigState.js
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useUpProvider } from "../context/UpProvider";
 import ConfigurationService from "../services/ConfigurationService";
@@ -48,6 +49,7 @@ const useConfigState = (currentProfileAddress) => {
   const { addToast } = useToast();
   /** @type {React.RefObject<ConfigurationService | null>} */
   const configServiceRef = useRef(null);
+  /** @type {React.RefObject<string | null>} */
   const prevProfileAddressForGlobalsRef = useRef(null);
 
   // State managed by this hook
@@ -110,7 +112,6 @@ const useConfigState = (currentProfileAddress) => {
                 } else {
                     setSavedReactions({}); // Reset if no data or '0x'
                 }
-                // reactionsLoaded = true; // Removed unused variable
             } catch (e) {
                 if (import.meta.env.DEV) {
                     console.error("Error loading global reactions:", e);
@@ -126,7 +127,6 @@ const useConfigState = (currentProfileAddress) => {
                 } else {
                     setMidiMap({}); // Reset if no data or '0x'
                 }
-                // midiLoaded = true; // Removed unused variable
             } catch (e) {
                 if (import.meta.env.DEV) {
                     console.error("Error loading global MIDI map:", e);
@@ -203,7 +203,7 @@ const useConfigState = (currentProfileAddress) => {
      } finally {
         setIsSavingGlobal(false);
      }
-  }, [currentProfileAddress, savedReactions, addToast, configServiceInstanceReady, configServiceRef, setHasPendingChanges]);
+  }, [currentProfileAddress, savedReactions, addToast, configServiceInstanceReady, setHasPendingChanges]);
 
   /**
    * Saves the current global MIDI map state (for the host profile) to the host profile via ConfigurationService.
@@ -239,7 +239,7 @@ const useConfigState = (currentProfileAddress) => {
      } finally {
         setIsSavingGlobal(false);
      }
-  }, [currentProfileAddress, midiMap, addToast, configServiceInstanceReady, configServiceRef, setHasPendingChanges]);
+  }, [currentProfileAddress, midiMap, addToast, configServiceInstanceReady, setHasPendingChanges]);
 
   /**
    * Updates or adds a specific event reaction configuration in the local state. Sets `hasPendingChanges` to true.

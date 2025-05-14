@@ -1,35 +1,42 @@
+// src/components/Toolbars/TopRightControls.jsx
 import React from "react";
 import PropTypes from "prop-types";
-import "./ToolbarStyles/TopRightControls.css";
+
+import "./ToolbarStyles/TopRightControls.css"; // Local styles
 import {
   whitelistIcon,
   enlargeIcon,
-  learnIcon,
-  eyeIcon,
-  eyeopenIcon,
-} from "../../assets";
+  learnIcon, // Info icon
+  eyeIcon,   // UI hidden icon
+  eyeopenIcon, // UI visible icon
+} from "../../assets"; // Assuming assets are correctly pathed
+
+/**
+ * @typedef {object} TopRightControlsProps
+ * @property {boolean} [showWhitelist=false] - Whether to display the whitelist management button. Visibility is ultimately controlled by this prop combined with `isProjectAdminForWhitelist`.
+ * @property {boolean} [isProjectAdminForWhitelist=false] - Indicates if the current user has administrative privileges required to see and use the whitelist button.
+ * @property {boolean} [showInfo=true] - Whether to display the information overlay button.
+ * @property {boolean} [showToggleUI=true] - Whether to display the UI visibility toggle button.
+ * @property {boolean} [showEnhancedView=true] - Whether to display the fullscreen/enhanced view toggle button.
+ * @property {(() => void)} [onWhitelistClick] - Callback function invoked when the whitelist button is clicked.
+ * @property {(() => void)} [onInfoClick] - Callback function invoked when the info button is clicked.
+ * @property {(() => void)} [onToggleUI] - Callback function invoked when the UI toggle button is clicked.
+ * @property {(() => void)} [onEnhancedView] - Callback function invoked when the fullscreen/enhanced view toggle button is clicked.
+ * @property {boolean} [isUiVisible=true] - Current visibility state of the main UI, used to determine the icon for the UI toggle button and apply conditional styling.
+ */
 
 /**
  * TopRightControls component renders a set of control icons positioned at the top-right
- * of the screen. It includes buttons for toggling fullscreen, managing whitelisted collections (admin-only),
- * accessing an information overlay, and toggling the main UI visibility.
+ * of the screen. It includes buttons for toggling fullscreen/enhanced view,
+ * managing whitelisted collections (conditionally shown to admins), accessing an
+ * information overlay, and toggling the main UI visibility.
  *
- * @param {object} props - The component's props.
- * @param {boolean} [props.showWhitelist=false] - Whether to show the whitelist management button. This is controlled by the parent.
- * @param {boolean} [props.isProjectAdminForWhitelist=false] - Whether the current user is an admin eligible to see/use the whitelist button.
- * @param {boolean} [props.showInfo=true] - Whether to show the information overlay button.
- * @param {boolean} [props.showToggleUI=true] - Whether to show the UI visibility toggle button.
- * @param {boolean} [props.showEnhancedView=true] - Whether to show the fullscreen toggle button.
- * @param {Function} [props.onWhitelistClick] - Callback function when the whitelist button is clicked.
- * @param {Function} [props.onInfoClick] - Callback function when the info button is clicked.
- * @param {Function} [props.onToggleUI] - Callback function when the UI toggle button is clicked.
- * @param {Function} [props.onEnhancedView] - Callback function when the fullscreen toggle button is clicked.
- * @param {boolean} [props.isUiVisible=true] - Current visibility state of the main UI.
- * @returns {JSX.Element} The rendered TopRightControls component.
+ * @param {TopRightControlsProps} props - The component's props.
+ * @returns {JSX.Element | null} The rendered TopRightControls component, or null if it shouldn't be visible (though current logic always renders the container).
  */
 const TopRightControls = ({
   showWhitelist = false,
-  isProjectAdminForWhitelist = false, // New prop to determine if admin can see it
+  isProjectAdminForWhitelist = false,
   showInfo = true,
   showToggleUI = true,
   showEnhancedView = true,
@@ -39,52 +46,64 @@ const TopRightControls = ({
   onEnhancedView,
   isUiVisible = true,
 }) => {
+  // The main container's visibility is handled by its parent or CSS based on `isUiVisible` for its children.
+  // The `ui-hidden` class on the container itself might be redundant if children are conditionally rendered
+  // or also styled based on `isUiVisible`. For this refactor, keeping existing class logic.
   return (
     <div className={`top-right-controls-container ${!isUiVisible ? "ui-hidden" : ""}`}>
+      {/* Enhanced View / Fullscreen Toggle Button */}
       {showEnhancedView && isUiVisible && (
         <button
           className="toolbar-icon"
           onClick={onEnhancedView}
           title="Toggle Fullscreen"
+          aria-label="Toggle Fullscreen" // Accessibility: Provide an accessible name
         >
           <img
             src={enlargeIcon}
-            alt="Toggle Fullscreen"
+            alt="Toggle Fullscreen" // Alt text for accessibility
             className="enhanced-view-icon icon-image"
           />
         </button>
       )}
 
-      {/* Whitelist button: shown if showWhitelist is true AND user is admin */}
+      {/* Whitelist Management Button: Conditionally rendered */}
       {showWhitelist && isProjectAdminForWhitelist && isUiVisible && (
         <button
           className="toolbar-icon"
           onClick={onWhitelistClick}
-          title="Manage Collections"
+          title="Manage Whitelisted Collections"
+          aria-label="Manage Whitelisted Collections"
         >
           <img
             src={whitelistIcon}
-            alt="Whitelist Collections"
+            alt="Manage Collections"
             className="icon-image"
           />
         </button>
       )}
 
+      {/* Information Overlay Button */}
       {showInfo && isUiVisible && (
         <button
           className="toolbar-icon"
           onClick={onInfoClick}
           title="Information"
+          aria-label="Show Information"
         >
-          <img src={learnIcon} alt="Info" className="icon-image" />
+          <img src={learnIcon} alt="Information" className="icon-image" />
         </button>
       )}
 
+      {/* UI Visibility Toggle Button */}
       {showToggleUI && (
         <button
+          // `fixed-toggle-button` suggests it might always be visible regardless of `isUiVisible` for other elements.
+          // `show-ui-btn` class is applied when UI is hidden, potentially making this button more prominent.
           className={`toolbar-icon fixed-toggle-button ${!isUiVisible ? "show-ui-btn" : ""}`}
           onClick={onToggleUI}
           title={isUiVisible ? "Hide UI" : "Show UI"}
+          aria-label={isUiVisible ? "Hide User Interface" : "Show User Interface"}
         >
           <img
             src={isUiVisible ? eyeopenIcon : eyeIcon}
@@ -110,4 +129,5 @@ TopRightControls.propTypes = {
   isUiVisible: PropTypes.bool,
 };
 
+// Default export is fine for components.
 export default TopRightControls;

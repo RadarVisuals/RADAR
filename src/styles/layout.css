@@ -1,10 +1,11 @@
+/* src/styles/layout.css */
 @import "./variables.css";
 
 /* Core App Layout */
 .main-view {
   width: 100%;
   height: 100%;
-  background: none;
+  background: none; /* Background is on canvas-container now */
   position: relative;
   overflow: hidden;
   display: block;
@@ -16,9 +17,12 @@
   height: 100%;
   position: relative;
   overflow: hidden;
-  background: radial-gradient( circle at center, var(--color-bg-light) 0%, #000000 100% );
+  /* background, opacity, and transition for dimming are now in Mainview.css */
   z-index: var(--z-background);
 }
+
+/* REMOVED: .main-view.overlay-animating .canvas-container .canvas rule */
+/* This is now handled by .main-view.overlay-animating .canvas-container in Mainview.css */
 
 /* Background Grid */
 .grid-overlay {
@@ -31,7 +35,7 @@
   background-size: 20px 20px;
   pointer-events: none;
   opacity: 1;
-  z-index: 0; /* Behind canvases */
+  z-index: 0; /* Behind canvases, but within canvas-container */
 }
 
 /* Centered Logo */
@@ -41,7 +45,7 @@
   left: 50%;
   transform: translateX(-50%);
   max-width: 200px;
-  z-index: var(--z-ui);
+  z-index: var(--z-ui); /* Above canvas container */
   opacity: 1;
   transition: all var(--transition-slow) ease;
 }
@@ -54,7 +58,7 @@
 /* Preview Mode Indicator */
 .preview-mode-indicator {
   position: fixed;
-  top: calc(var(--space-lg) + var(--icon-size-lg) + 10px); /* Position below top-right controls */
+  top: calc(var(--space-lg) + var(--icon-size-lg) + 10px);
   right: var(--space-lg);
   z-index: var(--z-controls);
   display: flex;
@@ -89,20 +93,43 @@
   background: var(--color-warning-a50, rgba(255, 165, 0, 0.5));
 }
 
-/* Main UI Container */
-.ui-container {
+/* Main UI Container - for toolbars, panels etc. */
+.ui-elements-container {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  pointer-events: none; /* Allow clicks through container */
-  z-index: var(--z-ui);
+  pointer-events: none;
+  z-index: var(--z-ui); /* Above canvas container */
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.5s ease-in-out, visibility 0s linear 0s;
 }
-/* Enable pointer events on direct UI children */
-.ui-container > * {
+.ui-elements-container.visible {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+.ui-elements-container.visible > * {
   pointer-events: auto;
 }
+.ui-elements-container.hidden-by-opacity {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.5s ease-in-out 0s, visibility 0s linear 0.5s;
+  pointer-events: none !important;
+}
+.ui-elements-container.hidden-by-opacity > * {
+  pointer-events: none !important;
+}
+.ui-elements-container.visible .panel-wrapper,
+.ui-elements-container.visible .vertical-toolbar-icon,
+.ui-elements-container.visible .bottom-right-icons,
+.ui-elements-container.visible .preset-selector-bar {
+  pointer-events: auto;
+}
+
 
 /* Status Display (Loading/Error/Idle Messages) */
 .status-display {
@@ -199,7 +226,6 @@
   opacity: 1;
   pointer-events: none;
   z-index: var(--z-effects, 10);
-  transform: translate(-50%, -50%) scale(0.1);
 }
 .click-ping-svg {
   display: block;
@@ -211,13 +237,15 @@
   stroke-opacity: 1;
   fill: none;
 }
-.ping-svg-animation {
-  animation: pingSVGEffect 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+.ping-svg-animation .click-ping-svg circle {
+  animation: ping-circle-anim 0.7s cubic-bezier(0.1, 0.7, 0.3, 1) forwards;
 }
-@keyframes pingSVGEffect {
-  0% { transform: translate(-50%, -50%) scale(0.1); opacity: 1; }
-  100% { transform: translate(-50%, -50%) scale(6); opacity: 0; }
+@keyframes ping-circle-anim {
+  0% { r: 2; stroke-opacity: 1; transform: scale(0.5); }
+  70% { r: 15; stroke-opacity: 0.7; transform: scale(1.2); }
+  100% { r: 20; stroke-opacity: 0; transform: scale(1.5); }
 }
+
 
 /* Hidden Audio Analyzer Element */
 .hidden-audio-analyzer {
@@ -231,10 +259,6 @@
 
 /* Maximize/Fullscreen Button */
 .maximize-button {
-  position: fixed;
-  bottom: var(--space-lg, 20px);
-  left: var(--space-lg, 20px);
-  z-index: 10000;
   background: rgba(255, 255, 255, 0.1);
   color: white;
   border: 1px solid rgba(255, 255, 255, 0.2);
@@ -247,16 +271,6 @@
 }
 .maximize-button:hover {
   background: rgba(255, 255, 255, 0.2);
-}
-
-/* Dimming background canvases during overlay transitions */
-.main-view.overlay-animating .canvas-container .canvas {
-  opacity: 0.7 !important; /* Dim canvas */
-  transition: opacity 0.3s ease-out !important;
-}
-.main-view .canvas-container .canvas {
-  opacity: 1 !important; /* Restore opacity */
-  transition: opacity 0.3s ease-in !important;
 }
 
 /* Bottom Right Icons Container */
@@ -272,43 +286,21 @@
   pointer-events: auto;
 }
 
-.ui-elements-container {
-  position: absolute; /* Or fixed, depending on desired behavior relative to viewport/parent */
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none; /* Children will override this if they need to be interactive */
-  z-index: 50; /* Below TopRightControls if it's a sibling with higher z-index */
-  opacity: 1;
-  visibility: visible;
-  transition: opacity 0.5s ease-in-out, visibility 0s linear 0s;
-}
-
-.ui-elements-container.visible {
-  opacity: 1;
-  visibility: visible;
-  transition-delay: 0s; /* Show immediately */
-}
-.ui-elements-container.visible > * {
-  pointer-events: auto; /* Allow children to be interactive */
-}
-
-
-.ui-elements-container.hidden-by-opacity {
-  opacity: 0;
-  visibility: visible; /* Still visible, but transparent */
-  transition: opacity 0.5s ease-in-out 0s, visibility 0s linear 0.5s; /* Delay visibility change if you were to use it */
-  pointer-events: none !important; /* Ensure no interaction when hidden */
-}
-.ui-elements-container.hidden-by-opacity > * {
-  pointer-events: none !important; /* Ensure children also don't interact */
-}
-
-/* Ensure specific children like panel wrappers inside ui-elements-container get pointer events when visible */
-.ui-elements-container.visible .panel-wrapper,
-.ui-elements-container.visible .vertical-toolbar-icon, /* if vertical toolbar is inside */
-.ui-elements-container.visible .bottom-right-icons, /* if these are inside */
-.ui-elements-container.visible .preset-selector-bar {
-  pointer-events: auto;
+/* General Connect Pill Style */
+.general-connect-pill {
+  position: fixed;
+  bottom: var(--space-md);
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--color-warning-a10);
+  color: var(--color-warning-a90);
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--color-warning-a30);
+  z-index: var(--z-top);
+  box-shadow: var(--shadow-md);
+  text-align: center;
+  max-width: 80%;
+  animation: fadeIn var(--transition-normal);
 }

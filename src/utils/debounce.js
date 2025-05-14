@@ -1,3 +1,5 @@
+// src/utils/debounce.js
+
 /**
  * Creates a debounced function that delays invoking the provided function (`func`)
  * until `wait` milliseconds have elapsed since the last time the debounced function
@@ -7,20 +9,28 @@
  *
  * @param {Function} func The function to debounce.
  * @param {number} wait The number of milliseconds to delay execution.
- * @returns {Function} The new debounced function.
+ * @returns {(...args: any[]) => void} The new debounced function.
  */
 function debounce(func, wait) {
-  let timeout;
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let timeout = null;
 
+  /**
+   * The debounced version of the input function.
+   * @param  {...any} args Arguments to pass to the original function.
+   */
   return function executedFunction(...args) {
+    // `this` context will be preserved from where `executedFunction` is called.
     const context = this;
 
     const later = () => {
-      timeout = null; // Indicate debounce ended
-      func.apply(context, args); // Execute original function
+      timeout = null; // Indicate debounce ended, allowing next call to set a new timeout
+      func.apply(context, args); // Execute original function with preserved context and arguments
     };
 
-    clearTimeout(timeout); // Clear previous timer
+    if (timeout !== null) {
+      clearTimeout(timeout); // Clear previous timer if one was set
+    }
     timeout = setTimeout(later, wait); // Set new timer
   };
 }

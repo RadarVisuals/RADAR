@@ -1,55 +1,125 @@
-import React, { useEffect, useState } from 'react';
+// src/components/Toast/Toast.jsx
+import React, { useEffect, useState, useCallback } from 'react'; // Added useCallback
 import PropTypes from 'prop-types';
-import './ToastStyles.css';
+
+import './ToastStyles.css'; // Local styles
 
 /**
- * Toast: Displays a single notification message that can be dismissed
- * manually or automatically after a specified duration.
+ * @typedef {'info' | 'success' | 'warning' | 'error'} ToastType - The type of the toast, influencing its appearance.
+ */
+
+/**
+ * @typedef {object} ToastProps
+ * @property {string|number} id - Unique identifier for the toast message.
+ * @property {React.ReactNode} content - The content of the toast message. Can be a string or a React node.
+ * @property {ToastType} [type='info'] - The type of the toast (e.g., 'info', 'success').
+ * @property {number | null} [duration] - Optional: The duration in milliseconds for which the toast should be visible.
+ *                                     If provided and positive, the toast will start fading out before this duration ends.
+ *                                     If null or 0, it remains until manually dismissed.
+ * @property {(id: string|number) => void} onDismiss - Callback function invoked when the toast requests to be dismissed, either manually or after its duration. It receives the toast's `id`.
+ */
+
+/**
+ * Toast: Displays a single notification message.
+ * It manages its own visibility state for fade-in/fade-out animations.
+ * It can be dismissed manually via a close button or automatically after a specified `duration`.
+ * The actual removal from the list of active toasts is handled by the `onDismiss` callback,
+ * which is typically provided by a `ToastProvider` or a similar state management system.
+ *
+ * @param {ToastProps} props - The component's props.
+ * @returns {JSX.Element} The rendered Toast component.
  */
 const Toast = ({ id, content, type = 'info', duration, onDismiss }) => {
+  // `isVisible` controls the CSS class for fade-in/fade-out animations.
   const [isVisible, setIsVisible] = useState(false);
 
+  // Effect for managing the toast's lifecycle (fade-in and timed fade-out)
   useEffect(() => {
-    // Fade in immediately
-    setIsVisible(true);
-    let fadeOutTimer = null;
+    // Trigger fade-in animation shortly after mount
+    const fadeInTimer = setTimeout(() => {
+      setIsVisible(true);
+    }, 10); // Small delay to ensure CSS transition applies
 
-    // Set timer to start fade out before full duration
-    if (duration) {
+    let fadeOutTimer = null;
+    let dismissTimer = null;
+
+    // If a positive duration is provided, set up automatic fade-out and dismissal
+    if (duration && duration > 0) {
+      // Start fade-out animation slightly before the full duration to allow for CSS transition
+      const fadeOutStartTime = Math.max(0, duration - 300); // Ensure non-negative
+
       fadeOutTimer = setTimeout(() => {
-        setIsVisible(false);
-      }, duration - 300); // Start fade 300ms before removal
+        setIsVisible(false); // Trigger fade-out animation
+      }, fadeOutStartTime);
+
+      // Set timer to call onDismiss after the full duration (allowing fade-out to complete)
+      dismissTimer = setTimeout(() => {
+        if (typeof onDismiss === 'function') {
+          onDismiss(id);
+        }
+      }, duration);
     }
 
-    // Cleanup timer on unmount or if duration/id changes
+    // Cleanup function: clear all timers when the component unmounts
+    // or if `id` or `duration` changes (which would re-run this effect).
     return () => {
-      clearTimeout(fadeOutTimer);
+      clearTimeout(fadeInTimer);
+      if (fadeOutTimer) clearTimeout(fadeOutTimer);
+      if (dismissTimer) clearTimeout(dismissTimer);
     };
-  }, [id, duration]); // Effect runs when the toast instance changes
+  }, [id, duration, onDismiss]); // `onDismiss` is included as it's part of the effect's logic flow
 
-  // Handle manual dismissal via button click
-  const handleDismiss = () => {
-    setIsVisible(false); // Start fade out animation
-    // Call the actual removal function after the fade animation completes
-    setTimeout(() => onDismiss(id), 300);
-  };
+  /**
+   * Handles manual dismissal of the toast via the close button.
+   * It first triggers the fade-out animation and then calls the `onDismiss` callback
+   * after the animation duration.
+   */
+  const handleDismiss = useCallback(() => {
+    setIsVisible(false); // Start fade-out animation
+    // Call the actual removal function (onDismiss) after the fade animation (300ms) completes.
+    setTimeout(() => {
+      if (typeof onDismiss === 'function') {
+        onDismiss(id);
+      }
+    }, 300); // This duration should match the CSS transition duration for opacity/transform
+  }, [id, onDismiss]); // `id` and `onDismiss` are dependencies
 
   return (
-    <div className={`toast toast-${type} ${isVisible ? 'visible' : ''}`}>
+    <div
+      className={`toast toast-${type} ${isVisible ? 'visible' : 'hidden'}`}
+      role="alert" // Accessibility: Indicates it's an alert
+      aria-live="assertive" // Accessibility: Announce changes assertively
+      aria-atomic="true"
+    >
       <div className="toast-content">{content}</div>
-      <button onClick={handleDismiss} className="toast-dismiss-button">
-        ×
+      <button
+        onClick={handleDismiss}
+        className="toast-dismiss-button"
+        aria-label="Dismiss notification" // Accessibility
+        title="Dismiss" // Tooltip
+      >
+        × {/* Standard multiplication sign for 'close' */}
       </button>
     </div>
   );
 };
 
 Toast.propTypes = {
-  id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired, // Allow string or number IDs
+  /** Unique identifier for the toast message. */
+  id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+  /** The content of the toast message. Can be a string or any renderable React node. */
   content: PropTypes.node.isRequired,
+  /** The type of the toast, influencing its visual style (e.g., 'info', 'success', 'warning', 'error'). */
   type: PropTypes.oneOf(['info', 'success', 'warning', 'error']),
+  /**
+   * Optional duration in milliseconds for the toast to be visible.
+   * If provided and positive, the toast will auto-dismiss.
+   * If null, 0, or not provided, it remains until manually dismissed.
+   */
   duration: PropTypes.number,
+  /** Callback function invoked when the toast requests to be dismissed (receives toast `id`). */
   onDismiss: PropTypes.func.isRequired,
 };
 
+// Default export is standard for React components.
 export default Toast;

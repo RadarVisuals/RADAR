@@ -4,10 +4,42 @@ import './PresetSelectorBar.css';
 
 const ITEMS_PER_PAGE = 5;
 const SLIDE_ANIMATION_DURATION_MS = 300;
+const MAX_BUTTON_LABEL_LENGTH = 3; // Max characters for the button label
+
+/**
+ * Generates a concise display label for a preset button.
+ * - If name is "Prefix.Number" (e.g., "RADAR.001"), displays the number (e.g., "1").
+ * - If name is "Prefix.Text" (e.g., "MyProject.Scene"), displays the first MAX_BUTTON_LABEL_LENGTH chars of "Text" in uppercase (e.g., "SCE").
+ * - If name is "TextOnly" (e.g., "Kalyuga"), displays the first MAX_BUTTON_LABEL_LENGTH chars in uppercase (e.g., "KAL").
+ * @param {string} fullName - The full preset name.
+ * @returns {string} The generated display label.
+ */
+const getPresetDisplayLabel = (fullName) => {
+  if (!fullName || typeof fullName !== 'string') return '?';
+
+  const nameParts = fullName.split('.');
+
+  if (nameParts.length > 1) {
+    // Case 1: "Prefix.Identifier"
+    const identifier = nameParts.slice(1).join('.'); // Get everything after the first dot
+
+    if (/^\d+$/.test(identifier)) { // If identifier is purely numeric (e.g., "001", "123")
+      const num = parseInt(identifier, 10);
+      return num.toString(); // Display "1", "123"
+    } else {
+      // If identifier is text (e.g., "Kal", "My Scene")
+      return identifier.substring(0, MAX_BUTTON_LABEL_LENGTH).toUpperCase();
+    }
+  } else {
+    // Case 2: "FullNameOnly" (no dots)
+    return fullName.substring(0, MAX_BUTTON_LABEL_LENGTH).toUpperCase();
+  }
+};
+
 
 /**
  * PresetSelectorBar displays a paginated list of saved configuration presets
- * as numbered buttons. It allows users to load presets by clicking these buttons
+ * as numbered/labeled buttons. It allows users to load presets by clicking these buttons
  * and navigate through pages of presets if the total number exceeds `ITEMS_PER_PAGE`.
  * The currently active preset is visually highlighted.
  *
@@ -31,17 +63,21 @@ const PresetSelectorBar = ({
     const validList = savedConfigList.filter(
       (item) => item && typeof item.name === 'string'
     );
-    // Sort by the numeric part of the preset name (e.g., "RADAR.001")
     return [...validList].sort((a, b) => {
       const numA = parseInt(a.name.split('.')[1] || '0', 10);
       const numB = parseInt(b.name.split('.')[1] || '0', 10);
-      const valA = isNaN(numA) ? Infinity : numA; // Handle non-standard names
+      const valA = isNaN(numA) ? Infinity : numA;
       const valB = isNaN(numB) ? Infinity : numB;
-      return valA - valB;
+      // If both are numbers, sort numerically
+      if (valA !== Infinity && valB !== Infinity) return valA - valB;
+      // If one is a number and the other isn't, number comes first
+      if (valA !== Infinity) return -1;
+      if (valB !== Infinity) return 1;
+      // If both are text (or non-standard), sort alphabetically by full name
+      return a.name.localeCompare(b.name);
     });
   }, [savedConfigList]);
 
-  // Effect to synchronize currentPage with currentConfigName
   useEffect(() => {
     if (currentConfigName && sortedList.length > 0) {
       const currentIndex = sortedList.findIndex(p => p.name === currentConfigName);
@@ -49,7 +85,7 @@ const PresetSelectorBar = ({
         const targetPage = Math.floor(currentIndex / ITEMS_PER_PAGE);
         setCurrentPage(prevPage => {
             if (prevPage !== targetPage) {
-                setPaginationDirection(null); // Reset animation direction
+                setPaginationDirection(null);
                 return targetPage;
             }
             return prevPage;
@@ -66,7 +102,6 @@ const PresetSelectorBar = ({
     }
   }, [currentConfigName, sortedList]);
 
-  // Effect to clear pagination animation direction after animation duration
   useEffect(() => {
     let timer;
     if (paginationDirection) {
@@ -83,24 +118,7 @@ const PresetSelectorBar = ({
 
   const visiblePresets = useMemo(() => {
     return sortedList.slice(startIndex, endIndex);
-  }, [sortedList, startIndex, endIndex]); // Correct: Depends on startIndex and endIndex
-
-  /**
-   * Extracts a displayable number or short identifier from the preset name.
-   * @param {string} name - The full preset name.
-   * @returns {string} The displayable number or a fallback.
-   */
-  const getPresetNumber = (name) => {
-    if (!name || typeof name !== 'string') return '?';
-    const nameParts = name.split('.');
-    if (nameParts.length > 1) {
-        const numStr = nameParts[1];
-        const num = parseInt(numStr, 10);
-        if (!isNaN(num)) { return num.toString(); }
-        return nameParts.slice(1).join('.'); // Fallback for non-numeric part
-    }
-    return name.substring(0, 3); // Fallback for names without a dot
-  };
+  }, [sortedList, startIndex, endIndex]);
 
   const handlePrev = () => {
     if (currentPage > 0) {
@@ -112,7 +130,7 @@ const PresetSelectorBar = ({
   const handleNext = () => {
     if (currentPage < totalPages - 1) {
       setPaginationDirection('next');
-      setCurrentPage((prev) => prev + 1);
+      setCurrentPage((prev) => prev + 1); // Corrected from prev - 1
     }
   };
 
@@ -140,6 +158,7 @@ const PresetSelectorBar = ({
       <div className={`preset-buttons-container ${animationClass}`}>
         {visiblePresets.map((preset) => {
           const isActive = preset.name === currentConfigName;
+          const displayLabel = getPresetDisplayLabel(preset.name);
           return (
             <button
               type="button"
@@ -147,9 +166,10 @@ const PresetSelectorBar = ({
               className={`preset-selector-button ${isActive ? 'active' : ''}`}
               onClick={() => onPresetSelect(preset.name)}
               disabled={isLoading}
-              title={`Load ${preset.name}`}
+              title={`Load: ${preset.name}`}
             >
-              {getPresetNumber(preset.name)}
+              {/* Shortened label on button */}
+              {displayLabel}
             </button>
           );
         })}

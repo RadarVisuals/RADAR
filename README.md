@@ -128,6 +128,7 @@ These experimental features showcase the ongoing commitment to making RADAR the 
 ### MIDI Control Setup
 
 RADAR offers intuitive MIDI control over its visual parameters, allowing for a tactile and expressive performance experience. Your MIDI mappings are saved globally to your Universal Profile.
+For reference, I use a Novation Launchcontrol XL MIDI controller, set up my complete mapping (24 parameters) and save it once to the global MIDI key. This one is accessible for me across all other profiles.
 
 **Steps to Map Your MIDI Controller:**
 

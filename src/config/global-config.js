@@ -13,7 +13,8 @@ export const IPFS_GATEWAY =
   "https://api.universalprofile.cloud/ipfs/";
 
 // RADAR Application Specific ERC725Y Storage Keys
-export const RADAR_NAMED_CONFIG_MAP_KEY_PREFIX = "0x44f0a644f86a60b95927";
+export const RADAR_NAMED_CONFIG_MAP_KEY_PREFIX = 
+  "0x44f0a644f86a60b95927";
 export const RADAR_SAVED_CONFIG_LIST_KEY =
   "0xb705191a8b41d1f6b4bd88156334f8218a5d70f6a579c9c5a0a6871d2e398a9a";
 export const RADAR_DEFAULT_CONFIG_NAME_KEY =

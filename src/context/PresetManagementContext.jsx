@@ -9,10 +9,12 @@ import React, {
   useMemo,
 } from "react";
 import PropTypes from "prop-types";
-import { useUserSession } from "./UserSessionContext";
-import { useConfig } from "./ConfigContext";
-import { useToast } from "./ToastContext";
-import fallbackConfig from "../config/fallback-config.js";
+
+import { useUserSession } from "./UserSessionContext"; // Local context
+import { useConfig } from "./ConfigContext"; // Local context
+import { useToast } from "./ToastContext"; // Local context
+
+import fallbackConfig from "../config/fallback-config.js"; // Local config
 
 /**
  * Transforms a list of preset name strings into an array of objects,
@@ -22,7 +24,7 @@ import fallbackConfig from "../config/fallback-config.js";
  */
 const transformStringListToObjects = (list) => {
   if (!Array.isArray(list)) return [];
-  return list.filter((item) => typeof item === "string").map((name) => ({ name }));
+  return list.filter((item) => typeof item === "string" && item.trim() !== "").map((name) => ({ name }));
 };
 
 /**
@@ -59,26 +61,22 @@ const ensureCompleteLayerConfigStructure = (
 ) => {
   const completeConfig = { ...defaultLayerConfigTemplate };
   if (layerConfig && typeof layerConfig === "object") {
-    for (const key in layerConfig) {
+    for (const key in defaultLayerConfigTemplate) { // Iterate over template keys to ensure all are considered
       if (
         Object.prototype.hasOwnProperty.call(layerConfig, key) &&
         layerConfig[key] !== null &&
         layerConfig[key] !== undefined
       ) {
-        completeConfig[key] = layerConfig[key];
+        if (key === "driftState" && typeof layerConfig[key] === 'object' && defaultLayerConfigTemplate.driftState && typeof defaultLayerConfigTemplate.driftState === 'object') {
+          completeConfig[key] = {
+            ...defaultLayerConfigTemplate.driftState,
+            ...(layerConfig[key] || {}),
+          };
+        } else {
+          completeConfig[key] = layerConfig[key];
+        }
       }
-      // Deep merge driftState if it exists and is an object
-      if (
-        key === "driftState" &&
-        typeof layerConfig[key] === "object" &&
-        defaultLayerConfigTemplate.driftState && // Ensure template has driftState
-        typeof defaultLayerConfigTemplate.driftState === 'object'
-      ) {
-        completeConfig[key] = {
-          ...defaultLayerConfigTemplate.driftState,
-          ...(layerConfig[key] || {}), // Ensure layerConfig[key] is an object for spread
-        };
-      }
+      // If key is in template but not in layerConfig (or is null/undefined), it keeps the default template value.
     }
   }
   // Final check for 'enabled' if it somehow got missed and is in the template
@@ -102,8 +100,8 @@ const ensureCompleteLayerConfigStructure = (
  * @property {boolean} saveSuccess - True if the last save/delete operation was successful.
  * @property {boolean} isInitiallyResolved - True once the initial attempt to load a preset (either default or fallback) has completed upon component mount or profile change.
  * @property {number} configLoadNonce - A number that increments each time a new configuration preset is successfully processed and applied. Used by consumers to detect new preset data.
- * @property {object | null} loadedLayerConfigsFromPreset - The layer configurations (e.g., for layers 1, 2, 3) loaded from the most recent preset or fallback.
- * @property {object | null} loadedTokenAssignmentsFromPreset - The token assignments (mapping layer IDs to token identifiers) loaded from the most recent preset or fallback.
+ * @property {object | null} loadedLayerConfigsFromPreset - The layer configurations (e.g., for layers 1, 2, 3) loaded from the most recent preset or fallback. Structure: `{ "1": LayerConfig, "2": LayerConfig, ... }`.
+ * @property {object | null} loadedTokenAssignmentsFromPreset - The token assignments (mapping layer IDs to token identifiers) loaded from the most recent preset or fallback. Structure: `{ "1": Assignment, "2": Assignment, ... }`.
  * @property {(name: string) => Promise<{success: boolean, error?: string, config?: object | null}>} loadNamedConfig - Loads a specific named configuration by its name.
  * @property {() => Promise<{success: boolean, error?: string, config?: object | null}>} loadDefaultConfig - Loads the configuration designated as the default for the current profile.
  * @property {() => Promise<{success: boolean, list?: Array<{name: string}>, error?: string}>} loadSavedConfigList - Reloads the list of saved configuration names from the current profile.
@@ -112,7 +110,7 @@ const ensureCompleteLayerConfigStructure = (
  */
 
 /** @type {PresetManagementContextValue} */
-export const defaultPresetManagementContext = {
+export const defaultPresetManagementContextValue = { // Renamed for clarity
   currentConfigName: null,
   savedConfigList: [],
   isLoading: true,
@@ -124,14 +122,29 @@ export const defaultPresetManagementContext = {
   configLoadNonce: 0,
   loadedLayerConfigsFromPreset: null,
   loadedTokenAssignmentsFromPreset: null,
-  loadNamedConfig: async () => ({ success: false, error: "PresetManagementProvider not initialized" }),
-  loadDefaultConfig: async () => ({ success: false, error: "PresetManagementProvider not initialized" }),
-  loadSavedConfigList: async () => ({ success: false, error: "PresetManagementProvider not initialized" }),
-  saveVisualPreset: async () => ({ success: false, error: "PresetManagementProvider not initialized" }),
-  deleteNamedConfig: async () => ({ success: false, error: "PresetManagementProvider not initialized" }),
+  loadNamedConfig: async () => {
+    if (import.meta.env.DEV) console.warn("loadNamedConfig called on default PresetManagementContext");
+    return { success: false, error: "PresetManagementProvider not initialized" };
+  },
+  loadDefaultConfig: async () => {
+    if (import.meta.env.DEV) console.warn("loadDefaultConfig called on default PresetManagementContext");
+    return { success: false, error: "PresetManagementProvider not initialized" };
+  },
+  loadSavedConfigList: async () => {
+    if (import.meta.env.DEV) console.warn("loadSavedConfigList called on default PresetManagementContext");
+    return { success: false, error: "PresetManagementProvider not initialized" };
+  },
+  saveVisualPreset: async () => {
+    if (import.meta.env.DEV) console.warn("saveVisualPreset called on default PresetManagementContext");
+    return { success: false, error: "PresetManagementProvider not initialized" };
+  },
+  deleteNamedConfig: async () => {
+    if (import.meta.env.DEV) console.warn("deleteNamedConfig called on default PresetManagementContext");
+    return { success: false, error: "PresetManagementProvider not initialized" };
+  },
 };
 
-const PresetManagementContext = createContext(defaultPresetManagementContext);
+const PresetManagementContext = createContext(defaultPresetManagementContextValue);
 
 /**
  * Provides context for managing visual presets (configurations).
@@ -149,82 +162,59 @@ export const PresetManagementProvider = ({ children }) => {
   const {
     configServiceRef,
     configServiceInstanceReady,
-    savedReactions: globalSavedReactions,
-    midiMap: globalMidiMap,
+    savedReactions: globalSavedReactions, // From ConfigContext
+    midiMap: globalMidiMap,             // From ConfigContext
     setHasPendingChanges,
   } = useConfig();
   const { addToast } = useToast();
 
-  /** @type {[string | null, React.Dispatch<React.SetStateAction<string | null>>]} Name of the currently loaded preset. */
   const [currentConfigName, setCurrentConfigName] = useState(null);
-  /** @type {[Array<{name: string}>, React.Dispatch<React.SetStateAction<Array<{name: string}>>>]} List of saved preset names. */
   const [savedConfigList, setSavedConfigList] = useState([]);
-
-  /** @type {[boolean, React.Dispatch<React.SetStateAction<boolean>>]} True when loading a preset or list. */
-  const [isLoading, setIsLoading] = useState(true);
-  /** @type {[boolean, React.Dispatch<React.SetStateAction<boolean>>]} True after initial preset/fallback load attempt. */
+  const [isLoading, setIsLoading] = useState(true); // True initially
   const [isInitiallyResolved, setIsInitiallyResolved] = useState(false);
-  /** @type {[number, React.Dispatch<React.SetStateAction<number>>]} Increments when new preset data is applied. */
   const [configLoadNonce, setConfigLoadNonce] = useState(0);
-
-  /** @type {[Error | string | null, React.Dispatch<React.SetStateAction<Error | string | null>>]} Error from last load attempt. */
   const [loadError, setLoadError] = useState(null);
-  /** @type {[boolean, React.Dispatch<React.SetStateAction<boolean>>]} True when saving/deleting. */
   const [isSaving, setIsSaving] = useState(false);
-  /** @type {[Error | string | null, React.Dispatch<React.SetStateAction<Error | string | null>>]} Error from last save/delete. */
   const [saveError, setSaveError] = useState(null);
-  /** @type {[boolean, React.Dispatch<React.SetStateAction<boolean>>]} True if last save/delete succeeded. */
   const [saveSuccess, setSaveSuccess] = useState(false);
-
-  /** @type {[object | null, React.Dispatch<React.SetStateAction<object | null>>]} Layer configs from the last loaded preset/fallback. */
   const [loadedLayerConfigsFromPreset, setLoadedLayerConfigsFromPreset] = useState(null);
-  /** @type {[object | null, React.Dispatch<React.SetStateAction<object | null>>]} Token assignments from the last loaded preset/fallback. */
   const [loadedTokenAssignmentsFromPreset, setLoadedTokenAssignmentsFromPreset] = useState(null);
 
-  /** @type {React.RefObject<string | null>} Ref to track the previous profile address to detect changes. */
+  /** @type {React.RefObject<string | null>} */
   const prevProfileAddressRef = useRef(hostProfileAddress);
-  /** @type {React.RefObject<boolean>} Ref to track if an initial default load has been attempted for the current profile. */
+  /** @type {React.RefObject<boolean>} */
   const initialDefaultLoadAttemptedForCurrentAddressRef = useRef(false);
 
-  /**
-   * Internal function to apply loaded preset data (or fallback/error state) to the context's state.
-   * This updates `loadedLayerConfigsFromPreset`, `loadedTokenAssignmentsFromPreset`, `currentConfigName`,
-   * `configLoadNonce`, and loading/error states.
-   * @param {object | null} loadedData - The data returned from ConfigurationService's load, or null for fallback. Contains `config` and `error`.
-   * @param {string | null} _loadedForAddress - The address for which the data was loaded (used for debugging, not in logic).
-   * @param {string | null} [targetName=null] - The name of the preset that was intended to be loaded.
-   */
   const applyLoadedPresetData = useCallback(
     (loadedData, _loadedForAddress, targetName = null) => {
       const minimalLayerTemplate = getMinimalLayerConfigTemplate();
       let finalName = null;
-      let finalLayersForPreset = null;
-      let finalTokensForPreset = null;
+      let finalLayersForPreset = {}; // Initialize as object
+      let finalTokensForPreset = {}; // Initialize as object
 
       if (loadedData?.error) {
         setLoadError(loadedData.error);
+        // Avoid toast for "no default" or "not found" as these are handled by fallback
         if (loadedData.error && !String(loadedData.error).toLowerCase().includes("no default") && !String(loadedData.error).toLowerCase().includes("not found")) {
             addToast(`Error loading preset: ${loadedData.error}`, 'error');
         }
-        finalName = targetName || "ErrorState"; // Name reflects attempted load or error
+        finalName = targetName || "ErrorState";
         const fallbackLayersData = fallbackConfig.layers || {};
-        finalLayersForPreset = {};
-        for (const layerId of ['1', '2', '3']) {
+        for (const layerId of ['1', '2', '3']) { // Ensure all layers have a structure
           finalLayersForPreset[layerId] = ensureCompleteLayerConfigStructure(fallbackLayersData[layerId], minimalLayerTemplate);
         }
         finalTokensForPreset = fallbackConfig.tokenAssignments || {};
-      } else if (loadedData?.config) { // Successfully loaded a specific preset
+      } else if (loadedData?.config) {
         finalName = loadedData.config.name ?? targetName ?? "Unnamed Preset";
-        finalLayersForPreset = {};
+        const loadedLayers = loadedData.config.layers || {}; // Use 'layers' as per mapping in ConfigService
         for (const layerId of ['1', '2', '3']) {
-          finalLayersForPreset[layerId] = ensureCompleteLayerConfigStructure(loadedData.config.layers?.[layerId], minimalLayerTemplate);
+          finalLayersForPreset[layerId] = ensureCompleteLayerConfigStructure(loadedLayers[layerId], minimalLayerTemplate);
         }
-        finalTokensForPreset = loadedData.config.tokenAssignments || {};
+        finalTokensForPreset = loadedData.config.tokenAssignments || {}; // Use 'tokenAssignments'
         setLoadError(null);
-      } else { // Fallback to default application config (e.g., if no default preset found on profile)
+      } else { // Fallback to default application config
         finalName = "Fallback";
         const fallbackLayersData = fallbackConfig.layers || {};
-        finalLayersForPreset = {};
         for (const layerId of ['1', '2', '3']) {
           finalLayersForPreset[layerId] = ensureCompleteLayerConfigStructure(fallbackLayersData[layerId], minimalLayerTemplate);
         }
@@ -235,22 +225,17 @@ export const PresetManagementProvider = ({ children }) => {
       setLoadedLayerConfigsFromPreset(finalLayersForPreset);
       setLoadedTokenAssignmentsFromPreset(finalTokensForPreset);
       if (finalName !== currentConfigName) setCurrentConfigName(finalName);
-      if (setHasPendingChanges) setHasPendingChanges(false); // Loading a preset clears pending changes
+      if (setHasPendingChanges) setHasPendingChanges(false);
 
-      setConfigLoadNonce(prevNonce => prevNonce + 1); // Signal that new config data is ready
+      setConfigLoadNonce(prevNonce => prevNonce + 1);
       if (!isInitiallyResolved) {
         setIsInitiallyResolved(true);
       }
       setIsLoading(false);
     },
-    [addToast, currentConfigName, isInitiallyResolved, setHasPendingChanges] // Removed setIsLoading, setLoadError, setLoadedLayerConfigsFromPreset etc., as they are stable setters
+    [addToast, currentConfigName, isInitiallyResolved, setHasPendingChanges]
   );
 
-  /**
-   * Internal function to load the list of saved configuration names for the current host profile.
-   * Updates `savedConfigList` state.
-   * @returns {Promise<{success: boolean, list?: Array<{name: string}>, error?: string}>} Result of the load operation.
-   */
   const loadSavedConfigListInternal = useCallback(async () => {
     const service = configServiceRef.current;
     const addressToLoad = hostProfileAddress;
@@ -273,17 +258,8 @@ export const PresetManagementProvider = ({ children }) => {
       setSavedConfigList([]);
       return { success: false, error: errorMsg };
     }
-  }, [hostProfileAddress, addToast, configServiceInstanceReady, configServiceRef]); // Removed setSavedConfigList (stable setter)
+  }, [hostProfileAddress, addToast, configServiceInstanceReady, configServiceRef]);
 
-  /**
-   * Internal core function to load a preset (named or default) using ConfigurationService.
-   * It handles setting loading states and applying the loaded data via `applyLoadedPresetData`.
-   * @param {string} address - The profile address to load from.
-   * @param {string | null} [configName=null] - The name of the config to load. If null, attempts to load default.
-   * @param {string | null} [customKey=null] - A specific ERC725Y key to load from (overrides name/default).
-   * @param {string} [reason="manual"] - A descriptive reason for the load, for debugging.
-   * @returns {Promise<{success: boolean, error?: string, config?: object | null}>} Result of the load operation.
-   */
   const performPresetLoadInternal = useCallback(
     async (address, configName = null, customKey = null, reason = "manual") => {
       const service = configServiceRef.current;
@@ -294,17 +270,16 @@ export const PresetManagementProvider = ({ children }) => {
 
       if (!address) {
         applyLoadedPresetData(null, `no_target_address_in_performLoad_${reason}`, null);
-        return { success: true, config: fallbackConfig }; // Successfully applied fallback
+        return { success: true, config: fallbackConfig };
       }
       if (!isReady) {
         addToast("Preset service not ready. Applying client fallback.", "warning");
-        applyLoadedPresetData(null, `service_not_ready_in_performLoad_${reason}`, address);
+        applyLoadedPresetData(null, `service_not_ready_in_performLoad_${reason}`, address); // Pass address for context
         return { success: false, error: "Service not ready." };
       }
 
       try {
         const loadedData = await service.loadConfiguration(address, configName, customKey);
-        // `applyLoadedPresetData` handles setting isLoading to false
         applyLoadedPresetData({ config: loadedData.config, error: loadedData.error }, address, configName || "Default");
 
         const loadSuccessful = !loadedData?.error && !!loadedData?.config;
@@ -322,62 +297,47 @@ export const PresetManagementProvider = ({ children }) => {
         return { success: false, error: errorMsg };
       }
     },
-    [configServiceInstanceReady, applyLoadedPresetData, addToast, loadSavedConfigListInternal, configServiceRef] // Removed setIsLoading, setLoadError (stable setters)
+    [configServiceInstanceReady, applyLoadedPresetData, addToast, loadSavedConfigListInternal, configServiceRef]
   );
 
-  /** Effect for initial load or when hostProfileAddress changes. */
   useEffect(() => {
     const currentAddress = hostProfileAddress;
     const serviceIsReady = configServiceInstanceReady;
 
     if (currentAddress !== prevProfileAddressRef.current) {
         prevProfileAddressRef.current = currentAddress;
-        initialDefaultLoadAttemptedForCurrentAddressRef.current = false; // Reset attempt flag for new profile
+        initialDefaultLoadAttemptedForCurrentAddressRef.current = false;
 
-        // Reset states for the new profile
         setIsLoading(true);
         setIsInitiallyResolved(false);
-        setConfigLoadNonce(0); // Reset nonce for a new profile context
+        setConfigLoadNonce(0);
         setCurrentConfigName(null);
         setLoadedLayerConfigsFromPreset(null);
         setLoadedTokenAssignmentsFromPreset(null);
         setLoadError(null);
         if (setHasPendingChanges) setHasPendingChanges(false);
 
-        if (!currentAddress) { // If new address is null (e.g., disconnected)
-            // Apply fallback immediately as there's no profile to load from
+        if (!currentAddress) {
             applyLoadedPresetData(null, "profile_disconnected", "Fallback");
-            setSavedConfigList([]); // Clear preset list
-            return; // Stop further processing
+            setSavedConfigList([]);
+            return;
         }
     }
 
-    // Attempt initial default load if conditions are met
     if (currentAddress && serviceIsReady && !initialDefaultLoadAttemptedForCurrentAddressRef.current && !isInitiallyResolved) {
         initialDefaultLoadAttemptedForCurrentAddressRef.current = true;
-        setIsLoading(true); // Ensure loading state is true before async operation
+        setIsLoading(true);
 
         performPresetLoadInternal(currentAddress, null, null, "initial_default_load_for_profile")
             .catch(error => {
                 if (import.meta.env.DEV) {
                     console.error(`[PresetManagementContext] Critical error during initial performPresetLoadInternal for ${currentAddress.slice(0,6)}:`, error);
                 }
-                // Ensure applyLoadedPresetData is called even on critical failure to resolve states
-                applyLoadedPresetData({ error: "Critical initial load error" }, currentAddress); 
+                applyLoadedPresetData({ error: "Critical initial load error" }, currentAddress);
             });
     }
-  }, [hostProfileAddress, configServiceInstanceReady, isInitiallyResolved, performPresetLoadInternal, applyLoadedPresetData, setHasPendingChanges]); // Dependencies are correct
+  }, [hostProfileAddress, configServiceInstanceReady, isInitiallyResolved, performPresetLoadInternal, applyLoadedPresetData, setHasPendingChanges]);
 
-  /**
-   * Saves the provided visual configuration as a named preset.
-   * @param {string} nameToSave - The name for the new preset.
-   * @param {boolean} setAsDefault - Whether to set this preset as the default for the profile.
-   * @param {boolean} includeReactions - Whether to include global reactions in this preset save (overwrites if they exist in preset).
-   * @param {boolean} includeMidi - Whether to include global MIDI map in this preset save (overwrites if they exist in preset).
-   * @param {object} layerConfigsToSave - The layer configurations to save.
-   * @param {object} tokenAssignmentsToSave - The token assignments to save.
-   * @returns {Promise<{success: boolean, error?: string}>} Result of the save operation.
-   */
   const saveVisualPreset = useCallback(
     async (nameToSave, setAsDefault, includeReactions, includeMidi, layerConfigsToSave, tokenAssignmentsToSave) => {
       const service = configServiceRef.current;
@@ -400,25 +360,22 @@ export const PresetManagementProvider = ({ children }) => {
       }
 
       const dataToSave = {
-        layers: completeLayerConfigsForSave,
-        tokenAssignments: tokenAssignmentsToSave || {},
-        // Only include reactions/midi in the saved preset data if requested
+        layers: completeLayerConfigsForSave, // This will be stored as 'l' by ConfigService
+        tokenAssignments: tokenAssignmentsToSave || {}, // This will be stored as 'tA'
         reactions: includeReactions ? globalSavedReactions : undefined,
         midi: includeMidi ? globalMidiMap : undefined,
       };
 
       try {
-        // The ConfigurationService.saveConfiguration handles saving visual, and conditionally global reactions/midi based on flags
         const result = await service.saveConfiguration(addressToSave, dataToSave, nameToSave, setAsDefault, true, includeReactions, includeMidi, null);
         if (result.success) {
           addToast(`Preset '${nameToSave}' saved successfully!`, 'success');
           setSaveSuccess(true);
           if (setHasPendingChanges) setHasPendingChanges(false);
-          // If saved successfully, update currentConfigName and reload list
-          if (currentConfigName !== nameToSave || setAsDefault) { // Or if it became default
+          if (currentConfigName !== nameToSave || setAsDefault) {
              setCurrentConfigName(nameToSave);
           }
-          await loadSavedConfigListInternal(); // Refresh the list of presets
+          await loadSavedConfigListInternal();
         } else { throw new Error(result.error || "Save configuration failed."); }
         return result;
       } catch (error) {
@@ -430,14 +387,9 @@ export const PresetManagementProvider = ({ children }) => {
         setIsSaving(false);
       }
     },
-    [hostProfileAddress, globalSavedReactions, globalMidiMap, addToast, loadSavedConfigListInternal, configServiceInstanceReady, configServiceRef, setHasPendingChanges, currentConfigName] // setCurrentConfigName is stable
+    [hostProfileAddress, globalSavedReactions, globalMidiMap, addToast, loadSavedConfigListInternal, configServiceInstanceReady, configServiceRef, setHasPendingChanges, currentConfigName]
   );
 
-  /**
-   * Deletes a named configuration.
-   * @param {string} nameToDelete - The name of the preset to delete.
-   * @returns {Promise<{success: boolean, error?: string}>} Result of the delete operation.
-   */
   const deleteNamedConfig = useCallback(
     async (nameToDelete) => {
       const service = configServiceRef.current;
@@ -450,16 +402,14 @@ export const PresetManagementProvider = ({ children }) => {
       if (!nameToDelete) {
         addToast("No preset name provided to delete.", "warning"); return { success: false, error: "No name provided." };
       }
-      setIsSaving(true); setSaveError(null); // Use isSaving for delete operation as well
+      setIsSaving(true); setSaveError(null); setSaveSuccess(false);
       try {
         const result = await service.deleteConfiguration(addressToDeleteFrom, nameToDelete);
         if (result.success) {
           addToast(`Preset '${nameToDelete}' deleted.`, 'success');
           setSaveSuccess(true);
-          await loadSavedConfigListInternal(); // Refresh list
-          // If the deleted preset was the current one, load the default (or fallback)
+          await loadSavedConfigListInternal();
           if (currentConfigName === nameToDelete) {
-            // performPresetLoadInternal will set isLoading and ultimately call applyLoadedPresetData
             await performPresetLoadInternal(addressToDeleteFrom, null, null, `delete_cleanup_for_${nameToDelete}`);
           }
         } else { throw new Error(result.error || "Delete operation failed."); }
@@ -468,21 +418,19 @@ export const PresetManagementProvider = ({ children }) => {
         const errorMsg = error.message || "Unknown delete error."; setSaveError(errorMsg);
         addToast(`Error deleting preset: ${errorMsg}`, 'error');
         if (import.meta.env.DEV) console.error(`[PresetManagementContext] Error deleting preset:`, error);
-        return { success: false, error: errorMsg };
+        setSaveSuccess(false); return { success: false, error: errorMsg };
       } finally {
         setIsSaving(false);
       }
     },
-    [hostProfileAddress, performPresetLoadInternal, addToast, loadSavedConfigListInternal, currentConfigName, configServiceInstanceReady, configServiceRef] // Removed setSaveSuccess, setSaveError, setIsSaving (stable setters)
+    [hostProfileAddress, performPresetLoadInternal, addToast, loadSavedConfigListInternal, currentConfigName, configServiceInstanceReady, configServiceRef]
   );
 
-  /** Loads a specific named configuration. */
   const loadNamedConfig = useCallback((name) =>
     performPresetLoadInternal(hostProfileAddress, name, null, `load_named:${name}`),
     [performPresetLoadInternal, hostProfileAddress]
   );
 
-  /** Loads the default configuration for the profile. */
   const loadDefaultConfig = useCallback(() =>
     performPresetLoadInternal(hostProfileAddress, null, null, "load_profile_default"),
     [performPresetLoadInternal, hostProfileAddress]
@@ -502,7 +450,7 @@ export const PresetManagementProvider = ({ children }) => {
     loadedTokenAssignmentsFromPreset,
     loadNamedConfig,
     loadDefaultConfig,
-    loadSavedConfigList: loadSavedConfigListInternal, // Expose the memoized internal version
+    loadSavedConfigList: loadSavedConfigListInternal,
     saveVisualPreset,
     deleteNamedConfig,
   }), [
@@ -532,8 +480,12 @@ PresetManagementProvider.propTypes = {
  */
 export const usePresetManagement = () => {
   const context = useContext(PresetManagementContext);
-  if (context === undefined) {
-    throw new Error("usePresetManagement must be used within a PresetManagementProvider");
+  if (context === undefined) { // Standard check for missing provider
+    const err = new Error("usePresetManagement must be used within a PresetManagementProvider");
+    if (import.meta.env.DEV) {
+        console.error("usePresetManagement context details: Attempted to use context but found undefined. This usually means PresetManagementProvider is missing as an ancestor.", err.stack);
+    }
+    throw err;
   }
   return context;
 };

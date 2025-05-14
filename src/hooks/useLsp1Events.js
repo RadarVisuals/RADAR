@@ -1,6 +1,14 @@
+// src/hooks/useLsp1Events.js
 import { useEffect, useRef } from 'react';
-import LSP1EventService from '../services/LSP1EventService'; // Adjust path if needed
-import { isAddress } from 'viem';
+
+import LSP1EventService from '../services/LSP1EventService'; // Local service
+
+import { isAddress } from 'viem'; // Third-party library
+
+/**
+ * @typedef {object} Lsp1Event - Represents an event received from the LSP1EventService.
+ * Structure depends on the specific event type.
+ */
 
 /**
  * Manages the lifecycle of an LSP1EventService instance, automatically
@@ -10,11 +18,15 @@ import { isAddress } from 'viem';
  * unnecessary effect re-runs.
  *
  * @param {string | null} profileAddress - The address of the Universal Profile to listen to. The service will connect/disconnect as this address changes or becomes null/invalid.
- * @param {(event: object) => void} onEventReceived - Callback function executed when a new LSP1 event is received from the service.
+ * @param {(event: Lsp1Event) => void} onEventReceived - Callback function executed when a new LSP1 event is received from the service.
+ * @returns {void} This hook does not return a value but manages side effects.
  */
 export function useLsp1Events(profileAddress, onEventReceived) {
+  /** @type {React.RefObject<LSP1EventService | null>} */
   const eventServiceRef = useRef(null);
+  /** @type {React.RefObject<() => void>} */
   const unsubscribeRef = useRef(() => {});
+  /** @type {React.RefObject<(event: Lsp1Event) => void>} */
   const onEventReceivedRef = useRef(onEventReceived);
 
   // Keep the callback ref updated to avoid adding it to the main effect's dependencies
@@ -24,6 +36,7 @@ export function useLsp1Events(profileAddress, onEventReceived) {
 
   // Effect to manage the service lifecycle based on profileAddress
   useEffect(() => {
+    /** @type {boolean} - Tracks if the component is still mounted to prevent state updates on unmounted components. */
     let isMounted = true;
 
     const initializeAndListen = async (address) => {
@@ -56,7 +69,9 @@ export function useLsp1Events(profileAddress, onEventReceived) {
             }
           });
         } else if (!success && isMounted) {
-          console.warn(`[useLsp1Events] Failed to set up listeners for ${address}.`);
+          if (import.meta.env.DEV) {
+            console.warn(`[useLsp1Events] Failed to set up listeners for ${address}.`);
+          }
           service.cleanupListeners();
           eventServiceRef.current = null;
         } else if (!isMounted) {
@@ -65,8 +80,9 @@ export function useLsp1Events(profileAddress, onEventReceived) {
            eventServiceRef.current = null;
         }
       } catch (error) {
-        // Keep error log for setup failures
-        console.error(`[useLsp1Events] Error initializing/setting up service for ${address}:`, error);
+        if (import.meta.env.DEV) {
+            console.error(`[useLsp1Events] Error initializing/setting up service for ${address}:`, error);
+        }
         if (eventServiceRef.current) { // Check ref before cleanup
             eventServiceRef.current.cleanupListeners();
             eventServiceRef.current = null;
