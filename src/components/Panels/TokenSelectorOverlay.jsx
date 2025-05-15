@@ -15,7 +15,7 @@ const OPEN_CLOSE_ANIMATION_DURATION = 300;
 const CONTENT_VISIBILITY_DELAY = 50;
 const INITIAL_OPERATIONS_DELAY = 16;
 const IMAGE_PRELOAD_DELAY_AFTER_CONTENT_VISIBLE = 200;
-const IMAGE_PRELOAD_BATCH_SIZE = 8; // Load images in batches of 8
+const IMAGE_PRELOAD_BATCH_SIZE = 40; // Load images in batches of 40
 const IMAGE_PRELOAD_BATCH_DELAY = 50; // Small delay between batches (ms)
 
 const TokenSelectorOverlay = ({ isOpen, onClose, onTokenApplied, readOnly = false }) => {

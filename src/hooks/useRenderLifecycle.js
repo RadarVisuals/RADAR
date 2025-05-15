@@ -3,14 +3,14 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 
 import fallbackConfig from '../config/fallback-config.js'; // Local config
 
-const CANVAS_FADE_DURATION = 1000; // User's desired duration for preset fade
-const LOADING_FADE_DURATION = 600; // Duration for the loading status message to fade out
+const CANVAS_FADE_DURATION = 250; // User's desired duration for preset fade
+const LOADING_FADE_DURATION = 400; // Duration for the loading status message to fade out
 const FORCE_REPAINT_DELAY = 50; // Small delay before redrawing to allow DOM updates
-const ANIMATION_CONTINUE_DURING_TRANSITION = true; // Whether animations should continue during preset transitions
+const ANIMATION_CONTINUE_DURING_TRANSITION = true;
 const CONNECTING_MESSAGE = "Connecting";
 const LOADING_CONFIG_MESSAGE = "Loading Configuration";
 const APPLYING_CONFIG_MESSAGE = "Applying Configuration";
-const TRANSITION_MESSAGE = "Transitioning";
+const TRANSITION_MESSAGE = "Transitioning"; // Ensure this is the message used
 
 /**
  * @typedef {object} RenderLifecycleOptions
@@ -55,15 +55,6 @@ const TRANSITION_MESSAGE = "Transitioning";
  * @property {() => void} handleManualRetry - Function to attempt a manual retry from an error state.
  * @property {() => void} resetLifecycle - Function to reset the entire render lifecycle to its initial state.
  */
-
-/**
- * Manages the complex lifecycle of rendering visual configurations, including loading,
- * applying presets, handling transitions with fades, and managing error states.
- * It coordinates canvas visibility, animations, and status messages based on various inputs.
- *
- * @param {RenderLifecycleOptions} options - Configuration and callback options for the hook.
- * @returns {RenderLifecycleAPI} An API object for interacting with and observing the render lifecycle.
- */
 export function useRenderLifecycle(options) {
   const {
     managersReady, defaultImagesLoaded, isInitiallyResolved, hasValidDimensions,
@@ -81,32 +72,21 @@ export function useRenderLifecycle(options) {
 
   const currentIsLoading = options.isLoading === undefined ? true : options.isLoading;
 
-  /** @type {[RenderStateValue, React.Dispatch<React.SetStateAction<RenderStateValue>>]} */
   const [renderState, setRenderStateInternal] = useState('initializing');
   const [loadingStatusMessage, setLoadingStatusMessageState] = useState(CONNECTING_MESSAGE);
   const [isStatusFadingOut, setIsStatusFadingOut] = useState(false);
   const [isTransitioningInternal, setIsTransitioningInternal] = useState(false);
   const [makeIncomingCanvasVisible, setMakeIncomingCanvasVisible] = useState(false);
 
-  /** @type {React.RefObject<boolean>} */
   const isMountedRef = useRef(false);
-  /** @type {React.RefObject<number>} */
   const lastAppliedNonceRef = useRef(0);
-  /** @type {React.RefObject<ReturnType<typeof setTimeout> | null>} */
   const statusDisplayFadeTimeoutRef = useRef(null);
-  /** @type {React.RefObject<ReturnType<typeof setTimeout> | null>} */
   const transitionEndTimeoutRef = useRef(null);
-  /** @type {React.RefObject<ReturnType<typeof setTimeout> | null>} */
   const fadeOutCompletionTimeoutRef = useRef(null);
-  /** @type {React.RefObject<ReturnType<typeof setTimeout> | null>} */
   const repaintDelayTimeoutRef = useRef(null);
-  /** @type {React.RefObject<Promise<void> | null>} */
   const applyConfigPromiseRef = useRef(null);
-  /** @type {React.RefObject<'stopped' | 'running' | 'pending_stop' | 'running_during_transition' | 'stopped_for_transition'>} */
   const animationStateRef = useRef('stopped');
-  /** @type {React.RefObject<Set<string>>} */
   const outgoingLayerIdsOnTransitionStartRef = useRef(new Set());
-  /** @type {React.RefObject<string | null>} */
   const prevAddressRef = useRef(currentProfileAddress);
 
 
@@ -126,7 +106,7 @@ export function useRenderLifecycle(options) {
       }
       return prevState;
     });
-  }, []); // Removed logAction from dependency array as it's stable
+  }, []);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -142,38 +122,43 @@ export function useRenderLifecycle(options) {
     };
   }, [logAction]);
 
-  const setLoadingStatusMessage = useCallback((message) => {
+  const setLoadingStatusMessage = useCallback((message, forceNoFade = false) => {
     if (isMountedRef.current) {
       setLoadingStatusMessageState(prev => {
-          if (prev !== message) {
-              logAction("Set Status Message", message);
+          if (prev !== message || forceNoFade) { 
+              logAction("Set Status Message", `${message}${forceNoFade ? ' (forced, no fade reset)' : ''}`);
+              if (message !== "Render complete" || forceNoFade) {
+                setIsStatusFadingOut(false);
+                if (statusDisplayFadeTimeoutRef.current) {
+                    clearTimeout(statusDisplayFadeTimeoutRef.current);
+                    statusDisplayFadeTimeoutRef.current = null;
+                }
+              }
               return message;
           }
           return prev;
       });
     }
-  }, [logAction]);
+  }, [logAction]); 
 
   const resetLifecycle = useCallback(() => {
       if (!isMountedRef.current) return;
       logAction(`!!! Resetting Lifecycle Triggered !!!`);
       animationStateRef.current = 'pending_stop';
       logStateChange("initializing", "External Reset");
-      setLoadingStatusMessage(CONNECTING_MESSAGE);
-      setIsStatusFadingOut(false);
+      setLoadingStatusMessage(CONNECTING_MESSAGE, true); 
       lastAppliedNonceRef.current = 0;
       setIsTransitioningInternal(false);
       setMakeIncomingCanvasVisible(false);
       outgoingLayerIdsOnTransitionStartRef.current.clear();
       applyConfigPromiseRef.current = null;
-      // Delay stopping animations to allow any fade-out CSS transitions to complete
       setTimeout(() => {
         if (isMountedRef.current && animationStateRef.current === 'pending_stop') {
           logAction(`Executing delayed animation stop after reset`);
           if (stopAllAnimations) stopAllAnimations();
           animationStateRef.current = 'stopped';
         }
-      }, CANVAS_FADE_DURATION); // Use a duration that covers potential visual fades
+      }, CANVAS_FADE_DURATION);
       if (statusDisplayFadeTimeoutRef.current) clearTimeout(statusDisplayFadeTimeoutRef.current);
       if (transitionEndTimeoutRef.current) clearTimeout(transitionEndTimeoutRef.current);
       if (fadeOutCompletionTimeoutRef.current) clearTimeout(fadeOutCompletionTimeoutRef.current);
@@ -185,23 +170,21 @@ export function useRenderLifecycle(options) {
     logAction(`Manual Retry Triggered.`);
     if (hasValidDimensions) {
       logAction(`Manual Retry: Dimensions valid -> 'applying_config'.`);
-      // Reset relevant error states before retrying
-      setLoadingStatusMessage(LOADING_CONFIG_MESSAGE); // Or APPLYING_CONFIG_MESSAGE
+      setLoadingStatusMessage(LOADING_CONFIG_MESSAGE, true); 
       logStateChange('applying_config', 'Manual Retry (Valid Dim)');
     } else {
       logAction(`Manual Retry: No valid dimensions. -> 'waiting_layout'`);
-      setLoadingStatusMessage("⚠ Still waiting for layout.");
+      setLoadingStatusMessage("⚠ Still waiting for layout.", true); 
       logStateChange('waiting_layout', 'Manual Retry (No Valid Dim)');
     }
   }, [renderState, hasValidDimensions, setLoadingStatusMessage, logAction, logStateChange]);
 
-  // Effect to handle critical errors from UPProvider or initial load
   useEffect(() => {
     const criticalError = upInitializationError || upFetchStateError || (loadError && !isInitiallyResolved);
-    if (criticalError && renderState !== 'error') { // Prevent re-triggering if already in error state
+    if (criticalError && renderState !== 'error') {
       const errorSource = upInitializationError ? 'UP Init Error' : upFetchStateError ? 'UP Fetch Error' : 'Initial Load Error';
       const errorMessage = (criticalError)?.message || "Unknown critical error.";
-      setLoadingStatusMessage(`⚠ Critical Error: ${errorMessage}`);
+      setLoadingStatusMessage(`⚠ Critical Error: ${errorMessage}`, true); 
       logStateChange('error', `${errorSource}: ${errorMessage}`);
       animationStateRef.current = 'stopped';
       if (stopAllAnimations) stopAllAnimations();
@@ -210,7 +193,6 @@ export function useRenderLifecycle(options) {
     }
   }, [upInitializationError, upFetchStateError, loadError, isInitiallyResolved, renderState, setLoadingStatusMessage, logStateChange, stopAllAnimations]);
 
-  // Effect to reset lifecycle on profile address change
   useEffect(() => {
     if (isMountedRef.current && isInitiallyResolved) {
       const previousAddress = prevAddressRef.current;
@@ -230,73 +212,75 @@ export function useRenderLifecycle(options) {
   useEffect(() => {
     const currentState = renderState;
     if (currentState === 'error' || currentState === 'fading_out' || currentState === 'applying_config') {
-        return; // These states have their own dedicated effects or are terminal
+        return;
     }
 
     const hasNewConfigToApply = configLoadNonce > lastAppliedNonceRef.current;
-    // const configNameDisplay = options.currentConfigName || (configLoadNonce > 0 ? 'New' : 'Default'); // Unused variable
 
     if (!hasValidDimensions) {
         if (currentState !== 'waiting_layout') {
-            setLoadingStatusMessage("Waiting for layout...");
+            setLoadingStatusMessage("Waiting for layout...", true);
             logStateChange('waiting_layout', 'No Layout');
         }
     } else if (!managersReady) {
         if (currentState !== 'initializing_managers') {
-            setLoadingStatusMessage("Initializing managers...");
+            setLoadingStatusMessage("Initializing managers...", true);
             logStateChange('initializing_managers', 'Layout OK -> Init Mgrs');
         }
     } else if (!defaultImagesLoaded) {
         if (currentState !== 'loading_defaults') {
-            setLoadingStatusMessage("Loading defaults...");
+            setLoadingStatusMessage("Loading defaults...", true);
             logStateChange('loading_defaults', 'Mgrs OK -> Load Defaults');
         }
     } else if (!isInitiallyResolved) {
         if (currentState !== 'resolving_initial_config') {
-            setLoadingStatusMessage(currentIsLoading ? LOADING_CONFIG_MESSAGE : CONNECTING_MESSAGE);
+            setLoadingStatusMessage(currentIsLoading ? LOADING_CONFIG_MESSAGE : CONNECTING_MESSAGE, true);
             logStateChange('resolving_initial_config', `Defaults OK -> Resolve Initial (isLoading: ${currentIsLoading})`);
         }
-    } else { // All prerequisites met, ready for 'rendered' or to apply new config
+    } else {
         if (hasNewConfigToApply) {
-            // If already rendered or in a transition phase, initiate a full fade transition
-            if (currentState === 'rendered' || currentState === 'applying_config' /* from a direct jump */ || currentState === 'fading_out' /* re-trigger */) {
-                logAction(`New config nonce ${configLoadNonce} detected. Current state: ${currentState}. Starting fade_out.`);
+            if (currentState === 'rendered' || currentState === 'applying_config' || currentState === 'fading_out') {
+                logAction(`New config nonce ${configLoadNonce} detected. Current state: ${currentState}. Starting transition.`);
+                
+                setLoadingStatusMessage(TRANSITION_MESSAGE, true); 
+
                 setIsTransitioningInternal(true);
                 setMakeIncomingCanvasVisible(false);
                 outgoingLayerIdsOnTransitionStartRef.current = new Set(Object.keys(layerConfigs || {}));
 
                 if (ANIMATION_CONTINUE_DURING_TRANSITION && animationStateRef.current === 'running') {
                     animationStateRef.current = 'running_during_transition';
-                    logAction("Animations will continue during transition.");
                 } else if (!ANIMATION_CONTINUE_DURING_TRANSITION && animationStateRef.current === 'running') {
-                    logAction("Stopping animations for transition.");
                     if (stopAllAnimations) stopAllAnimations();
                     animationStateRef.current = 'stopped_for_transition';
                 }
-                logStateChange('fading_out', 'New Config Detected');
-                setLoadingStatusMessage(TRANSITION_MESSAGE);
-            } else { // If in an earlier state, can jump directly to applying config
-                logAction(`New config nonce ${configLoadNonce} detected, current state ${currentState}. Moving to applying_config directly.`);
-                setLoadingStatusMessage(APPLYING_CONFIG_MESSAGE);
+                logStateChange('fading_out', 'New Config Detected (from rendered/applying)');
+            } else {
+                logAction(`New config nonce ${configLoadNonce} detected during ${currentState}. Moving to applying_config directly.`);
+                setLoadingStatusMessage(APPLYING_CONFIG_MESSAGE, true);
                 logStateChange('applying_config', `${currentState} -> Apply New/Fallback (Direct)`);
             }
-        } else if (currentState !== 'rendered') { // No new config, and not yet rendered (e.g., initial load completed)
-            logStateChange('rendered', `${currentState} -> Rendered (No New Conf / Initial Fallback Applied)`);
+        } else if (currentState !== 'rendered') {
+            logAction(`All prerequisites met, no new config. Current state ${currentState}. Moving to rendered.`);
+            logStateChange('rendered', `${currentState} -> Rendered (Initial Fallback/Default Applied)`);
         }
     }
   }, [
       renderState, managersReady, defaultImagesLoaded, isInitiallyResolved, hasValidDimensions,
-      configLoadNonce, currentIsLoading, options.currentConfigName,
-      layerConfigs, setLoadingStatusMessage, logStateChange, logAction, stopAllAnimations
+      configLoadNonce, currentIsLoading, layerConfigs, 
+      setLoadingStatusMessage, logStateChange, logAction, stopAllAnimations
     ]);
 
-  // Effect for 'fading_out' state (visual fade of outgoing canvases)
+  // Effect for 'fading_out' state
   useEffect(() => {
       if (renderState !== 'fading_out') {
         if (fadeOutCompletionTimeoutRef.current) clearTimeout(fadeOutCompletionTimeoutRef.current);
         return;
       }
-      logAction(`FADING_OUT: Outgoing canvases should be visually fading out (CSS opacity 0 over ${CANVAS_FADE_DURATION}ms).`);
+      logAction(`FADING_OUT: Outgoing canvases should be visually fading out (CSS opacity 0 over ${CANVAS_FADE_DURATION}ms). Message: ${loadingStatusMessage}`);
+      if (loadingStatusMessage !== TRANSITION_MESSAGE) {
+          setLoadingStatusMessage(TRANSITION_MESSAGE, true); 
+      }
       if (fadeOutCompletionTimeoutRef.current) clearTimeout(fadeOutCompletionTimeoutRef.current);
 
       fadeOutCompletionTimeoutRef.current = setTimeout(() => {
@@ -304,37 +288,37 @@ export function useRenderLifecycle(options) {
           logAction(`FADING_OUT: Visual fade-out duration (${CANVAS_FADE_DURATION}ms) complete. -> APPLYING_CONFIG.`);
           if (!ANIMATION_CONTINUE_DURING_TRANSITION) {
             if (animationStateRef.current !== 'stopped') {
-                logAction("Fade Out Complete: ANIMATION_CONTINUE_DURING_TRANSITION is false. Ensuring animations are stopped.");
                 if (stopAllAnimations) stopAllAnimations();
                 animationStateRef.current = 'stopped';
             }
           } else {
-            logAction("Fade Out Complete: ANIMATION_CONTINUE_DURING_TRANSITION is true. Animations should continue or be handled by next state.");
-            // Ensure it's marked correctly if it was running
             if (animationStateRef.current === 'stopped_for_transition' || animationStateRef.current === 'running') {
                 animationStateRef.current = 'running_during_transition';
             }
           }
+          setLoadingStatusMessage(APPLYING_CONFIG_MESSAGE, true); 
           logStateChange('applying_config', 'Fade Out Complete');
         }
       }, CANVAS_FADE_DURATION);
       return () => { if (fadeOutCompletionTimeoutRef.current) clearTimeout(fadeOutCompletionTimeoutRef.current); };
-  }, [renderState, stopAllAnimations, logAction, logStateChange]);
+  }, [renderState, stopAllAnimations, logAction, logStateChange, setLoadingStatusMessage, loadingStatusMessage]);
 
-  // Effect for 'applying_config' state (applying new configs and redrawing)
+  // Effect for 'applying_config' state
   useEffect(() => {
     if (renderState !== 'applying_config') {
       if (repaintDelayTimeoutRef.current) clearTimeout(repaintDelayTimeoutRef.current);
-      applyConfigPromiseRef.current = null; // Clear any pending promise if state changes away
+      applyConfigPromiseRef.current = null;
       return;
     }
     if (applyConfigPromiseRef.current) {
       logAction(`APPLYING_CONFIG: Application process already in progress for nonce ${configLoadNonce}. Skipping.`);
-      return; // Already processing
+      return;
     }
 
     logAction(`APPLYING_CONFIG: Starting configuration application process for nonce ${configLoadNonce}.`);
-    setLoadingStatusMessage(APPLYING_CONFIG_MESSAGE);
+    if (loadingStatusMessage !== APPLYING_CONFIG_MESSAGE) {
+        setLoadingStatusMessage(APPLYING_CONFIG_MESSAGE, true); 
+    }
 
     const configsToApply = targetLayerConfigsForPreset || fallbackConfig.layers;
     const tokensToApply = targetTokenAssignmentsForPreset || fallbackConfig.tokenAssignments;
@@ -352,9 +336,7 @@ export function useRenderLifecycle(options) {
 
             logAction(`APPLYING_CONFIG: Applying token assignments for nonce ${nonceForThisCycle}.`);
             if (applyTokenAssignments) await applyTokenAssignments(tokensToApply);
-            // Assuming tokenApplySuccess is true if no error, or handle specific return if needed
 
-            // Delay for repaint
             await new Promise(resolve => {
                 if (repaintDelayTimeoutRef.current) clearTimeout(repaintDelayTimeoutRef.current);
                 repaintDelayTimeoutRef.current = setTimeout(resolve, FORCE_REPAINT_DELAY);
@@ -367,15 +349,15 @@ export function useRenderLifecycle(options) {
 
             logAction(`APPLYING_CONFIG: Redrawing all canvases with new config for nonce ${nonceForThisCycle}.`);
             if (redrawAllCanvases) redrawSuccess = await redrawAllCanvases(configsToApply);
-            else redrawSuccess = true; // Assume success if no redraw function provided
+            else redrawSuccess = true;
 
             if (!redrawSuccess) throw new Error("Redraw after config/token application failed.");
 
         } catch (error) {
             logAction(`APPLYING_CONFIG: Error during apply/redraw: ${error.message}`);
-            if (import.meta.env.DEV) console.error(error); // Log full error in dev
-            setLoadingStatusMessage(`⚠ Error applying config: ${error.message}`);
-            configApplySuccess = false; redrawSuccess = false; // tokenApplySuccess remains true unless specific error handling added
+            if (import.meta.env.DEV) console.error(error);
+            setLoadingStatusMessage(`⚠ Error applying config: ${error.message}`, true);
+            configApplySuccess = false; redrawSuccess = false;
         } finally {
             applyConfigPromiseRef.current = null;
             if (repaintDelayTimeoutRef.current) clearTimeout(repaintDelayTimeoutRef.current);
@@ -384,13 +366,12 @@ export function useRenderLifecycle(options) {
         if (isMountedRef.current && renderState === 'applying_config') {
             if (configApplySuccess && tokenApplySuccess && redrawSuccess) {
                 logAction(`APPLYING_CONFIG: Apply & Redraw SUCCESS (Nonce ${nonceForThisCycle}). -> RENDERED.`);
-                setMakeIncomingCanvasVisible(true);
+                // setMakeIncomingCanvasVisible(true); // Moved to 'rendered' state effect
                 if (animationStateRef.current !== 'running') {
-                    logAction("APPLYING_CONFIG: Restarting animations.");
                     if (restartCanvasAnimations) restartCanvasAnimations();
                     animationStateRef.current = 'running';
                 }
-                logStateChange('rendered', 'Apply Success');
+                logStateChange('rendered', 'Apply Success'); 
                 lastAppliedNonceRef.current = nonceForThisCycle;
             } else {
                 logAction(`APPLYING_CONFIG: Apply or Redraw FAILED. -> ERROR.`);
@@ -407,61 +388,63 @@ export function useRenderLifecycle(options) {
   }, [
       renderState, configLoadNonce, targetLayerConfigsForPreset, targetTokenAssignmentsForPreset,
       applyConfigurationsToManagers, applyTokenAssignments, redrawAllCanvases, restartCanvasAnimations,
-      setLoadingStatusMessage, logStateChange, logAction, stopAllAnimations
+      setLoadingStatusMessage, logStateChange, logAction, stopAllAnimations, loadingStatusMessage
   ]);
 
-  // Effect for 'rendered' state (finalizing transitions, managing animations)
+  // Effect for 'rendered' state
   useEffect(() => {
     if (transitionEndTimeoutRef.current) clearTimeout(transitionEndTimeoutRef.current);
-    if (statusDisplayFadeTimeoutRef.current) clearTimeout(statusDisplayFadeTimeoutRef.current);
 
     if (renderState === "rendered") {
-      if (isTransitioningInternal) { // If a transition was active
-        logAction(`RENDERED: Transition was active. Waiting ${CANVAS_FADE_DURATION}ms for incoming canvas fade-in.`);
+      setMakeIncomingCanvasVisible(true); // Make visuals appear as soon as 'rendered' state is hit
+      
+      setLoadingStatusMessage("Render complete"); 
+      setIsStatusFadingOut(true); 
+
+      if (isTransitioningInternal) {
+        logAction(`RENDERED: Transition was active. Waiting ${CANVAS_FADE_DURATION}ms for incoming canvas fade-in to visually complete.`);
         transitionEndTimeoutRef.current = setTimeout(() => {
           if (isMountedRef.current && renderState === "rendered") {
-            logAction(`RENDERED: Incoming canvas fade-in complete. Clearing isTransitioningInternal.`);
+            logAction(`RENDERED: Incoming canvas visual fade-in duration complete. Clearing isTransitioningInternal.`);
             setIsTransitioningInternal(false);
-            setLoadingStatusMessage("Render complete");
-            setIsStatusFadingOut(true);
+            
+            if (statusDisplayFadeTimeoutRef.current) clearTimeout(statusDisplayFadeTimeoutRef.current);
             statusDisplayFadeTimeoutRef.current = setTimeout(() => {
               if (isMountedRef.current) setIsStatusFadingOut(false);
             }, LOADING_FADE_DURATION);
 
-            // Ensure layers that were part of the outgoing set and are now disabled in the new config are properly cleared/disabled
             outgoingLayerIdsOnTransitionStartRef.current.forEach(layerId => {
                 const newConfigForThisLayer = targetLayerConfigsForPreset?.[layerId];
                 if (!newConfigForThisLayer || !newConfigForThisLayer.enabled) {
                     const manager = managerInstancesRef?.current?.[layerId];
                     if (manager && typeof manager.applyFullConfig === 'function') {
-                        // Apply a minimal config that ensures the layer is disabled
                         manager.applyFullConfig({ ...(manager.getDefaultConfig?.() || {}), enabled: false });
-                        logAction(`RENDERED: Ensured outgoing layer ${layerId} is disabled as per new config.`);
                     }
                 }
             });
             outgoingLayerIdsOnTransitionStartRef.current.clear();
           }
         }, CANVAS_FADE_DURATION);
-      } else { // Not transitioning, just reached rendered state (e.g., initial load)
-        setLoadingStatusMessage("Render complete");
-        setIsStatusFadingOut(true);
+      } else { // Not transitioning, e.g., initial load completion
+        if (statusDisplayFadeTimeoutRef.current) clearTimeout(statusDisplayFadeTimeoutRef.current);
         statusDisplayFadeTimeoutRef.current = setTimeout(() => {
           if (isMountedRef.current) setIsStatusFadingOut(false);
         }, LOADING_FADE_DURATION);
       }
-      // Ensure animations are running if container is visible
       if (animationStateRef.current !== 'running' && isContainerObservedVisible) {
         logAction("RENDERED: Ensuring animations are running.");
         if (restartCanvasAnimations) restartCanvasAnimations();
         animationStateRef.current = 'running';
       }
-    } else { // Not in 'rendered' state
-      if (isStatusFadingOut) setIsStatusFadingOut(false);
-      // If not in a transition or applying config, ensure transition flags are reset and animations stopped
+    } else { 
+      // If we move away from 'rendered', ensure makeIncomingCanvasVisible is false
+      // unless we are in a state that explicitly manages it (like applying_config or fading_out)
+      if (renderState !== 'applying_config' && renderState !== 'fading_out') {
+        if (makeIncomingCanvasVisible) setMakeIncomingCanvasVisible(false);
+      }
+
       if (renderState !== 'fading_out' && renderState !== 'applying_config') {
         if (isTransitioningInternal) setIsTransitioningInternal(false);
-        if (makeIncomingCanvasVisible) setMakeIncomingCanvasVisible(false);
         if (animationStateRef.current === 'running') {
           logAction(`State changed from RENDERED to ${renderState}. Stopping animations.`);
           if (stopAllAnimations) stopAllAnimations();
@@ -475,8 +458,9 @@ export function useRenderLifecycle(options) {
     };
   }, [
       renderState, isTransitioningInternal, makeIncomingCanvasVisible, isContainerObservedVisible,
-      isStatusFadingOut, setLoadingStatusMessage, restartCanvasAnimations, stopAllAnimations, logAction,
-      managerInstancesRef, targetLayerConfigsForPreset // Added dependencies
+      setLoadingStatusMessage, restartCanvasAnimations, stopAllAnimations, logAction,
+      managerInstancesRef, targetLayerConfigsForPreset, isStatusFadingOut, 
+      setMakeIncomingCanvasVisible // Added setMakeIncomingCanvasVisible as a dependency
     ]);
 
   const showStatusDisplay = useMemo(() => {
@@ -484,7 +468,6 @@ export function useRenderLifecycle(options) {
   }, [renderState, isTransitioningInternal, isStatusFadingOut]);
 
   const showRetryButton = useMemo(() => {
-    // Show retry only for recoverable load errors, not critical UP provider errors
     return renderState === 'error' && !upInitializationError && !upFetchStateError && !(loadError && !isInitiallyResolved);
   }, [renderState, upInitializationError, upFetchStateError, loadError, isInitiallyResolved]);
 
@@ -503,7 +486,5 @@ export function useRenderLifecycle(options) {
   }), [
     renderState, loadingStatusMessage, isStatusFadingOut, showStatusDisplay, showRetryButton,
     isTransitioningInternal, makeIncomingCanvasVisible, handleManualRetry, resetLifecycle
-    // outgoingLayerIdsOnTransitionStartRef.current is a ref, its value is stable for memo, content changes don't trigger re-memo
-    // animationStateRef.current is also a ref, similar logic
   ]);
 }

@@ -1,3 +1,4 @@
+// src/hooks/useAnimationLifecycleManager.js
 import { useEffect, useRef } from 'react';
 
 import { globalAnimationFlags } from "../utils/globalAnimationFlags"; // Local utility
@@ -11,13 +12,16 @@ const ANIMATION_RESTART_DELAY = 16; // ms
  * visual correctness during UI changes or when the canvas is not visible.
  * Uses a small delay before restarting animations to allow UI to settle.
  *
+ * This version uses an internal ref (`lastActionRef`) to track its last commanded
+ * state (start/stop), making its decision to issue a new command more robust
+ * independently of an external `isAnimating` prop that might not be perfectly in sync.
+ *
  * @param {object} params - Parameters for the animation lifecycle manager.
  * @param {boolean} params.isMounted - Indicates if the component consuming this hook is fully mounted.
  * @param {string} params.renderState - The current rendering state of the visual component (e.g., "rendered", "loading").
  * @param {boolean} params.isContainerObservedVisible - Flag indicating if the main visual container is visible, typically determined by an IntersectionObserver.
  * @param {boolean} params.isBenignOverlayActive - Flag indicating if a non-blocking overlay (e.g., toasts, temporary messages) is currently active, which might warrant continued animation.
  * @param {string | null} params.animatingPanel - Identifier of any UI panel that is currently undergoing an open/close animation. (Logged for debugging; not directly used in the core animation start/stop decision logic of this hook version).
- * @param {boolean} params.isAnimating - Current state flag indicating if canvas animations are actively running. This is usually managed by the consumer and read here.
  * @param {boolean} params.isTransitioning - Flag indicating if a visual preset transition or an initial load animation sequence is active. Animations should generally run during transitions.
  * @param {() => void} params.restartCanvasAnimations - Callback function to be invoked when animations should (re)start.
  * @param {() => void} params.stopCanvasAnimations - Callback function to be invoked when animations should stop.
@@ -28,24 +32,22 @@ export function useAnimationLifecycleManager({
   renderState,
   isContainerObservedVisible,
   isBenignOverlayActive,
-  animatingPanel,
-  isAnimating,
+  animatingPanel, // Keep for logging, though not in core logic here
   isTransitioning,
   restartCanvasAnimations,
   stopCanvasAnimations,
 }) {
   /** @type {React.RefObject<ReturnType<typeof setTimeout> | null>} */
   const animationStartTimerRef = useRef(null);
+  /** @type {React.RefObject<'start' | 'stop' | null>} */
+  const lastActionRef = useRef(null); // Tracks the last action taken by this hook
 
   useEffect(() => {
-    // Log inputs at the start of the effect
     const timestamp = performance.now();
     if (import.meta.env.DEV) {
-        console.log(`[AnimLC ${timestamp.toFixed(0)}] EFFECT RUN. isTokenSelectorOpening: ${globalAnimationFlags.isTokenSelectorOpening}, IOVisible: ${isContainerObservedVisible}, BenignActive: ${isBenignOverlayActive}, AnimPanel: ${animatingPanel}, IsAnimating: ${isAnimating}, IsTransitioning: ${isTransitioning}, RenderState: ${renderState}`);
+        // Updated log to show last commanded action by this hook
+        console.log(`[AnimLC ${timestamp.toFixed(0)}] EFFECT RUN. LastCmd: ${lastActionRef.current}, isTokenSelectorOpening: ${globalAnimationFlags.isTokenSelectorOpening}, IOVisible: ${isContainerObservedVisible}, BenignActive: ${isBenignOverlayActive}, AnimPanel: ${animatingPanel}, IsTransitioning: ${isTransitioning}, RenderState: ${renderState}`);
     }
-
-    // No Promise.resolve().then() here for now, to react more immediately.
-    // We can add it back if this causes other issues.
 
     if (!isMounted || !restartCanvasAnimations || !stopCanvasAnimations) {
       if (import.meta.env.DEV) {
@@ -54,114 +56,101 @@ export function useAnimationLifecycleManager({
       return;
     }
 
-    const animTimer = animationStartTimerRef.current;
-    let shouldRunAnimations;
+    // Clear any pending restart timeout from a previous run of this effect
+    if (animationStartTimerRef.current) {
+      clearTimeout(animationStartTimerRef.current);
+      animationStartTimerRef.current = null;
+    }
 
-    // Decision logic for running animations
+    let shouldRunAnimations;
+    // Determine if animations should be running based on current state
     if (globalAnimationFlags.isTokenSelectorOpening) {
       shouldRunAnimations = true;
-      if (import.meta.env.DEV) {
-        console.log(`[AnimLC ${timestamp.toFixed(0)}] Decision: RUN (GlobalFlag Override: isTokenSelectorOpening)`);
-      }
+      if (import.meta.env.DEV) console.log(`[AnimLC ${timestamp.toFixed(0)}] Condition Eval: RUN (GlobalFlag Override: isTokenSelectorOpening)`);
     } else if (isTransitioning) {
       shouldRunAnimations = true;
-      if (import.meta.env.DEV) {
-        console.log(`[AnimLC ${timestamp.toFixed(0)}] Decision: RUN (Preset Transition active)`);
-      }
+      if (import.meta.env.DEV) console.log(`[AnimLC ${timestamp.toFixed(0)}] Condition Eval: RUN (Preset Transition active)`);
     } else if (isBenignOverlayActive) {
       shouldRunAnimations = true;
-      if (import.meta.env.DEV) {
-        console.log(`[AnimLC ${timestamp.toFixed(0)}] Decision: RUN (Benign Overlay Active)`);
-      }
+      if (import.meta.env.DEV) console.log(`[AnimLC ${timestamp.toFixed(0)}] Condition Eval: RUN (Benign Overlay Active)`);
     } else {
       shouldRunAnimations = renderState === "rendered" && isContainerObservedVisible;
-      if (import.meta.env.DEV) {
-        console.log(`[AnimLC ${timestamp.toFixed(0)}] Decision: ${shouldRunAnimations ? "RUN" : "MAYBE STOP"} (General: RenderState=${renderState}, IOVisible=${isContainerObservedVisible})`);
-      }
+      if (import.meta.env.DEV) console.log(`[AnimLC ${timestamp.toFixed(0)}] Condition Eval: ${shouldRunAnimations ? "RUN" : "STOP"} (General: RenderState=${renderState}, IOVisible=${isContainerObservedVisible})`);
     }
     
-    // Decision logic for stopping animations (only if not in fullscreen)
-    const shouldStopAnimations = !shouldRunAnimations && !document.fullscreenElement;
-    if (import.meta.env.DEV) {
-        if (shouldStopAnimations) { 
-            console.log(`[AnimLC ${timestamp.toFixed(0)}] shouldStopAnimations evaluated to TRUE (animations should not run AND not fullscreen).`);
-        } else if (!shouldRunAnimations && document.fullscreenElement) {
-            console.log(`[AnimLC ${timestamp.toFixed(0)}] Animations should not run, but fullscreen is active, so NOT stopping.`);
-        }
-    }
+    const isInFullscreen = !!document.fullscreenElement;
+    // Logic to determine if animations should definitely stop:
+    // They should stop if `shouldRunAnimations` is false AND we are not in fullscreen.
+    const shouldStopLogic = !shouldRunAnimations && !isInFullscreen;
 
-    if (shouldRunAnimations && !isAnimating) {
-      if (import.meta.env.DEV) {
-        console.log(`[AnimLC ${timestamp.toFixed(0)}] Condition: shouldRun & !isAnimating -> Scheduling RESTART of animations.`);
-      }
-      if (animTimer) clearTimeout(animTimer);
-      animationStartTimerRef.current = setTimeout(() => {
-        // Re-check conditions before restarting, as state might have changed during the timeout
-        let currentShouldRunAgain;
-        if (globalAnimationFlags.isTokenSelectorOpening) {
-          currentShouldRunAgain = true;
-        } else if (isTransitioning) {
-          currentShouldRunAgain = true;
-        } else if (isBenignOverlayActive) {
-          currentShouldRunAgain = true;
-        } else {
-          currentShouldRunAgain = renderState === "rendered" && isContainerObservedVisible;
-        }
+    if (shouldRunAnimations) {
+      // If animations should run, but this hook's last command wasn't 'start'
+      if (lastActionRef.current !== 'start') {
+        if (import.meta.env.DEV) console.log(`[AnimLC ${timestamp.toFixed(0)}] Action: Scheduling RESTART (last cmd: ${lastActionRef.current})`);
+        
+        animationStartTimerRef.current = setTimeout(() => {
+          // Re-check conditions inside timeout as state might have changed during the delay
+          let currentShouldRunAgain;
+          if (globalAnimationFlags.isTokenSelectorOpening) currentShouldRunAgain = true;
+          else if (isTransitioning) currentShouldRunAgain = true;
+          else if (isBenignOverlayActive) currentShouldRunAgain = true;
+          else currentShouldRunAgain = renderState === "rendered" && isContainerObservedVisible;
 
-        if (isMounted && currentShouldRunAgain) {
-          if (import.meta.env.DEV) {
-            console.log(`[AnimLC ${performance.now().toFixed(0)}] setTimeout: RESTARTING animations (isMounted & currentShouldRunAgain).`);
+          if (isMounted && currentShouldRunAgain) {
+            if (import.meta.env.DEV) console.log(`[AnimLC ${performance.now().toFixed(0)}] setTimeout: EXECUTING RESTART (isMounted & currentShouldRunAgain).`);
+            restartCanvasAnimations();
+            lastActionRef.current = 'start'; // Update last action
+          } else {
+            if (import.meta.env.DEV) console.log(`[AnimLC ${performance.now().toFixed(0)}] setTimeout: Conditions changed, NOT RESTARTING (isMounted=${isMounted}, currentShouldRunAgain=${currentShouldRunAgain}). Last cmd remains: ${lastActionRef.current}`);
           }
-          restartCanvasAnimations();
-        } else {
-          if (import.meta.env.DEV) {
-            console.log(`[AnimLC ${performance.now().toFixed(0)}] setTimeout: NOT RESTARTING (isMounted=${isMounted}, currentShouldRunAgain=${currentShouldRunAgain}). Conditions changed.`);
-          }
-        }
-        animationStartTimerRef.current = null; 
-      }, ANIMATION_RESTART_DELAY);
-    } else if (shouldStopAnimations && isAnimating) {
-      if (import.meta.env.DEV) {
-        console.log(`[AnimLC ${timestamp.toFixed(0)}] Condition: shouldStop & isAnimating -> STOPPING animations.`);
+          animationStartTimerRef.current = null; // Clear ref after execution or if not run
+        }, ANIMATION_RESTART_DELAY);
+      } else {
+          // Animations should run and last command was 'start', so do nothing.
+          if (import.meta.env.DEV) console.log(`[AnimLC ${timestamp.toFixed(0)}] No Action: Conditions indicate RUN, and last command was 'start'.`);
       }
-      stopCanvasAnimations();
-      if (animTimer) { 
-        clearTimeout(animTimer);
-        animationStartTimerRef.current = null;
+    } else if (shouldStopLogic) {
+      // If animations should stop, but this hook's last command wasn't 'stop'
+      if (lastActionRef.current !== 'stop') {
+        if (import.meta.env.DEV) console.log(`[AnimLC ${timestamp.toFixed(0)}] Action: EXECUTING STOP (last cmd: ${lastActionRef.current})`);
+        stopCanvasAnimations();
+        lastActionRef.current = 'stop'; // Update last action
+      } else {
+        // Animations should stop and last command was 'stop', so do nothing.
+        if (import.meta.env.DEV) console.log(`[AnimLC ${timestamp.toFixed(0)}] No Action: Conditions indicate STOP, and last command was 'stop'.`);
       }
     } else {
-        // Log why no action was taken, only in DEV
+        // This block covers cases where:
+        // 1. `shouldRunAnimations` is false, BUT `isInFullscreen` is true (so `shouldStopLogic` is false).
+        //    In this case, we don't stop animations. `lastActionRef` remains what it was.
+        //    If `lastActionRef` was 'start', animations continue (correct for fullscreen).
+        //    If `lastActionRef` was 'stop' (e.g. from a previous non-fullscreen stop), and now it's fullscreen but conditions like IOVisible are false,
+        //    it won't try to restart them here, which seems correct. The expectation is usually that fullscreen implies visible content.
         if (import.meta.env.DEV) {
-            if (!shouldRunAnimations && !isAnimating) {
-                // This state is common when animations are correctly paused. Verbose log commented out.
-                // console.log(`[AnimLC ${timestamp.toFixed(0)}] No Action: Animations should not run and are already not running.`);
-            } else if (shouldRunAnimations && isAnimating) {
-                // This state is common when animations are correctly running. Verbose log commented out.
-                // console.log(`[AnimLC ${timestamp.toFixed(0)}] No Action: Animations should run and are already running.`);
-            } else if (!shouldStopAnimations && isAnimating) { // e.g. shouldRunAnimations is false, but fullscreen is active OR shouldRunAnimations is true and isAnimating is true
-                console.log(`[AnimLC ${timestamp.toFixed(0)}] No Action: Animations are running, and conditions do not warrant stopping (e.g., fullscreen is active, or they are meant to be running and are).`);
-            } else if (shouldStopAnimations && !isAnimating) {
-                 // This state is common. Verbose log commented out.
-                 // console.log(`[AnimLC ${timestamp.toFixed(0)}] No Action: Animations should stop, and are already not running.`);
+            if (!shouldRunAnimations && isInFullscreen) {
+                 console.log(`[AnimLC ${timestamp.toFixed(0)}] No Action: Conditions suggest STOP, but fullscreen is active. Last cmd: ${lastActionRef.current}. Animation continues if it was 'start'.`);
             } else {
-                // Fallback log for unhandled "no action" cases.
-                console.log(`[AnimLC ${timestamp.toFixed(0)}] No Action: Uncategorized state (shouldRunAnimations: ${shouldRunAnimations}, isAnimating: ${isAnimating}, shouldStopAnimations: ${shouldStopAnimations}).`);
+                 // This case should ideally not be hit if logic is exhaustive.
+                 // It might mean `shouldRunAnimations` is true, but `lastActionRef.current` was already 'start'. (Covered by specific log above)
+                 // Or `shouldRunAnimations` is false, `isInFullscreen` is false (so `shouldStopLogic` is true), but `lastActionRef.current` was already 'stop'. (Covered by specific log above)
+                 console.log(`[AnimLC ${timestamp.toFixed(0)}] No Action: Uncategorized state or conditions met current command. shouldRunAnimations: ${shouldRunAnimations}, shouldStopLogic: ${shouldStopLogic}, last cmd: ${lastActionRef.current}.`);
             }
         }
     }
 
+    // Cleanup function for the useEffect
     return () => {
       if (animationStartTimerRef.current) {
         clearTimeout(animationStartTimerRef.current);
-        animationStartTimerRef.current = null; 
+        animationStartTimerRef.current = null;
       }
     };
   }, [
     isMounted, renderState, isContainerObservedVisible, isBenignOverlayActive,
-    animatingPanel, 
-    isAnimating, isTransitioning,
+    animatingPanel, // Kept for logging consistency, even if not in core decision logic
+    isTransitioning,
     restartCanvasAnimations, stopCanvasAnimations,
-    // globalAnimationFlags is an external mutable object, its changes won't trigger this effect directly.
-    // The effect re-reads its properties when other dependencies change.
+    // lastActionRef is a ref, its changes don't re-trigger useEffect.
+    // globalAnimationFlags is external, its changes don't re-trigger useEffect.
   ]);
 }

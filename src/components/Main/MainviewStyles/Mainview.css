@@ -69,7 +69,9 @@
 */
 .canvas {
   transition-property: opacity, transform;
-  transition-duration: 5000ms; /* <<< USER'S DESIRED DURATION >>> */
+  /* --- MODIFIED DURATION --- */
+  transition-duration: 500ms; /* Example: 0.5 seconds */
+  /* ------------------------- */
   transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
@@ -116,9 +118,11 @@
 /* Status Display, FPS Counter, etc. (styles remain the same) */
 .status-display {
   position: fixed;
-  top: 20%;
+  /* --- MODIFIED: Changed top from 20% to 75% to position in lower quarter --- */
+  top: 75%; 
+  /* --------------------------------------------------------------------- */
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%); /* Adjust Y transform if needed due to new top value */
   z-index: var(--z-top);
   backdrop-filter: blur(var(--blur-amount, 3px));
   -webkit-backdrop-filter: blur(var(--blur-amount, 3px));
