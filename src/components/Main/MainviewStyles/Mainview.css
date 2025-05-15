@@ -118,11 +118,9 @@
 /* Status Display, FPS Counter, etc. (styles remain the same) */
 .status-display {
   position: fixed;
-  /* --- MODIFIED: Changed top from 20% to 75% to position in lower quarter --- */
   top: 75%; 
-  /* --------------------------------------------------------------------- */
   left: 50%;
-  transform: translate(-50%, -50%); /* Adjust Y transform if needed due to new top value */
+  transform: translate(-50%, -50%); 
   z-index: var(--z-top);
   backdrop-filter: blur(var(--blur-amount, 3px));
   -webkit-backdrop-filter: blur(var(--blur-amount, 3px));
@@ -133,7 +131,7 @@
   font-weight: 500;
   text-align: center;
   min-width: 250px;
-  transition: opacity 1000ms cubic-bezier(0.2, 0.8, 0.2, 1); /* This is for the status message itself */
+  transition: opacity 1000ms cubic-bezier(0.2, 0.8, 0.2, 1); 
   opacity: 1;
   pointer-events: none;
 }
@@ -225,11 +223,11 @@
 .click-ping-svg-container {
   position: fixed;
   transform: translate(-50%, -50%);
-  width: 40px;
+  width: 40px; 
   height: 40px;
   pointer-events: none;
   z-index: 10001;
-  opacity: 1;
+  opacity: 1; 
   display: flex;
   justify-content: center;
   align-items: center;
@@ -238,20 +236,29 @@
 .click-ping-svg {
   width: 100%;
   height: 100%;
-  overflow: visible !important;
+  overflow: visible !important; 
 }
 
 .click-ping-svg circle {
-  stroke-opacity: 1;
-  transform-origin: center;
+  stroke-opacity: 1; 
+  transform-origin: center; 
 }
 
+/* --- SIMPLIFIED PING ANIMATION FOR TESTING --- */
 .ping-svg-animation .click-ping-svg circle {
-  animation: ping-circle-anim 0.7s cubic-bezier(0.1, 0.7, 0.3, 1) forwards;
+  animation: ping-circle-anim-simple 0.7s linear forwards;
 }
 
-@keyframes ping-circle-anim {
-  0% { r: 2; stroke-opacity: 1; transform: scale(0.5); }
-  70% { r: 15; stroke-opacity: 0.7; transform: scale(1.2); }
-  100% { r: 20; stroke-opacity: 0; transform: scale(1.5); }
+@keyframes ping-circle-anim-simple {
+  0% {
+    r: 2;
+    stroke-opacity: 1;
+    transform: scale(0.1);
+  }
+  100% {
+    r: 30; 
+    stroke-opacity: 0;
+    transform: scale(2.5); /* Make it very obviously large */
+  }
 }
+/* --- END SIMPLIFIED PING ANIMATION --- */

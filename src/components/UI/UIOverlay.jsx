@@ -28,7 +28,7 @@ const MemoizedPresetSelectorBar = React.memo(PresetSelectorBar);
 /**
  * @typedef {object} UIStatePropTypes
  * @property {string|null} activePanel - Identifier of the currently active panel (e.g., 'controls', 'notifications').
- * @property {string|null} animatingPanel - Identifier of the panel currently undergoing an open/close animation (e.g., 'controls', 'closing').
+ * @property {string|null} animatingPanel - Identifier of the panel currently undergoing an open/close animation (e.g., the panel name when opening, or "closing" when closing).
  * @property {string} activeLayerTab - Identifier of the active layer control tab (e.g., 'tab1', 'tab2', 'tab3').
  * @property {boolean} infoOverlayOpen - Whether the informational overlay is currently open.
  * @property {boolean} whitelistPanelOpen - Whether the whitelist management panel is currently open (functionality might be conditional).
@@ -39,6 +39,7 @@ const MemoizedPresetSelectorBar = React.memo(PresetSelectorBar);
  * @property {(panelName: string) => void} openPanel - Function to open a specific side panel by its identifier.
  * @property {() => void} toggleUiVisibility - Function to toggle the visibility of the main UI elements.
  * @property {boolean} isUiVisible - Whether the main UI elements (toolbars, panels) are currently set to be visible.
+ * @property {(panelName: string) => void} toggleSidePanel - Function to toggle a specific side panel's visibility.
  */
 
 /**
@@ -81,15 +82,8 @@ const MemoizedPresetSelectorBar = React.memo(PresetSelectorBar);
  * @property {(presetName: string) => void} onPresetSelect - Callback invoked when a preset is selected from the selector.
  */
 
-// --- General Connect Pill Component ---
-/**
- * A simple component that displays a message prompting the user to connect
- * their Universal Profile if they haven't already.
- * @returns {JSX.Element | null} The connect pill component or null if visitor is connected.
- */
 const GeneralConnectPill = () => {
   const { visitorUPAddress } = useProfileSessionState();
-  // Only show if the visitor is not connected (i.e., no visitorUPAddress)
   if (visitorUPAddress) return null;
 
   return (
@@ -98,19 +92,7 @@ const GeneralConnectPill = () => {
     </div>
   );
 };
-// --- End General Connect Pill Component ---
 
-
-/**
- * Renders the currently active panel based on `uiState.activePanel`.
- * This component acts as a switch for displaying different panel contents.
- * @param {object} props - Component props.
- * @param {UIStatePropTypes} props.uiState - Current UI state.
- * @param {AudioStatePropTypes} props.audioState - Current audio state.
- * @param {ConfigDataPropTypes} props.configData - Current configuration data.
- * @param {ActionsPropTypes} props.actions - Action callbacks.
- * @returns {JSX.Element | null} The rendered active panel or null.
- */
 const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
     const { activePanel, animatingPanel, activeLayerTab, closePanel, setActiveLayerTab } = uiState;
     const { isAudioActive, audioSettings, analyzerData, setIsAudioActive, setAudioSettings } = audioState;
@@ -118,13 +100,24 @@ const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
     const { onLayerConfigChange, onMarkNotificationRead, onClearAllNotifications, onSaveReaction, onRemoveReaction, onPreviewEffect, onTokenApplied } = actions;
 
     const handleTokenSelectorClose = useCallback(() => {
-        closePanel(); // From uiState
+        closePanel(); 
     }, [closePanel]);
+
+    // Construct className for PanelWrapper based on animatingPanel state
+    const panelWrapperClassName = useMemo(() => {
+        if (animatingPanel) {
+            if (animatingPanel === "closing") {
+                return "animating closing"; // For slide-out
+            }
+            return "animating"; // For slide-in (or generic animating state)
+        }
+        return ""; // No animation class
+    }, [animatingPanel]);
 
     switch (activePanel) {
         case "controls":
             return (
-                <PanelWrapper key="controls-panel" className={animatingPanel ? "animating" : ""}>
+                <PanelWrapper key="controls-panel" className={panelWrapperClassName}>
                     <EnhancedControlPanel
                         onLayerConfigChange={onLayerConfigChange}
                         blendModes={blendModes}
@@ -136,7 +129,7 @@ const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
             );
         case "notifications":
             return (
-                <PanelWrapper key="notifications-panel" className={animatingPanel ? "animating" : ""}>
+                <PanelWrapper key="notifications-panel" className={panelWrapperClassName}>
                     <NotificationPanel
                         notifications={notifications}
                         onClose={closePanel}
@@ -146,28 +139,27 @@ const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
                 </PanelWrapper>
             );
         case "events":
-            return canInteract ? ( // Only render if user can interact
-                <PanelWrapper key="events-panel" className={animatingPanel ? "animating" : ""}>
+            return canInteract ? ( 
+                <PanelWrapper key="events-panel" className={panelWrapperClassName}>
                     <EventsPanel
                         onSaveReaction={onSaveReaction}
-                        onRemoveReaction={onRemoveReaction} // Added missing prop
+                        onRemoveReaction={onRemoveReaction} 
                         reactions={savedReactions}
                         onClose={closePanel}
-                        readOnly={!canSave} // Based on ability to save to host profile
+                        readOnly={!canSave} 
                         onPreviewEffect={onPreviewEffect}
                     />
                 </PanelWrapper>
             ) : null;
         case "save":
-            // Show save panel only if there's a profile and not in preview mode
             return currentProfileAddress && !isPreviewMode ? (
-                <PanelWrapper key="save-panel" className={animatingPanel ? "animating" : ""}>
+                <PanelWrapper key="save-panel" className={panelWrapperClassName}>
                     <EnhancedSavePanel onClose={closePanel} />
                 </PanelWrapper>
             ) : null;
         case "audio":
             return (
-                <PanelWrapper key="audio-panel" className={animatingPanel ? "animating" : ""}>
+                <PanelWrapper key="audio-panel" className={panelWrapperClassName}>
                     <AudioControlPanel
                         onClose={closePanel}
                         isAudioActive={isAudioActive}
@@ -179,13 +171,13 @@ const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
                 </PanelWrapper>
             );
         case "tokens":
-            return canInteract ? ( // Only render if user can interact
+            return canInteract ? ( 
                 <TokenSelectorOverlay
                     key="token-selector-overlay"
-                    isOpen={activePanel === "tokens"} // Controlled by activePanel state
+                    isOpen={activePanel === "tokens"} 
                     onClose={handleTokenSelectorClose}
                     onTokenApplied={onTokenApplied}
-                    readOnly={!canInteract} // UI interaction capability
+                    readOnly={!canInteract} 
                 />
             ) : null;
         default:
@@ -200,26 +192,13 @@ ActivePanelRenderer.propTypes = {
 };
 const MemoizedActivePanelRenderer = React.memo(ActivePanelRenderer);
 
-
-/**
- * Renders overlays like the InfoOverlay.
- * @param {object} props - Component props.
- * @param {UIStatePropTypes} props.uiState - Current UI state.
- * @returns {JSX.Element} The rendered overlays.
- */
 const OverlayRenderer = ({ uiState }) => {
-    const { infoOverlayOpen, toggleInfoOverlay /*, whitelistPanelOpen, toggleWhitelistPanel */ } = uiState;
-    // Whitelist panel logic can be added here if it's a similar full-screen overlay
+    const { infoOverlayOpen, toggleInfoOverlay } = uiState;
     return (
         <>
             {infoOverlayOpen && (
                 <InfoOverlay isOpen={infoOverlayOpen} onClose={toggleInfoOverlay} />
             )}
-            {/* Example for WhitelistOverlay if it were similar:
-            {whitelistPanelOpen && (
-                <WhitelistOverlay isOpen={whitelistPanelOpen} onClose={toggleWhitelistPanel} />
-            )}
-            */}
         </>
     );
 };
@@ -228,44 +207,28 @@ OverlayRenderer.propTypes = {
 };
 const MemoizedOverlayRenderer = React.memo(OverlayRenderer);
 
-
-/**
- * UIOverlay: The main component responsible for rendering all primary UI elements,
- * including toolbars, panels, status indicators, and overlays. It orchestrates
- * the visibility and interaction of these elements based on the application state.
- *
- * @param {object} props - Component props.
- * @param {UIStatePropTypes} props.uiState - Current state of various UI elements.
- * @param {AudioStatePropTypes} props.audioState - Current state related to audio processing.
- * @param {ConfigDataPropTypes} props.configData - General configuration data and application status.
- * @param {ActionsPropTypes} props.actions - Collection of callback functions for UI interactions.
- * @param {Array<object>} [props.passedSavedConfigList=[]] - List of saved presets, passed down to `PresetSelectorBar`.
- * @returns {JSX.Element} The rendered UI overlay.
- */
 function UIOverlay(props) {
   const {
     uiState,
     audioState,
-    configData: propConfigData, // Renamed to avoid conflict with internal configData
+    configData: propConfigData, 
     actions,
     passedSavedConfigList,
   } = props;
 
-  // Integrate session-specific interaction capabilities
   const { canInteract: sessionCanInteract, currentProfileAddress: sessionCurrentProfileAddress, visitorUPAddress } = useProfileSessionState();
 
-  // Memoize the configData prop enhanced with session interaction state
   const configData = useMemo(() => ({
     ...propConfigData,
-    canInteract: sessionCanInteract, // Override/set canInteract from session
-    currentProfileAddress: sessionCurrentProfileAddress, // Override/set currentProfileAddress from session
+    canInteract: sessionCanInteract, 
+    currentProfileAddress: sessionCurrentProfileAddress, 
   }), [propConfigData, sessionCanInteract, sessionCurrentProfileAddress]);
 
 
   const {
     isUiVisible,
     activePanel,
-    openPanel, // From uiState, used by child components
+    toggleSidePanel, 
     toggleInfoOverlay,
     toggleWhitelistPanel,
     toggleUiVisibility
@@ -280,30 +243,24 @@ function UIOverlay(props) {
     isTransitioning,
     isBaseReady,
     renderState,
-    // canInteract and currentProfileAddress are now sourced from the memoized configData above
   } = configData;
   const { onEnhancedView, onPresetSelect } = actions;
 
-  // Determine if the core UI should be shown (e.g., after initial loading/connection)
   const actualShouldShowUI = useMemo(() => {
-    // Example condition: UI is ready when base components are ready OR in a state prompting connection.
-    // Adjust this logic based on your application's specific readiness criteria.
     return isBaseReady || renderState === 'prompt_connect';
   } , [isBaseReady, renderState]);
 
   const showPresetBar = useMemo(() => {
-    // Show preset bar if UI is generally ready, visible, no panel is open, and a profile is being viewed.
     return actualShouldShowUI && isUiVisible && !activePanel && !!configData.currentProfileAddress;
   }, [actualShouldShowUI, isUiVisible, activePanel, configData.currentProfileAddress]);
 
-  // Dynamically set class for main UI container based on visibility
   const mainUiContainerClass = `ui-elements-container ${actualShouldShowUI && isUiVisible ? "visible" : "hidden-by-opacity"}`;
 
   return (
     <>
       {actualShouldShowUI && (
         <MemoizedTopRightControls
-          showWhitelist={false} // Whitelist feature can be conditionally shown based on other state if needed
+          showWhitelist={false} 
           isProjectAdminForWhitelist={isParentAdmin}
           showInfo={true}
           showToggleUI={true}
@@ -312,14 +269,14 @@ function UIOverlay(props) {
           onInfoClick={toggleInfoOverlay}
           onToggleUI={toggleUiVisibility}
           onEnhancedView={onEnhancedView}
-          isUiVisible={isUiVisible} // Pass current UI visibility state
+          isUiVisible={isUiVisible} 
         />
       )}
       <div className={mainUiContainerClass}>
         {actualShouldShowUI && isUiVisible && (
           <>
             <div className="bottom-right-icons">
-              <MemoizedAudioStatusIcon isActive={isAudioActive} onClick={() => openPanel('audio')} />
+              <MemoizedAudioStatusIcon isActive={isAudioActive} onClick={() => uiState.openPanel('audio')} />
               <MemoizedGlobalMIDIStatus />
             </div>
             {isPreviewMode && (
@@ -329,13 +286,13 @@ function UIOverlay(props) {
             )}
             <MemoizedVerticalToolbar
               activePanel={activePanel}
-              setActivePanel={openPanel} // Pass openPanel to handle panel activation
+              setActivePanel={toggleSidePanel} 
               notificationCount={unreadCount}
             />
             <MemoizedActivePanelRenderer
                 uiState={uiState}
                 audioState={audioState}
-                configData={configData} // Pass the enhanced configData
+                configData={configData} 
                 actions={actions}
             />
             {showPresetBar && (
@@ -343,16 +300,16 @@ function UIOverlay(props) {
                 savedConfigList={passedSavedConfigList}
                 currentConfigName={currentConfigName}
                 onPresetSelect={onPresetSelect}
-                isLoading={isTransitioning} // Reflects preset loading/transition state
+                isLoading={isTransitioning} 
               />
             )}
           </>
         )}
       </div>
-      {actualShouldShowUI && ( // Only render overlays if base UI is ready
+      {actualShouldShowUI && ( 
         <MemoizedOverlayRenderer uiState={uiState} />
       )}
-      {actualShouldShowUI && !visitorUPAddress && ( // Show connect pill if UI is ready but visitor not connected
+      {actualShouldShowUI && !visitorUPAddress && ( 
          <GeneralConnectPill />
       )}
     </>
@@ -360,10 +317,10 @@ function UIOverlay(props) {
 }
 
 UIOverlay.propTypes = {
-  uiState: PropTypes.object.isRequired, // Should match UIStatePropTypes
-  audioState: PropTypes.object.isRequired, // Should match AudioStatePropTypes
-  configData: PropTypes.object.isRequired, // Should match ConfigDataPropTypes
-  actions: PropTypes.object.isRequired, // Should match ActionsPropTypes
+  uiState: PropTypes.object.isRequired, 
+  audioState: PropTypes.object.isRequired, 
+  configData: PropTypes.object.isRequired, 
+  actions: PropTypes.object.isRequired, 
   passedSavedConfigList: PropTypes.array,
 };
 
@@ -371,4 +328,4 @@ UIOverlay.defaultProps = {
   passedSavedConfigList: [],
 };
 
-export default React.memo(UIOverlay); // Memoize the main UIOverlay component
+export default React.memo(UIOverlay);

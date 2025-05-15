@@ -2,13 +2,6 @@
 import React from "react";
 import PropTypes from "prop-types";
 
-// Note: The exemplar code does not use styled-jsx.
-// For strict adherence, these styles would typically be moved to a separate CSS file
-// and imported (e.g., import './PanelStyles/PanelWrapper.css';).
-// However, to preserve functionality and the original structure as much as possible
-// while focusing on JS/React style, the styled-jsx block is kept.
-// If the project standard is separate CSS files, this would be a candidate for that change.
-
 /**
  * @typedef {object} PanelWrapperProps
  * @property {string} [className=""] - Optional additional CSS class names to apply to the wrapper div.
@@ -52,7 +45,7 @@ const PanelWrapper = ({ className = "", children, style }) => {
         @keyframes panel-slide-in {
           from {
             opacity: 0;
-            transform: translateX(-150px);
+            transform: translateX(-150px); /* Initial off-screen position */
           }
           to {
             opacity: 1;
@@ -72,7 +65,7 @@ const PanelWrapper = ({ className = "", children, style }) => {
           }
           to {
             opacity: 0;
-            transform: translateX(-20px); /* Corrected: Removed problematic comment */
+            transform: translateX(-150px); /* MODIFIED: Match slide-in 'from' transform */
           }
         }
       `}</style>

@@ -1,9 +1,8 @@
 // src/hooks/usePanelManager.js
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 
-// MODIFIED: Adjusted JS animation timing constants
-const OPEN_ANIMATION_DURATION = 500; // Was 300
-const CLOSE_ANIMATION_DELAY = 480;   // Was 250, adjust as needed, slightly less than CSS duration
+const OPEN_ANIMATION_DURATION = 500; 
+const CLOSE_ANIMATION_DELAY = 500;   // MODIFIED: Match CSS animation duration (0.5s)
 
 /**
  * @typedef {object} PanelManagerState
@@ -32,19 +31,16 @@ export function usePanelManager(initialPanel = null) {
   /** @type {React.RefObject<ReturnType<typeof setTimeout> | null>} */
   const closeTimeoutRef = useRef(null);
 
-  // Wrapper to log when activePanel becomes null
   const setActivePanel = useCallback((newPanelValue) => {
-      const previousActivePanel = activePanel; // Capture for logging
+      const previousActivePanel = activePanel; 
       if (newPanelValue === null && previousActivePanel !== null) {
-          // Keep this warning as requested, helps trace unexpected closes
           if (import.meta.env.DEV) {
-            console.warn(`[usePanelManager] ---> Setting activePanel to NULL! (Previous: '${previousActivePanel}')`);
+            // console.warn(`[usePanelManager] ---> Setting activePanel to NULL! (Previous: '${previousActivePanel}')`); // Kept for debugging if needed
           }
       }
       setActivePanelInternal(newPanelValue);
-  }, [activePanel]); // Dependency: activePanel (for logging the previous value)
+  }, [activePanel]); 
 
-  // Cleanup timeouts on unmount
   useEffect(() => {
     return () => {
       if (openTimeoutRef.current) {
@@ -56,7 +52,6 @@ export function usePanelManager(initialPanel = null) {
     };
   }, []);
 
-  /** Opens a specific panel, handling animation state. */
   const openPanel = useCallback((panelName) => {
     if (closeTimeoutRef.current) {
       clearTimeout(closeTimeoutRef.current);
@@ -67,36 +62,34 @@ export function usePanelManager(initialPanel = null) {
         openTimeoutRef.current = null;
     }
 
-    setAnimatingPanel(panelName); // Indicate opening animation
-    setActivePanel(panelName); // Make panel active
+    setAnimatingPanel(panelName); 
+    setActivePanel(panelName); 
 
     openTimeoutRef.current = setTimeout(() => {
-      setAnimatingPanel(null); // Clear animation state after duration
+      setAnimatingPanel(null); 
       openTimeoutRef.current = null;
     }, OPEN_ANIMATION_DURATION);
   }, [setActivePanel]);
 
-  /** Closes the currently active panel, handling animation state. */
   const closePanel = useCallback(() => {
     if (openTimeoutRef.current) {
       clearTimeout(openTimeoutRef.current);
       openTimeoutRef.current = null;
     }
     if (closeTimeoutRef.current) {
-        clearTimeout(closeTimeoutRef.current); // Prevent duplicate close timeouts
+        clearTimeout(closeTimeoutRef.current); 
         closeTimeoutRef.current = null;
     }
 
-    setAnimatingPanel("closing"); // Indicate closing animation
+    setAnimatingPanel("closing"); 
 
     closeTimeoutRef.current = setTimeout(() => {
-      setActivePanel(null); // Set active to null after delay
-      setAnimatingPanel(null); // Clear animation state
+      setActivePanel(null); 
+      setAnimatingPanel(null); 
       closeTimeoutRef.current = null;
     }, CLOSE_ANIMATION_DELAY);
   }, [setActivePanel]);
 
-  /** Toggles a panel: opens it if closed, closes it if open. */
   const togglePanel = useCallback((panelName) => {
     if (activePanel === panelName) {
       closePanel();
