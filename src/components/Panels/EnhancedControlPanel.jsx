@@ -1,26 +1,20 @@
 // src/components/Panels/EnhancedControlPanel.jsx
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useMemo, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 
-import Panel from "./Panel"; // Local component
-import { useProfileSessionState, useVisualLayerState } from "../../hooks/configSelectors"; // Local hooks
-import { useMIDI } from "../../context/MIDIContext"; // Local context
+import Panel from "./Panel";
+import { useProfileSessionState, useVisualLayerState } from "../../hooks/configSelectors";
+import { useMIDI } from "../../context/MIDIContext";
 
-// Import only icons that are actually used in this component's JSX
 import {
   toplayerIcon,
   middlelayerIcon,
   bottomlayerIcon,
-  rotateIcon, // Used for direction toggle button
-} from "../../assets"; // Local assets
+  rotateIcon,
+} from "../../assets";
 
-import "./PanelStyles/EnhancedControlPanel.css"; // Local styles
+import "./PanelStyles/EnhancedControlPanel.css";
 
-/**
- * Returns a default template object for a single visual layer's configuration.
- * This ensures a consistent structure for all layers.
- * @returns {import('../../context/VisualConfigContext').LayerConfig} The default layer configuration template.
- */
 const getDefaultLayerConfigTemplate = () => ({
   enabled: true,
   blendMode: "normal",
@@ -42,13 +36,6 @@ const getDefaultLayerConfigTemplate = () => ({
 });
 
 
-/**
- * Formats a numerical value to a string with a specified number of decimal places.
- * Returns a default string if the input is not a valid number.
- * @param {number|string|null|undefined} value - The value to format.
- * @param {number} [decimals=1] - The number of decimal places to use.
- * @returns {string} The formatted string representation of the value.
- */
 const formatValue = (value, decimals = 1) => {
   const numValue = Number(value);
   if (value === undefined || value === null || isNaN(numValue)) {
@@ -57,10 +44,6 @@ const formatValue = (value, decimals = 1) => {
   return numValue.toFixed(decimals);
 };
 
-/**
- * Configuration for slider parameters used in the control panel.
- * @type {Array<{prop: string, label: string, icon: string, min: number, max: number, step: number, formatDecimals: number, defaultValue?: number}>}
- */
 export const sliderParams = [
   { prop: "speed", label: "SPEED", icon: "slidersIcon_placeholder", min: 0.001, max: 0.1, step: 0.001, formatDecimals: 3 },
   { prop: "size", label: "SIZE", icon: "enlargeIcon_placeholder", min: 0.1, max: 8.0, step: 0.01, formatDecimals: 1 },
@@ -72,26 +55,8 @@ export const sliderParams = [
   { prop: "angle", label: "ANGLE", icon: "rotateIcon_placeholder", min: -360, max: 360, step: 0.001, formatDecimals: 1 },
 ];
 
-/**
- * Maps tab identifiers to their corresponding numerical layer IDs.
- * @type {Object.<string, number>}
- */
 const tabToLayerIdMap = { tab1: 3, tab2: 2, tab3: 1 };
 
-/**
- * @typedef {object} EnhancedControlPanelProps
- * @property {(layerId: string | number, key: string, value: any) => void} onLayerConfigChange - Callback invoked when a layer's configuration property changes.
- * @property {string[]} blendModes - An array of available blend mode strings for the blend mode selector.
- * @property {() => void} onToggleMinimize - Callback invoked to close/minimize the panel.
- * @property {string} [activeTab='tab1'] - The identifier of the currently active layer tab.
- * @property {(tabId: string) => void} [onTabChange] - Callback invoked when a layer tab is changed.
- */
-
-/**
- * EnhancedControlPanel: A UI component that provides detailed controls for visual layers.
- * @param {EnhancedControlPanelProps} props - The component's props.
- * @returns {JSX.Element} The rendered EnhancedControlPanel component.
- */
 const EnhancedControlPanel = ({
   onLayerConfigChange,
   blendModes,
@@ -99,10 +64,19 @@ const EnhancedControlPanel = ({
   activeTab = "tab1",
   onTabChange,
 }) => {
-  const { isVisitor, isParentAdmin, isPreviewMode, canSave, canInteract, currentProfileAddress } = useProfileSessionState();
+  const { 
+    isVisitor, 
+    isParentAdmin, 
+    isPreviewMode,      // Still available for context
+    canSave,            // For "Reset Mappings" button logic
+    isProfileOwner,     // To show/hide MIDI Learn buttons
+    // hostCanInteract, // We will use hostProfileAddress directly for enabling most controls
+    currentProfileAddress: hostProfileAddress 
+  } = useProfileSessionState();
   const { layerConfigs } = useVisualLayerState();
 
-  const effectiveReadOnly = useMemo(() => !canInteract, [canInteract]);
+  // Layer parameter controls are disabled if no hostProfileAddress is loaded
+  const disableHostLayerControls = useMemo(() => !hostProfileAddress, [hostProfileAddress]);
 
   const {
     isConnected: midiConnected,
@@ -116,19 +90,27 @@ const EnhancedControlPanel = ({
     stopMIDILearn,
     startLayerMIDILearn,
     stopLayerMIDILearn,
-    clearAllMappings,
+    clearAllMappings, 
     setChannelFilter,
     clearMIDIMonitor,
-    midiMap,
+    midiMap, 
     layerMappings,
   } = useMIDI();
 
   const activeLayer = useMemo(() => tabToLayerIdMap[activeTab] || 1, [activeTab]);
   const config = useMemo(() => layerConfigs?.[activeLayer] || getDefaultLayerConfigTemplate(), [layerConfigs, activeLayer]);
 
+  const midiMonitorRef = useRef(null);
+
+  useEffect(() => {
+    if (midiMonitorRef.current && showMidiMonitor) {
+      midiMonitorRef.current.scrollTop = midiMonitorRef.current.scrollHeight;
+    }
+  }, [midiMonitorData, showMidiMonitor]);
+
   const handleEnterMIDILearnMode = useCallback(
     (paramName) => {
-      if (effectiveReadOnly) return;
+      if (!isProfileOwner) return; 
       if (!midiConnected) { alert("Please connect a MIDI device first to enable MIDI Learn."); return; }
       const isValidParam = sliderParams.some((p) => p.prop === paramName);
       if (!isValidParam) {
@@ -137,34 +119,39 @@ const EnhancedControlPanel = ({
       }
       startMIDILearn(paramName, activeLayer);
     },
-    [midiConnected, startMIDILearn, activeLayer, effectiveReadOnly],
+    [isProfileOwner, midiConnected, startMIDILearn, activeLayer],
   );
 
   const handleEnterLayerMIDILearnMode = useCallback(
     (layer) => {
-      if (effectiveReadOnly) return;
+      if (!isProfileOwner) return; 
       if (!midiConnected) { alert("Please connect a MIDI device first."); return; }
       startLayerMIDILearn(layer);
     },
-    [midiConnected, startLayerMIDILearn, effectiveReadOnly],
+    [isProfileOwner, midiConnected, startLayerMIDILearn],
   );
 
   const handleMidiChannelChange = useCallback((e) => { setChannelFilter(parseInt(e.target.value, 10)); }, [setChannelFilter]);
   const handleClearMidiMonitor = useCallback(() => { clearMIDIMonitor(); }, [clearMIDIMonitor]);
+  
   const handleResetAllMappings = useCallback(() => {
-    if (!effectiveReadOnly && canSave) {
-        clearAllMappings();
-    } else if (import.meta.env.DEV) {
-        console.warn("[ECP] Reset all MIDI mappings blocked. ReadOnly:", effectiveReadOnly, "CanSave:", canSave);
+    // Reset button is disabled if no host profile, or if in preview mode (via canSave), or if not owner (via canSave)
+    if (disableHostLayerControls || !canSave) { 
+      if (import.meta.env.DEV) {
+        console.warn("[ECP] Reset all MIDI mappings (for host profile) blocked. DisableHostControls:", disableHostLayerControls, "CanSave:", canSave);
+      }
+      return;
     }
-  }, [effectiveReadOnly, canSave, clearAllMappings]);
+    clearAllMappings();
+  }, [disableHostLayerControls, canSave, clearAllMappings]);
+
   const handleToggleMonitor = useCallback(() => { setShowMidiMonitor(prev => !prev); }, [setShowMidiMonitor]);
   const handleCancelMIDILearn = useCallback(() => { stopMIDILearn?.(); }, [stopMIDILearn]);
   const handleCancelLayerMIDILearn = useCallback(() => { stopLayerMIDILearn?.(); }, [stopLayerMIDILearn]);
 
   const displayMidiMapping = useCallback(
     (layer, param) => {
-      const mapping = midiMap?.[layer]?.[param];
+      const mapping = midiMap?.[String(layer)]?.[param];
       if (!mapping) return "None";
       const channelDisplay = mapping.channel !== undefined ? ` (Ch ${mapping.channel + 1})` : "";
       if (mapping.type === "cc") return `CC ${mapping.number}${channelDisplay}`;
@@ -177,7 +164,7 @@ const EnhancedControlPanel = ({
 
   const displayLayerMidiMapping = useCallback(
     (layer) => {
-      const mapping = layerMappings[layer]?.layerSelect;
+      const mapping = layerMappings[String(layer)]?.layerSelect;
       if (!mapping) return "-";
       const channelDisplay = mapping.channel !== undefined ? ` (Ch ${mapping.channel + 1})` : "";
       if (mapping.type === "note") return `Note ${mapping.number}${channelDisplay}`;
@@ -187,67 +174,75 @@ const EnhancedControlPanel = ({
   );
 
   const handleSliderChange = useCallback((e) => {
-    if (effectiveReadOnly) return;
+    if (disableHostLayerControls) return;
     const { name, value } = e.target;
     const parsedValue = parseFloat(value);
     if (typeof onLayerConfigChange === 'function') {
       onLayerConfigChange(activeLayer, name, parsedValue);
-    } else if (import.meta.env.DEV) {
-      console.error("[ECP] onLayerConfigChange prop is MISSING or not a function!", { activeLayer, name, parsedValue });
     }
-  }, [effectiveReadOnly, onLayerConfigChange, activeLayer]);
+  }, [disableHostLayerControls, onLayerConfigChange, activeLayer]);
 
   const handleBlendModeChange = useCallback((e) => {
-    if (effectiveReadOnly) return;
+    if (disableHostLayerControls) return;
     const { value } = e.target;
     if (typeof onLayerConfigChange === 'function') {
       onLayerConfigChange(activeLayer, "blendMode", value);
-    } else if (import.meta.env.DEV) {
-      console.error("[ECP] onLayerConfigChange prop is MISSING or not a function for blend mode!", { activeLayer, value });
     }
-  }, [effectiveReadOnly, onLayerConfigChange, activeLayer]);
+  }, [disableHostLayerControls, onLayerConfigChange, activeLayer]);
 
   const handleDirectionToggle = useCallback(() => {
-    if (effectiveReadOnly) return;
+    if (disableHostLayerControls) return;
     const currentDirection = config.direction || 1;
     const newDirection = -currentDirection;
     if (typeof onLayerConfigChange === 'function') {
       onLayerConfigChange(activeLayer, "direction", newDirection);
-    } else if (import.meta.env.DEV) {
-      console.error("[ECP] onLayerConfigChange prop is MISSING or not a function for direction toggle!", { activeLayer, newDirection });
     }
-  }, [effectiveReadOnly, config.direction, onLayerConfigChange, activeLayer]);
+  }, [disableHostLayerControls, config.direction, onLayerConfigChange, activeLayer]);
 
   const handleEnabledToggle = useCallback((e) => {
-    if (effectiveReadOnly) return;
+    if (disableHostLayerControls) return;
     const newEnabledState = e.target.checked;
     if (typeof onLayerConfigChange === 'function') {
       onLayerConfigChange(activeLayer, "enabled", newEnabledState);
-    } else if (import.meta.env.DEV) {
-      console.error("[ECP] onLayerConfigChange prop is MISSING or not a function for enabled toggle!", { activeLayer, newEnabledState });
     }
-  }, [effectiveReadOnly, onLayerConfigChange, activeLayer]);
+  }, [disableHostLayerControls, onLayerConfigChange, activeLayer]);
 
-  const adminVisitorMessage = isVisitor && isParentAdmin && canInteract && !canSave && (
+  const adminVisitorMessage = isVisitor && isParentAdmin && !disableHostLayerControls && !canSave && (
     <div className="visitor-message info">
       As an admin visitor, you can experiment with controls. Changes won't save to this profile.
     </div>
   );
 
-  const generalVisitorMessage = isVisitor && !isParentAdmin && canInteract && !canSave && (
+  const generalVisitorMessage = isVisitor && !isParentAdmin && !disableHostLayerControls && !canSave && (
       <div className="visitor-message info">
           Viewing another profile. Changes will not be saved.
       </div>
   );
 
-  const readOnlyUIMessage = !canInteract && (
+  // This message appears if !hostProfileAddress (via disableHostLayerControls)
+  // OR if isPreviewMode is true.
+  const readOnlyUIMessage = (disableHostLayerControls || isPreviewMode) && (
     <div className="visitor-message warning">
-      {isPreviewMode ? "Preview Mode: Controls are view-only." :
-       !currentProfileAddress ? "Connect or load a profile to enable controls." :
-       "Controls are currently disabled."}
+      {isPreviewMode ? "Preview Mode: Controls are view-only." : // This message is for general preview
+       !hostProfileAddress ? "Connect or load a host profile to enable its layer controls." :
+       "Host layer controls are currently disabled."} {/* Fallback, should be covered by the others */}
     </div>
   );
-
+  
+  const getMIDILearnButtonTitle = (paramProp, paramLabel) => {
+    if (!isProfileOwner) return "MIDI Learn disabled when viewing another profile";
+    if (!midiConnected) return "Connect MIDI device to enable Learn";
+    // If host controls are generally disabled (e.g. no profile), learn is also implicitly disabled
+    if (disableHostLayerControls) return "MIDI Learn disabled as host controls are inactive"; 
+    return `Map MIDI to ${paramLabel}. Current: ${displayMidiMapping(String(activeLayer), paramProp)}`;
+  };
+  
+  const getLayerMIDILearnButtonTitle = (layerNum) => {
+    if (!isProfileOwner) return "MIDI Learn for layer selection disabled when viewing another profile";
+    if (!midiConnected) return "Connect MIDI device to enable Learn";
+    if (disableHostLayerControls) return "MIDI Learn disabled as host controls are inactive";
+    return `Map MIDI to select Layer ${layerNum}`;
+  };
 
   return (
     <Panel
@@ -257,9 +252,9 @@ const EnhancedControlPanel = ({
     >
       <div className="compact-panel-header">
         <div className="tab-navigation">
-          <button key="tab1" className={`tab-button ${activeTab === "tab1" ? "active" : ""}`} onClick={() => onTabChange && onTabChange("tab1")} title={`Layer 3 (Top)`} aria-label="Select Top Layer (Layer 3)"> <img src={toplayerIcon} alt="L3" className="tab-icon" /> </button>
-          <button key="tab2" className={`tab-button ${activeTab === "tab2" ? "active" : ""}`} onClick={() => onTabChange && onTabChange("tab2")} title={`Layer 2 (Middle)`} aria-label="Select Middle Layer (Layer 2)"> <img src={middlelayerIcon} alt="L2" className="tab-icon" /> </button>
-          <button key="tab3" className={`tab-button ${activeTab === "tab3" ? "active" : ""}`} onClick={() => onTabChange && onTabChange("tab3")} title={`Layer 1 (Bottom)`} aria-label="Select Bottom Layer (Layer 1)"> <img src={bottomlayerIcon} alt="L1" className="tab-icon" /> </button>
+          <button type="button" className={`tab-button ${activeTab === "tab1" ? "active" : ""}`} onClick={() => onTabChange && onTabChange("tab1")} title={`Layer 3 (Top)`} aria-label="Select Top Layer (Layer 3)"> <img src={toplayerIcon} alt="L3" className="tab-icon" /> </button>
+          <button type="button" className={`tab-button ${activeTab === "tab2" ? "active" : ""}`} onClick={() => onTabChange && onTabChange("tab2")} title={`Layer 2 (Middle)`} aria-label="Select Middle Layer (Layer 2)"> <img src={middlelayerIcon} alt="L2" className="tab-icon" /> </button>
+          <button type="button" className={`tab-button ${activeTab === "tab3" ? "active" : ""}`} onClick={() => onTabChange && onTabChange("tab3")} title={`Layer 1 (Bottom)`} aria-label="Select Bottom Layer (Layer 1)"> <img src={bottomlayerIcon} alt="L1" className="tab-icon" /> </button>
         </div>
       </div>
 
@@ -268,7 +263,7 @@ const EnhancedControlPanel = ({
           <span className="midi-learning-text">
             {learningLayer !== null ? `Mapping: LAYER ${learningLayer} SELECTION` : `Mapping: ${midiLearning?.param?.toUpperCase()} for Layer ${midiLearning?.layer}`}
           </span>
-          <button className="midi-cancel-btn" onClick={ learningLayer !== null ? handleCancelLayerMIDILearn : handleCancelMIDILearn } >
+          <button type="button" className="midi-cancel-btn" onClick={ learningLayer !== null ? handleCancelLayerMIDILearn : handleCancelMIDILearn } >
             Cancel
           </button>
         </div>
@@ -285,14 +280,18 @@ const EnhancedControlPanel = ({
                     <span className="layer-mapping-text" title={displayLayerMidiMapping(String(layerNum))} >
                       {displayLayerMidiMapping(String(layerNum))}
                     </span>
-                    <button
-                      className={`midi-learn-btn small-action-button ${learningLayer === layerNum ? "learning" : ""}`}
-                      onClick={() => handleEnterLayerMIDILearnMode(layerNum)}
-                      disabled={!midiConnected || effectiveReadOnly || learningLayer !== null}
-                      aria-label={`Map MIDI to select Layer ${layerNum}`}
-                    >
-                      {learningLayer === layerNum ? "..." : "Map"}
-                    </button>
+                    {isProfileOwner && ( 
+                      <button
+                        type="button"
+                        className={`midi-learn-btn small-action-button ${learningLayer === layerNum ? "learning" : ""}`}
+                        onClick={() => handleEnterLayerMIDILearnMode(layerNum)}
+                        disabled={disableHostLayerControls || !midiConnected || learningLayer !== null || (learningLayer !== null && learningLayer !== layerNum)}
+                        title={getLayerMIDILearnButtonTitle(layerNum)}
+                        aria-label={`Map MIDI to select Layer ${layerNum}`}
+                      >
+                        {learningLayer === layerNum ? "..." : "Map"}
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -301,8 +300,6 @@ const EnhancedControlPanel = ({
         )}
 
         {sliderParams.map(
-          // Removed 'icon' from destructuring as it's not rendered next to the label
-          // The 'icon' property still exists on the 'paramConfig' object if needed elsewhere.
           (paramConfig) => {
             const { prop, label, min, max, step, formatDecimals, defaultValue = 0 } = paramConfig;
             const isLearningThis = midiLearning?.param === prop && midiLearning?.layer === activeLayer;
@@ -315,12 +312,13 @@ const EnhancedControlPanel = ({
                   </span>
                   <div className="slider-controls">
                     <span className="slider-value"> {formatValue(currentValue, formatDecimals)} </span>
-                    {midiConnected && (
+                    {midiConnected && isProfileOwner && ( 
                       <button
+                        type="button"
                         className={`midi-btn small-action-button ${isLearningThis ? "learning" : ""}`}
                         onClick={() => handleEnterMIDILearnMode(prop)}
-                        disabled={!midiConnected || effectiveReadOnly || !!midiLearning}
-                        title={`Map MIDI to ${label}. Current: ${displayMidiMapping(String(activeLayer), prop)}`}
+                        disabled={disableHostLayerControls || !midiConnected || !!learningLayer || (midiLearning !== null && !(midiLearning?.param === prop && midiLearning?.layer === activeLayer))}
+                        title={getMIDILearnButtonTitle(prop, label)}
                         aria-label={`Map MIDI to ${label}`}
                       >
                         {isLearningThis ? "..." : "M"}
@@ -328,7 +326,7 @@ const EnhancedControlPanel = ({
                     )}
                   </div>
                 </div>
-                <input type="range" name={prop} min={min} max={max} step={step} value={currentValue} onChange={handleSliderChange} disabled={effectiveReadOnly || isLearningThis} className="horizontal-slider" aria-label={label} />
+                <input type="range" name={prop} min={min} max={max} step={step} value={currentValue} onChange={handleSliderChange} disabled={disableHostLayerControls || isLearningThis} className="horizontal-slider" aria-label={label} />
               </div>
             );
           },
@@ -337,23 +335,31 @@ const EnhancedControlPanel = ({
         <div className="controls-footer">
           <div className="blendmode-container">
             <label htmlFor={`blendModeVertical-${activeLayer}`}>BLEND MODE</label>
-            <select id={`blendModeVertical-${activeLayer}`} className="custom-select blend-mode-select" name="blendMode" value={config.blendMode || "normal"} onChange={handleBlendModeChange} disabled={effectiveReadOnly} aria-label="Select Blend Mode">
+            <select id={`blendModeVertical-${activeLayer}`} className="custom-select blend-mode-select" name="blendMode" value={config.blendMode || "normal"} onChange={handleBlendModeChange} disabled={disableHostLayerControls} aria-label="Select Blend Mode">
               {blendModes.map((mode) => ( <option key={mode} value={mode}> {mode.charAt(0).toUpperCase() + mode.slice(1).replace("-", " ")} </option> ))}
             </select>
           </div>
-          <button className="changerotation-btn icon-button" onClick={handleDirectionToggle} title="Change Rotation Direction" disabled={effectiveReadOnly} aria-label="Change Rotation Direction">
+          <button type="button" className="changerotation-btn icon-button" onClick={handleDirectionToggle} title="Change Rotation Direction" disabled={disableHostLayerControls} aria-label="Change Rotation Direction">
             <img src={rotateIcon} className="changerotation-icon" alt="Change Rotation Direction" />
           </button>
           <div className="enabled-control-vertical">
             <label htmlFor={`enabled-v-${activeLayer}`}>Enabled</label>
-            <input type="checkbox" id={`enabled-v-${activeLayer}`} name="enabled" checked={config.enabled ?? true} onChange={handleEnabledToggle} disabled={effectiveReadOnly} />
+            <input type="checkbox" id={`enabled-v-${activeLayer}`} name="enabled" checked={config.enabled ?? true} onChange={handleEnabledToggle} disabled={disableHostLayerControls} />
           </div>
         </div>
 
         {midiConnected && (
           <div className="midi-tools">
-              <button className="midi-monitor-btn" onClick={handleToggleMonitor}> {showMidiMonitor ? "Hide Monitor" : "Show Monitor"} </button>
-              <button className="midi-reset-btn" onClick={handleResetAllMappings} title="Reset all MIDI mappings for this controller" disabled={effectiveReadOnly || !canSave}> Reset Mappings </button>
+              <button type="button" className="midi-monitor-btn" onClick={handleToggleMonitor}> {showMidiMonitor ? "Hide Monitor" : "Show Monitor"} </button>
+              <button 
+                  type="button" 
+                  className="midi-reset-btn" 
+                  onClick={handleResetAllMappings} 
+                  title="Reset all MIDI mappings for this controller (saved on host profile)" 
+                  disabled={disableHostLayerControls || !canSave} 
+              > 
+                  Reset Mappings 
+              </button>
               <select className="midi-channel-select" value={selectedChannel} onChange={handleMidiChannelChange} title="Filter MIDI messages by channel" aria-label="Select MIDI Channel Filter" >
                 <option value="0">All Channels</option>
                 {[...Array(16)].map((_, i) => ( <option key={i + 1} value={i + 1}> Channel {i + 1} </option> ))}
@@ -366,10 +372,10 @@ const EnhancedControlPanel = ({
       </div>
 
       {midiConnected && showMidiMonitor && (
-        <div className="midi-monitor">
+        <div className="midi-monitor" ref={midiMonitorRef}>
           <div className="midi-monitor-header">
             <h4>MIDI Monitor</h4>
-            <button className="midi-clear-btn small-action-button" onClick={handleClearMidiMonitor}> Clear </button>
+            <button type="button" className="midi-clear-btn small-action-button" onClick={handleClearMidiMonitor}> Clear </button>
           </div>
           <div className="midi-monitor-content">
             {midiMonitorData.length === 0 ? ( <div className="midi-monitor-empty"> No MIDI messages received yet. </div> ) : (
@@ -388,7 +394,7 @@ const EnhancedControlPanel = ({
       )}
       {adminVisitorMessage}
       {generalVisitorMessage}
-      {readOnlyUIMessage}
+      {readOnlyUIMessage /* This message will show if disableHostLayerControls is true OR isPreviewMode is true */}
     </Panel>
   );
 };
