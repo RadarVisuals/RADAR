@@ -53,75 +53,109 @@ const formatAddress = (address, length = 6) => {
  */
 const NotificationItem = ({ notification, onMarkAsRead }) => {
   const { getCachedProfile, getProfileData } = useProfileCache();
+  const itemLogPrefix = `[NotifItem ID:${String(notification.id).slice(-5)} Type:${notification.type}]`;
 
-  const [senderName, setSenderName] = useState(() =>
-    notification.sender ? formatAddress(notification.sender) : "Unknown Sender"
-  );
+
+  const [senderName, setSenderName] = useState(() => {
+    const initialName = notification.sender ? formatAddress(notification.sender) : "Unknown Sender";
+    if (import.meta.env.DEV) console.log(`${itemLogPrefix} Initial senderName set to: ${initialName}`);
+    return initialName;
+  });
 
   const [followerName, setFollowerName] = useState(() => {
       const addr = notification.decodedPayload?.followerAddress;
-      return addr && isAddress(addr) ? formatAddress(addr) : null;
+      const initialName = addr && isAddress(addr) ? formatAddress(addr) : null;
+      if (import.meta.env.DEV) console.log(`${itemLogPrefix} Initial followerName set to: ${initialName} (from followerAddress: ${addr})`);
+      return initialName;
   });
 
   // Effect to fetch and update sender's profile name
   useEffect(() => {
     const senderAddress = notification.sender;
+    if (import.meta.env.DEV) console.log(`${itemLogPrefix} SENDER effect. Address: ${senderAddress}`);
     if (senderAddress && isAddress(senderAddress)) {
       const cachedProfile = getCachedProfile(senderAddress);
-      if (cachedProfile?.name && cachedProfile.name !== senderName) {
-        setSenderName(cachedProfile.name);
-      } else if (cachedProfile?.error && `Error (${formatAddress(senderAddress,4)})` !== senderName) { // Check if cached error name is different
-        setSenderName(`Error (${formatAddress(senderAddress,4)})`);
-      } else if (!cachedProfile) { // Not cached (implies not error, not found, or expired)
+      if (import.meta.env.DEV) console.log(`${itemLogPrefix} SENDER cachedProfile for ${senderAddress}:`, cachedProfile);
+      if (cachedProfile?.name) {
+        if (senderName !== cachedProfile.name) {
+            if (import.meta.env.DEV) console.log(`${itemLogPrefix} SENDER setSenderName from CACHE: ${cachedProfile.name}`);
+            setSenderName(cachedProfile.name);
+        }
+      } else if (cachedProfile?.error) {
+        const errorName = `Error (${formatAddress(senderAddress,4)})`;
+        if (senderName !== errorName) {
+            if (import.meta.env.DEV) console.log(`${itemLogPrefix} SENDER setSenderName from CACHED ERROR: ${errorName}`);
+            setSenderName(errorName);
+        }
+      } else { 
+        if (import.meta.env.DEV) console.log(`${itemLogPrefix} SENDER no valid cache, calling getProfileData for ${senderAddress}`);
         getProfileData(senderAddress).then((profileData) => {
+          if (import.meta.env.DEV) console.log(`${itemLogPrefix} SENDER getProfileData response for ${senderAddress}:`, profileData);
           if (profileData?.name) {
-            setSenderName(profileData.name); // This will handle success and error names from getProfileData
+            if (import.meta.env.DEV) console.log(`${itemLogPrefix} SENDER setSenderName from FETCH: ${profileData.name}`);
+            setSenderName(profileData.name);
+          } else if (profileData === null && import.meta.env.DEV) { // Explicitly null usually means invalid address to fetch
+             console.warn(`${itemLogPrefix} SENDER getProfileData returned null for ${senderAddress}. Keeping current name: ${senderName}`);
           }
-          // If profileData is null (e.g. invalid address passed to getProfileData, though unlikely here), keep current senderName
+          // If profileData is an error object from getProfileData, its name field will indicate error.
         }).catch(err => {
-            if(import.meta.env.DEV) console.error(`[NotificationItem] Error fetching sender profile data for ${senderAddress}:`, err);
-            // Optionally set to a generic error or keep formatted address
+            if(import.meta.env.DEV) console.error(`${itemLogPrefix} SENDER Error in getProfileData promise for ${senderAddress}:`, err);
         });
       }
     } else if (senderName !== "Unknown Sender") {
+      if (import.meta.env.DEV) console.log(`${itemLogPrefix} SENDER setSenderName to 'Unknown Sender' (no valid address)`);
       setSenderName("Unknown Sender");
     }
-  }, [notification.sender, getProfileData, getCachedProfile, senderName]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notification.sender, getProfileData, getCachedProfile]); // senderName removed to avoid re-fetch loops on its own change
 
   // Effect to fetch and update follower's profile name
   useEffect(() => {
     const followerAddr = notification.decodedPayload?.followerAddress;
-    const logPrefix = `[NotificationItem Follower Fetch ID:${String(notification.id).slice(-5)}]`;
+    if (import.meta.env.DEV) console.log(`${itemLogPrefix} FOLLOWER effect. Address: ${followerAddr}`);
 
-    if (
-      (notification.type === "follower_gained" || notification.type === "follower_lost") &&
-      followerAddr &&
-      isAddress(followerAddr)
-    ) {
+    if ((notification.type === "follower_gained" || notification.type === "follower_lost") && followerAddr && isAddress(followerAddr)) {
       const cachedProfile = getCachedProfile(followerAddr);
-      if (cachedProfile?.name && cachedProfile.name !== followerName) {
-        setFollowerName(cachedProfile.name);
-      } else if (cachedProfile?.error && `Error (${formatAddress(followerAddr, 4)})` !== followerName) {
-        setFollowerName(`Error (${formatAddress(followerAddr, 4)})`);
-      } else if (!cachedProfile) {
+      if (import.meta.env.DEV) console.log(`${itemLogPrefix} FOLLOWER cachedProfile for ${followerAddr}:`, cachedProfile);
+
+      if (cachedProfile?.name) {
+        if (followerName !== cachedProfile.name) {
+            if (import.meta.env.DEV) console.log(`${itemLogPrefix} FOLLOWER setFollowerName from CACHE: ${cachedProfile.name}`);
+            setFollowerName(cachedProfile.name);
+        }
+      } else if (cachedProfile?.error) {
+        const errorName = `Error (${formatAddress(followerAddr, 4)})`;
+        if (followerName !== errorName) {
+            if (import.meta.env.DEV) console.log(`${itemLogPrefix} FOLLOWER setFollowerName from CACHED ERROR: ${errorName}`);
+            setFollowerName(errorName);
+        }
+      } else {
+        if (import.meta.env.DEV) console.log(`${itemLogPrefix} FOLLOWER no valid cache, calling getProfileData for ${followerAddr}`);
         getProfileData(followerAddr).then((profileData) => {
+          if (import.meta.env.DEV) console.log(`${itemLogPrefix} FOLLOWER getProfileData response for ${followerAddr}:`, profileData);
           if (profileData?.name) {
+            if (import.meta.env.DEV) console.log(`${itemLogPrefix} FOLLOWER setFollowerName from FETCH: ${profileData.name}`);
             setFollowerName(profileData.name);
-          } else {
-            setFollowerName(formatAddress(followerAddr)); // Fallback to formatted address if name not found after fetch
+          } else { // No name found after fetch, or profileData is null (e.g. invalid address sent to fetch)
+            const fallbackName = formatAddress(followerAddr);
+            if (import.meta.env.DEV) console.log(`${itemLogPrefix} FOLLOWER no name from fetch, setFollowerName to FALLBACK: ${fallbackName}`);
+            setFollowerName(fallbackName); 
           }
         }).catch(err => {
-            if(import.meta.env.DEV) console.error(`${logPrefix} Error fetching follower profile data for ${followerAddr}:`, err);
-            setFollowerName(`Error (${formatAddress(followerAddr, 4)})`);
+            if(import.meta.env.DEV) console.error(`${itemLogPrefix} FOLLOWER Error in getProfileData promise for ${followerAddr}:`, err);
+            const errorName = `Error (${formatAddress(followerAddr, 4)})`;
+            if (import.meta.env.DEV) console.log(`${itemLogPrefix} FOLLOWER setFollowerName to FETCH ERROR: ${errorName}`);
+            setFollowerName(errorName);
         });
       }
-    } else {
-      if (followerName !== null) setFollowerName(null);
+    } else { // Not a follower event or no valid followerAddr
+      if (followerName !== null) {
+        if (import.meta.env.DEV) console.log(`${itemLogPrefix} FOLLOWER setFollowerName to null (not a follower event or no valid address)`);
+        setFollowerName(null);
+      }
     }
-  }, [
-    notification.id, notification.type, notification.decodedPayload?.followerAddress,
-    getCachedProfile, getProfileData, followerName
-  ]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notification.id, notification.type, notification.decodedPayload?.followerAddress, getCachedProfile, getProfileData]); // followerName removed
 
   const getEventTypeClass = (eventType) => {
     if (typeof eventType !== "string") return "contract";
@@ -134,14 +168,15 @@ const NotificationItem = ({ notification, onMarkAsRead }) => {
 
   const displayMessage = useMemo(() => {
     if (notification.content) return notification.content;
+    const currentFollowerName = followerName || "Someone"; // Use "Someone" if followerName is null/empty
 
     switch (notification.type) {
       case "lyx_received":
         return <>Received LYX from <strong>{senderName}</strong></>;
       case "follower_gained":
-        return <>{followerName || "Someone"} started following you</>;
+        return <>{currentFollowerName} started following you</>;
       case "follower_lost":
-        return <>{followerName || "Someone"} unfollowed you</>;
+        return <>{currentFollowerName} unfollowed you</>;
       case "lsp7_received":
          return <>Received LSP7 Token from <strong>{senderName}</strong></>;
       case "lsp8_received":

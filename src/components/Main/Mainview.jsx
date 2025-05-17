@@ -291,12 +291,30 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   }, [updateTokenAssignment, setCanvasLayerImage, configServiceRef]);
 
   const handleEventReceived = useCallback((event) => {
-    if (!isMountedRef.current || !event?.type) return;
+    if (!isMountedRef.current || !event?.typeId) {
+        if (import.meta.env.DEV && event) console.warn(`[MainView handleEventReceived] Event missing typeId. Event type: ${event.type}`);
+        return;
+    }
     if (typeof addNotification === 'function') addNotification(event);
 
     const reactionsMap = savedReactions || {};
-    const eventTypeLower = event.type.toLowerCase();
-    const matchingReactions = Object.values(reactionsMap).filter(r => r?.event?.toLowerCase() === eventTypeLower);
+    const typeIdToMatch = event.typeId.toLowerCase(); // typeId is already lowercase from LSP1EventService
+
+    if (import.meta.env.DEV) {
+        const timestamp = performance.now().toFixed(0);
+        console.log(`%c[MV Event ${timestamp}] TypeID: ${typeIdToMatch} (Type: ${event.type})`, 'color: lime; font-weight: bold;');
+        // console.log(`  Saved Reactions for matching:`, JSON.parse(JSON.stringify(reactionsMap)));
+    }
+
+    const matchingReactions = Object.values(reactionsMap).filter(
+        r => r?.event?.toLowerCase() === typeIdToMatch // Ensure reaction.event is also lowercased for comparison
+    );
+
+    if (import.meta.env.DEV && matchingReactions.length > 0) {
+        console.log(`%c[MV Event ${performance.now().toFixed(0)}] Found ${matchingReactions.length} matching reaction(s) for ${typeIdToMatch}`, 'color: lightgreen;');
+    } else if (import.meta.env.DEV && matchingReactions.length === 0) {
+        console.log(`%c[MV Event ${performance.now().toFixed(0)}] No matching reactions found for ${typeIdToMatch}. Available reaction event keys: ${Object.values(reactionsMap).map(r => r?.event).join(', ')}`, 'color: orange;');
+    }
 
     if (matchingReactions.length > 0) {
       matchingReactions.forEach(reactionConfig => {
@@ -306,7 +324,8 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
         }
       });
     } else if (typeof createDefaultEffect === 'function') {
-      createDefaultEffect(event.type)
+      if (import.meta.env.DEV) console.log(`%c[MV Event ${performance.now().toFixed(0)}] No specific reaction, creating default for type: ${event.type}`, 'color: skyblue;');
+      createDefaultEffect(event.type) // Default effect can be based on human-readable type
         .catch(e => { if (import.meta.env.DEV) console.error("[MainView] Error creating default effect:", e); });
     }
   }, [addNotification, savedReactions, processEffect, createDefaultEffect]);

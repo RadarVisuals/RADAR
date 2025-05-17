@@ -87,7 +87,7 @@ RADAR transforms the Universal Profile from a mere wallet or identity layer into
     *   Load their saved visual presets and witness their unique artistic interpretations of their assets.
     *   If you have a MIDI controller, *your* global MIDI map (from your UP) can control the parameters of *their* presets, enabling unprecedented live, cross-profile VJing.
     *   See their on-chain events trigger their personally configured visual reactions.
-*   **Future of Whitelist & Community Curation:** Post-hackathon, activating the whitelist panel within RADAR (as a MiniApp on a user's UP) could empower trusted community members or "Layer Creators" to curate and propose collections, further decentralizing the artistic ecosystem.
+*   **Future of Whitelist & Community Curation:** Post-hackathon, activating the whitelist panel within RADAR.
 
 This interplay of personal creation, shared experiences, and on-chain identity only scratches the surface of the possibilities achievable with LUKSO's architecture.
 

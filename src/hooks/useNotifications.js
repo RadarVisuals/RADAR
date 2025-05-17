@@ -8,27 +8,35 @@ const LOCAL_STORAGE_KEY = "axyz_app_notifications";
  * @property {string|number} id - Unique identifier for the notification.
  * @property {number} timestamp - Timestamp of when the notification was created or received.
  * @property {boolean} read - Whether the notification has been marked as read.
- * @property {string} message - The main content/message of the notification.
- * @property {string} [type] - Optional: Type of notification (e.g., 'info', 'warning', 'error').
- * @property {object} [data] - Optional: Any additional data associated with the notification.
- * @property {string} [link] - Optional: A URL link associated with the notification.
+ * @property {string} [messageFromInput] - Optional: A pre-formatted message if provided directly to addNotification.
+ * @property {string} type - Event type (e.g., 'follower_gained', 'lyx_received'). From LSP1EventService.
+ * @property {string} [typeId] - The on-chain typeId of the event. From LSP1EventService.
+ * @property {string} [sender] - Sender address. From LSP1EventService.
+ * @property {string} [value] - Event value. From LSP1EventService.
+ * @property {string} [data] - Raw receivedData. From LSP1EventService.
+ * @property {object} [decodedPayload] - Decoded payload, e.g., followerAddress. From LSP1EventService.
+ * @property {string} [link] - Optional: A URL link associated with the notification (if provided to addNotification).
  */
 
 /**
  * @typedef {object} NotificationInput
- * @property {string} message - The main content/message of the notification.
- * @property {string} [type] - Optional: Type of notification (e.g., 'info', 'warning', 'error').
- * @property {object} [data] - Optional: Any additional data associated with the notification.
- * @property {string} [link] - Optional: A URL link associated with the notification.
- * @property {string|number} [id] - Optional: Predefined ID. If not provided, one will be generated.
- * @property {number} [timestamp] - Optional: Predefined timestamp. If not provided, `Date.now()` will be used.
- * @property {boolean} [read] - Optional: Initial read status. Defaults to false.
+ * @property {string} [message] - Optional: A pre-formatted message. If not provided, NotificationItem will generate one.
+ * @property {string} type - REQUIRED: Event type from LSP1EventService or a custom type.
+ * @property {string} [typeId] - Optional: The on-chain typeId.
+ * @property {string} [sender] - Optional: Sender address.
+ * @property {string} [value] - Optional: Event value.
+ * @property {string} [data] - Optional: Raw receivedData.
+ * @property {object} [decodedPayload] - Optional: Decoded payload.
+ * @property {string} [link] - Optional: A URL link.
+ * @property {string|number} [id] - Optional: Predefined ID.
+ * @property {number} [timestamp] - Optional: Predefined timestamp.
+ * @property {boolean} [read] - Optional: Initial read status.
  */
 
 /**
  * @typedef {object} NotificationsAPI
  * @property {Array<NotificationItem>} notifications - The current array of notification objects.
- * @property {(notification: NotificationInput) => void} addNotification - Adds a new notification to the list.
+ * @property {(notificationInput: NotificationInput) => void} addNotification - Adds a new notification to the list.
  * @property {(id: string|number) => void} markAsRead - Marks a specific notification as read by its ID.
  * @property {() => void} markAllAsRead - Marks all current notifications as read.
  * @property {(id: string|number) => void} removeNotification - Removes a specific notification from the list by its ID.
@@ -82,19 +90,26 @@ export function useNotifications(initialNotifications = []) {
 
   /**
    * Adds a new notification to the list, ensuring a unique ID and timestamp.
-   * @param {NotificationInput} notification - The notification object to add.
+   * @param {NotificationInput} notificationInput - The notification object to add.
    */
-  const addNotification = useCallback((notification) => {
+  const addNotification = useCallback((notificationInput) => {
+    // The `notificationInput` object is the `eventObj` from LSP1EventService
+    // or a custom object if addNotification is called from elsewhere.
     const formattedNotification = {
-      id:
-        notification.id ||
-        `notification_${Date.now()}_${Math.random().toString(16).slice(2)}`,
-      timestamp: notification.timestamp || Date.now(),
-      read: notification.read || false,
-      message: notification.message, // Ensure message is part of the base structure
-      type: notification.type,
-      data: notification.data,
-      link: notification.link,
+      // Fields directly from LSP1EventService's eventObj or from custom input
+      id: notificationInput.id || `notification_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+      timestamp: notificationInput.timestamp || Date.now(),
+      read: notificationInput.read || false,
+      type: notificationInput.type, // This is the human-readable eventTypeName
+      typeId: notificationInput.typeId, // The on-chain typeId
+      sender: notificationInput.sender, // The determined sender/initiator
+      value: notificationInput.value,   // The event value
+      data: notificationInput.data,     // The raw receivedData
+      decodedPayload: notificationInput.decodedPayload, // Contains followerAddress etc.
+      
+      // Optional fields that might be passed if addNotification is called with a custom object
+      messageFromInput: notificationInput.message, // If a pre-formatted message is passed
+      link: notificationInput.link,
     };
     setNotifications((prev) => [formattedNotification, ...prev]); // Prepend
   }, []);

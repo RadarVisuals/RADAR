@@ -244,7 +244,6 @@
   transform-origin: center; 
 }
 
-/* --- SIMPLIFIED PING ANIMATION FOR TESTING --- */
 .ping-svg-animation .click-ping-svg circle {
   animation: ping-circle-anim-simple 0.7s linear forwards;
 }
@@ -258,7 +257,6 @@
   100% {
     r: 30; 
     stroke-opacity: 0;
-    transform: scale(2.5); /* Make it very obviously large */
+    transform: scale(2.5); 
   }
 }
-/* --- END SIMPLIFIED PING ANIMATION --- */

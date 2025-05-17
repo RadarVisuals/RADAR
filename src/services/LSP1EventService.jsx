@@ -4,7 +4,7 @@ import {
   webSocket,
   isAddress,
   decodeEventLog,
-  slice,
+  // slice, // Intentionally removed as unused
   getAddress,
   decodeAbiParameters,
   parseAbiParameters,
@@ -265,7 +265,7 @@ class LSP1EventService {
       }
       return;
     }
-    const { from, value, typeId, receivedData } = eventArgs;
+    const { from, value, typeId, receivedData, returnedValue } = eventArgs;
     const lowerCaseTypeId = typeId?.toLowerCase();
 
     if (!lowerCaseTypeId) {
@@ -278,8 +278,20 @@ class LSP1EventService {
     const stringValue = value?.toString() ?? "0";
     const eventTypeName = TYPE_ID_TO_EVENT_MAP[lowerCaseTypeId] || "unknown_event";
 
-    // Use a more robust identifier for duplicate checking if possible (e.g., tx hash + log index)
-    // For now, using the provided fields.
+    // --- ADD DEBUG LOGGING FOR FOLLOWER_GAINED ---
+    if (eventTypeName === "follower_gained" && import.meta.env.DEV) {
+        console.log("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
+        console.log("DEBUG: Follower Gained Event Received by LSP1EventService");
+        console.log("  eventArgs.from (caller of universalReceiver):", from);
+        console.log("  eventArgs.value:", stringValue);
+        console.log("  eventArgs.typeId:", typeId);
+        console.log("  eventArgs.receivedData:", receivedData);
+        console.log("  eventArgs.returnedValue:", returnedValue);
+        console.log(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
+    }
+    // --- END DEBUG LOGGING ---
+
+
     if (this.isDuplicateEvent(typeId, from, stringValue, receivedData)) {
       if (import.meta.env.DEV) {
         console.warn(`[LSP1 handleUniversalReceiver - viem] Duplicate event detected, ignoring: Type=${eventTypeName}`);
@@ -290,16 +302,15 @@ class LSP1EventService {
         console.log(`✅ [LSP1 handleUniversalReceiver - viem] Processing Unique Event: Type=${eventTypeName}, From=${from?.slice(0, 6)}, Value=${stringValue}, TypeId=${lowerCaseTypeId.slice(0, 8)}...`);
     }
 
-    let actualSender = from || "0xUNKNOWN"; // Default to 'from' field
+    let actualSender = from || "0xUNKNOWN"; 
     let decodedPayload = {};
 
     if ((eventTypeName === "lsp7_received" || eventTypeName === "lsp8_received") && typeof receivedData === "string" && receivedData !== "0x") {
         const abiToUse = eventTypeName === "lsp7_received" ? LSP7_RECEIVED_DATA_ABI : LSP8_RECEIVED_DATA_ABI;
         try {
             const decodedDataArray = decodeAbiParameters(abiToUse, receivedData);
-            // decodedDataArray[0] is caller, decodedDataArray[1] is 'from' (actual sender for token)
             if (decodedDataArray && decodedDataArray.length > 1 && typeof decodedDataArray[1] === 'string' && isAddress(decodedDataArray[1])) {
-                actualSender = getAddress(decodedDataArray[1]); // Ensure checksummed
+                actualSender = getAddress(decodedDataArray[1]); 
                 if (import.meta.env.DEV) {
                     console.log(`   Decoded actual sender from receivedData (${eventTypeName}): ${actualSender}`);
                 }
@@ -313,35 +324,59 @@ class LSP1EventService {
         }
     }
 
-    if ((eventTypeName === "follower_gained" || eventTypeName === "follower_lost") && typeof receivedData === "string" && receivedData.length >= 42) { // "0x" + 40 hex chars for address
-      try {
-        // Assuming follower address is the last 20 bytes of receivedData
-        const followerAddr = getAddress(slice(receivedData, -20)); // getAddress will checksum
-        if (isAddress(followerAddr)) { // Redundant check as getAddress throws, but safe
-          decodedPayload.followerAddress = followerAddr;
-          if (import.meta.env.DEV) {
-            console.log(`   Decoded follower/unfollower address: ${followerAddr}`);
-          }
-        } else if (import.meta.env.DEV) { // Should not be reached if getAddress works
-          console.warn("[LSP1 viem] Follower event data format invalid or address extraction failed:", receivedData);
-        }
-      } catch (e) {
+    // --- REVISED FOLLOWER ADDRESS EXTRACTION for LSP26 ---
+    if ((eventTypeName === "follower_gained" || eventTypeName === "follower_lost")) {
+        let potentialFollowerAddr = null;
+        const logCtx = `[LSP1 ${eventTypeName}]`;
+
         if (import.meta.env.DEV) {
-            console.error("[LSP1 viem] Follower address decode/checksum error:", e, "Data:", receivedData);
+            console.log(`${logCtx} Initial 'from' (UR caller): ${from}, receivedData: ${receivedData}`);
         }
-      }
+
+        // Priority 1: Check if receivedData is the follower address (as per LSP26 spec)
+        if (typeof receivedData === "string" && receivedData.startsWith("0x")) {
+            try {
+                if (isAddress(receivedData)) { // isAddress checks length and format
+                    potentialFollowerAddr = getAddress(receivedData);
+                    if (import.meta.env.DEV) {
+                        console.log(`${logCtx} Attempt 1: Follower address from receivedData: ${potentialFollowerAddr}`);
+                    }
+                }
+            } catch { /* isAddress failed or getAddress failed - error ignored by ESLint due to _e */ }
+        }
+
+        // Priority 2 (Fallback): Check if 'from' (UR caller) is the follower address
+        if (!potentialFollowerAddr && from && isAddress(from)) {
+            const followerRegistryAddress = "0xf01103E5a9909Fc0DBe8166dA7085e0285daDDcA"; // From LSP26 spec
+            if (from.toLowerCase() !== followerRegistryAddress.toLowerCase()) {
+                potentialFollowerAddr = getAddress(from);
+                if (import.meta.env.DEV) {
+                    console.log(`${logCtx} Attempt 2: Follower address from 'from' field (UR caller): ${potentialFollowerAddr}`);
+                }
+            } else if (import.meta.env.DEV) {
+                 console.log(`${logCtx} 'from' field is the Follower Registry. Not using it as follower address.`);
+            }
+        }
+        
+        if (potentialFollowerAddr) {
+            decodedPayload.followerAddress = potentialFollowerAddr;
+        } else if (import.meta.env.DEV) {
+            console.warn(`${logCtx} Could not determine follower address from receivedData or 'from' field.`);
+        }
     }
+    // --- END REVISED FOLLOWER ADDRESS EXTRACTION for LSP26 ---
+
 
     const eventObj = {
       id: `event_${Date.now()}_${Math.random().toString(16).slice(2)}`,
       timestamp: Date.now(),
-      type: eventTypeName,
-      typeId: lowerCaseTypeId,
+      type: eventTypeName, // Human-readable name from TYPE_ID_TO_EVENT_MAP
+      typeId: lowerCaseTypeId, // The actual on-chain typeId, lowercased
       data: receivedData || "0x",
-      sender: actualSender,
+      sender: actualSender, 
       value: stringValue,
       read: false,
-      decodedPayload: decodedPayload,
+      decodedPayload: decodedPayload, 
     };
     this.notifyEventListeners(eventObj);
   }
@@ -402,7 +437,7 @@ class LSP1EventService {
       // return; // Allow to proceed even if no listeners, for consistency
     }
     if (import.meta.env.DEV) {
-        console.log(`[LSP1 viem] Notifying ${this.eventCallbacks.length} listeners about event type '${event.type}'. Event ID: ${event.id}`);
+        console.log(`[LSP1 viem] Notifying ${this.eventCallbacks.length} listeners about event type '${event.type}'. Event ID: ${event.id}, TypeId: ${event.typeId}`);
     }
     // Iterate over a copy in case a callback modifies the array (e.g., unsubscribes)
     this.eventCallbacks.slice().forEach((callback) => {
@@ -459,23 +494,23 @@ class LSP1EventService {
     }
 
     const mockValue = readableName.includes("lyx") ? 1000000000000000000n : 0n; // 1 LYX or 0
-    const mockSender = "0xSimulationSender0000000000000000000000"; // Placeholder
+    // For simulating follower gained, the 'from' address should be the Follower Registry
+    const mockFromField = (readableName === "follower_gained" || readableName === "follower_lost")
+        ? "0xf01103E5a9909Fc0DBe8166dA7085e0285daDDcA" // LSP26 Follower Registry
+        : "0xSimulationSender0000000000000000000000"; // Placeholder for other events
+    
     let mockReceivedData = "0x";
-
     if (readableName === "follower_gained" || readableName === "follower_lost") {
-      // Example follower address
-      const mockFollowerAddress = "0xd8dA6Bf26964AF9D7eed9e03e53415D37aA96045";
-      // Simulate raw bytes data for follower events (address directly)
-      mockReceivedData = mockFollowerAddress.toLowerCase();
+      const mockFollowerAddress = "0xd8dA6Bf26964AF9D7eed9e03e53415D37aA96045"; // Actual follower/unfollower
+      mockReceivedData = mockFollowerAddress.toLowerCase(); // LSP26: receivedData is the follower's address
     }
-    // Add more specific mockReceivedData for LSP7/LSP8 if needed for thorough simulation
 
     const simulatedArgs = {
-      from: mockSender,
+      from: mockFromField, 
       value: mockValue,
       typeId: typeId,
-      receivedData: mockReceivedData,
-      returnedValue: "0x", // Typically not used for notifications
+      receivedData: mockReceivedData, 
+      returnedValue: "0x", 
     };
 
     try {
