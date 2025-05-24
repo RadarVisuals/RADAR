@@ -1,5 +1,5 @@
 // src/components/UI/UIOverlay.jsx
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 
 import TopRightControls from '../Toolbars/TopRightControls';
@@ -16,7 +16,9 @@ import GlobalMIDIStatus from '../MIDI/GlobalMIDIStatus';
 import AudioStatusIcon from '../Audio/AudioStatusIcon';
 import PresetSelectorBar from './PresetSelectorBar';
 
-import { useProfileSessionState } from '../../hooks/configSelectors'; // Local hook
+import { useProfileSessionState } from '../../hooks/configSelectors';
+import { useToast } from '../../context/ToastContext';
+import { ForwardIcon as SequencerIcon } from '@heroicons/react/24/outline';
 
 // Memoized components for performance optimization
 const MemoizedTopRightControls = React.memo(TopRightControls);
@@ -24,6 +26,14 @@ const MemoizedVerticalToolbar = React.memo(VerticalToolbar);
 const MemoizedGlobalMIDIStatus = React.memo(GlobalMIDIStatus);
 const MemoizedAudioStatusIcon = React.memo(AudioStatusIcon);
 const MemoizedPresetSelectorBar = React.memo(PresetSelectorBar);
+
+const DEFAULT_SEQUENCER_INTERVAL = 10000; // 10 seconds
+
+/**
+ * @typedef {import('../../hooks/useUIState').UIState} UIStateHook
+ * @typedef {import('../../hooks/useAudioVisualizer').AudioVisualizerAPI} AudioStateHook
+ * @typedef {import('../../hooks/configSelectors').ProfileSessionState} ProfileSessionStateHook
+ */
 
 /**
  * @typedef {object} UIStatePropTypes
@@ -67,6 +77,7 @@ const MemoizedPresetSelectorBar = React.memo(PresetSelectorBar);
  * @property {string} renderState - Current state of the rendering lifecycle (e.g., 'rendered', 'loading_defaults').
  * @property {boolean} canInteract - Whether the user can interact with UI elements (e.g., not in preview, profile loaded).
  * @property {string|null} currentProfileAddress - The address of the Universal Profile currently being viewed.
+ * @property {boolean} [isConfigLoading] - Indicates if a configuration preset is currently being loaded.
  */
 
 /**
@@ -80,8 +91,23 @@ const MemoizedPresetSelectorBar = React.memo(PresetSelectorBar);
  * @property {(effectConfig: object) => Promise<string | null>} onPreviewEffect - Callback to preview a visual effect.
  * @property {(tokenId: string | object | null, layerId: string | number) => void} onTokenApplied - Callback invoked when a token is applied to a layer.
  * @property {(presetName: string) => void} onPresetSelect - Callback invoked when a preset is selected from the selector.
+ * @property {(newIntervalMs: number) => void} [onSetSequencerInterval] - Optional callback to set the sequencer interval.
  */
 
+/**
+ * @typedef {object} UIOverlayProps
+ * @property {UIStateHook} uiState - State and functions for managing UI visibility and panel states.
+ * @property {AudioStateHook} audioState - State and functions for managing audio reactivity.
+ * @property {ConfigDataPropTypes} configData - Data related to visual configurations, presets, and user permissions.
+ * @property {ActionsPropTypes} actions - Callback functions for various application interactions.
+ * @property {Array<{name: string}>} [passedSavedConfigList=[]] - List of saved configuration presets.
+ */
+
+/**
+ * GeneralConnectPill displays a message prompting users to connect their Universal Profile
+ * if no visitor UP address is detected.
+ * @returns {JSX.Element | null} The pill component or null.
+ */
 const GeneralConnectPill = () => {
   const { visitorUPAddress } = useProfileSessionState();
   if (visitorUPAddress) return null;
@@ -93,25 +119,33 @@ const GeneralConnectPill = () => {
   );
 };
 
+/**
+ * ActivePanelRenderer conditionally renders the currently active side panel based on `uiState.activePanel`.
+ * @param {object} props - Component props.
+ * @param {UIStateHook} props.uiState - UI state from `useUIState`.
+ * @param {AudioStateHook} props.audioState - Audio state from `useAudioVisualizer`.
+ * @param {ConfigDataPropTypes} props.configData - Configuration data.
+ * @param {ActionsPropTypes} props.actions - Interaction callbacks.
+ * @returns {JSX.Element | null} The rendered active panel or null.
+ */
 const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
     const { activePanel, animatingPanel, activeLayerTab, closePanel, setActiveLayerTab } = uiState;
     const { isAudioActive, audioSettings, analyzerData, setIsAudioActive, setAudioSettings } = audioState;
     const { blendModes, notifications, savedReactions, canSave, isPreviewMode, canInteract, currentProfileAddress } = configData;
-    const { onLayerConfigChange, onMarkNotificationRead, onClearAllNotifications, onSaveReaction, onRemoveReaction, onPreviewEffect, onTokenApplied } = actions;
+    const { onLayerConfigChange, onMarkNotificationRead, onClearAllNotifications, onSaveReaction, onRemoveReaction, onPreviewEffect, onTokenApplied, onSetSequencerInterval } = actions;
 
     const handleTokenSelectorClose = useCallback(() => {
-        closePanel(); 
+        closePanel();
     }, [closePanel]);
 
-    // Construct className for PanelWrapper based on animatingPanel state
     const panelWrapperClassName = useMemo(() => {
         if (animatingPanel) {
             if (animatingPanel === "closing") {
-                return "animating closing"; // For slide-out
+                return "animating closing";
             }
-            return "animating"; // For slide-in (or generic animating state)
+            return "animating";
         }
-        return ""; // No animation class
+        return "";
     }, [animatingPanel]);
 
     switch (activePanel) {
@@ -124,6 +158,7 @@ const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
                         onToggleMinimize={closePanel}
                         activeTab={activeLayerTab}
                         onTabChange={setActiveLayerTab}
+                        onSetSequencerInterval={onSetSequencerInterval} // Pass down the new prop
                     />
                 </PanelWrapper>
             );
@@ -139,14 +174,14 @@ const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
                 </PanelWrapper>
             );
         case "events":
-            return canInteract ? ( 
+            return canInteract ? (
                 <PanelWrapper key="events-panel" className={panelWrapperClassName}>
                     <EventsPanel
                         onSaveReaction={onSaveReaction}
-                        onRemoveReaction={onRemoveReaction} 
+                        onRemoveReaction={onRemoveReaction}
                         reactions={savedReactions}
                         onClose={closePanel}
-                        readOnly={!canSave} 
+                        readOnly={!canSave}
                         onPreviewEffect={onPreviewEffect}
                     />
                 </PanelWrapper>
@@ -171,13 +206,13 @@ const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
                 </PanelWrapper>
             );
         case "tokens":
-            return canInteract ? ( 
+            return canInteract ? (
                 <TokenSelectorOverlay
                     key="token-selector-overlay"
-                    isOpen={activePanel === "tokens"} 
+                    isOpen={activePanel === "tokens"}
                     onClose={handleTokenSelectorClose}
                     onTokenApplied={onTokenApplied}
-                    readOnly={!canInteract} 
+                    readOnly={!canInteract}
                 />
             ) : null;
         default:
@@ -192,6 +227,12 @@ ActivePanelRenderer.propTypes = {
 };
 const MemoizedActivePanelRenderer = React.memo(ActivePanelRenderer);
 
+/**
+ * OverlayRenderer conditionally renders modal-like overlays (e.g., InfoOverlay).
+ * @param {object} props - Component props.
+ * @param {UIStateHook} props.uiState - UI state from `useUIState`.
+ * @returns {JSX.Element} The rendered overlays.
+ */
 const OverlayRenderer = ({ uiState }) => {
     const { infoOverlayOpen, toggleInfoOverlay } = uiState;
     return (
@@ -207,28 +248,37 @@ OverlayRenderer.propTypes = {
 };
 const MemoizedOverlayRenderer = React.memo(OverlayRenderer);
 
+/**
+ * UIOverlay is the main component responsible for rendering all user interface elements
+ * that overlay the core visual canvas. This includes toolbars, panels, and modal overlays.
+ * It orchestrates the visibility and interaction of these elements based on application state.
+ * It now includes a preset sequencer feature with a customizable interval.
+ *
+ * @param {UIOverlayProps} props - The component's props.
+ * @returns {JSX.Element} The rendered UIOverlay component.
+ */
 function UIOverlay(props) {
   const {
     uiState,
     audioState,
-    configData: propConfigData, 
+    configData: propConfigData,
     actions,
     passedSavedConfigList,
   } = props;
 
+  const { addToast } = useToast();
   const { canInteract: sessionCanInteract, currentProfileAddress: sessionCurrentProfileAddress, visitorUPAddress } = useProfileSessionState();
 
   const configData = useMemo(() => ({
     ...propConfigData,
-    canInteract: sessionCanInteract, 
-    currentProfileAddress: sessionCurrentProfileAddress, 
+    canInteract: sessionCanInteract,
+    currentProfileAddress: sessionCurrentProfileAddress,
   }), [propConfigData, sessionCanInteract, sessionCurrentProfileAddress]);
-
 
   const {
     isUiVisible,
     activePanel,
-    toggleSidePanel, 
+    toggleSidePanel,
     toggleInfoOverlay,
     toggleWhitelistPanel,
     toggleUiVisibility
@@ -239,20 +289,162 @@ function UIOverlay(props) {
     isParentAdmin,
     isPreviewMode,
     unreadCount,
-    currentConfigName,
     isTransitioning,
     isBaseReady,
-    renderState,
+    currentProfileAddress,
   } = configData;
   const { onEnhancedView, onPresetSelect } = actions;
 
+  const [isSequencerActive, setIsSequencerActive] = useState(false);
+  const sequencerIntervalRef = useRef(null);
+  const nextPresetIndexRef = useRef(0);
+  const [sequencerIntervalMs, setSequencerIntervalMs] = useState(DEFAULT_SEQUENCER_INTERVAL);
+
+
+  const configDataRef = useRef(configData);
+  useEffect(() => {
+    configDataRef.current = configData;
+  }, [configData]);
+
+  const passedSavedConfigListRef = useRef(passedSavedConfigList);
+  useEffect(() => {
+    passedSavedConfigListRef.current = passedSavedConfigList;
+  }, [passedSavedConfigList]);
+
+  const onPresetSelectRef = useRef(onPresetSelect);
+  useEffect(() => {
+    onPresetSelectRef.current = onPresetSelect;
+  }, [onPresetSelect]);
+
+
   const actualShouldShowUI = useMemo(() => {
-    return isBaseReady || renderState === 'prompt_connect';
-  } , [isBaseReady, renderState]);
+    return isBaseReady || configData.renderState === 'prompt_connect';
+  } , [isBaseReady, configData.renderState]);
 
   const showPresetBar = useMemo(() => {
-    return actualShouldShowUI && isUiVisible && !activePanel && !!configData.currentProfileAddress;
-  }, [actualShouldShowUI, isUiVisible, activePanel, configData.currentProfileAddress]);
+    return actualShouldShowUI && isUiVisible && !activePanel && !!currentProfileAddress;
+  }, [actualShouldShowUI, isUiVisible, activePanel, currentProfileAddress]);
+
+
+  const loadNextPresetInSequence = useCallback((isInitialCall = false) => {
+    const { renderState, isConfigLoading, isTransitioning, currentConfigName: currentLoadedConfigNameValue } = configDataRef.current;
+    const currentPassedSavedConfigList = passedSavedConfigListRef.current;
+    const currentOnPresetSelect = onPresetSelectRef.current;
+
+    if (import.meta.env.DEV) {
+        console.log(`[Sequencer LoadNext${isInitialCall ? " (Initial Call)" : " (Interval Tick)"}] Index: ${nextPresetIndexRef.current}, Conditions: isConfigLoading=${isConfigLoading}, renderState=${renderState}, isTransitioning=${isTransitioning}`);
+    }
+
+    if (isConfigLoading || renderState !== 'rendered' || isTransitioning) {
+      if (import.meta.env.DEV) {
+        console.log(`[Sequencer] Load SKIPPED: isConfigLoading=${isConfigLoading}, renderState=${renderState}, isTransitioning=${isTransitioning}`);
+      }
+      return;
+    }
+
+    if (!currentPassedSavedConfigList || currentPassedSavedConfigList.length === 0) {
+        return;
+    }
+
+    let presetToLoad = currentPassedSavedConfigList[nextPresetIndexRef.current];
+    let currentIndexToLoad = nextPresetIndexRef.current;
+
+    if (presetToLoad && presetToLoad.name === currentLoadedConfigNameValue && currentPassedSavedConfigList.length > 1) {
+        if (import.meta.env.DEV) {
+            console.log(`[Sequencer] Next preset (${presetToLoad.name}) is same as current. Advancing index for this attempt.`);
+        }
+        currentIndexToLoad = (nextPresetIndexRef.current + 1) % currentPassedSavedConfigList.length;
+        presetToLoad = currentPassedSavedConfigList[currentIndexToLoad];
+    }
+
+    if (presetToLoad && presetToLoad.name) {
+      if (import.meta.env.DEV) {
+        console.log(`[Sequencer] >>> Loading preset [${currentIndexToLoad}]: ${presetToLoad.name}`);
+      }
+      currentOnPresetSelect(presetToLoad.name);
+      nextPresetIndexRef.current = (currentIndexToLoad + 1) % currentPassedSavedConfigList.length;
+    } else {
+        if (import.meta.env.DEV) {
+            console.warn(`[Sequencer] Preset at index ${currentIndexToLoad} is invalid. Resetting index to 0.`);
+        }
+        nextPresetIndexRef.current = 0;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isSequencerActive) {
+      const currentPassedSavedConfigList = passedSavedConfigListRef.current;
+      if (!currentPassedSavedConfigList || currentPassedSavedConfigList.length === 0) {
+        return;
+      }
+      const { renderState, isConfigLoading, isTransitioning } = configDataRef.current;
+      if (!isConfigLoading && renderState === 'rendered' && !isTransitioning) {
+        if (import.meta.env.DEV) console.log("[Sequencer] Attempting initial load on activation.");
+        loadNextPresetInSequence(true);
+      } else {
+        if (import.meta.env.DEV) console.log("[Sequencer] Skipping initial load on activation, conditions not met.");
+      }
+    }
+  }, [isSequencerActive, loadNextPresetInSequence]);
+
+  useEffect(() => {
+    if (sequencerIntervalRef.current) {
+      clearInterval(sequencerIntervalRef.current);
+      sequencerIntervalRef.current = null;
+    }
+
+    if (isSequencerActive) {
+      const currentPassedSavedConfigList = passedSavedConfigListRef.current;
+      if (!currentPassedSavedConfigList || currentPassedSavedConfigList.length === 0) {
+        addToast("No saved presets available to sequence.", "warning");
+        setIsSequencerActive(false);
+        return;
+      }
+      sequencerIntervalRef.current = setInterval(() => loadNextPresetInSequence(false), sequencerIntervalMs);
+    } else {
+      nextPresetIndexRef.current = 0;
+    }
+
+    return () => {
+      if (sequencerIntervalRef.current) {
+        clearInterval(sequencerIntervalRef.current);
+        sequencerIntervalRef.current = null;
+      }
+    };
+  }, [isSequencerActive, loadNextPresetInSequence, addToast, sequencerIntervalMs]);
+
+
+  const handleToggleSequencer = () => {
+    if (configData.isConfigLoading) {
+        addToast("Cannot toggle sequencer while a preset is loading.", "warning");
+        return;
+    }
+    if (!configData.currentProfileAddress) {
+        addToast("Connect a profile to use the preset sequencer.", "warning");
+        return;
+    }
+    setIsSequencerActive(prev => {
+        if (!prev) {
+            nextPresetIndexRef.current = 0;
+        }
+        return !prev;
+    });
+  };
+
+  const handleSetSequencerInterval = useCallback((newIntervalMs) => {
+    const newInterval = Number(newIntervalMs);
+    if (!isNaN(newInterval) && newInterval >= 1000) {
+        setSequencerIntervalMs(newInterval);
+        addToast(`Sequencer interval set to ${newInterval / 1000}s.`, "info");
+    } else {
+        addToast("Invalid interval. Must be at least 1000ms.", "warning");
+    }
+  }, [addToast]);
+
+  const actionsWithSequencerControl = useMemo(() => ({
+    ...actions,
+    onSetSequencerInterval: handleSetSequencerInterval,
+  }), [actions, handleSetSequencerInterval]);
 
   const mainUiContainerClass = `ui-elements-container ${actualShouldShowUI && isUiVisible ? "visible" : "hidden-by-opacity"}`;
 
@@ -260,7 +452,7 @@ function UIOverlay(props) {
     <>
       {actualShouldShowUI && (
         <MemoizedTopRightControls
-          showWhitelist={false} 
+          showWhitelist={false}
           isProjectAdminForWhitelist={isParentAdmin}
           showInfo={true}
           showToggleUI={true}
@@ -269,13 +461,22 @@ function UIOverlay(props) {
           onInfoClick={toggleInfoOverlay}
           onToggleUI={toggleUiVisibility}
           onEnhancedView={onEnhancedView}
-          isUiVisible={isUiVisible} 
+          isUiVisible={isUiVisible}
         />
       )}
       <div className={mainUiContainerClass}>
         {actualShouldShowUI && isUiVisible && (
           <>
             <div className="bottom-right-icons">
+              <button
+                className={`toolbar-icon sequencer-toggle-button ${isSequencerActive ? "active" : ""}`}
+                onClick={handleToggleSequencer}
+                title={isSequencerActive ? `Stop Preset Sequencer (Interval: ${sequencerIntervalMs / 1000}s)` : `Start Preset Sequencer (Interval: ${sequencerIntervalMs / 1000}s)`}
+                aria-label={isSequencerActive ? "Stop Preset Sequencer" : "Start Preset Sequencer"}
+                disabled={configData.isConfigLoading || !configData.currentProfileAddress}
+              >
+                <SequencerIcon className="icon-image" />
+              </button>
               <MemoizedAudioStatusIcon isActive={isAudioActive} onClick={() => uiState.openPanel('audio')} />
               <MemoizedGlobalMIDIStatus />
             </div>
@@ -286,30 +487,30 @@ function UIOverlay(props) {
             )}
             <MemoizedVerticalToolbar
               activePanel={activePanel}
-              setActivePanel={toggleSidePanel} 
+              setActivePanel={toggleSidePanel}
               notificationCount={unreadCount}
             />
             <MemoizedActivePanelRenderer
                 uiState={uiState}
                 audioState={audioState}
-                configData={configData} 
-                actions={actions}
+                configData={configData}
+                actions={actionsWithSequencerControl}
             />
             {showPresetBar && (
               <MemoizedPresetSelectorBar
                 savedConfigList={passedSavedConfigList}
-                currentConfigName={currentConfigName}
+                currentConfigName={configData.currentConfigName}
                 onPresetSelect={onPresetSelect}
-                isLoading={isTransitioning} 
+                isLoading={isTransitioning || configData.isConfigLoading}
               />
             )}
           </>
         )}
       </div>
-      {actualShouldShowUI && ( 
+      {actualShouldShowUI && (
         <MemoizedOverlayRenderer uiState={uiState} />
       )}
-      {actualShouldShowUI && !visitorUPAddress && ( 
+      {actualShouldShowUI && !visitorUPAddress && (
          <GeneralConnectPill />
       )}
     </>
@@ -317,15 +518,21 @@ function UIOverlay(props) {
 }
 
 UIOverlay.propTypes = {
-  uiState: PropTypes.object.isRequired, 
-  audioState: PropTypes.object.isRequired, 
-  configData: PropTypes.object.isRequired, 
-  actions: PropTypes.object.isRequired, 
+  /** State and functions for managing UI visibility and panel states. */
+  uiState: PropTypes.object.isRequired,
+  /** State and functions for managing audio reactivity. */
+  audioState: PropTypes.object.isRequired,
+  /** Data related to visual configurations, presets, and user permissions. */
+  configData: PropTypes.object.isRequired,
+  /** Callback functions for various application interactions. */
+  actions: PropTypes.object.isRequired,
+  /** List of saved configuration presets. */
   passedSavedConfigList: PropTypes.array,
 };
 
 UIOverlay.defaultProps = {
   passedSavedConfigList: [],
 };
+
 
 export default React.memo(UIOverlay);

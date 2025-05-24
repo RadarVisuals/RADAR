@@ -1,3 +1,5 @@
+/* src/components/Panels/PanelStyles/EnhancedControlPanel.css */
+
 /* Styles for the tab container in THIS panel */
 .compact-panel-header {
   display: flex;
@@ -543,3 +545,42 @@
   width: 100%;
   padding: var(--space-xs) 0;
 }
+
+/* --- START: Styles for Sequencer Interval Control --- */
+.sequencer-interval-control {
+  margin-top: var(--space-lg);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-border);
+}
+
+.sequencer-interval-control .section-title { /* Re-style h4 if needed, or use existing */
+  margin-bottom: var(--space-sm);
+  font-size: var(--font-size-sm); /* Smaller title for this section */
+  color: var(--color-primary-a90);
+  text-transform: uppercase;
+  font-weight: 500; /* Match other section titles if needed */
+  letter-spacing: 0.5px;
+  border-bottom: none; /* Remove double border if .config-section already has one */
+  padding-bottom: 0;
+}
+
+.sequencer-interval-control .form-group {
+  margin-bottom: 0; /* Remove bottom margin if it's the only element */
+}
+
+.sequencer-interval-control .input-with-button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.sequencer-interval-control .input-with-button .form-control {
+  flex-grow: 1;
+  /* Optional: make number input smaller if desired */
+  /* max-width: 80px; */
+}
+
+.sequencer-interval-control .input-with-button .btn {
+  flex-shrink: 0; /* Prevent button from shrinking */
+}
+/* --- END: Styles for Sequencer Interval Control --- */

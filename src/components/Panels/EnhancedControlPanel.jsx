@@ -1,5 +1,5 @@
 // src/components/Panels/EnhancedControlPanel.jsx
-import React, { useCallback, useMemo, useEffect, useRef } from "react";
+import React, { useCallback, useMemo, useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
 
 import Panel from "./Panel";
@@ -57,25 +57,41 @@ export const sliderParams = [
 
 const tabToLayerIdMap = { tab1: 3, tab2: 2, tab3: 1 };
 
+/**
+ * @typedef EnhancedControlPanelProps
+ * @property {(layerId: string | number, key: string, value: any) => void} onLayerConfigChange - Callback to update a layer's configuration.
+ * @property {Array<string>} blendModes - Array of available blend mode strings.
+ * @property {() => void} onToggleMinimize - Callback to toggle the panel's minimized state.
+ * @property {string} [activeTab="tab1"] - The currently active layer tab.
+ * @property {(tabId: string) => void} [onTabChange] - Callback when a layer tab is changed.
+ * @property {(newIntervalMs: number) => void} [onSetSequencerInterval] - Optional callback to set the sequencer interval.
+ */
+
+/**
+ * EnhancedControlPanel provides UI controls for manipulating parameters
+ * of visual layers, MIDI mappings, and potentially other global settings like sequencer interval.
+ *
+ * @param {EnhancedControlPanelProps} props - Component props.
+ * @returns {JSX.Element} The rendered EnhancedControlPanel.
+ */
 const EnhancedControlPanel = ({
   onLayerConfigChange,
   blendModes,
   onToggleMinimize,
   activeTab = "tab1",
   onTabChange,
+  onSetSequencerInterval,
 }) => {
-  const { 
-    isVisitor, 
-    isParentAdmin, 
-    isPreviewMode,      // Still available for context
-    canSave,            // For "Reset Mappings" button logic
-    isProfileOwner,     // To show/hide MIDI Learn buttons
-    // hostCanInteract, // We will use hostProfileAddress directly for enabling most controls
-    currentProfileAddress: hostProfileAddress 
+  const {
+    isVisitor,
+    isParentAdmin,
+    isPreviewMode,
+    canSave,
+    isProfileOwner,
+    currentProfileAddress: hostProfileAddress
   } = useProfileSessionState();
   const { layerConfigs } = useVisualLayerState();
 
-  // Layer parameter controls are disabled if no hostProfileAddress is loaded
   const disableHostLayerControls = useMemo(() => !hostProfileAddress, [hostProfileAddress]);
 
   const {
@@ -90,10 +106,10 @@ const EnhancedControlPanel = ({
     stopMIDILearn,
     startLayerMIDILearn,
     stopLayerMIDILearn,
-    clearAllMappings, 
+    clearAllMappings,
     setChannelFilter,
     clearMIDIMonitor,
-    midiMap, 
+    midiMap,
     layerMappings,
   } = useMIDI();
 
@@ -101,6 +117,7 @@ const EnhancedControlPanel = ({
   const config = useMemo(() => layerConfigs?.[activeLayer] || getDefaultLayerConfigTemplate(), [layerConfigs, activeLayer]);
 
   const midiMonitorRef = useRef(null);
+  const [localSequencerInterval, setLocalSequencerInterval] = useState("10");
 
   useEffect(() => {
     if (midiMonitorRef.current && showMidiMonitor) {
@@ -110,7 +127,7 @@ const EnhancedControlPanel = ({
 
   const handleEnterMIDILearnMode = useCallback(
     (paramName) => {
-      if (!isProfileOwner) return; 
+      if (!isProfileOwner) return;
       if (!midiConnected) { alert("Please connect a MIDI device first to enable MIDI Learn."); return; }
       const isValidParam = sliderParams.some((p) => p.prop === paramName);
       if (!isValidParam) {
@@ -124,7 +141,7 @@ const EnhancedControlPanel = ({
 
   const handleEnterLayerMIDILearnMode = useCallback(
     (layer) => {
-      if (!isProfileOwner) return; 
+      if (!isProfileOwner) return;
       if (!midiConnected) { alert("Please connect a MIDI device first."); return; }
       startLayerMIDILearn(layer);
     },
@@ -133,10 +150,9 @@ const EnhancedControlPanel = ({
 
   const handleMidiChannelChange = useCallback((e) => { setChannelFilter(parseInt(e.target.value, 10)); }, [setChannelFilter]);
   const handleClearMidiMonitor = useCallback(() => { clearMIDIMonitor(); }, [clearMIDIMonitor]);
-  
+
   const handleResetAllMappings = useCallback(() => {
-    // Reset button is disabled if no host profile, or if in preview mode (via canSave), or if not owner (via canSave)
-    if (disableHostLayerControls || !canSave) { 
+    if (disableHostLayerControls || !canSave) {
       if (import.meta.env.DEV) {
         console.warn("[ECP] Reset all MIDI mappings (for host profile) blocked. DisableHostControls:", disableHostLayerControls, "CanSave:", canSave);
       }
@@ -207,6 +223,22 @@ const EnhancedControlPanel = ({
     }
   }, [disableHostLayerControls, onLayerConfigChange, activeLayer]);
 
+  const handleSequencerIntervalInputChange = (e) => {
+    setLocalSequencerInterval(e.target.value);
+  };
+
+  const applySequencerInterval = () => {
+    if (onSetSequencerInterval) {
+        const intervalSeconds = parseFloat(localSequencerInterval);
+        if (!isNaN(intervalSeconds) && intervalSeconds >= 1) {
+            onSetSequencerInterval(intervalSeconds * 1000);
+        } else {
+            console.warn("Invalid sequencer interval input.");
+            // Optionally, provide user feedback e.g., via a toast
+        }
+    }
+  };
+
   const adminVisitorMessage = isVisitor && isParentAdmin && !disableHostLayerControls && !canSave && (
     <div className="visitor-message info">
       As an admin visitor, you can experiment with controls. Changes won't save to this profile.
@@ -219,30 +251,28 @@ const EnhancedControlPanel = ({
       </div>
   );
 
-  // This message appears if !hostProfileAddress (via disableHostLayerControls)
-  // OR if isPreviewMode is true.
   const readOnlyUIMessage = (disableHostLayerControls || isPreviewMode) && (
     <div className="visitor-message warning">
-      {isPreviewMode ? "Preview Mode: Controls are view-only." : // This message is for general preview
+      {isPreviewMode ? "Preview Mode: Controls are view-only." :
        !hostProfileAddress ? "Connect or load a host profile to enable its layer controls." :
-       "Host layer controls are currently disabled."} {/* Fallback, should be covered by the others */}
+       "Host layer controls are currently disabled."}
     </div>
   );
-  
+
   const getMIDILearnButtonTitle = (paramProp, paramLabel) => {
     if (!isProfileOwner) return "MIDI Learn disabled when viewing another profile";
     if (!midiConnected) return "Connect MIDI device to enable Learn";
-    // If host controls are generally disabled (e.g. no profile), learn is also implicitly disabled
-    if (disableHostLayerControls) return "MIDI Learn disabled as host controls are inactive"; 
+    if (disableHostLayerControls) return "MIDI Learn disabled as host controls are inactive";
     return `Map MIDI to ${paramLabel}. Current: ${displayMidiMapping(String(activeLayer), paramProp)}`;
   };
-  
+
   const getLayerMIDILearnButtonTitle = (layerNum) => {
     if (!isProfileOwner) return "MIDI Learn for layer selection disabled when viewing another profile";
     if (!midiConnected) return "Connect MIDI device to enable Learn";
     if (disableHostLayerControls) return "MIDI Learn disabled as host controls are inactive";
     return `Map MIDI to select Layer ${layerNum}`;
   };
+
 
   return (
     <Panel
@@ -280,7 +310,7 @@ const EnhancedControlPanel = ({
                     <span className="layer-mapping-text" title={displayLayerMidiMapping(String(layerNum))} >
                       {displayLayerMidiMapping(String(layerNum))}
                     </span>
-                    {isProfileOwner && ( 
+                    {isProfileOwner && (
                       <button
                         type="button"
                         className={`midi-learn-btn small-action-button ${learningLayer === layerNum ? "learning" : ""}`}
@@ -312,7 +342,7 @@ const EnhancedControlPanel = ({
                   </span>
                   <div className="slider-controls">
                     <span className="slider-value"> {formatValue(currentValue, formatDecimals)} </span>
-                    {midiConnected && isProfileOwner && ( 
+                    {midiConnected && isProfileOwner && (
                       <button
                         type="button"
                         className={`midi-btn small-action-button ${isLearningThis ? "learning" : ""}`}
@@ -348,17 +378,47 @@ const EnhancedControlPanel = ({
           </div>
         </div>
 
+        {typeof onSetSequencerInterval === 'function' && (
+            <div className="sequencer-interval-control config-section"> {/* Added config-section for consistent styling */}
+                <h4 className="section-title">Sequencer Settings</h4> {/* Changed from h3 to h4 for hierarchy */}
+                <div className="form-group">
+                    <label htmlFor="sequencer-interval-input">Interval (seconds)</label>
+                    <div className="input-with-button">
+                        <input
+                            type="number"
+                            id="sequencer-interval-input"
+                            className="form-control"
+                            value={localSequencerInterval}
+                            onChange={handleSequencerIntervalInputChange}
+                            min="1" // Minimum 1 second
+                            step="1"
+                            disabled={disableHostLayerControls} // Example disable logic
+                        />
+                        <button
+                            type="button"
+                            className="btn btn-sm" // Use existing button style
+                            onClick={applySequencerInterval}
+                            disabled={disableHostLayerControls}
+                        >
+                            Set
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+
         {midiConnected && (
           <div className="midi-tools">
               <button type="button" className="midi-monitor-btn" onClick={handleToggleMonitor}> {showMidiMonitor ? "Hide Monitor" : "Show Monitor"} </button>
-              <button 
-                  type="button" 
-                  className="midi-reset-btn" 
-                  onClick={handleResetAllMappings} 
-                  title="Reset all MIDI mappings for this controller (saved on host profile)" 
-                  disabled={disableHostLayerControls || !canSave} 
-              > 
-                  Reset Mappings 
+              <button
+                  type="button"
+                  className="midi-reset-btn"
+                  onClick={handleResetAllMappings}
+                  title="Reset all MIDI mappings for this controller (saved on host profile)"
+                  disabled={disableHostLayerControls || !canSave}
+              >
+                  Reset Mappings
               </button>
               <select className="midi-channel-select" value={selectedChannel} onChange={handleMidiChannelChange} title="Filter MIDI messages by channel" aria-label="Select MIDI Channel Filter" >
                 <option value="0">All Channels</option>
@@ -394,7 +454,7 @@ const EnhancedControlPanel = ({
       )}
       {adminVisitorMessage}
       {generalVisitorMessage}
-      {readOnlyUIMessage /* This message will show if disableHostLayerControls is true OR isPreviewMode is true */}
+      {readOnlyUIMessage}
     </Panel>
   );
 };
@@ -405,6 +465,7 @@ EnhancedControlPanel.propTypes = {
   onToggleMinimize: PropTypes.func.isRequired,
   activeTab: PropTypes.string,
   onTabChange: PropTypes.func,
+  onSetSequencerInterval: PropTypes.func,
 };
 EnhancedControlPanel.defaultProps = {
   activeTab: "tab1",

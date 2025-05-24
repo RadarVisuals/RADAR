@@ -280,16 +280,73 @@
   right: var(--space-lg);
   z-index: var(--z-controls);
   display: flex;
-  flex-direction: row;
+  flex-direction: row; /* Ensures horizontal layout */
   align-items: center;
-  gap: var(--space-sm);
-  pointer-events: auto;
+  gap: var(--space-sm); /* Spacing between icons */
+  pointer-events: auto; /* Container itself allows pointer events */
 }
+
+/* --- START: Styles for Sequencer/Randomizer Button --- */
+.bottom-right-icons .toolbar-icon.sequencer-toggle-button { /* UPDATED CLASS NAME */
+  order: -1;
+  width: var(--icon-size-lg);
+  height: var(--icon-size-lg);
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bottom-right-icons .toolbar-icon.sequencer-toggle-button .icon-image { /* UPDATED CLASS NAME */
+  width: var(--icon-size-md);
+  height: var(--icon-size-md);
+  object-fit: contain;
+  color: var(--color-primary-a70);
+  transition: color var(--transition-fast), filter var(--transition-fast);
+}
+
+.bottom-right-icons .toolbar-icon.sequencer-toggle-button:hover .icon-image { /* UPDATED CLASS NAME */
+  color: var(--color-primary);
+}
+
+.bottom-right-icons .toolbar-icon.sequencer-toggle-button.active { /* UPDATED CLASS NAME */
+  background: var(--color-primary-a30);
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-primary-md);
+}
+
+.bottom-right-icons .toolbar-icon.sequencer-toggle-button.active .icon-image { /* UPDATED CLASS NAME */
+  color: var(--color-primary);
+  filter: drop-shadow(0 0 5px var(--color-primary));
+}
+
+/* Disabled state for all toolbar icons in bottom-right */
+.bottom-right-icons .toolbar-icon:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: var(--color-button-secondary-a80);
+  border-color: var(--color-primary-a50);
+}
+
+.bottom-right-icons .toolbar-icon:disabled:hover {
+  transform: none;
+  background: var(--color-button-secondary-a80);
+  border-color: var(--color-primary-a50);
+}
+
+.bottom-right-icons .toolbar-icon:disabled .icon-image {
+  color: var(--color-text-muted);
+  filter: none;
+}
+/* --- END: Styles for Sequencer/Randomizer Button --- */
+
 
 /* General Connect Pill Style */
 .general-connect-pill {
   position: fixed;
-  bottom: var(--space-md);
+  /* --- MODIFIED: Increased bottom value --- */
+  bottom: calc(var(--space-md) + 36px + var(--space-sm)); /* approx 16px + 36px (bar height) + 12px (gap) = 64px */
+  /* --------------------------------------- */
   left: 50%;
   transform: translateX(-50%);
   background-color: var(--color-warning-a10);
@@ -298,7 +355,7 @@
   border-radius: var(--radius-md);
   font-size: var(--font-size-sm);
   border: 1px solid var(--color-warning-a30);
-  z-index: var(--z-top);
+  z-index: var(--z-top); /* Ensure it's above preset bar if z-indexes are close */
   box-shadow: var(--shadow-md);
   text-align: center;
   max-width: 80%;
