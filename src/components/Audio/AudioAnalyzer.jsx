@@ -86,17 +86,21 @@ const AudioAnalyzer = ({
   // Update base layer values and handle transition state when a new preset is loaded
   useEffect(() => {
     if (layerConfigsProp && configLoadNonce !== capturedNonceRef.current) {
-        if (capturedNonceRef.current !== -1 && import.meta.env.DEV) { // If not the very first load
-            // console.log("[AudioAnalyzer] New configLoadNonce detected, entering transition phase for audio reactivity.");
-            isTransitioningRef.current = true;
-            // Transition phase to smooth out audio reactivity changes
-            setTimeout(() => {
-                if (isTransitioningRef.current) {
-                    isTransitioningRef.current = false;
-                    // if (import.meta.env.DEV) console.log("[AudioAnalyzer] Audio reactivity transition phase ended.");
-                }
-            }, 1000); // Duration of the transition dampening
-        }
+        // --- START: TEMPORARILY DISABLED TRANSITION LOGIC ---
+        // if (capturedNonceRef.current !== -1 && import.meta.env.DEV) { // If not the very first load
+        //     // console.log("[AudioAnalyzer] New configLoadNonce detected, entering transition phase for audio reactivity.");
+        //     isTransitioningRef.current = true;
+        //     // Transition phase to smooth out audio reactivity changes
+        //     setTimeout(() => {
+        //         if (isTransitioningRef.current) {
+        //             isTransitioningRef.current = false;
+        //             // if (import.meta.env.DEV) console.log("[AudioAnalyzer] Audio reactivity transition phase ended.");
+        //         }
+        //     }, 1000); // Duration of the transition dampening
+        // }
+        // --- END: TEMPORARILY DISABLED TRANSITION LOGIC ---
+        isTransitioningRef.current = false; // Explicitly set to false for testing responsiveness
+
         const newBaseValues = {};
         for (const layerIdStr of ['1', '2', '3']) { // Assuming fixed layer IDs
             const config = layerConfigsProp[layerIdStr] || {};
@@ -116,8 +120,11 @@ const AudioAnalyzer = ({
         return;
     }
 
+    // --- START: TEMPORARILY DISABLED TRANSITION LOGIC ---
     // Dampen effect intensity during preset transitions
-    const transitionFactor = isTransitioningRef.current ? 0.2 : 1.0;
+    // const transitionFactor = isTransitioningRef.current ? 0.2 : 1.0;
+    const transitionFactor = 1.0; // Force no dampening for testing responsiveness
+    // --- END: TEMPORARILY DISABLED TRANSITION LOGIC ---
     const { bassIntensity = 1.0, midIntensity = 1.0, trebleIntensity = 1.0 } = currentSettings;
 
     // Apply bass frequency to layer 1 size
@@ -142,7 +149,10 @@ const AudioAnalyzer = ({
     }
 
     // Trigger a beat pulse effect on all layers if conditions are met
-    if (level > 0.4 && bands.bass > 0.6 && !isTransitioningRef.current) {
+    // --- START: TEMPORARILY DISABLED TRANSITION LOGIC in beat pulse ---
+    // if (level > 0.4 && bands.bass > 0.6 && !isTransitioningRef.current) {
+    if (level > 0.4 && bands.bass > 0.6) { // Always allow beat pulse if conditions met for testing
+    // --- END: TEMPORARILY DISABLED TRANSITION LOGIC in beat pulse ---
       const pulseMultiplier = 1 + level * 0.8; // Stronger pulse for higher levels
       Object.keys(managers).forEach(layerIdStr => {
         const manager = managers[layerIdStr];
@@ -183,14 +193,17 @@ const AudioAnalyzer = ({
 
     let newBass = bass, newMid = mid, newTreble = treble, newLevel = averageLevel;
 
+    // --- START: TEMPORARILY DISABLED TRANSITION LOGIC ---
     // Smooth values during transitions to avoid jarring visual changes
-    if (isTransitioningRef.current) {
-        const blendFactor = 0.8; // How much of the previous value to keep
-        newBass = lastBandDataRef.current.bass * blendFactor + bass * (1 - blendFactor);
-        newMid = lastBandDataRef.current.mid * blendFactor + mid * (1 - blendFactor);
-        newTreble = lastBandDataRef.current.treble * blendFactor + treble * (1 - blendFactor);
-        newLevel = lastLevelRef.current * blendFactor + averageLevel * (1 - blendFactor);
-    }
+    // if (isTransitioningRef.current) {
+    //     const blendFactor = 0.8; // How much of the previous value to keep
+    //     newBass = lastBandDataRef.current.bass * blendFactor + bass * (1 - blendFactor);
+    //     newMid = lastBandDataRef.current.mid * blendFactor + mid * (1 - blendFactor);
+    //     newTreble = lastBandDataRef.current.treble * blendFactor + treble * (1 - blendFactor);
+    //     newLevel = lastLevelRef.current * blendFactor + averageLevel * (1 - blendFactor);
+    // }
+    // --- END: TEMPORARILY DISABLED TRANSITION LOGIC ---
+    // When transition logic is disabled, newBass, newMid, etc., will just be the raw band values
 
     lastBandDataRef.current = { bass: newBass, mid: newMid, treble: newTreble };
     lastLevelRef.current = newLevel;

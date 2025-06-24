@@ -1,5 +1,5 @@
 // src/components/Main/Mainview.jsx
-import React, { useRef, useEffect, useMemo, useState } from "react";
+import React, { useRef, useEffect, useMemo, useState, useCallback } from "react";
 import PropTypes from "prop-types";
 
 // Custom Hooks
@@ -22,7 +22,7 @@ import CanvasContainerWrapper from '../MainViewParts/CanvasContainerWrapper';
 import FpsDisplay from '../MainViewParts/FpsDisplay';
 import StatusIndicator from '../MainViewParts/StatusIndicator';
 import AudioAnalyzerWrapper from '../MainViewParts/AudioAnalyzerWrapper';
-import CriticalErrorDisplay from '../MainViewParts/CriticalErrorDisplay'; // NEW IMPORT
+import CriticalErrorDisplay from '../MainViewParts/CriticalErrorDisplay';
 
 // Config & Assets
 import { BLEND_MODES } from "../../config/global-config";
@@ -127,6 +127,28 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     handleLayerPropChange,
   } = appInteractions;
 
+  /**
+   * Callback to handle the generated snapshot. It applies the snapshot image
+   * to the target layer and updates the application state accordingly.
+   * @param {string} dataUrl - The base64 data URL of the snapshot image.
+   * @param {string} targetLayerId - The ID of the layer to apply the snapshot to ('1', '2', or '3').
+   */
+  const handleSnapshotReady = useCallback((dataUrl, targetLayerId) => {
+    // 1. Apply the new composite image directly to the target canvas layer.
+    setCanvasLayerImage(targetLayerId, dataUrl);
+
+    // 2. Update the global token assignment state so this change can be saved in presets.
+    updateTokenAssignment(targetLayerId, dataUrl);
+
+    // 3. For a better user experience, disable the other two layers to focus on the new composite.
+    const allLayers = ['1', '2', '3'];
+    const otherLayerIds = allLayers.filter(id => id !== targetLayerId);
+    for (const layerId of otherLayerIds) {
+      updateLayerConfig(layerId, 'enabled', false);
+    }
+
+  }, [setCanvasLayerImage, updateTokenAssignment, updateLayerConfig]);
+
   useEffect(() => {
     setLocalAnimatingPanel(uiStateHook.animatingPanel);
     const newIsBenign = uiStateHook.animatingPanel === 'tokens' ||
@@ -159,8 +181,6 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     };
   }, [localAnimatingPanel, animationLockForTokenOverlay, isMountedRef]);
 
-  // Critical error display check
-  // If CriticalErrorDisplay renders content, it will be returned, and the rest of MainView won't render.
   const criticalErrorContent = (
     <CriticalErrorDisplay
       initializationError={upInitializationError}
@@ -269,6 +289,14 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
           configLoadNonce={configLoadNonce}
           managerInstancesRef={managerInstancesRef}
         />
+        
+        {/* --- FIX: Commented out the missing component --- */}
+        {/* Render the snapshot generator button and pass it the manager instances and the callback */}
+        {/* <CompositeAssetGenerator
+          managerInstancesRef={managerInstancesRef}
+          onSnapshotReady={handleSnapshotReady}
+        /> */}
+        {/* --- END FIX --- */}
       </div>
     </>
   );
