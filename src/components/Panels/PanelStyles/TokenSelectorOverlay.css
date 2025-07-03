@@ -29,6 +29,21 @@
   animation: pulse 2s infinite ease-in-out;
 }
 
+.token-section {
+  margin-bottom: var(--space-lg);
+}
+
+.token-section-header {
+  font-size: 1.1em;
+  color: var(--color-primary-a70);
+  margin: 0 0 var(--space-sm) var(--space-xs);
+  padding-bottom: var(--space-xs);
+  border-bottom: 1px solid var(--color-border);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  font-weight: 500;
+}
+
 .overlay.token-selector-overlay {
   position: fixed;
   top: 0;
