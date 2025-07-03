@@ -1,0 +1,166 @@
+/* src/components/Panels/PanelStyles/LibraryPanel.css */
+@import "../../../styles/variables.css";
+
+/* Apply flex layout directly to the panel to space out its direct children */
+.library-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+/* Base styling for section boxes within the panel */
+.library-panel .section-box {
+  background: var(--color-primary-a05);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+}
+
+/* "Owner Mode" header styling (this is not a section-box, so style separately) */
+.library-panel .admin-header {
+  background: var(--color-success-a10);
+  border: 1px solid var(--color-success-a30);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+}
+
+.library-panel .admin-badge {
+  display: inline-block;
+  background: var(--color-success-a30);
+  color: var(--color-success-a90);
+  font-size: var(--font-size-xs);
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-xs);
+}
+
+.library-panel .admin-description {
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Section titles ("Add New Collection", "Current Library Collections") */
+.library-panel .section-title {
+  margin-top: 0;
+  margin-bottom: var(--space-md);
+  color: var(--color-primary);
+  font-size: var(--font-size-md);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--space-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Error message styling */
+.library-panel .status-message.error {
+  background: var(--color-error-a10);
+  border: 1px solid var(--color-error-a30);
+  color: var(--color-error-a90);
+  padding: var(--space-sm);
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+
+/* Consistent input styling */
+.library-panel .form-control {
+  background-color: var(--color-bg-inset);
+}
+
+/* Messages for empty/loading states */
+.library-panel .loading-message,
+.library-panel .empty-message {
+  text-align: center;
+  padding: var(--space-md);
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* Grid for displaying collections */
+.library-panel .collections-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-md);
+}
+
+/* Individual collection card styling */
+.library-panel .collection-card {
+  background: rgba(0,0,0,0.2);
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  transition: all var(--transition-fast);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+.library-panel .collection-card:hover {
+  border-color: var(--color-primary-a30);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-primary-sm);
+}
+
+.library-panel .collection-image {
+  width: 100%;
+  padding-bottom: 56.25%; /* 16:9 Aspect Ratio */
+  height: 0;
+  position: relative;
+  background: var(--color-bg);
+}
+
+.library-panel .collection-image img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.library-panel .collection-info {
+  padding: var(--space-sm);
+  flex-grow: 1;
+}
+
+.library-panel .collection-name {
+  font-size: var(--font-size-md);
+  color: var(--color-primary);
+  margin: 0 0 var(--space-xs) 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.library-panel .collection-address {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  font-family: monospace;
+}
+
+.library-panel .remove-button {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--color-error-a50);
+  color: var(--color-error-a90);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  z-index: 5;
+}
+
+.library-panel .remove-button:hover {
+  background: var(--color-error-a30);
+  transform: scale(1.1);
+}
