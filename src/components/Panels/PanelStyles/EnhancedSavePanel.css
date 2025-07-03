@@ -131,6 +131,8 @@
   align-items: center;
   padding: var(--space-sm) var(--space-md);
   border-bottom: 1px solid var(--color-border-dark);
+  /* --- NEW --- */
+  gap: var(--space-sm);
 }
 .load-section .config-list li:last-child { border-bottom: none; }
 .load-section .config-list li.active { background-color: var(--color-primary-a15); }
@@ -144,9 +146,13 @@
   color: var(--color-primary-a90);
   cursor: pointer;
   padding: 0;
-  margin-right: var(--space-sm);
+  margin-right: 0; /* Updated from var(--space-sm) */
   font-size: var(--font-size-md);
   font-family: var(--font-family);
+  /* --- NEW --- */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .load-section .config-list .config-name:hover:not(:disabled) { text-decoration: none; color: var(--color-primary); }
 .load-section .config-list .config-name:disabled { color: var(--color-text-muted); cursor: not-allowed; font-weight: normal; }
@@ -220,3 +226,45 @@
 .btn-icon:disabled { cursor: not-allowed; opacity: 0.5; }
 
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0; }
+
+/* --- NEW STYLES ADDED FOR REFACTORED SAVE PANEL --- */
+.preset-main-content {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-grow: 1;
+  overflow: hidden;
+}
+
+.default-preset-tag {
+  font-size: var(--font-size-xs);
+  color: var(--color-primary);
+  font-weight: bold;
+  background-color: var(--color-primary-a15);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.preset-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+}
+
+.preset-actions .btn-icon {
+  font-size: 1.2em;
+  color: var(--color-text-muted);
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.preset-actions .btn-icon:hover:not(:disabled) {
+  color: var(--color-primary);
+  transform: scale(1.1);
+}
+
+.preset-actions .btn-icon[title*="Default"]:hover:not(:disabled) {
+  color: var(--color-warning);
+}
+/* --- END NEW STYLES --- */

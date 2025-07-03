@@ -5,6 +5,7 @@ import PropTypes from "prop-types";
 import Panel from "./Panel"; // Local component
 import { EVENT_TYPE_MAP } from "../../config/global-config"; // Local config
 import { useToast } from "../../context/ToastContext"; // Local context
+import { usePresetManagement } from "../../context/PresetManagementContext"; // Refactored to use this
 
 import "./PanelStyles/Eventspanel.css"; // Local styles
 
@@ -46,9 +47,6 @@ const generateEventOptions = () => {
 
 /**
  * @typedef {object} EventsPanelProps
- * @property {(reactionId: string, reactionConfig: ReactionConfig) => void} [onSaveReaction] - Callback to stage a reaction locally. `reactionId` is the event typeId.
- * @property {(reactionId: string) => void} [onRemoveReaction] - Callback to remove/unstage a reaction locally (uses event typeId).
- * @property {ReactionsMap} [reactions={}] - The currently saved global reactions for the host profile. Keys are event typeIds.
  * @property {() => void} onClose - Callback to close the panel.
  * @property {boolean} [readOnly=false] - If true, UI controls for modifying reactions are disabled.
  * @property {(effectConfig: object) => Promise<string | null>} [onPreviewEffect] - Callback to trigger a preview of the configured visual effect.
@@ -65,14 +63,21 @@ const generateEventOptions = () => {
  * @returns {JSX.Element} The rendered EventsPanel component.
  */
 const EventsPanel = ({
-  onSaveReaction,
-  onRemoveReaction,
-  reactions = {},
   onClose,
   readOnly = false,
   onPreviewEffect,
 }) => {
   const { addToast } = useToast();
+  const {
+    stagedWorkspace,
+    updateGlobalEventReactions,
+    deleteGlobalEventReaction,
+  } = usePresetManagement();
+
+  const reactions = useMemo(() => stagedWorkspace?.globalEventReactions || {}, [stagedWorkspace]);
+  const onSaveReaction = updateGlobalEventReactions;
+  const onRemoveReaction = deleteGlobalEventReaction;
+
   const allEventOptions = useMemo(() => generateEventOptions(), []);
 
   const [selectedEvent, setSelectedEvent] = useState(allEventOptions[0]?.value || ""); // Value will be typeId
@@ -310,9 +315,6 @@ const EventsPanel = ({
 };
 
 EventsPanel.propTypes = {
-  onSaveReaction: PropTypes.func,
-  onRemoveReaction: PropTypes.func,
-  reactions: PropTypes.object,
   onClose: PropTypes.func.isRequired,
   readOnly: PropTypes.bool,
   onPreviewEffect: PropTypes.func,

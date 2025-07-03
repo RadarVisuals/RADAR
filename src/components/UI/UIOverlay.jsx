@@ -9,9 +9,10 @@ import EnhancedControlPanel from '../Panels/EnhancedControlPanel';
 import NotificationPanel from '../Panels/NotificationPanel';
 import EventsPanel from '../Panels/EventsPanel';
 import EnhancedSavePanel from '../Panels/EnhancedSavePanel';
-import AudioControlPanel from '../Audio/AudioControlPanel';
+import AudioControlPanel from '../Audio/AudioControlPanel'; // CORRECTED PATH
 import TokenSelectorOverlay from '../Panels/TokenSelectorOverlay';
 import InfoOverlay from '../Panels/InfoOverlay';
+import LibraryPanel from '../Panels/LibraryPanel';
 import GlobalMIDIStatus from '../MIDI/GlobalMIDIStatus';
 import AudioStatusIcon from '../Audio/AudioStatusIcon';
 import PresetSelectorBar from './PresetSelectorBar';
@@ -19,6 +20,7 @@ import PresetSelectorBar from './PresetSelectorBar';
 import { useProfileSessionState } from '../../hooks/configSelectors';
 import { useToast } from '../../context/ToastContext';
 import { ForwardIcon as SequencerIcon } from '@heroicons/react/24/outline';
+import { whitelistIcon } from '../../assets';
 
 // Memoized components for performance optimization
 const MemoizedTopRightControls = React.memo(TopRightControls);
@@ -27,7 +29,7 @@ const MemoizedGlobalMIDIStatus = React.memo(GlobalMIDIStatus);
 const MemoizedAudioStatusIcon = React.memo(AudioStatusIcon);
 const MemoizedPresetSelectorBar = React.memo(PresetSelectorBar);
 
-const DEFAULT_SEQUENCER_INTERVAL = 10000; // 10 seconds
+const DEFAULT_SEQUENCER_INTERVAL = 10000;
 
 /**
  * @typedef {import('../../hooks/useUIState').UIState} UIStateHook
@@ -37,77 +39,72 @@ const DEFAULT_SEQUENCER_INTERVAL = 10000; // 10 seconds
 
 /**
  * @typedef {object} UIStatePropTypes
- * @property {string|null} activePanel - Identifier of the currently active panel (e.g., 'controls', 'notifications').
- * @property {string|null} animatingPanel - Identifier of the panel currently undergoing an open/close animation (e.g., the panel name when opening, or "closing" when closing).
- * @property {string} activeLayerTab - Identifier of the active layer control tab (e.g., 'tab1', 'tab2', 'tab3').
- * @property {boolean} infoOverlayOpen - Whether the informational overlay is currently open.
- * @property {boolean} whitelistPanelOpen - Whether the whitelist management panel is currently open (functionality might be conditional).
- * @property {() => void} closePanel - Function to close the currently active side panel.
- * @property {(tabId: string) => void} setActiveLayerTab - Function to set the active layer control tab.
- * @property {() => void} toggleInfoOverlay - Function to toggle the visibility of the informational overlay.
- * @property {() => void} toggleWhitelistPanel - Function to toggle the visibility of the whitelist panel.
- * @property {(panelName: string) => void} openPanel - Function to open a specific side panel by its identifier.
- * @property {() => void} toggleUiVisibility - Function to toggle the visibility of the main UI elements.
- * @property {boolean} isUiVisible - Whether the main UI elements (toolbars, panels) are currently set to be visible.
- * @property {(panelName: string) => void} toggleSidePanel - Function to toggle a specific side panel's visibility.
+ * @property {string|null} activePanel
+ * @property {string|null} animatingPanel
+ * @property {string} activeLayerTab
+ * @property {boolean} infoOverlayOpen
+ * @property {boolean} whitelistPanelOpen
+ * @property {() => void} closePanel
+ * @property {(tabId: string) => void} setActiveLayerTab
+ * @property {() => void} toggleInfoOverlay
+ * @property {() => void} toggleWhitelistPanel
+ * @property {(panelName: string) => void} openPanel
+ * @property {() => void} toggleUiVisibility
+ * @property {boolean} isUiVisible
+ * @property {(panelName: string) => void} toggleSidePanel
  */
 
 /**
  * @typedef {object} AudioStatePropTypes
- * @property {boolean} isAudioActive - Whether audio reactivity is currently active.
- * @property {object} audioSettings - Current settings for audio reactivity (structure depends on `useAudioVisualizer`).
- * @property {object} analyzerData - Data from the audio analyzer (structure depends on `useAudioVisualizer`).
- * @property {React.Dispatch<React.SetStateAction<boolean>>} setIsAudioActive - Function to set the audio reactivity state.
- * @property {React.Dispatch<React.SetStateAction<object>>} setAudioSettings - Function to set audio reactivity settings.
+ * @property {boolean} isAudioActive
+ * @property {object} audioSettings
+ * @property {object} analyzerData
+ * @property {React.Dispatch<React.SetStateAction<boolean>>} setIsAudioActive
+ * @property {React.Dispatch<React.SetStateAction<object>>} setAudioSettings
  */
 
 /**
  * @typedef {object} ConfigDataPropTypes
- * @property {object} layerConfigs - Configurations for visual layers (structure depends on `VisualConfigContext`).
- * @property {Array<string>} blendModes - Array of available blend mode strings.
- * @property {Array<object>} notifications - Array of notification objects (structure depends on `useNotifications`).
- * @property {number} unreadCount - Number of unread notifications.
- * @property {object} savedReactions - Saved event reactions (structure depends on `ConfigContext`).
- * @property {boolean} canSave - Whether the current user has permissions to save configurations.
- * @property {boolean} isPreviewMode - Whether the application is currently in preview mode.
- * @property {boolean} isParentAdmin - Whether the current user is the project admin (derived from `isRadarProjectAdmin`).
- * @property {string|null} currentConfigName - Name of the currently loaded visual preset.
- * @property {boolean} isTransitioning - Whether a preset transition (e.g., fade in/out) is currently in progress.
- * @property {boolean} isBaseReady - Whether base components and initial data are considered ready for UI display.
- * @property {string} renderState - Current state of the rendering lifecycle (e.g., 'rendered', 'loading_defaults').
- * @property {boolean} canInteract - Whether the user can interact with UI elements (e.g., not in preview, profile loaded).
- * @property {string|null} currentProfileAddress - The address of the Universal Profile currently being viewed.
- * @property {boolean} [isConfigLoading] - Indicates if a configuration preset is currently being loaded.
+ * @property {object} layerConfigs
+ * @property {Array<string>} blendModes
+ * @property {Array<object>} notifications
+ * @property {number} unreadCount
+ * @property {object} savedReactions
+ * @property {boolean} canSave
+ * @property {boolean} isPreviewMode
+ * @property {boolean} isParentAdmin
+ * @property {string|null} currentConfigName
+ * @property {boolean} isTransitioning
+ * @property {boolean} isBaseReady
+ * @property {string} renderState
+ * @property {boolean} canInteract
+ * @property {string|null} currentProfileAddress
+ * @property {boolean} [isConfigLoading]
  */
 
 /**
  * @typedef {object} ActionsPropTypes
- * @property {() => void} onEnhancedView - Callback function for toggling fullscreen or an enhanced view mode.
- * @property {(layerId: string | number, key: string, value: any) => void} onLayerConfigChange - Callback for when a layer's configuration property changes.
- * @property {(id: string | number) => void} onMarkNotificationRead - Callback to mark a specific notification as read.
- * @property {() => void} onClearAllNotifications - Callback to clear all notifications.
- * @property {(eventType: string, reactionData: object) => void} onSaveReaction - Callback to save an event reaction configuration.
- * @property {(eventType: string) => void} onRemoveReaction - Callback to remove an event reaction configuration.
- * @property {(effectConfig: object) => Promise<string | null>} onPreviewEffect - Callback to preview a visual effect.
- * @property {(tokenId: string | object | null, layerId: string | number) => void} onTokenApplied - Callback invoked when a token is applied to a layer.
- * @property {(presetName: string) => void} onPresetSelect - Callback invoked when a preset is selected from the selector.
- * @property {(newIntervalMs: number) => void} [onSetSequencerInterval] - Optional callback to set the sequencer interval.
+ * @property {() => void} onEnhancedView
+ * @property {(layerId: string | number, key: string, value: any) => void} onLayerConfigChange
+ * @property {(id: string | number) => void} onMarkNotificationRead
+ * @property {() => void} onClearAllNotifications
+ * @property {(eventType: string, reactionData: object) => void} onSaveReaction
+ * @property {(eventType: string) => void} onRemoveReaction
+ * @property {(effectConfig: object) => Promise<string | null>} onPreviewEffect
+ * @property {(tokenId: string | object | null, layerId: string | number) => void} onTokenApplied
+ * @property {(presetName: string) => void} onPresetSelect
+ * @property {(newIntervalMs: number) => void} [onSetSequencerInterval]
  */
 
 /**
  * @typedef {object} UIOverlayProps
- * @property {UIStateHook} uiState - State and functions for managing UI visibility and panel states.
- * @property {AudioStateHook} audioState - State and functions for managing audio reactivity.
- * @property {ConfigDataPropTypes} configData - Data related to visual configurations, presets, and user permissions.
- * @property {ActionsPropTypes} actions - Callback functions for various application interactions.
- * @property {Array<{name: string}>} [passedSavedConfigList=[]] - List of saved configuration presets.
+ * @property {UIStateHook} uiState
+ * @property {AudioStateHook} audioState
+ * @property {ConfigDataPropTypes} configData
+ * @property {ActionsPropTypes} actions
+ * @property {Array<{name: string}>} [passedSavedConfigList=[]]
  */
 
-/**
- * GeneralConnectPill displays a message prompting users to connect their Universal Profile
- * if no visitor UP address is detected.
- * @returns {JSX.Element | null} The pill component or null.
- */
 const GeneralConnectPill = () => {
   const { visitorUPAddress } = useProfileSessionState();
   if (visitorUPAddress) return null;
@@ -119,15 +116,6 @@ const GeneralConnectPill = () => {
   );
 };
 
-/**
- * ActivePanelRenderer conditionally renders the currently active side panel based on `uiState.activePanel`.
- * @param {object} props - Component props.
- * @param {UIStateHook} props.uiState - UI state from `useUIState`.
- * @param {AudioStateHook} props.audioState - Audio state from `useAudioVisualizer`.
- * @param {ConfigDataPropTypes} props.configData - Configuration data.
- * @param {ActionsPropTypes} props.actions - Interaction callbacks.
- * @returns {JSX.Element | null} The rendered active panel or null.
- */
 const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
     const { activePanel, animatingPanel, activeLayerTab, closePanel, setActiveLayerTab } = uiState;
     const { isAudioActive, audioSettings, analyzerData, setIsAudioActive, setAudioSettings } = audioState;
@@ -140,10 +128,7 @@ const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
 
     const panelWrapperClassName = useMemo(() => {
         if (animatingPanel) {
-            if (animatingPanel === "closing") {
-                return "animating closing";
-            }
-            return "animating";
+            return animatingPanel === "closing" ? "animating closing" : "animating";
         }
         return "";
     }, [animatingPanel]);
@@ -152,38 +137,19 @@ const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
         case "controls":
             return (
                 <PanelWrapper key="controls-panel" className={panelWrapperClassName}>
-                    <EnhancedControlPanel
-                        onLayerConfigChange={onLayerConfigChange}
-                        blendModes={blendModes}
-                        onToggleMinimize={closePanel}
-                        activeTab={activeLayerTab}
-                        onTabChange={setActiveLayerTab}
-                        onSetSequencerInterval={onSetSequencerInterval} // Pass down the new prop
-                    />
+                    <EnhancedControlPanel onLayerConfigChange={onLayerConfigChange} blendModes={blendModes} onToggleMinimize={closePanel} activeTab={activeLayerTab} onTabChange={setActiveLayerTab} onSetSequencerInterval={onSetSequencerInterval} />
                 </PanelWrapper>
             );
         case "notifications":
             return (
                 <PanelWrapper key="notifications-panel" className={panelWrapperClassName}>
-                    <NotificationPanel
-                        notifications={notifications}
-                        onClose={closePanel}
-                        onMarkAsRead={onMarkNotificationRead}
-                        onClearAll={onClearAllNotifications}
-                    />
+                    <NotificationPanel notifications={notifications} onClose={closePanel} onMarkAsRead={onMarkNotificationRead} onClearAll={onClearAllNotifications} />
                 </PanelWrapper>
             );
         case "events":
             return canInteract ? (
                 <PanelWrapper key="events-panel" className={panelWrapperClassName}>
-                    <EventsPanel
-                        onSaveReaction={onSaveReaction}
-                        onRemoveReaction={onRemoveReaction}
-                        reactions={savedReactions}
-                        onClose={closePanel}
-                        readOnly={!canSave}
-                        onPreviewEffect={onPreviewEffect}
-                    />
+                    <EventsPanel onSaveReaction={onSaveReaction} onRemoveReaction={onRemoveReaction} reactions={savedReactions} onClose={closePanel} readOnly={!canSave} onPreviewEffect={onPreviewEffect} />
                 </PanelWrapper>
             ) : null;
         case "save":
@@ -195,104 +161,47 @@ const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
         case "audio":
             return (
                 <PanelWrapper key="audio-panel" className={panelWrapperClassName}>
-                    <AudioControlPanel
-                        onClose={closePanel}
-                        isAudioActive={isAudioActive}
-                        setIsAudioActive={setIsAudioActive}
-                        audioSettings={audioSettings}
-                        setAudioSettings={setAudioSettings}
-                        analyzerData={analyzerData}
-                    />
+                    <AudioControlPanel onClose={closePanel} isAudioActive={isAudioActive} setIsAudioActive={setIsAudioActive} audioSettings={audioSettings} setAudioSettings={setAudioSettings} analyzerData={analyzerData} />
                 </PanelWrapper>
             );
         case "tokens":
             return canInteract ? (
-                <TokenSelectorOverlay
-                    key="token-selector-overlay"
-                    isOpen={activePanel === "tokens"}
-                    onClose={handleTokenSelectorClose}
-                    onTokenApplied={onTokenApplied}
-                    readOnly={!canInteract}
-                />
+                <TokenSelectorOverlay key="token-selector-overlay" isOpen={activePanel === "tokens"} onClose={handleTokenSelectorClose} onTokenApplied={onTokenApplied} readOnly={!canInteract} />
+            ) : null;
+        case "library":
+            return currentProfileAddress ? (
+                <PanelWrapper key="library-panel" className={panelWrapperClassName}>
+                    <LibraryPanel onClose={closePanel} />
+                </PanelWrapper>
             ) : null;
         default:
             return null;
     }
 };
-ActivePanelRenderer.propTypes = {
-    uiState: PropTypes.object.isRequired,
-    audioState: PropTypes.object.isRequired,
-    configData: PropTypes.object.isRequired,
-    actions: PropTypes.object.isRequired,
-};
+ActivePanelRenderer.propTypes = { uiState: PropTypes.object.isRequired, audioState: PropTypes.object.isRequired, configData: PropTypes.object.isRequired, actions: PropTypes.object.isRequired };
 const MemoizedActivePanelRenderer = React.memo(ActivePanelRenderer);
 
-/**
- * OverlayRenderer conditionally renders modal-like overlays (e.g., InfoOverlay).
- * @param {object} props - Component props.
- * @param {UIStateHook} props.uiState - UI state from `useUIState`.
- * @returns {JSX.Element} The rendered overlays.
- */
 const OverlayRenderer = ({ uiState }) => {
     const { infoOverlayOpen, toggleInfoOverlay } = uiState;
     return (
         <>
-            {infoOverlayOpen && (
-                <InfoOverlay isOpen={infoOverlayOpen} onClose={toggleInfoOverlay} />
-            )}
+            {infoOverlayOpen && ( <InfoOverlay isOpen={infoOverlayOpen} onClose={toggleInfoOverlay} /> )}
         </>
     );
 };
-OverlayRenderer.propTypes = {
-    uiState: PropTypes.object.isRequired,
-};
+OverlayRenderer.propTypes = { uiState: PropTypes.object.isRequired };
 const MemoizedOverlayRenderer = React.memo(OverlayRenderer);
 
-/**
- * UIOverlay is the main component responsible for rendering all user interface elements
- * that overlay the core visual canvas. This includes toolbars, panels, and modal overlays.
- * It orchestrates the visibility and interaction of these elements based on application state.
- * It now includes a preset sequencer feature with a customizable interval.
- *
- * @param {UIOverlayProps} props - The component's props.
- * @returns {JSX.Element} The rendered UIOverlay component.
- */
 function UIOverlay(props) {
-  const {
-    uiState,
-    audioState,
-    configData: propConfigData,
-    actions,
-    passedSavedConfigList,
-  } = props;
-
+  const { uiState, audioState, configData: propConfigData, actions, passedSavedConfigList } = props;
   const { addToast } = useToast();
   const { canInteract: sessionCanInteract, currentProfileAddress: sessionCurrentProfileAddress, visitorUPAddress } = useProfileSessionState();
 
-  const configData = useMemo(() => ({
-    ...propConfigData,
-    canInteract: sessionCanInteract,
-    currentProfileAddress: sessionCurrentProfileAddress,
-  }), [propConfigData, sessionCanInteract, sessionCurrentProfileAddress]);
+  const configData = useMemo(() => ({ ...propConfigData, canInteract: sessionCanInteract, currentProfileAddress: sessionCurrentProfileAddress }), [propConfigData, sessionCanInteract, sessionCurrentProfileAddress]);
 
-  const {
-    isUiVisible,
-    activePanel,
-    toggleSidePanel,
-    toggleInfoOverlay,
-    toggleWhitelistPanel,
-    toggleUiVisibility
-  } = uiState;
-
+  const { isUiVisible, activePanel, toggleSidePanel, toggleInfoOverlay, toggleUiVisibility } = uiState;
   const { isAudioActive } = audioState;
-  const {
-    isParentAdmin,
-    isPreviewMode,
-    unreadCount,
-    isTransitioning,
-    isBaseReady,
-    currentProfileAddress,
-  } = configData;
+  const { isParentAdmin, isPreviewMode, unreadCount, isTransitioning, isBaseReady, currentProfileAddress } = configData;
   const { onEnhancedView, onPresetSelect } = actions;
 
   const [isSequencerActive, setIsSequencerActive] = useState(false);
@@ -300,35 +209,21 @@ function UIOverlay(props) {
   const nextPresetIndexRef = useRef(0);
   const [sequencerIntervalMs, setSequencerIntervalMs] = useState(DEFAULT_SEQUENCER_INTERVAL);
 
-
   const configDataRef = useRef(configData);
-  useEffect(() => {
-    configDataRef.current = configData;
-  }, [configData]);
+  useEffect(() => { configDataRef.current = configData; }, [configData]);
 
-  const passedSavedConfigListRef = useRef(passedSavedConfigList);
-  useEffect(() => {
-    passedSavedConfigListRef.current = passedSavedConfigList;
-  }, [passedSavedConfigList]);
+  const savedConfigListRef = useRef(passedSavedConfigList);
+  useEffect(() => { savedConfigListRef.current = passedSavedConfigList; }, [passedSavedConfigList]);
 
   const onPresetSelectRef = useRef(onPresetSelect);
-  useEffect(() => {
-    onPresetSelectRef.current = onPresetSelect;
-  }, [onPresetSelect]);
+  useEffect(() => { onPresetSelectRef.current = onPresetSelect; }, [onPresetSelect]);
 
-
-  const actualShouldShowUI = useMemo(() => {
-    return isBaseReady || configData.renderState === 'prompt_connect';
-  } , [isBaseReady, configData.renderState]);
-
-  const showPresetBar = useMemo(() => {
-    return actualShouldShowUI && isUiVisible && !activePanel && !!currentProfileAddress;
-  }, [actualShouldShowUI, isUiVisible, activePanel, currentProfileAddress]);
-
+  const actualShouldShowUI = useMemo(() => isBaseReady || configData.renderState === 'prompt_connect', [isBaseReady, configData.renderState]);
+  const showPresetBar = useMemo(() => actualShouldShowUI && isUiVisible && !activePanel && !!currentProfileAddress, [actualShouldShowUI, isUiVisible, activePanel, currentProfileAddress]);
 
   const loadNextPresetInSequence = useCallback((isInitialCall = false) => {
     const { renderState, isConfigLoading, isTransitioning, currentConfigName: currentLoadedConfigNameValue } = configDataRef.current;
-    const currentPassedSavedConfigList = passedSavedConfigListRef.current;
+    const currentSavedConfigList = savedConfigListRef.current;
     const currentOnPresetSelect = onPresetSelectRef.current;
 
     if (import.meta.env.DEV) {
@@ -336,53 +231,41 @@ function UIOverlay(props) {
     }
 
     if (isConfigLoading || renderState !== 'rendered' || isTransitioning) {
-      if (import.meta.env.DEV) {
-        console.log(`[Sequencer] Load SKIPPED: isConfigLoading=${isConfigLoading}, renderState=${renderState}, isTransitioning=${isTransitioning}`);
-      }
+      if (import.meta.env.DEV) console.log(`[Sequencer] Load SKIPPED: isConfigLoading=${isConfigLoading}, renderState=${renderState}, isTransitioning=${isTransitioning}`);
       return;
     }
 
-    if (!currentPassedSavedConfigList || currentPassedSavedConfigList.length === 0) {
-        return;
-    }
+    if (!currentSavedConfigList || currentSavedConfigList.length === 0) return;
 
-    let presetToLoad = currentPassedSavedConfigList[nextPresetIndexRef.current];
+    let presetToLoad = currentSavedConfigList[nextPresetIndexRef.current];
     let currentIndexToLoad = nextPresetIndexRef.current;
 
-    if (presetToLoad && presetToLoad.name === currentLoadedConfigNameValue && currentPassedSavedConfigList.length > 1) {
-        if (import.meta.env.DEV) {
-            console.log(`[Sequencer] Next preset (${presetToLoad.name}) is same as current. Advancing index for this attempt.`);
-        }
-        currentIndexToLoad = (nextPresetIndexRef.current + 1) % currentPassedSavedConfigList.length;
-        presetToLoad = currentPassedSavedConfigList[currentIndexToLoad];
+    if (presetToLoad && presetToLoad.name === currentLoadedConfigNameValue && currentSavedConfigList.length > 1) {
+        if (import.meta.env.DEV) console.log(`[Sequencer] Next preset (${presetToLoad.name}) is same as current. Advancing index for this attempt.`);
+        currentIndexToLoad = (nextPresetIndexRef.current + 1) % currentSavedConfigList.length;
+        presetToLoad = currentSavedConfigList[currentIndexToLoad];
     }
 
-    if (presetToLoad && presetToLoad.name) {
-      if (import.meta.env.DEV) {
-        console.log(`[Sequencer] >>> Loading preset [${currentIndexToLoad}]: ${presetToLoad.name}`);
-      }
+    if (presetToLoad?.name) {
+      if (import.meta.env.DEV) console.log(`[Sequencer] >>> Loading preset [${currentIndexToLoad}]: ${presetToLoad.name}`);
       currentOnPresetSelect(presetToLoad.name);
-      nextPresetIndexRef.current = (currentIndexToLoad + 1) % currentPassedSavedConfigList.length;
+      nextPresetIndexRef.current = (currentIndexToLoad + 1) % currentSavedConfigList.length;
     } else {
-        if (import.meta.env.DEV) {
-            console.warn(`[Sequencer] Preset at index ${currentIndexToLoad} is invalid. Resetting index to 0.`);
-        }
+        if (import.meta.env.DEV) console.warn(`[Sequencer] Preset at index ${currentIndexToLoad} is invalid. Resetting index to 0.`);
         nextPresetIndexRef.current = 0;
     }
   }, []);
 
   useEffect(() => {
     if (isSequencerActive) {
-      const currentPassedSavedConfigList = passedSavedConfigListRef.current;
-      if (!currentPassedSavedConfigList || currentPassedSavedConfigList.length === 0) {
-        return;
-      }
+      const currentSavedConfigList = savedConfigListRef.current;
+      if (!currentSavedConfigList || currentSavedConfigList.length === 0) return;
       const { renderState, isConfigLoading, isTransitioning } = configDataRef.current;
       if (!isConfigLoading && renderState === 'rendered' && !isTransitioning) {
         if (import.meta.env.DEV) console.log("[Sequencer] Attempting initial load on activation.");
         loadNextPresetInSequence(true);
-      } else {
-        if (import.meta.env.DEV) console.log("[Sequencer] Skipping initial load on activation, conditions not met.");
+      } else if (import.meta.env.DEV) {
+        console.log("[Sequencer] Skipping initial load on activation, conditions not met.");
       }
     }
   }, [isSequencerActive, loadNextPresetInSequence]);
@@ -394,8 +277,8 @@ function UIOverlay(props) {
     }
 
     if (isSequencerActive) {
-      const currentPassedSavedConfigList = passedSavedConfigListRef.current;
-      if (!currentPassedSavedConfigList || currentPassedSavedConfigList.length === 0) {
+      const currentSavedConfigList = savedConfigListRef.current;
+      if (!currentSavedConfigList || currentSavedConfigList.length === 0) {
         addToast("No saved presets available to sequence.", "warning");
         setIsSequencerActive(false);
         return;
@@ -413,7 +296,6 @@ function UIOverlay(props) {
     };
   }, [isSequencerActive, loadNextPresetInSequence, addToast, sequencerIntervalMs]);
 
-
   const handleToggleSequencer = () => {
     if (configData.isConfigLoading) {
         addToast("Cannot toggle sequencer while a preset is loading.", "warning");
@@ -424,9 +306,7 @@ function UIOverlay(props) {
         return;
     }
     setIsSequencerActive(prev => {
-        if (!prev) {
-            nextPresetIndexRef.current = 0;
-        }
+        if (!prev) nextPresetIndexRef.current = 0;
         return !prev;
     });
   };
@@ -441,10 +321,7 @@ function UIOverlay(props) {
     }
   }, [addToast]);
 
-  const actionsWithSequencerControl = useMemo(() => ({
-    ...actions,
-    onSetSequencerInterval: handleSetSequencerInterval,
-  }), [actions, handleSetSequencerInterval]);
+  const actionsWithSequencerControl = useMemo(() => ({ ...actions, onSetSequencerInterval: handleSetSequencerInterval }), [actions, handleSetSequencerInterval]);
 
   const mainUiContainerClass = `ui-elements-container ${actualShouldShowUI && isUiVisible ? "visible" : "hidden-by-opacity"}`;
 
@@ -457,7 +334,7 @@ function UIOverlay(props) {
           showInfo={true}
           showToggleUI={true}
           showEnhancedView={true}
-          onWhitelistClick={toggleWhitelistPanel}
+          onWhitelistClick={() => toggleSidePanel('library')}
           onInfoClick={toggleInfoOverlay}
           onToggleUI={toggleUiVisibility}
           onEnhancedView={onEnhancedView}
@@ -485,11 +362,22 @@ function UIOverlay(props) {
                 <span>👁️</span> Preview Mode
               </div>
             )}
-            <MemoizedVerticalToolbar
-              activePanel={activePanel}
-              setActivePanel={toggleSidePanel}
-              notificationCount={unreadCount}
-            />
+            <div className="vertical-toolbar-container">
+              <MemoizedVerticalToolbar
+                activePanel={activePanel}
+                setActivePanel={toggleSidePanel}
+                notificationCount={unreadCount}
+              />
+              <button
+                className={`vertical-toolbar-icon ${activePanel === "library" ? "active" : ""}`}
+                onClick={() => toggleSidePanel("library")}
+                title="My Library"
+                aria-label="Open My Library Panel"
+                style={{ top: '290px' }}
+              >
+                <img src={whitelistIcon} alt="My Library" className="icon-image" />
+              </button>
+            </div>
             <MemoizedActivePanelRenderer
                 uiState={uiState}
                 audioState={audioState}
@@ -518,21 +406,15 @@ function UIOverlay(props) {
 }
 
 UIOverlay.propTypes = {
-  /** State and functions for managing UI visibility and panel states. */
   uiState: PropTypes.object.isRequired,
-  /** State and functions for managing audio reactivity. */
   audioState: PropTypes.object.isRequired,
-  /** Data related to visual configurations, presets, and user permissions. */
   configData: PropTypes.object.isRequired,
-  /** Callback functions for various application interactions. */
   actions: PropTypes.object.isRequired,
-  /** List of saved configuration presets. */
   passedSavedConfigList: PropTypes.array,
 };
 
 UIOverlay.defaultProps = {
   passedSavedConfigList: [],
 };
-
 
 export default React.memo(UIOverlay);

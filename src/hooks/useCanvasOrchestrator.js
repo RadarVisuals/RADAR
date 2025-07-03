@@ -2,28 +2,24 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
 import { useVisualConfig } from '../context/VisualConfigContext';
-import { useCanvasManagers } from './useCanvasManagers'; // Local hook
+import { useCanvasManagers } from './useCanvasManagers';
 
-import debounce from '../utils/debounce'; // Local utility
-import { resolveLsp4Metadata } from '../utils/erc725.js'; // Local utility
-import { demoAssetMap } from '../assets/DemoLayers/initLayers'; // Local assets
-import { IPFS_GATEWAY } from '../config/global-config'; // Local config
-import { INTERPOLATED_MIDI_PARAMS } from '../config/midiConstants'; // Local config
+import debounce from '../utils/debounce';
+import { resolveLsp4Metadata } from '../utils/erc725.js';
+import { demoAssetMap } from '../assets/DemoLayers/initLayers';
+import { IPFS_GATEWAY } from '../config/global-config';
+import { INTERPOLATED_MIDI_PARAMS } from '../config/midiConstants';
 
-import { isAddress } from 'viem'; // Third-party library
-import CanvasManager from '../utils/CanvasManager'; // For instanceof check
+import { isAddress } from 'viem';
+import CanvasManager from '../utils/CanvasManager';
 
-const RESIZE_DEBOUNCE_DELAY = 250; // Milliseconds for debouncing resize events
+const RESIZE_DEBOUNCE_DELAY = 250;
 
-// --- MODIFIED: Align defaultAssets with fallback-config.js using DEMO_LAYER_4 ---
-// This object defines the default images to be loaded for each canvas layer
-// if no other specific image or token is assigned.
 const defaultAssets = {
-    1: demoAssetMap.DEMO_LAYER_4 || '', // Use DEMO_LAYER_4 as per fallback-config
-    2: demoAssetMap.DEMO_LAYER_4 || '', // Use DEMO_LAYER_4
-    3: demoAssetMap.DEMO_LAYER_4 || '', // Use DEMO_LAYER_4
+    1: demoAssetMap.DEMO_LAYER_4 || '',
+    2: demoAssetMap.DEMO_LAYER_4 || '',
+    3: demoAssetMap.DEMO_LAYER_4 || '',
 };
-// --- END MODIFICATION ---
 
 /**
  * @typedef {object} CanvasOrchestratorAPI
@@ -50,16 +46,14 @@ const defaultAssets = {
  * @param {React.RefObject<import('../services/ConfigurationService').default | null>} params.configServiceRef - Ref to the ConfigurationService, used for resolving LSP4 metadata.
  * @param {Object.<string, React.RefObject<HTMLCanvasElement>>} params.canvasRefs - Refs to the canvas elements for each layer.
  * @param {number} params.configLoadNonce - A nonce that changes when a new global configuration (preset) is loaded, used to coordinate updates.
+ * @param {boolean} params.isInitiallyResolved - A flag from `PresetManagementContext` that is true only after the initial workspace has been loaded.
  * @returns {CanvasOrchestratorAPI} An API object for interacting with the orchestrated canvas managers.
  */
-export function useCanvasOrchestrator({ configServiceRef, canvasRefs, configLoadNonce }) {
-    /** @type {React.RefObject<boolean>} */
+export function useCanvasOrchestrator({ configServiceRef, canvasRefs, configLoadNonce, isInitiallyResolved }) {
     const isMountedRef = useRef(false);
     const [managersReady, setManagersReady] = useState(false);
     const [defaultImagesLoaded, setDefaultImagesLoaded] = useState(false);
-    /** @type {React.RefObject<number>} */
     const lastProcessedNonceByOrchestratorRef = useRef(0);
-    /** @type {React.RefObject<Object.<string, object> | null>} */
     const prevLayerConfigsRef = useRef(null);
 
     const {
@@ -73,11 +67,10 @@ export function useCanvasOrchestrator({ configServiceRef, canvasRefs, configLoad
         handleResize: handleResizeInternal,
     } = useCanvasManagers(canvasRefs, defaultAssets);
 
-    /** @type {React.RefObject<() => Promise<void>>} */
     const rawHandleResize = useRef(handleResizeInternal);
     const debouncedResizeHandler = useMemo(
         () => debounce(() => { if (rawHandleResize.current) rawHandleResize.current(); }, RESIZE_DEBOUNCE_DELAY),
-        [] // Debounce function should be stable
+        []
     );
 
     useEffect(() => {
@@ -89,7 +82,6 @@ export function useCanvasOrchestrator({ configServiceRef, canvasRefs, configLoad
         rawHandleResize.current = handleResizeInternal;
     }, [handleResizeInternal]);
 
-    // Effect to determine if all CanvasManager instances are ready
     useEffect(() => {
         if (managersInitialized && isMountedRef.current) {
             const allManagersExist = Object.keys(canvasRefs).every(
@@ -98,12 +90,11 @@ export function useCanvasOrchestrator({ configServiceRef, canvasRefs, configLoad
             if (managersReady !== allManagersExist) {
                 setManagersReady(allManagersExist);
             }
-        } else if (managersReady) { // If not initialized or not mounted, but was previously ready
+        } else if (managersReady) {
             setManagersReady(false);
         }
-    }, [managersInitialized, canvasRefs, managersReady, managerInstancesRef]); // managerInstancesRef ADDED HERE
+    }, [managersInitialized, canvasRefs, managersReady, managerInstancesRef]);
 
-    // Effect to load default images once managers are ready
     useEffect(() => {
         if (!managersReady || !isMountedRef.current || defaultImagesLoaded) return;
 
@@ -111,17 +102,16 @@ export function useCanvasOrchestrator({ configServiceRef, canvasRefs, configLoad
         const loadImages = async () => {
             const promises = Object.keys(currentManagers).map(layerId => {
                 const manager = currentManagers[layerId];
-                const src = defaultAssets[layerId]; // This will now use DEMO_LAYER_4
+                const src = defaultAssets[layerId];
                 if (manager && src && typeof manager.setImage === "function") {
                     return manager.setImage(src).catch((e) => {
                         if (import.meta.env.DEV) {
                             console.error(`[CanvasOrchestrator] Default Image Load FAILED L${layerId} (src: ${src}):`, e);
                         }
-                        // Propagate error to be caught by Promise.allSettled
                         return Promise.reject(e);
                     });
                 }
-                return Promise.resolve(); // Resolve if no manager, src, or setImage
+                return Promise.resolve();
             });
 
             try {
@@ -133,7 +123,7 @@ export function useCanvasOrchestrator({ configServiceRef, canvasRefs, configLoad
                         console.warn("[CanvasOrchestrator] Not all default images loaded successfully. Results:", results);
                     }
                 }
-            } catch (e) { // Should not be reached if using Promise.allSettled correctly
+            } catch (e) {
                 if (import.meta.env.DEV) {
                     console.error("[CanvasOrchestrator] Unexpected error in Promise.allSettled for default images:", e);
                 }
@@ -145,8 +135,17 @@ export function useCanvasOrchestrator({ configServiceRef, canvasRefs, configLoad
 
     const { layerConfigs: currentContextLayerConfigs } = useVisualConfig();
 
-    // Effect to react to changes in layer configurations from VisualConfigContext or configLoadNonce
+    // This is the core reactive effect that applies visual changes.
     useEffect(() => {
+        // --- ADDED GUARD CLAUSE ---
+        // Do not proceed if the main application state has not yet been resolved.
+        // This prevents the orchestrator from incorrectly applying the initial `fallbackConfig`
+        // from VisualConfigContext before the real user workspace has been loaded.
+        if (!isInitiallyResolved) {
+            return;
+        }
+        // --- END ADDED GUARD CLAUSE ---
+
         if (!managersReady || !currentContextLayerConfigs || !isMountedRef.current) {
             return;
         }
@@ -170,7 +169,7 @@ export function useCanvasOrchestrator({ configServiceRef, canvasRefs, configLoad
         const prevConfigs = prevLayerConfigsRef.current;
         let changedOverall = false;
 
-        for (const layerIdStr of ['1', '2', '3']) { // Assuming fixed layer IDs
+        for (const layerIdStr of ['1', '2', '3']) {
             const newConfigForLayer = currentContextLayerConfigs[layerIdStr];
             const oldConfigForLayer = prevConfigs ? prevConfigs[layerIdStr] : null;
             const manager = managers[layerIdStr];
@@ -221,8 +220,7 @@ export function useCanvasOrchestrator({ configServiceRef, canvasRefs, configLoad
             }
             prevLayerConfigsRef.current = JSON.parse(JSON.stringify(currentContextLayerConfigs));
         }
-    }, [currentContextLayerConfigs, managersReady, managerInstancesRef, configLoadNonce]);
-
+    }, [currentContextLayerConfigs, managersReady, managerInstancesRef, configLoadNonce, isInitiallyResolved]); // ADDED isInitiallyResolved
 
     const setCanvasLayerImage = useCallback((layerId, src) => {
         if (!managersReady) {
@@ -246,7 +244,7 @@ export function useCanvasOrchestrator({ configServiceRef, canvasRefs, configLoad
         const currentManagers = managerInstancesRef.current;
         const imageLoadPromises = [];
 
-        for (const layerId of ['1', '2', '3']) { // Assuming fixed layer IDs
+        for (const layerId of ['1', '2', '3']) {
             const manager = currentManagers[layerId];
             if (!manager) continue;
 
