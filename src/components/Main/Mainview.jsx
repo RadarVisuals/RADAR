@@ -41,11 +41,12 @@ const TOKEN_OVERLAY_ANIMATION_LOCK_DURATION = 500;
 const MainView = ({ blendModes = BLEND_MODES }) => {
   const { publicClient, walletClient } = useUpProvider();
 
+  // FIXED: Now we get updateTokenAssignment from useVisualLayerState
   const {
     layerConfigs: currentActiveLayerConfigs,
     tokenAssignments: currentActiveTokenAssignments,
     updateLayerConfig,
-    updateTokenAssignment,
+    updateTokenAssignment,  // <-- ADDED THIS
   } = useVisualLayerState();
 
   const { savedReactions, updateSavedReaction, deleteSavedReaction } = useInteractionSettingsState();
@@ -105,13 +106,14 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   } = coreApp;
   const { isAudioActive, audioSettings, handleAudioDataUpdate } = audioState;
 
+  // FIXED: Now passing updateTokenAssignment to useAppInteractions
   const appInteractions = useAppInteractions({
     updateLayerConfig,
     currentProfileAddress,
     savedReactions,
     managerInstancesRef,
     setCanvasLayerImage,
-    updateTokenAssignment,
+    updateTokenAssignment,  // <-- ADDED THIS
     configServiceRef,
     pendingParamUpdate,
     pendingLayerSelect,
@@ -127,27 +129,8 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     handleLayerPropChange,
   } = appInteractions;
 
-  /**
-   * Callback to handle the generated snapshot. It applies the snapshot image
-   * to the target layer and updates the application state accordingly.
-   * @param {string} dataUrl - The base64 data URL of the snapshot image.
-   * @param {string} targetLayerId - The ID of the layer to apply the snapshot to ('1', '2', or '3').
-   */
-  const handleSnapshotReady = useCallback((dataUrl, targetLayerId) => {
-    // 1. Apply the new composite image directly to the target canvas layer.
-    setCanvasLayerImage(targetLayerId, dataUrl);
-
-    // 2. Update the global token assignment state so this change can be saved in presets.
-    updateTokenAssignment(targetLayerId, dataUrl);
-
-    // 3. For a better user experience, disable the other two layers to focus on the new composite.
-    const allLayers = ['1', '2', '3'];
-    const otherLayerIds = allLayers.filter(id => id !== targetLayerId);
-    for (const layerId of otherLayerIds) {
-      updateLayerConfig(layerId, 'enabled', false);
-    }
-
-  }, [setCanvasLayerImage, updateTokenAssignment, updateLayerConfig]);
+  // --- REMOVED: handleSnapshotReady callback ---
+  // The callback for the CompositeAssetGenerator is no longer needed.
 
   useEffect(() => {
     setLocalAnimatingPanel(uiStateHook.animatingPanel);
@@ -290,13 +273,7 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
           managerInstancesRef={managerInstancesRef}
         />
         
-        {/* --- FIX: Commented out the missing component --- */}
-        {/* Render the snapshot generator button and pass it the manager instances and the callback */}
-        {/* <CompositeAssetGenerator
-          managerInstancesRef={managerInstancesRef}
-          onSnapshotReady={handleSnapshotReady}
-        /> */}
-        {/* --- END FIX --- */}
+        {/* --- REMOVED: CompositeAssetGenerator is gone --- */}
       </div>
     </>
   );

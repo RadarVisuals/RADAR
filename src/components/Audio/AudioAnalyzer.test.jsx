@@ -289,8 +289,6 @@ describe('AudioAnalyzer', () => {
       );
       expect(timestamp).toBeCloseTo(Date.now(), -2);
       expect(mockSetAudioFrequencyFactor).toHaveBeenCalledTimes(3);
-      // Our calculation: 1 + (0.3780 * 0.8 * 1.2) = 1 + 0.36288 = 1.36288
-      // Received: 1.3628990559186638. Adjusted closeTo for this.
       expect(mockSetAudioFrequencyFactor).toHaveBeenNthCalledWith(1, expect.closeTo(1.3629, 4));
 
       mockGetByteFrequencyData.mockImplementationOnce((array) => {
@@ -326,57 +324,6 @@ describe('AudioAnalyzer', () => {
       expect(mockAnalyserNode.smoothingTimeConstant).toBe(0.3);
     });
 
-    it('updates baseLayerValues and enters transition on configLoadNonce change', async () => {
-      const layerConfigs1 = { '1': { size: 1.5 }, '2': { size: 0.8 } };
-      const { rerender } = render(
-        <AudioAnalyzer
-          isActive={false}
-          layerConfigs={layerConfigs1}
-          configLoadNonce={1}
-          managerInstancesRef={mockManagerInstancesRef}
-        />
-      );
-      const layerConfigs2 = { '1': { size: 2.0 }, '3': { size: 1.2 } };
-      rerender(
-        <AudioAnalyzer
-          isActive={false}
-          layerConfigs={layerConfigs2}
-          configLoadNonce={2}
-          managerInstancesRef={mockManagerInstancesRef}
-        />
-      );
-      rerender(
-        <AudioAnalyzer
-          isActive={true}
-          layerConfigs={layerConfigs2}
-          configLoadNonce={2}
-          managerInstancesRef={mockManagerInstancesRef}
-          onAudioData={onAudioDataMock}
-          audioSettings={{ bassIntensity: 1.0, midIntensity: 1.0, trebleIntensity: 1.0 }}
-        />
-      );
-      await act(async () => {
-        await Promise.resolve();
-      });
-      // During transition: smoothedBass = 0 * 0.8 + 0.3780 * 0.2 = 0.0756
-      // Expected bass factor = 1 + (0.0756 * 0.8 * 1.0 * 0.2) = 1 + 0.012096 = 1.012096
-      advanceRAF();
-      expect(onAudioDataMock).toHaveBeenCalledTimes(1);
-      const { frequencyBands: bandsTransition } = onAudioDataMock.mock.calls[0][0];
-      expect(bandsTransition.bass).toBeCloseTo(0.0756, 4);
-      expect(mockSetAudioFrequencyFactor).toHaveBeenNthCalledWith(1, expect.closeTo(1.0121, 4));
-
-      act(() => {
-        vi.advanceTimersByTime(1000);
-      });
-
-      // After transition: rawBass = 0.3780
-      // Expected bass factor = 1 + (0.3780 * 0.8 * 1.0 * 1.0) = 1 + 0.3024 = 1.3024
-      advanceRAF();
-      expect(onAudioDataMock).toHaveBeenCalledTimes(2);
-      const { frequencyBands: bandsAfter } = onAudioDataMock.mock.calls[1][0];
-      expect(bandsAfter.bass).toBeCloseTo(0.3780, 4);
-      expect(mockSetAudioFrequencyFactor).toHaveBeenNthCalledWith(4, expect.closeTo(1.3024, 4));
-    });
+    // --- REMOVED: Test for transition logic on configLoadNonce change ---
   });
 });

@@ -47,13 +47,12 @@ const AudioAnalyzer = ({
   });
   /** @type {React.RefObject<number>} */
   const capturedNonceRef = useRef(-1); // Tracks the last processed configLoadNonce
-  /** @type {React.RefObject<boolean>} */
-  const isTransitioningRef = useRef(false); // Flag to dampen audio effects during preset transitions
-  /** @type {React.RefObject<{bass: number, mid: number, treble: number}>} */
-  const lastBandDataRef = useRef({ bass: 0, mid: 0, treble: 0 }); // For smoothing during transitions
-  /** @type {React.RefObject<number>} */
-  const lastLevelRef = useRef(0); // For smoothing during transitions
-
+  
+  // --- REMOVED: Transition refs ---
+  // const isTransitioningRef = useRef(false);
+  // const lastBandDataRef = useRef({ bass: 0, mid: 0, treble: 0 });
+  // const lastLevelRef = useRef(0);
+  
   /** @type {React.RefObject<AudioContext | null>} */
   const audioContextRef = useRef(null);
   /** @type {React.RefObject<AnalyserNode | null>} */
@@ -83,24 +82,10 @@ const AudioAnalyzer = ({
     }
   }, [audioSettingsProp]);
 
-  // Update base layer values and handle transition state when a new preset is loaded
+  // Update base layer values when a new preset is loaded
   useEffect(() => {
     if (layerConfigsProp && configLoadNonce !== capturedNonceRef.current) {
-        // --- START: TEMPORARILY DISABLED TRANSITION LOGIC ---
-        // if (capturedNonceRef.current !== -1 && import.meta.env.DEV) { // If not the very first load
-        //     // console.log("[AudioAnalyzer] New configLoadNonce detected, entering transition phase for audio reactivity.");
-        //     isTransitioningRef.current = true;
-        //     // Transition phase to smooth out audio reactivity changes
-        //     setTimeout(() => {
-        //         if (isTransitioningRef.current) {
-        //             isTransitioningRef.current = false;
-        //             // if (import.meta.env.DEV) console.log("[AudioAnalyzer] Audio reactivity transition phase ended.");
-        //         }
-        //     }, 1000); // Duration of the transition dampening
-        // }
-        // --- END: TEMPORARILY DISABLED TRANSITION LOGIC ---
-        isTransitioningRef.current = false; // Explicitly set to false for testing responsiveness
-
+        // --- REMOVED: Transition logic ---
         const newBaseValues = {};
         for (const layerIdStr of ['1', '2', '3']) { // Assuming fixed layer IDs
             const config = layerConfigsProp[layerIdStr] || {};
@@ -120,62 +105,53 @@ const AudioAnalyzer = ({
         return;
     }
 
-    // --- START: TEMPORARILY DISABLED TRANSITION LOGIC ---
-    // Dampen effect intensity during preset transitions
-    // const transitionFactor = isTransitioningRef.current ? 0.2 : 1.0;
-    const transitionFactor = 1.0; // Force no dampening for testing responsiveness
-    // --- END: TEMPORARILY DISABLED TRANSITION LOGIC ---
+    // --- REMOVED: Transition logic ---
     const { bassIntensity = 1.0, midIntensity = 1.0, trebleIntensity = 1.0 } = currentSettings;
 
     // Apply bass frequency to layer 1 size
-    const bassEffectMagnitude = bands.bass * 0.8 * bassIntensity * transitionFactor;
-    const finalBassFactor = 1 + bassEffectMagnitude; // Multiplier around base size
+    const bassEffectMagnitude = bands.bass * 0.8 * bassIntensity;
+    const finalBassFactor = 1 + bassEffectMagnitude;
     if (managers['1'] && typeof managers['1'].setAudioFrequencyFactor === 'function') {
         managers['1'].setAudioFrequencyFactor(Math.max(0.1, finalBassFactor));
     }
 
     // Apply mid frequency to layer 2 size
-    const midEffectMagnitude = bands.mid * 1.0 * midIntensity * transitionFactor;
+    const midEffectMagnitude = bands.mid * 1.0 * midIntensity;
     const finalMidFactor = 1 + midEffectMagnitude;
     if (managers['2'] && typeof managers['2'].setAudioFrequencyFactor === 'function') {
         managers['2'].setAudioFrequencyFactor(Math.max(0.1, finalMidFactor));
     }
 
     // Apply treble frequency to layer 3 size
-    const trebleEffectMagnitude = bands.treble * 2.0 * trebleIntensity * transitionFactor;
+    const trebleEffectMagnitude = bands.treble * 2.0 * trebleIntensity;
     const finalTrebleFactor = 1 + trebleEffectMagnitude;
     if (managers['3'] && typeof managers['3'].setAudioFrequencyFactor === 'function') {
         managers['3'].setAudioFrequencyFactor(Math.max(0.1, finalTrebleFactor));
     }
 
     // Trigger a beat pulse effect on all layers if conditions are met
-    // --- START: TEMPORARILY DISABLED TRANSITION LOGIC in beat pulse ---
-    // if (level > 0.4 && bands.bass > 0.6 && !isTransitioningRef.current) {
-    if (level > 0.4 && bands.bass > 0.6) { // Always allow beat pulse if conditions met for testing
-    // --- END: TEMPORARILY DISABLED TRANSITION LOGIC in beat pulse ---
-      const pulseMultiplier = 1 + level * 0.8; // Stronger pulse for higher levels
+    if (level > 0.4 && bands.bass > 0.6) {
+      const pulseMultiplier = 1 + level * 0.8;
       Object.keys(managers).forEach(layerIdStr => {
         const manager = managers[layerIdStr];
         if (manager && typeof manager.triggerBeatPulse === 'function') {
-          manager.triggerBeatPulse(Math.max(0.1, pulseMultiplier), 80); // Short pulse duration
+          manager.triggerBeatPulse(Math.max(0.1, pulseMultiplier), 80);
         }
       });
     }
-  }, [managerInstancesRef]); // audioSettingsRef and isTransitioningRef are refs
+  }, [managerInstancesRef]);
 
   // Processes raw frequency data from AnalyserNode into level and bands
   const processAudioData = useCallback((dataArray) => {
     if (!dataArray || !analyserRef.current) return;
-
     const bufferLength = analyserRef.current.frequencyBinCount;
-    if (bufferLength === 0) return; // Should not happen if analyser is set up
+    if (bufferLength === 0) return;
 
     let sum = 0; for (let i = 0; i < bufferLength; i++) { sum += dataArray[i]; }
-    const averageLevel = sum / bufferLength / 255; // Normalize to 0-1 range
+    const averageLevel = sum / bufferLength / 255;
 
-    // Define frequency band ranges (these can be tuned)
-    const bassEndIndex = Math.floor(bufferLength * 0.08); // ~0-200Hz for 2048 FFT / 48kHz sample rate
-    const midEndIndex = bassEndIndex + Math.floor(bufferLength * 0.35); // ~200Hz-1.8kHz
+    const bassEndIndex = Math.floor(bufferLength * 0.08);
+    const midEndIndex = bassEndIndex + Math.floor(bufferLength * 0.35);
 
     let bassSum = 0, midSum = 0, trebleSum = 0;
     let bassCount = 0, midCount = 0, trebleCount = 0;
@@ -186,36 +162,19 @@ const AudioAnalyzer = ({
         else { trebleSum += dataArray[i]; trebleCount++; }
     }
 
-    // Normalize band values to 0-1 range
     const bass = Math.min(1, bassCount > 0 ? (bassSum / bassCount / 255) : 0);
     const mid = Math.min(1, midCount > 0 ? (midSum / midCount / 255) : 0);
     const treble = Math.min(1, trebleCount > 0 ? (trebleSum / trebleCount / 255) : 0);
+    
+    // --- REMOVED: Transition logic ---
 
-    let newBass = bass, newMid = mid, newTreble = treble, newLevel = averageLevel;
-
-    // --- START: TEMPORARILY DISABLED TRANSITION LOGIC ---
-    // Smooth values during transitions to avoid jarring visual changes
-    // if (isTransitioningRef.current) {
-    //     const blendFactor = 0.8; // How much of the previous value to keep
-    //     newBass = lastBandDataRef.current.bass * blendFactor + bass * (1 - blendFactor);
-    //     newMid = lastBandDataRef.current.mid * blendFactor + mid * (1 - blendFactor);
-    //     newTreble = lastBandDataRef.current.treble * blendFactor + treble * (1 - blendFactor);
-    //     newLevel = lastLevelRef.current * blendFactor + averageLevel * (1 - blendFactor);
-    // }
-    // --- END: TEMPORARILY DISABLED TRANSITION LOGIC ---
-    // When transition logic is disabled, newBass, newMid, etc., will just be the raw band values
-
-    lastBandDataRef.current = { bass: newBass, mid: newMid, treble: newTreble };
-    lastLevelRef.current = newLevel;
-
-    const newFrequencyBands = { bass: newBass, mid: newMid, treble: newTreble };
-
-    applyAudioToLayers(newFrequencyBands, newLevel);
+    const newFrequencyBands = { bass, mid, treble };
+    applyAudioToLayers(newFrequencyBands, averageLevel);
 
     if (typeof onAudioData === "function") {
-      onAudioData({ level: newLevel, frequencyBands: newFrequencyBands, timestamp: Date.now() });
+      onAudioData({ level: averageLevel, frequencyBands: newFrequencyBands, timestamp: Date.now() });
     }
-  }, [onAudioData, applyAudioToLayers]); // isTransitioningRef, lastBandDataRef, lastLevelRef are refs
+  }, [onAudioData, applyAudioToLayers]);
 
   // Main audio analysis loop using requestAnimationFrame
   const analyzeAudio = useCallback(() => {
@@ -235,7 +194,7 @@ const AudioAnalyzer = ({
     if (typeof requestAnimationFrame === 'function') {
         animationFrameRef.current = requestAnimationFrame(analyzeAudio);
     }
-  }, [isActive, processAudioData]); // processAudioData is memoized
+  }, [isActive, processAudioData]);
 
   // Sets up the AudioContext, AnalyserNode, and connects the microphone stream
   const setupAudioAnalyzer = useCallback(async (stream) => {
@@ -269,7 +228,7 @@ const AudioAnalyzer = ({
       const initialSmoothing = audioSettingsRef.current?.smoothingFactor ?? DEFAULT_SMOOTHING;
       analyserRef.current.fftSize = FFT_SIZE;
       analyserRef.current.smoothingTimeConstant = Math.max(0, Math.min(1, initialSmoothing));
-      analyserRef.current.minDecibels = -90; // Typical range for audio analysis
+      analyserRef.current.minDecibels = -90;
       analyserRef.current.maxDecibels = -10;
 
       const bufferLength = analyserRef.current.frequencyBinCount;
@@ -280,7 +239,7 @@ const AudioAnalyzer = ({
       dataArrayRef.current = new Uint8Array(bufferLength);
       if (import.meta.env.DEV) console.log(`[AudioAnalyzer setupAudioAnalyzer] Data array created with length: ${bufferLength}`);
 
-      if (sourceRef.current) { // Disconnect previous source if exists
+      if (sourceRef.current) {
         try {
             sourceRef.current.disconnect();
             if (import.meta.env.DEV) console.log("[AudioAnalyzer setupAudioAnalyzer] Disconnected previous source.");
@@ -289,24 +248,23 @@ const AudioAnalyzer = ({
         }
       }
       sourceRef.current = audioContextRef.current.createMediaStreamSource(stream);
-      sourceRef.current.connect(analyserRef.current); // Connect new stream to analyser
+      sourceRef.current.connect(analyserRef.current);
       if (import.meta.env.DEV) console.log("[AudioAnalyzer setupAudioAnalyzer] MediaStreamSource created and connected to analyser.");
 
-      if (animationFrameRef.current) { // Cancel any existing animation loop
+      if (animationFrameRef.current) {
           cancelAnimationFrame(animationFrameRef.current);
       }
       if (typeof requestAnimationFrame === 'function') {
-        animationFrameRef.current = requestAnimationFrame(analyzeAudio); // Start new loop
+        animationFrameRef.current = requestAnimationFrame(analyzeAudio);
         if (import.meta.env.DEV) console.log("[AudioAnalyzer setupAudioAnalyzer] Audio analysis loop started.");
       }
-      isCleanupScheduledRef.current = false; // Reset cleanup flag
+      isCleanupScheduledRef.current = false;
 
     } catch (e) {
       if (import.meta.env.DEV) console.error("[AudioAnalyzer setupAudioAnalyzer] Error setting up audio analyzer:", e);
     }
-  }, [analyzeAudio]); // analyzeAudio is memoized, audioSettingsRef is a ref
+  }, [analyzeAudio]);
 
-  // Requests microphone access from the user
   const requestMicrophoneAccess = useCallback(async () => {
     if (import.meta.env.DEV) console.log("[AudioAnalyzer requestMicrophoneAccess] Requesting microphone access...");
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -315,25 +273,19 @@ const AudioAnalyzer = ({
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { // Desired audio constraints
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        },
-        video: false, // No video needed
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        video: false,
       });
       if (import.meta.env.DEV) console.log("[AudioAnalyzer requestMicrophoneAccess] Microphone access granted.");
       streamRef.current = stream;
       await setupAudioAnalyzer(stream);
     } catch (err) {
       if (import.meta.env.DEV) console.error("[AudioAnalyzer requestMicrophoneAccess] Error accessing microphone:", err.name, err.message);
-      // Potentially update UI or notify user of permission denial
     }
-  }, [setupAudioAnalyzer]); // setupAudioAnalyzer is memoized
+  }, [setupAudioAnalyzer]);
 
-  // Cleans up audio resources (stream, nodes, context)
   const cleanupAudio = useCallback(() => {
-    if (isCleanupScheduledRef.current) return; // Prevent redundant cleanups
+    if (isCleanupScheduledRef.current) return;
     isCleanupScheduledRef.current = true;
     if (import.meta.env.DEV) console.log("[AudioAnalyzer cleanupAudio] Initiating audio resources cleanup...");
 
@@ -365,18 +317,17 @@ const AudioAnalyzer = ({
 
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => {
-        track.stop(); // Stop each track in the stream
+        track.stop();
         if (import.meta.env.DEV) console.log(`[AudioAnalyzer cleanupAudio] MediaStreamTrack stopped: ${track.label || track.id}`);
       });
       streamRef.current = null;
     }
 
-    // Suspend AudioContext instead of closing, to allow potential re-activation
     if (audioContextRef.current) {
         if (audioContextRef.current.state === "running") {
             audioContextRef.current.suspend().then(() => {
                 if (import.meta.env.DEV) console.log("[AudioAnalyzer cleanupAudio] AudioContext suspended.");
-                isCleanupScheduledRef.current = false; // Allow cleanup again if re-activated
+                isCleanupScheduledRef.current = false;
             }).catch((e) => {
                 if (import.meta.env.DEV) console.error("[AudioAnalyzer cleanupAudio] Error suspending AudioContext:", e);
                 isCleanupScheduledRef.current = false;
@@ -386,12 +337,11 @@ const AudioAnalyzer = ({
             isCleanupScheduledRef.current = false;
         }
     } else {
-        isCleanupScheduledRef.current = false; // No context to suspend
+        isCleanupScheduledRef.current = false;
     }
     if (import.meta.env.DEV) console.log("[AudioAnalyzer cleanupAudio] Cleanup process finished.");
-  }, [managerInstancesRef]); // managerInstancesRef is a ref
+  }, [managerInstancesRef]);
 
-  // Effect to manage audio setup/teardown based on `isActive` prop
   useEffect(() => {
     if (isActive) {
       if (import.meta.env.DEV) console.log("[AudioAnalyzer] isActive is true. Requesting microphone access.");
@@ -400,21 +350,17 @@ const AudioAnalyzer = ({
       if (import.meta.env.DEV) console.log("[AudioAnalyzer] isActive is false. Cleaning up audio.");
       cleanupAudio();
     }
-    // This return function is for when `isActive` changes from true to false,
-    // or when the component unmounts while `isActive` was true.
     return () => {
-        if (isActive) { // Only cleanup if it was active before this effect re-ran or unmounted
+        if (isActive) {
             cleanupAudio();
         }
     };
   }, [isActive, requestMicrophoneAccess, cleanupAudio]);
 
-  // Final cleanup on component unmount
   useEffect(() => {
     return () => {
       if (import.meta.env.DEV) console.log("[AudioAnalyzer] Component unmounting. Performing final cleanup.");
-      cleanupAudio(); // Ensure all resources are released
-      // Close AudioContext fully on unmount
+      cleanupAudio();
       if (audioContextRef.current) {
         audioContextRef.current.close().then(() => {
             if (import.meta.env.DEV) console.log("[AudioAnalyzer] AudioContext closed on unmount.");
@@ -424,9 +370,9 @@ const AudioAnalyzer = ({
         audioContextRef.current = null;
       }
     };
-  }, [cleanupAudio]); // cleanupAudio is memoized
+  }, [cleanupAudio]);
 
-  return null; // This component does not render any visible UI
+  return null;
 };
 
 AudioAnalyzer.propTypes = {
@@ -435,7 +381,7 @@ AudioAnalyzer.propTypes = {
   layerConfigs: PropTypes.object,
   audioSettings: PropTypes.object,
   configLoadNonce: PropTypes.number,
-  managerInstancesRef: PropTypes.object.isRequired, // Typically React.RefObject
+  managerInstancesRef: PropTypes.object.isRequired,
 };
 
 export default AudioAnalyzer;
