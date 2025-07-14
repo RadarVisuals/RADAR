@@ -39,13 +39,9 @@ import Layer37 from './Layer37.webp';
 import Layer38 from './Layer38.webp';
 import Layer39 from './Layer39.webp';
 import Layer40 from './Layer40.webp';
-import targetWebp from './target.webp'; // <--- ADD THIS IMPORT
 
 // This map is used by TokenSelectorOverlay and for default loading
 export const demoAssetMap = {
-  // --- ADD THIS ENTRY for the aim trainer target ---
-  'TARGET': targetWebp,
-  // ---------------------------------------------------
   'DEMO_LAYER_1': Layer1,
   'DEMO_LAYER_2': Layer2,
   'DEMO_LAYER_3': Layer3,
