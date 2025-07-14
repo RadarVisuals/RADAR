@@ -1,48 +1,8 @@
 @import "../../../styles/variables.css";
 
-.logo-transition-container {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: calc(var(--z-overlay) + 5); /* Above main overlay backdrop */
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-}
-
-.logo-transition-container.visible {
-  opacity: 1;
-  visibility: visible;
-  transition:
-    opacity 400ms ease-in-out,
-    visibility 0s linear 0s;
-}
-
-.logo-transition-container .logo-animation {
-  max-width: 150px;
-  opacity: 0.8;
-  animation: pulse 2s infinite ease-in-out;
-}
-
-.token-section {
-  margin-bottom: var(--space-lg);
-}
-
-.token-section-header {
-  font-size: 1.1em;
-  color: var(--color-primary-a70);
-  margin: 0 0 var(--space-sm) var(--space-xs);
-  padding-bottom: var(--space-xs);
-  border-bottom: 1px solid var(--color-border);
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  font-weight: 500;
-}
+/* ==========================================================================
+   NON-BLOCKING TOKEN SELECTOR OVERLAY
+   ========================================================================== */
 
 .overlay.token-selector-overlay {
   position: fixed;
@@ -50,42 +10,33 @@
   left: 0;
   width: 100%;
   height: 100%;
-  z-index: var(--z-overlay); /* Below logo container */
+  z-index: var(--z-overlay);
   background-color: rgba(0, 0, 0, 0);
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
   transform: translateZ(0);
-  transition:
-    opacity 300ms ease-out,
-    background-color 300ms ease-out,
-    visibility 0s linear 300ms;
+  transition: opacity 300ms ease-out, background-color 300ms ease-out, visibility 0s linear 300ms;
 }
 
 .overlay.token-selector-overlay.visible {
   opacity: 1;
   visibility: visible;
-  transition:
-    opacity 300ms ease-out,
-    background-color 300ms ease-out,
-    visibility 0s linear 0s; /* Show immediately */
+  transition: opacity 300ms ease-out, background-color 300ms ease-out, visibility 0s linear 0s;
 }
 
-.overlay.token-selector-overlay.state-logo {
-  background-color: rgba(0, 0, 0, 0);
-  backdrop-filter: blur(0px);
-  -webkit-backdrop-filter: blur(0px);
-  pointer-events: none;
+.overlay.token-selector-overlay.state-opening {
+  background-color: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  pointer-events: auto;
 }
 
 .overlay.token-selector-overlay.state-content {
   background-color: rgba(0, 0, 0, 0.8);
-  will-change: opacity, background-color;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   pointer-events: auto;
-  transition:
-    opacity 300ms ease-out,
-    background-color 300ms ease-out,
-    visibility 0s linear 0s;
 }
 
 .overlay.token-selector-overlay.state-exiting {
@@ -95,13 +46,23 @@
   background-color: rgba(0, 0, 0, 0);
   backdrop-filter: blur(0px);
   -webkit-backdrop-filter: blur(0px);
-  transition:
-    opacity 300ms ease-out,
-    background-color 300ms ease-out,
-    backdrop-filter 300ms ease-out,
-    -webkit-backdrop-filter 300ms ease-out,
-    visibility 0s linear 300ms;
+  transition: opacity 300ms ease-out, background-color 300ms ease-out, backdrop-filter 300ms ease-out, visibility 0s linear 300ms;
 }
+
+/* Preview mode - fade overlay to show background */
+.overlay.token-selector-overlay.preview-mode {
+  opacity: 0.1 !important;
+  transition: opacity 150ms ease-out !important;
+}
+
+.overlay.token-selector-overlay.preview-mode .overlay-content {
+  opacity: 0.1 !important;
+  transition: opacity 150ms ease-out !important;
+}
+
+/* ==========================================================================
+   OVERLAY CONTENT
+   ========================================================================== */
 
 .overlay.token-selector-overlay .overlay-content {
   width: 90%;
@@ -116,61 +77,27 @@
   display: flex;
   flex-direction: column;
   opacity: 0;
-  transform: scale(0.95);
+  transform: scale(0.95) translateY(20px);
   transform-origin: center center;
-  will-change: transform, opacity;
-  transition:
-    opacity 300ms ease-out,
-    transform 300ms ease-out;
-}
-
-.overlay.token-selector-overlay.state-logo .overlay-content {
-  opacity: 0;
-  transform: scale(0.95);
-  transition: none;
+  transition: opacity 300ms ease-out, transform 300ms ease-out;
 }
 
 .overlay.token-selector-overlay.state-content .overlay-content {
   opacity: 1;
-  transform: scale(1);
-  transition-delay: 100ms; /* Delay content appearance slightly after background */
-  transition:
-    opacity 300ms ease-out 100ms,
-    transform 300ms ease-out 100ms;
+  transform: scale(1) translateY(0);
 }
 
 .overlay.token-selector-overlay.state-exiting .overlay-content {
   opacity: 0;
-  transform: scale(0.95);
+  transform: scale(0.95) translateY(20px);
   transition:
     opacity 300ms ease-out,
     transform 300ms ease-out;
 }
 
-.overlay.token-selector-overlay.preview-mode {
-  background-color: transparent !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  pointer-events: none !important;
-  opacity: 0 !important;
-  transition: opacity 300ms ease !important;
-}
-
-.overlay.token-selector-overlay.preview-mode .overlay-content {
-  opacity: 0 !important;
-  pointer-events: none !important;
-  transition: opacity 300ms ease !important;
-  background: transparent !important;
-}
-
-.token-selector-overlay .overlay-body {
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  height: calc(100% - 50px);
-  overflow: hidden;
-  position: relative;
-}
+/* ==========================================================================
+   HEADER
+   ========================================================================== */
 
 .token-selector-header {
   display: flex;
@@ -180,12 +107,11 @@
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
   background: rgba(var(--color-bg-rgb, 16, 16, 24), 0.7);
-  backdrop-filter: blur(var(--blur-amount, 10px));
-  -webkit-backdrop-filter: blur(var(--blur-amount, 10px));
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   height: 50px;
   position: relative;
   z-index: 20;
-  overflow: hidden;
 }
 
 .header-center-content {
@@ -196,14 +122,13 @@
   padding: 0 var(--space-lg);
 }
 
-.token-selector-header .layer-buttons {
+.layer-buttons {
   display: flex;
   gap: var(--space-xs);
-  margin: 0;
   margin-bottom: 3px;
 }
 
-.token-selector-header .layer-button {
+.layer-button {
   width: 34px;
   height: 34px;
   background: var(--color-primary-a05);
@@ -217,30 +142,30 @@
   justify-content: center;
 }
 
-.token-selector-header .layer-button:hover {
+.layer-button:hover {
   background: var(--color-primary-a15);
   border-color: var(--color-primary-a30);
 }
 
-.token-selector-header .layer-button.active {
+.layer-button.active {
   background: var(--color-primary-a15);
   border-color: var(--color-primary-a50);
   box-shadow: var(--shadow-primary-sm);
 }
 
-.token-selector-header .layer-button-icon {
+.layer-button-icon {
   width: 20px;
   height: 20px;
   opacity: 0.8;
 }
 
-.token-selector-header .layer-button:hover .layer-button-icon,
-.token-selector-header .layer-button.active .layer-button-icon {
+.layer-button:hover .layer-button-icon,
+.layer-button.active .layer-button-icon {
   opacity: 1;
   filter: drop-shadow(0 0 3px var(--color-primary-a30));
 }
 
-.token-selector-header .close-button {
+.close-button {
   flex-shrink: 0;
   width: 30px;
   height: 30px;
@@ -253,70 +178,33 @@
   transition: all var(--transition-fast);
 }
 
-.token-selector-header .close-button:hover {
+.close-button:hover {
   background: var(--color-primary-a15);
   color: var(--color-primary);
-  transform: none;
 }
 
-.status-message {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: calc(var(--z-overlay) + 1);
-  width: auto;
-  max-width: 60%;
-  padding: 6px 12px;
-  border-radius: var(--radius-lg);
-  text-align: center;
-  font-size: var(--font-size-xs);
-  font-weight: 500;
-  background-color: var(--color-info-a10, rgba(0, 180, 255, 0.1));
-  border: 1px solid var(--color-info-a30, rgba(0, 180, 255, 0.3));
-  color: var(--color-info-a90, #a0e0ff);
-  transition: opacity 300ms ease, visibility 300ms ease;
-  opacity: 1;
-  visibility: visible;
-  pointer-events: none;
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-}
+/* ==========================================================================
+   BODY AND TOKEN AREAS
+   ========================================================================== */
 
-.status-message.success {
-  background-color: var(--color-success-a10);
-  border-color: var(--color-success-a30);
-  color: var(--color-success-a90);
-}
-
-.status-message.error {
-  background-color: var(--color-error-a10);
-  border-color: var(--color-error-a30);
-  color: var(--color-error-a90);
-}
-
-.status-message.warning {
-  background-color: var(--color-warning-a10);
-  border-color: var(--color-warning-a30);
-  color: var(--color-warning-a90);
-}
-
-.status-message.hidden {
-  opacity: 0;
-  visibility: hidden;
+.overlay-body {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  height: calc(100% - 50px);
+  overflow: hidden;
 }
 
 .token-display-area {
   flex-grow: 1;
   overflow-y: auto;
-  padding: var(--space-md);
+  padding: var(--space-lg) var(--space-md); /* More top padding to prevent cropping */
   scrollbar-width: thin;
   scrollbar-color: var(--color-primary-a30) rgba(0, 0, 0, 0.1);
 }
 
 .token-display-area::-webkit-scrollbar {
   width: 6px;
-  height: 6px;
 }
 
 .token-display-area::-webkit-scrollbar-track {
@@ -333,11 +221,60 @@
   background: var(--color-primary-a50);
 }
 
-.tokens-grid {
+/* ==========================================================================
+   TOKEN SECTIONS
+   ========================================================================== */
+
+.token-section {
+  margin-bottom: var(--space-xl);
+}
+
+.token-section:last-child {
+  margin-bottom: 0;
+}
+
+.token-section-header {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-sm);
-  justify-content: center;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 1.1em;
+  color: var(--color-primary-a70);
+  margin: 0 0 var(--space-md) var(--space-xs);
+  padding-bottom: var(--space-xs);
+  border-bottom: 1px solid var(--color-border);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  font-weight: 500;
+}
+
+.token-section-header h3 {
+  margin: 0;
+  font-size: inherit;
+  color: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+
+/* ==========================================================================
+   PERFORMANCE OPTIMIZATIONS FOR SMOOTH BACKGROUND ANIMATIONS
+   ========================================================================== */
+
+/* Reduce rendering complexity during overlay operations */
+.overlay.token-selector-overlay.visible ~ * {
+  /* Reduce background complexity while overlay is open */
+  will-change: auto;
+  transform: translateZ(0);
+}
+
+/* Optimize token rendering */
+.tokens-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 12px; /* Consistent gap for both horizontal and vertical */
+  contain: layout style paint size; /* Aggressive containment */
+  transform: translateZ(0); /* Force GPU layer */
+  padding: 8px; /* Add padding to prevent hover effect cropping */
 }
 
 .token-item {
@@ -349,33 +286,60 @@
   transition: all var(--transition-normal);
   text-align: center;
   width: 90px;
-  flex-shrink: 0;
+  height: 90px; /* Make it square */
   display: flex;
   flex-direction: column;
   user-select: none;
   -webkit-user-select: none;
+  /* Aggressive performance optimizations */
+  contain: layout style paint size;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  /* Default hidden state - no animation initially */
+  opacity: 0;
+  transform: translateY(30px) scale(0.9) translateZ(0);
+  margin: 4px; /* Extra margin to ensure hover effects don't get cropped */
+}
+
+/* Only animate tokens that are explicitly loaded through our sequence */
+.token-item.loaded {
+  animation: tokenSlideIn 400ms ease-out both; /* Faster animation */
+}
+
+/* Tokens that have already been animated should not re-animate */
+.token-item.no-animate {
+  opacity: 1;
+  transform: translateY(0) scale(1) translateZ(0);
+  animation: none !important;
+}
+
+/* Tokens that appear due to scrolling get immediate appearance */
+.token-item:not(.loaded):not(.no-animate) {
+  opacity: 1;
+  transform: translateY(0) scale(1) translateZ(0);
+  transition: all var(--transition-fast); /* Faster transitions */
+}
+
+@keyframes tokenSlideIn {
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1) translateZ(0);
+  }
 }
 
 .token-item:hover {
   border-color: var(--color-primary-a50);
   background: var(--color-primary-a15);
-  transform: translateY(-2px);
+  transform: translateY(-4px) scale(1.02); /* Slightly more pronounced hover effect */
   box-shadow: var(--shadow-sm);
+  z-index: 10; /* Ensure hover effect stays above other tokens */
 }
 
 .token-item.selected {
   border-color: var(--color-primary);
   background: var(--color-primary-a30);
   box-shadow: var(--shadow-primary-md);
-}
-
-.token-item.read-only {
-  cursor: default; /* Not not-allowed, as demo tokens are still usable */
-  opacity: 0.8; /* Slightly dim if it's read-only for non-demo */
-}
-.token-item.read-only:hover {
-  /* Keep hover for demo tokens, or remove if all interaction should cease */
-  /* For now, let demo token hover effects persist */
 }
 
 .token-image-container {
@@ -387,6 +351,9 @@
   overflow: hidden;
   border-radius: var(--radius-sm);
   background-color: rgba(0, 0, 0, 0.3);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  flex-grow: 1; /* Take up remaining space to keep square aspect ratio */
 }
 
 .token-image {
@@ -398,53 +365,308 @@
   object-fit: cover;
   transition: transform var(--transition-normal);
   pointer-events: none;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 .token-item:hover .token-image {
   transform: scale(1.05);
 }
-.token-item.read-only:hover .token-image {
-  /* Allow image scale on hover even if read-only for demo tokens */
-  /* transform: none; */ 
-}
 
-.token-name {
-  display: none;
-}
+/* ==========================================================================
+   LOADING STATES AND SPINNERS
+   ========================================================================== */
 
 .loading-message {
   text-align: center;
-  padding: var(--space-lg);
+  padding: var(--space-xl);
   color: var(--color-text-muted);
   font-style: italic;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
 }
 
-.visitor-banner {
-  text-align: center; 
-  padding: var(--space-sm) var(--space-md); 
-  margin: var(--space-md); 
-  border-radius: var(--radius-md); 
-  background: var(--color-warning-a10); 
-  border: 1px solid var(--color-warning-a30);
-  color: var(--color-warning-a90);
-  font-size: var(--font-size-sm); 
-  font-weight: 500; 
-  flex-shrink: 0; 
-  box-shadow: var(--shadow-sm); 
+.spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--color-primary-a20);
+  border-top: 3px solid var(--color-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
 }
 
-/* New style for token preview instruction */
-.token-preview-instruction {
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.status-message {
   text-align: center;
-  padding: var(--space-xs) var(--space-md);
-  margin: var(--space-xs) var(--space-md) var(--space-sm); /* Adjusted margin */
+  padding: var(--space-md);
+  margin: var(--space-md);
+  border-radius: var(--radius-md);
   font-size: var(--font-size-sm);
-  color: var(--color-text-muted);
-  background-color: var(--color-primary-a05);
-  border: 1px solid var(--color-primary-a15);
-  border-radius: var(--radius-sm);
+  font-weight: 500;
+  box-shadow: var(--shadow-sm);
 }
 
+.status-message.info {
+  background-color: var(--color-info-a10);
+  border: 1px solid var(--color-info-a30);
+  color: var(--color-info-a90);
+}
+
+/* ==========================================================================
+   BUTTON STYLES
+   ========================================================================== */
+
+.btn {
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border: 1px solid;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  font-family: inherit;
+}
+
+.btn.btn-sm {
+  padding: 4px var(--space-xs);
+  font-size: var(--font-size-xs);
+}
+
+.btn.btn-outline {
+  background: transparent;
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+
+.btn.btn-outline:hover:not(:disabled) {
+  background: var(--color-primary-a10);
+  border-color: var(--color-primary-a30);
+  color: var(--color-primary);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ==========================================================================
+   RESPONSIVE DESIGN
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  .overlay.token-selector-overlay .overlay-content {
+    width: 95%;
+    height: 85vh;
+  }
+  
+  .token-display-area {
+    padding: var(--space-md) var(--space-sm);
+  }
+  
+  .tokens-grid {
+    grid-template-columns: repeat(auto-fill, minmax(75px, 1fr));
+    gap: 10px;
+  }
+  
+  .token-item {
+    width: 75px;
+    height: 75px;
+  }
+  
+  .layer-button {
+    width: 30px;
+    height: 30px;
+  }
+  
+  .layer-button-icon {
+    width: 18px;
+    height: 18px;
+  }
+  
+  .header-center-content {
+    padding: 0 var(--space-md);
+  }
+  
+  .token-section-header {
+    font-size: 1em;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-xs);
+  }
+  
+  .progress-info {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-xs);
+  }
+}
+
+@media (max-width: 480px) {
+  .overlay.token-selector-overlay .overlay-content {
+    width: 98%;
+    height: 90vh;
+  }
+  
+  .tokens-grid {
+    grid-template-columns: repeat(auto-fill, minmax(65px, 1fr));
+  }
+  
+  .token-item {
+    width: 65px;
+    height: 65px;
+    padding: 4px;
+  }
+  
+  .loading-progress-header {
+    padding: var(--space-xs) var(--space-sm);
+  }
+  
+  .progress-text {
+    font-size: var(--font-size-xs);
+  }
+  
+  .token-count {
+    font-size: 10px;
+  }
+}
+
+/* ==========================================================================
+   ACCESSIBILITY AND REDUCED MOTION
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .token-item,
+  .token-image,
+  .overlay.token-selector-overlay,
+  .overlay.token-selector-overlay .overlay-content,
+  .progress-bar-fill,
+  .progress-bar-fill::after,
+  .loading-progress-header,
+  .spinner {
+    transition: none !important;
+    animation: none !important;
+  }
+  
+  .token-item:hover .token-image {
+    transform: none;
+  }
+  
+  .token-item:hover {
+    transform: none;
+  }
+  
+  .progress-bar-fill {
+    background: var(--color-primary);
+  }
+  
+  /* Show tokens immediately without staggered animation */
+  .token-item {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Focus styles for accessibility */
+.layer-button:focus-visible,
+.close-button:focus-visible,
+.btn:focus-visible,
+.token-item:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .token-item {
+    border-width: 2px;
+  }
+  
+  .token-item:hover,
+  .token-item.selected {
+    border-width: 3px;
+  }
+  
+  .progress-bar-container {
+    border: 1px solid var(--color-text);
+  }
+}
+
+/* ==========================================================================
+   PERFORMANCE OPTIMIZATIONS
+   ========================================================================== */
+
+/* Use GPU acceleration for smooth animations */
+.token-item,
+.token-image,
+.overlay.token-selector-overlay .overlay-content,
+.progress-bar-fill {
+  will-change: transform, opacity;
+}
+
+/* Remove will-change after animations complete */
+.token-item:not(:hover) {
+  will-change: auto;
+}
+
+/* Optimize for large token lists */
+.tokens-grid {
+  /* Enable CSS containment for better performance */
+  contain: layout style paint;
+}
+
+.token-item {
+  /* Enable individual containment for each token */
+  contain: layout style paint size;
+}
+
+/* ==========================================================================
+   DARK MODE ADJUSTMENTS (if using CSS variables)
+   ========================================================================== */
+
+@media (prefers-color-scheme: dark) {
+  .progress-bar-container {
+    box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.1);
+  }
+  
+  .loading-progress-header {
+    background: rgba(var(--color-bg-rgb, 16, 16, 24), 0.9);
+  }
+}
+
+/* ==========================================================================
+   UTILITY CLASSES
+   ========================================================================== */
+
+.token-name {
+  display: none; /* Hidden but available for screen readers */
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ==========================================================================
+   ANIMATIONS
+   ========================================================================== */
 
 @keyframes pulse {
   0% { opacity: 0.7; }
