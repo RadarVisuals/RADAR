@@ -9,10 +9,10 @@ import EnhancedControlPanel from '../Panels/EnhancedControlPanel';
 import NotificationPanel from '../Panels/NotificationPanel';
 import EventsPanel from '../Panels/EventsPanel';
 import EnhancedSavePanel from '../Panels/EnhancedSavePanel';
-import AudioControlPanel from '../Audio/AudioControlPanel'; // CORRECTED PATH
+import AudioControlPanel from '../Audio/AudioControlPanel';
 import TokenSelectorOverlay from '../Panels/TokenSelectorOverlay';
 import InfoOverlay from '../Panels/InfoOverlay';
-import LibraryPanel from '../Panels/LibraryPanel';
+// import LibraryPanel from '../Panels/LibraryPanel'; // 1. LibraryPanel import commented out
 import GlobalMIDIStatus from '../MIDI/GlobalMIDIStatus';
 import AudioStatusIcon from '../Audio/AudioStatusIcon';
 import PresetSelectorBar from './PresetSelectorBar';
@@ -168,12 +168,14 @@ const ActivePanelRenderer = ({ uiState, audioState, configData, actions }) => {
             return canInteract ? (
                 <TokenSelectorOverlay key="token-selector-overlay" isOpen={activePanel === "tokens"} onClose={handleTokenSelectorClose} onTokenApplied={onTokenApplied} readOnly={!canInteract} />
             ) : null;
+        /* // 3. Case for rendering LibraryPanel commented out
         case "library":
             return currentProfileAddress ? (
                 <PanelWrapper key="library-panel" className={panelWrapperClassName}>
                     <LibraryPanel onClose={closePanel} />
                 </PanelWrapper>
             ) : null;
+        */
         default:
             return null;
     }
@@ -368,6 +370,7 @@ function UIOverlay(props) {
                 setActivePanel={toggleSidePanel}
                 notificationCount={unreadCount}
               />
+              {/* 2. Library button in toolbar commented out
               <button
                 className={`vertical-toolbar-icon ${activePanel === "library" ? "active" : ""}`}
                 onClick={() => toggleSidePanel("library")}
@@ -377,6 +380,7 @@ function UIOverlay(props) {
               >
                 <img src={whitelistIcon} alt="My Library" className="icon-image" />
               </button>
+              */}
             </div>
             <MemoizedActivePanelRenderer
                 uiState={uiState}
