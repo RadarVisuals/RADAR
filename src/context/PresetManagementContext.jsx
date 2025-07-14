@@ -23,6 +23,12 @@ export const defaultWorkspaceManagementContextValue = {
   configLoadNonce: 0, loadedLayerConfigsFromPreset: null, loadedTokenAssignmentsFromPreset: null,
   personalCollectionLibrary: [], hasPendingChanges: false,
   configServiceRef: { current: null }, configServiceInstanceReady: false,
+  activeMidiMap: {},
+  // --- MODIFICATION: Added owned tokens state to default context ---
+  ownedTokens: [],
+  isFetchingTokens: false,
+  refreshOwnedTokens: async () => {},
+  // --- END MODIFICATION ---
   loadNamedConfig: async () => ({ success: false, error: "Provider not initialized" }),
   saveWorkspace: async () => ({ success: false, error: "Provider not initialized" }),
   addNewPresetToStagedWorkspace: () => {}, deletePresetFromStagedWorkspace: () => {},
@@ -35,7 +41,7 @@ export const defaultWorkspaceManagementContextValue = {
 const WorkspaceManagementContext = createContext(defaultWorkspaceManagementContextValue);
 
 export const PresetManagementProvider = ({ children }) => {
-  const { hostProfileAddress } = useUserSession();
+  const { hostProfileAddress, visitorProfileAddress } = useUserSession();
   const { provider, walletClient, publicClient } = useUpProvider();
   const { setLiveConfig } = useVisualConfig();
   const { addToast } = useToast();
@@ -45,6 +51,7 @@ export const PresetManagementProvider = ({ children }) => {
 
   const [workspace, setWorkspace] = useState(null);
   const [stagedWorkspace, setStagedWorkspace] = useState(null);
+  const [activeMidiMap, setActiveMidiMap] = useState({});
   const [currentConfigName, setCurrentConfigName] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isInitiallyResolved, setIsInitiallyResolved] = useState(false);
@@ -55,6 +62,11 @@ export const PresetManagementProvider = ({ children }) => {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [hasPendingChanges, setHasPendingChanges] = useState(false);
   const prevProfileAddressRef = useRef(null);
+
+  // --- MODIFICATION: New state for managing owned tokens ---
+  const [ownedTokens, setOwnedTokens] = useState([]);
+  const [isFetchingTokens, setIsFetchingTokens] = useState(false);
+  // --- END MODIFICATION ---
 
   useEffect(() => {
     if (provider && !configServiceRef.current) {
@@ -92,6 +104,60 @@ export const PresetManagementProvider = ({ children }) => {
     };
   }, [stagedWorkspace, currentConfigName]);
 
+  // --- MODIFICATION: Centralized token fetching logic ---
+  const refreshOwnedTokens = useCallback(async (isSilent = false) => {
+    const service = configServiceRef.current;
+    if (!visitorProfileAddress || personalCollectionLibrary.length === 0 || !service) {
+      setOwnedTokens([]);
+      return;
+    }
+    setIsFetchingTokens(true);
+    if (!isSilent) {
+        addToast("Refreshing your token library...", "info", 2000);
+    }
+    try {
+      const allTokens = [];
+      for (const collection of personalCollectionLibrary) {
+        const standard = await service.detectCollectionStandard(collection.address);
+        if (standard === 'LSP8') {
+          const tokenIds = await service.getOwnedLSP8TokenIdsForCollection(visitorProfileAddress, collection.address);
+          for (const tokenId of tokenIds) {
+            const metadata = await service.getTokenMetadata(collection.address, tokenId);
+            if (metadata?.image) {
+              allTokens.push({ id: `${collection.address}-${tokenId}`, type: 'owned', address: collection.address, metadata });
+            }
+          }
+        } else if (standard === 'LSP7') {
+          const balance = await service.getLSP7Balance(visitorProfileAddress, collection.address);
+          if (balance > 0n) {
+            const metadata = await service.getLSP4CollectionMetadata(collection.address);
+            if (metadata?.image) {
+              allTokens.push({ id: collection.address, type: 'owned', address: collection.address, metadata });
+            }
+          }
+        }
+      }
+      setOwnedTokens(allTokens);
+      if (!isSilent) {
+        addToast("Token library updated!", "success", 2000);
+      }
+    } catch (error) {
+      console.error("Failed to refresh owned tokens:", error);
+      if (!isSilent) {
+        addToast("Could not refresh token library.", "error");
+      }
+    } finally {
+      setIsFetchingTokens(false);
+    }
+  }, [visitorProfileAddress, personalCollectionLibrary, addToast]);
+
+  // Effect to fetch tokens when library or user changes
+  useEffect(() => {
+    // This is the background fetch. We call it "silently" so it doesn't show a toast every time.
+    refreshOwnedTokens(true);
+  }, [refreshOwnedTokens]);
+  // --- END MODIFICATION ---
+
   useEffect(() => {
     const currentAddress = hostProfileAddress;
     const service = configServiceRef.current;
@@ -102,6 +168,8 @@ export const PresetManagementProvider = ({ children }) => {
       prevProfileAddressRef.current = currentAddress;
       setIsLoading(true); setIsInitiallyResolved(false); setWorkspace(null); setStagedWorkspace(null);
       setCurrentConfigName(null); setLoadError(null); setHasPendingChanges(false);
+      setActiveMidiMap({});
+      setOwnedTokens([]); // Clear tokens on profile change
     }
 
     const loadInitialData = async (address) => {
@@ -117,6 +185,14 @@ export const PresetManagementProvider = ({ children }) => {
           setHasPendingChanges(false);
           const initialPreset = initialPresetName ? loadedWorkspace.presets[initialPresetName] : null;
           setLiveConfig(initialPreset?.layers || fallbackConfig.layers, initialPreset?.tokenAssignments || fallbackConfig.tokenAssignments);
+
+          const isVisitor = visitorProfileAddress && visitorProfileAddress.toLowerCase() !== address.toLowerCase();
+          if (isVisitor) {
+            const visitorMidiMap = await service.loadMidiMapForProfile(visitorProfileAddress);
+            setActiveMidiMap(visitorMidiMap || {});
+          } else {
+            setActiveMidiMap(loadedWorkspace.globalMidiMap || {});
+          }
         }
       } catch (error) {
         if (prevProfileAddressRef.current === address) {
@@ -124,6 +200,7 @@ export const PresetManagementProvider = ({ children }) => {
           addToast("Could not load your workspace.", "error");
           setWorkspace(emptyWorkspace);
           setStagedWorkspace(emptyWorkspace);
+          setActiveMidiMap({});
           setLiveConfig(fallbackConfig.layers, fallbackConfig.tokenAssignments);
         }
       } finally {
@@ -140,12 +217,13 @@ export const PresetManagementProvider = ({ children }) => {
     } else if (!currentAddress && !isInitiallyResolved) {
       setWorkspace(emptyWorkspace);
       setStagedWorkspace(emptyWorkspace);
+      setActiveMidiMap({});
       setLiveConfig(fallbackConfig.layers, fallbackConfig.tokenAssignments);
       setIsLoading(false);
       setIsInitiallyResolved(true);
       setConfigLoadNonce(prev => prev + 1);
     }
-  }, [hostProfileAddress, configServiceInstanceReady, isInitiallyResolved, addToast, setLiveConfig]);
+  }, [hostProfileAddress, visitorProfileAddress, configServiceInstanceReady, isInitiallyResolved, addToast, setLiveConfig]);
 
   const addCollectionToStagedLibrary = useCallback((collectionData) => {
     setStagedWorkspace(prev => {
@@ -202,6 +280,7 @@ export const PresetManagementProvider = ({ children }) => {
     const presetNameToReload = currentConfigName || workspace?.defaultPresetName || null;
     const preset = presetNameToReload ? workspace.presets[presetNameToReload] : null;
     setLiveConfig(preset?.layers || fallbackConfig.layers, preset?.tokenAssignments || fallbackConfig.tokenAssignments);
+    setActiveMidiMap(workspace?.globalMidiMap || {});
     setHasPendingChanges(false);
     addToast("Changes discarded.", "info");
   }, [workspace, currentConfigName, addToast, setLiveConfig]);
@@ -223,6 +302,7 @@ export const PresetManagementProvider = ({ children }) => {
 
   const updateGlobalMidiMap = useCallback((newMap) => {
     setStagedWorkspace(prev => ({ ...prev, globalMidiMap: newMap || {} }));
+    setActiveMidiMap(newMap || {});
     setHasPendingChanges(true);
   }, []);
 
@@ -269,9 +349,15 @@ export const PresetManagementProvider = ({ children }) => {
       await service.saveWorkspace(addressToSave, workspaceToSave);
       setWorkspace(workspaceToSave);
       setStagedWorkspace(workspaceToSave);
+      setActiveMidiMap(workspaceToSave.globalMidiMap || {});
       setHasPendingChanges(false);
       setSaveSuccess(true);
       addToast("Workspace saved successfully!", "success");
+      // --- MODIFICATION: Trigger a silent token refresh after saving the library ---
+      if (stagedWorkspace.personalCollectionLibrary.length !== workspace?.personalCollectionLibrary?.length) {
+        refreshOwnedTokens(true);
+      }
+      // --- END MODIFICATION ---
       return { success: true };
     } catch (error) {
       const errorMsg = error.message || "Unknown save error.";
@@ -282,13 +368,19 @@ export const PresetManagementProvider = ({ children }) => {
     } finally {
       setIsSaving(false);
     }
-  }, [stagedWorkspace, hostProfileAddress, addToast]);
+  }, [stagedWorkspace, hostProfileAddress, addToast, workspace, refreshOwnedTokens]);
   
   const contextValue = useMemo(() => ({
     workspace, stagedWorkspace, currentConfigName, savedConfigList, isLoading, loadError, isSaving, saveError, saveSuccess,
     isInitiallyResolved, configLoadNonce, loadedLayerConfigsFromPreset, loadedTokenAssignmentsFromPreset,
     personalCollectionLibrary, hasPendingChanges, setHasPendingChanges,
-    configServiceRef, configServiceInstanceReady, // <-- ADDED EXPORTS
+    configServiceRef, configServiceInstanceReady,
+    activeMidiMap,
+    // --- MODIFICATION: Export new token state and refresh function ---
+    ownedTokens,
+    isFetchingTokens,
+    refreshOwnedTokens,
+    // --- END MODIFICATION ---
     loadNamedConfig, saveWorkspace, addNewPresetToStagedWorkspace, deletePresetFromStagedWorkspace,
     setDefaultPresetInStagedWorkspace, discardStagedChanges,
     addCollectionToStagedLibrary, removeCollectionFromStagedLibrary,
@@ -297,7 +389,11 @@ export const PresetManagementProvider = ({ children }) => {
     workspace, stagedWorkspace, currentConfigName, savedConfigList, isLoading, loadError, isSaving, saveError, saveSuccess,
     isInitiallyResolved, configLoadNonce, loadedLayerConfigsFromPreset, loadedTokenAssignmentsFromPreset,
     personalCollectionLibrary, hasPendingChanges,
-    configServiceRef, configServiceInstanceReady, // <-- ADDED EXPORTS
+    configServiceRef, configServiceInstanceReady,
+    activeMidiMap,
+    // --- MODIFICATION: Add new values to dependency array ---
+    ownedTokens, isFetchingTokens, refreshOwnedTokens,
+    // --- END MODIFICATION ---
     loadNamedConfig, saveWorkspace, addNewPresetToStagedWorkspace, deletePresetFromStagedWorkspace,
     setDefaultPresetInStagedWorkspace, discardStagedChanges,
     addCollectionToStagedLibrary, removeCollectionFromStagedLibrary,

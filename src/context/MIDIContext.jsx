@@ -4,7 +4,6 @@ import React, {
 } from 'react';
 import PropTypes from 'prop-types';
 
-import { useUpProvider } from './UpProvider';
 import { usePresetManagement } from './PresetManagementContext';
 
 import { sliderParams } from '../components/Panels/EnhancedControlPanel';
@@ -134,7 +133,14 @@ const getMidiMessageType = (status) => {
 };
 
 export function MIDIProvider({ children }) {
-  const { updateGlobalMidiMap, stagedWorkspace, configLoadNonce, loadedLayerConfigsFromPreset } = usePresetManagement();
+  // --- MODIFICATION: Get MIDI state and updaters from PresetManagementContext ---
+  const { 
+    activeMidiMap, 
+    updateGlobalMidiMap, 
+    configLoadNonce, 
+    loadedLayerConfigsFromPreset 
+  } = usePresetManagement();
+  // --- END MODIFICATION ---
   
   const [midiAccess, setMidiAccess] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -152,10 +158,9 @@ export function MIDIProvider({ children }) {
   const [pendingParamUpdate, setPendingParamUpdate] = useState(null);
   const [catchModeTargetValues, setCatchModeTargetValues] = useState({});
 
-  const activeControllerMidiMap = useMemo(() => stagedWorkspace?.globalMidiMap || {}, [stagedWorkspace]);
-
   const catchModeTargetValuesRef = useRef(catchModeTargetValues);
-  const activeControllerMidiMapRef = useRef(activeControllerMidiMap);
+  // --- MODIFICATION: This ref now points to the map from the preset context ---
+  const activeControllerMidiMapRef = useRef(activeMidiMap);
   const layerMappingsRef = useRef(layerMappings);
   const globalMappingsRef = useRef(globalMappings);
   const midiLearningRef = useRef(midiLearning);
@@ -168,7 +173,8 @@ export function MIDIProvider({ children }) {
   const midiAccessRefForCallbacks = useRef(midiAccess);
   const handleMIDIMessageRef = useRef(null);
 
-  useEffect(() => { activeControllerMidiMapRef.current = activeControllerMidiMap; }, [activeControllerMidiMap]);
+  // --- MODIFICATION: Update ref when activeMidiMap from context changes ---
+  useEffect(() => { activeControllerMidiMapRef.current = activeMidiMap; }, [activeMidiMap]);
   useEffect(() => { catchModeTargetValuesRef.current = catchModeTargetValues; }, [catchModeTargetValues]);
   useEffect(() => { midiAccessRefForCallbacks.current = midiAccess; }, [midiAccess]);
   useEffect(() => { layerMappingsRef.current = layerMappings; }, [layerMappings]);
@@ -221,8 +227,9 @@ export function MIDIProvider({ children }) {
     return () => { if (pendingTimeoutRef.current) clearTimeout(pendingTimeoutRef.current); };
   }, [pendingLayerSelect, pendingParamUpdate]);
 
+  // --- MODIFICATION: This now calls the centralized updater from PresetManagementContext ---
   const mapParameterToMIDI = useCallback((param, layer, mappingData) => {
-    const currentMap = stagedWorkspace?.globalMidiMap || {};
+    const currentMap = activeMidiMap || {};
     const updatedActiveMap = {
       ...currentMap,
       [String(layer)]: {
@@ -231,16 +238,17 @@ export function MIDIProvider({ children }) {
       }
     };
     updateGlobalMidiMap(updatedActiveMap);
-  }, [stagedWorkspace, updateGlobalMidiMap]);
+  }, [activeMidiMap, updateGlobalMidiMap]);
 
   const clearAllMappings = useCallback(() => {
     if (window.confirm("Are you sure you want to reset ALL persistent MIDI parameter mappings? This will be staged until you save.")) {
-      updateGlobalMidiMap({});
+      updateGlobalMidiMap({}); // This now clears both staged and active maps
       setLayerMappings({ "1": {}, "2": {}, "3": {} });
       setGlobalMappings({});
       setCatchModeTargetValues({});
     }
   }, [updateGlobalMidiMap]);
+  // --- END MODIFICATION ---
 
   const mapLayerToMIDI = useCallback((layer, mappingData) => {
     setLayerMappings(prev => ({ ...prev, [String(layer)]: { ...(prev[String(layer)] || {}), layerSelect: mappingData } }));
@@ -536,7 +544,8 @@ export function MIDIProvider({ children }) {
 
   const contextValue = useMemo(() => ({
     midiAccess, isConnected, isConnecting, error, midiInputs,
-    midiMap: activeControllerMidiMap,
+    // --- MODIFICATION: midiMap now comes directly from the activeMidiMap state ---
+    midiMap: activeMidiMap,
     layerMappings, globalMappings, midiLearning, learningLayer, selectedChannel,
     midiMonitorData, showMidiMonitor, pendingLayerSelect, pendingParamUpdate,
     setShowMidiMonitor,
@@ -544,7 +553,9 @@ export function MIDIProvider({ children }) {
     startLayerMIDILearn, stopLayerMIDILearn, clearAllMappings, setChannelFilter,
     clearMIDIMonitor, mapParameterToMIDI, mapLayerToMIDI, clearPendingActions,
   }), [
-    midiAccess, isConnected, isConnecting, error, midiInputs, activeControllerMidiMap,
+    midiAccess, isConnected, isConnecting, error, midiInputs, 
+    // --- MODIFICATION: Add activeMidiMap to dependency array ---
+    activeMidiMap,
     layerMappings, globalMappings, midiLearning, learningLayer, selectedChannel,
     midiMonitorData, showMidiMonitor, pendingLayerSelect, pendingParamUpdate,
     connectMIDI, disconnectMIDI, clearAllMappings, mapParameterToMIDI, mapLayerToMIDI,

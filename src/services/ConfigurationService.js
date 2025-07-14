@@ -1,7 +1,7 @@
 // src/services/ConfigurationService.js
 import {
-  hexToString, stringToHex, numberToHex,
-  getAddress, slice, isAddress,
+  hexToString, stringToHex,
+  getAddress,
 } from "viem";
 
 import {
@@ -25,7 +25,6 @@ const ERC725Y_ABI = [
   { name: "supportsInterface", inputs: [{ type: "bytes4", name: "interfaceId" }], outputs: [{ type: "bool" }], stateMutability: "view", type: "function" },
 ];
 
-// --- ADDED: Minimal ABI for required LSP7 interactions ---
 const LSP7_ABI = [
   {
     "inputs": [{ "name": "owner", "type": "address" }],
@@ -36,7 +35,6 @@ const LSP7_ABI = [
   }
 ];
 
-// --- ADDED: Minimal ABI for required LSP8 interactions ---
 const LSP8_ABI = [
   {
     "inputs": [{ "name": "tokenOwner", "type": "address" }],
@@ -64,7 +62,6 @@ const LSP8_ABI = [
   }
 ];
 
-// --- ADDED: LSP Interface IDs ---
 const LSP8_INTERFACE_ID = "0x3a271706";
 const LSP7_INTERFACE_ID = "0xc52d6008";
 
@@ -129,7 +126,7 @@ class ConfigurationService {
   }
 
   async loadWorkspace(profileAddress) {
-    const defaultWorkspace = { presets: {}, defaultPresetName: null, globalMidiMap: {}, globalEventReactions: {} };
+    const defaultWorkspace = { presets: {}, defaultPresetName: null, globalMidiMap: {}, globalEventReactions: {}, personalCollectionLibrary: [] };
     if (!this.checkReadyForRead()) { return defaultWorkspace; }
     const checksummedProfileAddr = getChecksumAddressSafe(profileAddress);
     if (!checksummedProfileAddr) { return defaultWorkspace; }
@@ -153,6 +150,29 @@ class ConfigurationService {
       return defaultWorkspace;
     }
   }
+
+  // --- MODIFICATION: Added new method to fetch only the MIDI map ---
+  /**
+   * Fetches the workspace for a given profile and returns only the globalMidiMap.
+   * @param {string} profileAddress - The address of the profile to fetch the MIDI map from.
+   * @returns {Promise<object>} The globalMidiMap object, or an empty object if not found.
+   */
+  async loadMidiMapForProfile(profileAddress) {
+    const logPrefix = `[CS loadMidiMap Addr:${profileAddress?.slice(0, 6)}]`;
+    try {
+      const workspace = await this.loadWorkspace(profileAddress);
+      if (import.meta.env.DEV) {
+        console.log(`${logPrefix} Loaded workspace, extracting MIDI map.`);
+      }
+      return workspace?.globalMidiMap || {};
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error(`${logPrefix} Failed to load MIDI map:`, error);
+      }
+      return {}; // Return empty object on failure
+    }
+  }
+  // --- END MODIFICATION ---
 
   async saveWorkspace(targetProfileAddress, workspaceObject) {
     const logPrefix = `[CS saveWorkspace Addr:${targetProfileAddress?.slice(0, 6)}]`;
@@ -213,7 +233,6 @@ class ConfigurationService {
     }
   }
 
-  // --- NEW: INTERFACE DETECTION ---
   async detectCollectionStandard(collectionAddress) {
     const checksummedCollectionAddr = getChecksumAddressSafe(collectionAddress);
     if (!this.checkReadyForRead() || !checksummedCollectionAddr) {
@@ -237,7 +256,6 @@ class ConfigurationService {
     }
   }
 
-  // --- NEW: LSP7 TOKEN FETCHING METHODS ---
   async getLSP7Balance(userAddress, collectionAddress) {
     const checksummedUserAddr = getChecksumAddressSafe(userAddress);
     const checksummedCollectionAddr = getChecksumAddressSafe(collectionAddress);
@@ -286,7 +304,6 @@ class ConfigurationService {
     }
   }
 
-  // --- LSP8 TOKEN FETCHING METHODS ---
   async getOwnedLSP8TokenIdsForCollection(userAddress, collectionAddress) {
       const logPrefix = `[CS getOwnedLSP8]`;
       const checksummedUserAddr = getChecksumAddressSafe(userAddress);
