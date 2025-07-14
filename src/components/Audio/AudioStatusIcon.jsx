@@ -19,7 +19,8 @@ import "./AudioStyles/AudioStatusIcon.css"; // Local styles
  * @param {AudioStatusIconProps} props - The component's props.
  * @returns {JSX.Element | null} The rendered AudioStatusIcon button, or null if `isActive` is false.
  */
-const AudioStatusIcon = ({ isActive = false, onClick }) => {
+// MODIFIED LINE: Added default parameters directly in the function signature
+const AudioStatusIcon = ({ isActive = false, onClick = () => {} }) => {
   // If audio visualization is not active, do not render the icon.
   if (!isActive) {
     return null;
@@ -27,14 +28,13 @@ const AudioStatusIcon = ({ isActive = false, onClick }) => {
 
   return (
     <button
-      className={`audio-status-icon ${isActive ? "active" : ""}`} // 'active' class can be used for specific styling when active
+      className={`audio-status-icon ${isActive ? "active" : ""}`}
       onClick={onClick}
-      aria-label="Audio Visualizer Active" // Accessibility: Label for screen readers
-      title="Audio Visualizer is Active - Click to open settings" // Tooltip for mouse users
+      aria-label="Audio Visualizer Active"
+      title="Audio Visualizer is Active - Click to open settings"
     >
-      <div className="audio-icon"> {/* Container for the visual wave elements */}
+      <div className="audio-icon">
         <div className="wave-container">
-          {/* These spans are typically styled with CSS to create the animated wave effect */}
           <span className="audio-wave"></span>
           <span className="audio-wave"></span>
           <span className="audio-wave"></span>
@@ -45,18 +45,8 @@ const AudioStatusIcon = ({ isActive = false, onClick }) => {
 };
 
 AudioStatusIcon.propTypes = {
-  /** If true, the icon is displayed and indicates that audio visualization is active. */
   isActive: PropTypes.bool,
-  /** Optional callback function invoked when the icon is clicked. */
   onClick: PropTypes.func,
 };
 
-AudioStatusIcon.defaultProps = {
-  isActive: false,
-  onClick: () => {}, // Default to a no-op function to prevent errors if not provided
-};
-
-// Default export is standard for React components.
-// React.memo can be considered if onClick is stable and isActive changes don't always warrant re-render,
-// but for a small component like this, it's often not critical.
 export default AudioStatusIcon;
