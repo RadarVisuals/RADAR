@@ -90,12 +90,13 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   } = coreApp;
   
   const sequencer = usePLockSequencer({
+    // This `onValueUpdate` callback is the critical change.
+    // By only calling `updateLayerConfig`, we ensure the sequencer's output
+    // flows through the standard React state management. The `useCanvasOrchestrator`
+    // hook will then pick up this state change and apply it to the canvas.
+    // This eliminates the direct, second update path that was causing the race condition.
     onValueUpdate: (layerId, paramName, value) => {
-      const manager = managerInstancesRef.current?.[String(layerId)];
-      if (manager) {
-        manager.snapVisualProperty(paramName, value);
-        updateLayerConfig(layerId, paramName, value);
-      }
+      updateLayerConfig(String(layerId), paramName, value);
     }
   });
 
@@ -108,22 +109,18 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   }, [sequencer]);
 
   const handleUserLayerPropChange = useCallback((layerId, key, value, isMidiUpdate = false) => {
-    // --- START: BUG FIX ---
     const pLockIsActive = sequencer.pLockState === 'playing' || 
                           sequencer.pLockState === 'resetting' || 
                           sequencer.pLockState === 'arming_to_play';
 
-    // If this is a manual change from the UI (not MIDI) and the P-Lock is active, block it completely.
     if (!isMidiUpdate && pLockIsActive) {
       return;
     }
     
-    // If this is a MIDI update, only block it if the specific parameter is part of the recorded automation.
     const isParamRecorded = sequencer.animationDataRef.current?.[String(layerId)]?.[key];
     if (isMidiUpdate && pLockIsActive && isParamRecorded) {
       return;
     }
-    // --- END: BUG FIX ---
     
     if (typeof updateLayerConfig === 'function') {
       updateLayerConfig(String(layerId), key, value);
