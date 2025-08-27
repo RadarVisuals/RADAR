@@ -1,13 +1,18 @@
 // src/utils/CanvasManager.js
 import { BLEND_MODES } from '../config/global-config';
 import ValueInterpolator from './ValueInterpolator';
-import { sliderParams } from '../components/Panels/EnhancedControlPanel'; // Import slider definitions
+import { sliderParams } from '../components/Panels/EnhancedControlPanel';
 
 const SETUP_CANVAS_POLL_INTERVAL = 100;
 const SETUP_CANVAS_POLL_TIMEOUT = 3000;
 const MAX_TOTAL_OFFSET = 10000;
 const DELTA_TIME_BUFFER_SIZE = 5;
-const MIDI_INTERPOLATION_DURATION = 80; // A single duration for all MIDI-driven parameter smoothing
+const MIDI_INTERPOLATION_DURATION = 80;
+
+// This is the fix. We cap the maximum time processed in a single frame to prevent
+// jerky movements when the browser throttles requestAnimationFrame, which is
+// common for applications running inside an iframe. 30fps is a safe cap.
+const MAX_DELTA_TIME = 1 / 30; // Maximum time slice is for 30fps
 
 class CanvasManager {
     canvas = null;
@@ -445,7 +450,10 @@ class CanvasManager {
         if (!this.lastTimestamp) this.lastTimestamp = timestamp;
         const elapsed = timestamp - this.lastTimestamp;
         this.lastTimestamp = timestamp;
-        const rawDeltaTime = Math.max(0.001, elapsed / 1000.0);
+        
+        // This is where the deltaTime is capped to prevent animation jumps
+        const rawDeltaTime = Math.min(elapsed / 1000.0, MAX_DELTA_TIME);
+
         this.deltaTimeBuffer.push(rawDeltaTime);
         if (this.deltaTimeBuffer.length > DELTA_TIME_BUFFER_SIZE) this.deltaTimeBuffer.shift();
         this.smoothedDeltaTime = this.deltaTimeBuffer.reduce((a,b) => a+b,0) / this.deltaTimeBuffer.length;
