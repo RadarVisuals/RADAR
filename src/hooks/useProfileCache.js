@@ -150,7 +150,7 @@ export function useProfileCache() {
         }
       }
     },
-    [isLoadingAddress], // isLoadingAddress is specific to this hook instance
+    [isLoadingAddress],
   );
 
   /**

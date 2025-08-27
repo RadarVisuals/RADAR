@@ -584,3 +584,56 @@
   flex-shrink: 0; /* Prevent button from shrinking */
 }
 /* --- END: Styles for Sequencer Interval Control --- */
+
+.plock-midi-section {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  justify-content: space-between; 
+}
+
+.plock-midi-section .plock-controls-container {
+  flex-grow: 1;
+  margin-bottom: 0;
+}
+
+.plock-midi-map {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+}
+
+.slider-wrapper {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.slider-container.out-of-sync .horizontal-slider::-webkit-slider-thumb {
+  background: var(--color-text-dim);
+  box-shadow: none;
+}
+.slider-container.out-of-sync .horizontal-slider::-moz-range-thumb {
+  background: var(--color-text-dim);
+  box-shadow: none;
+}
+
+.slider-value-indicator {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 8px;
+  height: 8px;
+  background-color: var(--color-primary);
+  border-radius: 50%;
+  box-shadow: 0 0 5px var(--color-primary);
+  pointer-events: none;
+  z-index: 2;
+  transition: background-color 0.2s ease;
+}
+
+.slider-container.out-of-sync:hover .slider-value-indicator {
+  background-color: white;
+}

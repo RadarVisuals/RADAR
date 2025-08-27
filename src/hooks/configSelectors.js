@@ -45,13 +45,14 @@ export const useInteractionSettingsState = () => {
   // UPDATED: Now uses usePresetManagement as the source of truth.
   const presetCtx = usePresetManagement();
   return useMemo(() => ({
-    savedReactions: presetCtx.stagedWorkspace?.globalEventReactions || {},
-    midiMap: presetCtx.stagedWorkspace?.globalMidiMap || {},
+    savedReactions: presetCtx.activeEventReactions || {},
+    midiMap: presetCtx.activeMidiMap || {},
     updateSavedReaction: presetCtx.updateGlobalEventReactions,
     deleteSavedReaction: presetCtx.deleteGlobalEventReaction,
     updateMidiMap: presetCtx.updateGlobalMidiMap,
   }), [
-    presetCtx.stagedWorkspace,
+    presetCtx.activeEventReactions,
+    presetCtx.activeMidiMap,
     presetCtx.updateGlobalEventReactions,
     presetCtx.deleteGlobalEventReaction,
     presetCtx.updateGlobalMidiMap,

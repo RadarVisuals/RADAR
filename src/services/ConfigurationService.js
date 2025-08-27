@@ -1,4 +1,5 @@
 // src/services/ConfigurationService.js
+
 import {
   hexToString, stringToHex,
   getAddress,
@@ -7,6 +8,7 @@ import {
 import {
   RADAR_ROOT_STORAGE_POINTER_KEY,
   IPFS_GATEWAY,
+  RADAR_OFFICIAL_ADMIN_ADDRESS,
 } from "../config/global-config";
 import { resolveLsp4Metadata } from '../utils/erc725.js';
 import { uploadJsonToPinata } from './PinataService.js';
@@ -59,6 +61,13 @@ const LSP8_ABI = [
     "outputs": [{ "name": "dataValue", "type": "bytes" }],
     "stateMutability": "view",
     "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "totalSupply",
+    "outputs": [{ "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
   }
 ];
 
@@ -67,9 +76,42 @@ const LSP7_INTERFACE_ID = "0xc52d6008";
 
 export function hexToUtf8Safe(hex) {
   if (!hex || typeof hex !== "string" || !hex.startsWith("0x") || hex === "0x") return null;
-  try { return hexToString(hex); }
-  catch { return null; }
+  try {
+    const decodedString = hexToString(hex);
+    return decodedString.replace(/\u0000/g, '');
+  } catch {
+    return null;
+  }
 }
+
+function decodeVerifiableUriBytes(bytesValue) {
+    if (!bytesValue || typeof bytesValue !== 'string' || !bytesValue.startsWith('0x') || bytesValue.length < 14) {
+        return null; 
+    }
+
+    const valueWithoutPrefix = bytesValue.substring(2);
+
+    if (valueWithoutPrefix.startsWith('0000')) {
+        try {
+            const hashLengthHex = `0x${valueWithoutPrefix.substring(12, 16)}`;
+            const hashLength = parseInt(hashLengthHex, 16);
+            const urlBytesStart = 16 + (hashLength * 2);
+
+            if (valueWithoutPrefix.length < urlBytesStart) {
+                return null;
+            }
+
+            const urlBytes = `0x${valueWithoutPrefix.substring(urlBytesStart)}`;
+            return hexToUtf8Safe(urlBytes);
+        } catch (e) {
+            console.error("Error parsing VerifiableURI bytes:", e);
+            return null;
+        }
+    } else {
+        return hexToUtf8Safe(bytesValue);
+    }
+}
+
 
 export function hexBytesToIntegerSafe(hex) {
   if (!hex || typeof hex !== "string" || !hex.startsWith("0x") || hex === "0x") return 0;
@@ -151,12 +193,6 @@ class ConfigurationService {
     }
   }
 
-  // --- MODIFICATION: Added new method to fetch only the MIDI map ---
-  /**
-   * Fetches the workspace for a given profile and returns only the globalMidiMap.
-   * @param {string} profileAddress - The address of the profile to fetch the MIDI map from.
-   * @returns {Promise<object>} The globalMidiMap object, or an empty object if not found.
-   */
   async loadMidiMapForProfile(profileAddress) {
     const logPrefix = `[CS loadMidiMap Addr:${profileAddress?.slice(0, 6)}]`;
     try {
@@ -169,31 +205,70 @@ class ConfigurationService {
       if (import.meta.env.DEV) {
         console.error(`${logPrefix} Failed to load MIDI map:`, error);
       }
-      return {}; // Return empty object on failure
+      return {};
     }
   }
-  // --- END MODIFICATION ---
 
   async saveWorkspace(targetProfileAddress, workspaceObject) {
     const logPrefix = `[CS saveWorkspace Addr:${targetProfileAddress?.slice(0, 6)}]`;
-    if (!this.checkReadyForWrite()) { throw new Error("Client not ready for writing."); }
+    if (!this.checkReadyForWrite()) {
+      throw new Error("Client not ready for writing.");
+    }
     const checksummedTargetAddr = getChecksumAddressSafe(targetProfileAddress);
-    if (!checksummedTargetAddr) { throw new Error("Invalid target profile address format."); }
-    if (!workspaceObject || typeof workspaceObject !== 'object' || !('presets' in workspaceObject)) { throw new Error("Invalid or malformed workspaceObject provided."); }
+    if (!checksummedTargetAddr) {
+      throw new Error("Invalid target profile address format.");
+    }
+    if (!workspaceObject || typeof workspaceObject !== 'object' || !('presets' in workspaceObject)) {
+      throw new Error("Invalid or malformed workspaceObject provided.");
+    }
     const userAddress = this.walletClient.account.address;
-    if (userAddress?.toLowerCase() !== checksummedTargetAddr?.toLowerCase()) { throw new Error("Permission denied: Signer does not own the target profile."); }
+    if (userAddress?.toLowerCase() !== checksummedTargetAddr?.toLowerCase()) {
+      throw new Error("Permission denied: Signer does not own the target profile.");
+    }
+
+    let oldCidToUnpin = null;
+    try {
+      const oldPointerHex = await this.loadDataFromKey(checksummedTargetAddr, RADAR_ROOT_STORAGE_POINTER_KEY);
+      if (oldPointerHex && oldPointerHex !== '0x') {
+        const oldIpfsUri = hexToUtf8Safe(oldPointerHex);
+        if (oldIpfsUri && oldIpfsUri.startsWith('ipfs://')) {
+          oldCidToUnpin = oldIpfsUri.substring(7);
+          if (import.meta.env.DEV) console.log(`${logPrefix} Found old CID to unpin later: ${oldCidToUnpin}`);
+        }
+      }
+    } catch (e) {
+      if (import.meta.env.DEV) console.warn(`${logPrefix} Could not retrieve old CID, will proceed without unpinning. Error:`, e);
+    }
+
     try {
       const jsonData = workspaceObject;
-      if (import.meta.env.DEV) console.log(`${logPrefix} Uploading workspace JSON to IPFS...`);
-      const ipfsCid = await uploadJsonToPinata(jsonData);
-      if (!ipfsCid) { throw new Error("IPFS upload failed: received no CID from PinataService."); }
-      if (import.meta.env.DEV) console.log(`${logPrefix} IPFS upload successful. CID: ${ipfsCid}`);
-      const ipfsUri = `ipfs://${ipfsCid}`;
-      const valueHex = stringToHex(ipfsUri);
-      if (import.meta.env.DEV) console.log(`${logPrefix} Setting RADAR.RootStoragePointer on-chain...`);
-      const result = await this.saveDataToKey( checksummedTargetAddr, RADAR_ROOT_STORAGE_POINTER_KEY, valueHex );
+      if (import.meta.env.DEV) console.log(`${logPrefix} Uploading new workspace JSON to IPFS...`);
+      const newIpfsCid = await uploadJsonToPinata(jsonData);
+      if (!newIpfsCid) {
+        throw new Error("IPFS upload failed: received no CID from PinataService.");
+      }
+      if (import.meta.env.DEV) console.log(`${logPrefix} IPFS upload successful. New CID: ${newIpfsCid}`);
+
+      const newIpfsUri = `ipfs://${newIpfsCid}`;
+      const valueHex = stringToHex(newIpfsUri);
+      if (import.meta.env.DEV) console.log(`${logPrefix} Setting RADAR.RootStoragePointer on-chain to new value...`);
+      const result = await this.saveDataToKey(checksummedTargetAddr, RADAR_ROOT_STORAGE_POINTER_KEY, valueHex);
       if (import.meta.env.DEV) console.log(`${logPrefix} On-chain update successful. TxHash: ${result.hash}`);
+      
+      if (oldCidToUnpin && oldCidToUnpin !== newIpfsCid) {
+        if (import.meta.env.DEV) console.log(`${logPrefix} Triggering unpinning of old CID: ${oldCidToUnpin}`);
+        
+        fetch('/api/unpin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cid: oldCidToUnpin }),
+        }).catch(unpinError => {
+            if (import.meta.env.DEV) console.error(`${logPrefix} Call to the /api/unpin endpoint failed:`, unpinError);
+        });
+      }
+
       return result;
+
     } catch (error) {
       if (import.meta.env.DEV) { console.error(`${logPrefix} Error during saveWorkspace:`, error); }
       throw new Error(error.message || "An unexpected error occurred during the save process.");
@@ -303,7 +378,8 @@ class ConfigurationService {
       return null;
     }
   }
-
+  
+  // --- START OF FIX: Revert to simple "get owned" function ---
   async getOwnedLSP8TokenIdsForCollection(userAddress, collectionAddress) {
       const logPrefix = `[CS getOwnedLSP8]`;
       const checksummedUserAddr = getChecksumAddressSafe(userAddress);
@@ -314,6 +390,7 @@ class ConfigurationService {
           return [];
       }
 
+      if (import.meta.env.DEV) console.log(`${logPrefix} Fetching owned tokens for: ${checksummedUserAddr}.`);
       try {
           const tokenIds = await this.publicClient.readContract({
               address: checksummedCollectionAddr,
@@ -327,6 +404,39 @@ class ConfigurationService {
           return [];
       }
   }
+  // --- END OF FIX ---
+
+  // --- START OF FIX: Add new function to get ALL tokens ---
+  async getAllLSP8TokenIdsForCollection(collectionAddress) {
+      const logPrefix = `[CS getAllLSP8]`;
+      const checksummedCollectionAddr = getChecksumAddressSafe(collectionAddress);
+
+      if (!this.checkReadyForRead() || !checksummedCollectionAddr) {
+          if (import.meta.env.DEV) console.warn(`${logPrefix} Prereqs failed: ready=${this.readReady}, collection=${!!checksummedCollectionAddr}`);
+          return [];
+      }
+
+      if (import.meta.env.DEV) console.log(`${logPrefix} Fetching ALL tokens for collection: ${checksummedCollectionAddr}.`);
+      try {
+          const total = await this.publicClient.readContract({
+              address: checksummedCollectionAddr,
+              abi: LSP8_ABI,
+              functionName: "totalSupply",
+          });
+          const totalAsNumber = Number(total);
+          
+          const allTokenIds = Array.from({ length: totalAsNumber }, (_, i) => {
+              return '0x' + i.toString(16).padStart(64, '0');
+          });
+          
+          if (import.meta.env.DEV) console.log(`${logPrefix} Found ${totalAsNumber} total tokens.`);
+          return allTokenIds;
+      } catch (error) {
+          if (import.meta.env.DEV) console.error(`${logPrefix} Failed to fetch all tokens. Does contract have 'totalSupply'?`, error);
+          return [];
+      }
+  }
+  // --- END OF FIX ---
 
   async getTokenMetadata(collectionAddress, tokenId) {
     const logPrefix = `[CS getTokenMetadata]`;
@@ -346,7 +456,7 @@ class ConfigurationService {
       let finalMetadataUrl = '';
 
       if (metadataUriBytes && metadataUriBytes !== '0x') {
-        const decodedUri = hexToUtf8Safe(metadataUriBytes);
+        const decodedUri = decodeVerifiableUriBytes(metadataUriBytes);
         if (decodedUri) finalMetadataUrl = decodedUri;
       } else {
         const baseUriKey = ERC725YDataKeys.LSP8.LSP8TokenMetadataBaseURI;
@@ -355,7 +465,7 @@ class ConfigurationService {
         }).catch(() => null);
 
         if (baseUriBytes && baseUriBytes !== '0x') {
-          const decodedBaseUri = hexToUtf8Safe(baseUriBytes);
+          const decodedBaseUri = decodeVerifiableUriBytes(baseUriBytes);
           if (decodedBaseUri) {
             const tokenIdAsString = BigInt(tokenId).toString();
             finalMetadataUrl = decodedBaseUri.endsWith('/') ? `${decodedBaseUri}${tokenIdAsString}` : `${decodedBaseUri}/${tokenIdAsString}`;
@@ -367,8 +477,14 @@ class ConfigurationService {
         if (import.meta.env.DEV) console.log(`${logPrefix} No metadata URI found for tokenId ${tokenId.slice(0,10)}...`);
         return null;
       }
-
-      let fetchableUrl = finalMetadataUrl.startsWith('ipfs://') ? `${IPFS_GATEWAY}${finalMetadataUrl.substring(7)}` : finalMetadataUrl;
+      
+      let fetchableUrl = finalMetadataUrl;
+      if (fetchableUrl.startsWith('ipfs://')) {
+          fetchableUrl = `${IPFS_GATEWAY}${fetchableUrl.substring(7)}`;
+      } else if (!fetchableUrl.startsWith('http')) {
+          fetchableUrl = `${IPFS_GATEWAY}${fetchableUrl}`;
+      }
+      
       if (!fetchableUrl.startsWith('http')) {
         if (import.meta.env.DEV) console.warn(`${logPrefix} Unsupported metadata URI scheme: ${fetchableUrl}`);
         return null;
@@ -376,29 +492,77 @@ class ConfigurationService {
 
       const response = await fetch(fetchableUrl);
       if (!response.ok) throw new Error(`HTTP ${response.status} fetching ${fetchableUrl}`);
+      
+      const contentType = response.headers.get("content-type");
 
-      const metadata = await response.json();
-      const lsp4Data = metadata.LSP4Metadata || metadata;
-      const name = lsp4Data.name || 'Unnamed Token';
-      
-      const rawUrl = lsp4Data.images?.[0]?.[0]?.url || lsp4Data.icon?.[0]?.url || lsp4Data.assets?.[0]?.url;
-      let imageUrl = null;
-      
-      if (rawUrl && typeof rawUrl === 'string') {
-        const trimmedUrl = rawUrl.trim();
-        if (trimmedUrl.startsWith('ipfs://')) {
-            imageUrl = `${IPFS_GATEWAY}${trimmedUrl.slice(7)}`;
-        } else if (trimmedUrl.startsWith('http') || trimmedUrl.startsWith('data:')) {
-            imageUrl = trimmedUrl;
-        }
+      if (contentType && contentType.includes("application/json")) {
+          const metadata = await response.json();
+          const lsp4Data = metadata.LSP4Metadata || metadata;
+          const name = lsp4Data.name || 'Unnamed Token';
+          const rawUrl = lsp4Data.images?.[0]?.[0]?.url || lsp4Data.icon?.[0]?.url || lsp4Data.assets?.[0]?.url;
+          let imageUrl = null;
+          
+          if (rawUrl && typeof rawUrl === 'string') {
+            const trimmedUrl = rawUrl.trim();
+            if (trimmedUrl.startsWith('ipfs://')) {
+                imageUrl = `${IPFS_GATEWAY}${trimmedUrl.slice(7)}`;
+            } else if (trimmedUrl.startsWith('http') || trimmedUrl.startsWith('data:')) {
+                imageUrl = trimmedUrl;
+            }
+          }
+          return { name, image: imageUrl };
+      } else if (contentType && contentType.startsWith("image/")) {
+          const tokenIdNum = Number(BigInt(tokenId));
+          const name = `Token #${tokenIdNum}`;
+          const imageUrl = fetchableUrl;
+          return { name, image: imageUrl };
+      } else {
+          throw new Error(`Unsupported content type: ${contentType}`);
       }
-      
-      return { name, image: imageUrl };
 
     } catch (error) {
-        if (import.meta.env.DEV) console.warn(`${logPrefix} Error getting metadata for tokenId ${tokenId.slice(0,10)} in collection ${collectionAddress.slice(0,6)}...:`, error.message);
+        if (import.meta.env.DEV) console.error(`${logPrefix} Error getting metadata for tokenId ${tokenId.slice(0,10)} in collection ${collectionAddress.slice(0,6)}...:`, error.message);
         return null;
     }
+  }
+
+  async getTokensMetadataBatch(tokensToFetch) {
+    const logPrefix = `[CS getTokensMetadataBatch]`;
+    if (!this.checkReadyForRead() || !tokensToFetch || tokensToFetch.length === 0) {
+        return [];
+    }
+
+    const metadataFetchPromises = tokensToFetch.map(async (token) => {
+        const metadata = await this.getTokenMetadata(token.collectionAddress, token.tokenId);
+        return metadata ? { originalToken: token, metadata } : null;
+    });
+
+    if (import.meta.env.DEV) console.log(`${logPrefix} Fetching metadata for ${tokensToFetch.length} tokens...`);
+    const settledMetadataResults = await Promise.allSettled(metadataFetchPromises);
+  
+    const finalTokenData = settledMetadataResults.map((result) => {
+        if (result.status === 'rejected' || !result.value) {
+            return null;
+        }
+  
+        const { originalToken, metadata } = result.value;
+        const name = metadata.name || 'Unnamed Token';
+        const imageUrl = metadata.image;
+  
+        if (!imageUrl) {
+            return null;
+        }
+  
+        return {
+            id: originalToken.tokenId ? `${originalToken.collectionAddress}-${originalToken.tokenId}` : originalToken.collectionAddress,
+            type: 'owned',
+            address: originalToken.collectionAddress,
+            tokenId: originalToken.tokenId,
+            metadata: { name, image: imageUrl },
+        };
+    });
+  
+    return finalTokenData.filter(Boolean);
   }
 }
 

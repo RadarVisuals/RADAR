@@ -5,7 +5,6 @@ import React, {
 import PropTypes from 'prop-types';
 
 import { usePresetManagement } from './PresetManagementContext';
-
 import { sliderParams } from '../components/Panels/EnhancedControlPanel';
 
 const MAX_MONITOR_ENTRIES = 100;
@@ -13,95 +12,22 @@ const PENDING_ACTION_EXPIRY_MS = 1000;
 const MIDI_CONNECT_TIMEOUT_MS = 10000;
 const CATCH_MODE_NORMALIZATION_EPSILON = 0.01;
 
-/**
- * @typedef {object} MIDIDevice
- * @property {string} id - The unique ID of the MIDI device.
- * @property {string} name - The name of the MIDI device.
- * @property {string} manufacturer - The manufacturer of the MIDI device.
- * @property {'connected'|'disconnected'} state - The connection state of the MIDI device.
- */
-/**
- * @typedef {object} MIDIMappingData
- * @property {'cc'|'note'|'pitchbend'} type - The type of MIDI message.
- * @property {number} number - The MIDI note number or CC number.
- * @property {number} channel - The MIDI channel (0-15).
- */
-/**
- * @typedef {Object.<string, MIDIMappingData>} LayerParamMappings
- * Key is parameter name (e.g., 'opacity', 'speed'), value is `MIDIMappingData`.
- */
-/**
- * @typedef {Object.<string, LayerParamMappings>} ControllerMIDIMap
- * Key is layer ID string (e.g., '1', '2', '3'), value is `LayerParamMappings`.
- */
-/**
- * @typedef {object} MIDIMonitorEntry
- * @property {string} timestamp - Formatted timestamp of the MIDI message.
- * @property {number} status - The MIDI status byte.
- * @property {number} data1 - The first MIDI data byte.
- * @property {number} data2 - The second MIDI data byte.
- * @property {number} channel - The MIDI channel (1-16).
- * @property {string} type - The human-readable type of the MIDI message.
- */
-/**
- * @typedef {object} CatchModeParamState
- * @property {number} value - The target parameter value from the loaded preset (actual scale, not normalized).
- * @property {boolean} caught - True if the physical MIDI control has "caught up" to or passed this value.
- * @property {number | null} lastMidiValue - The last known normalized (0-1) MIDI value for this parameter, used for crossing detection.
- */
-/**
- * @typedef {Object.<string, CatchModeParamState>} CatchModeTargetValues
- * An object where keys are strings in the format 'layerId_paramName' (e.g., '1_speed'),
- * and values are `CatchModeParamState` objects. This state manages the soft takeover
- * behavior for each MIDI-mapped parameter after a preset load.
- */
-/**
- * @typedef {object} MIDIContextValue
- * @property {MIDIAccess | null} midiAccess - The raw MIDIAccess object from the Web MIDI API.
- * @property {boolean} isConnected - True if at least one MIDI input device is connected.
- * @property {boolean} isConnecting - True if a MIDI connection attempt is currently in progress.
- * @property {Error | string | null} error - Any error related to MIDI connection or setup.
- * @property {Array<MIDIDevice>} midiInputs - An array of available MIDI input devices.
- * @property {ControllerMIDIMap} midiMap - The active MIDI controller mappings loaded from the user's profile or being built.
- * @property {Object.<string, {layerSelect?: MIDIMappingData}>} layerMappings - Mappings for layer selection via MIDI. (Structure might need refinement based on usage)
- * @property {object} globalMappings - Mappings for global controls via MIDI. (Structure might need refinement)
- * @property {{param: string, layer: string|number} | null} midiLearning - Object indicating the parameter and layer currently in MIDI learn mode, or null.
- * @property {string|number|null} learningLayer - The layer ID currently in MIDI learn mode for layer selection, or null.
- * @property {number} selectedChannel - The currently selected MIDI channel filter (0 for Omni, 1-16 for specific channels).
- * @property {Array<MIDIMonitorEntry>} midiMonitorData - An array of recent MIDI messages for display in the monitor.
- * @property {boolean} showMidiMonitor - Whether the MIDI monitor UI should be visible.
- * @property {{layer: number, timestamp: number} | null} pendingLayerSelect - Information about a pending layer selection action triggered by MIDI.
- * @property {{layer: number, param: string, value: number, timestamp: number} | null} pendingParamUpdate - Information about a pending parameter update action triggered by MIDI.
- * @property {() => Promise<MIDIAccess | null>} connectMIDI - Function to initiate connection to MIDI devices.
- * @property {(forceFullDisconnect?: boolean) => void} disconnectMIDI - Function to disconnect from MIDI devices.
- * @property {(param: string, layer: string|number) => void} startMIDILearn - Function to start MIDI learn mode for a specific parameter and layer.
- * @property {() => void} stopMIDILearn - Function to stop MIDI learn mode for parameters.
- * @property {(layer: string|number) => void} startLayerMIDILearn - Function to start MIDI learn mode for layer selection.
- * @property {() => void} stopLayerMIDILearn - Function to stop MIDI learn mode for layer selection.
- * @property {() => void} clearAllMappings - Function to clear all stored MIDI mappings for the current controller.
- * @property {(channel: number) => void} setChannelFilter - Function to set the MIDI channel filter.
- * @property {() => void} clearMIDIMonitor - Function to clear the MIDI monitor data.
- * @property {(layer: string|number, mappingData: MIDIMappingData) => void} mapLayerToMIDI - Function to map a MIDI control to layer selection.
- * @property {React.Dispatch<React.SetStateAction<boolean>>} setShowMidiMonitor - Function to toggle the visibility of the MIDI monitor.
- * @property {() => void} clearPendingActions - Function to clear any pending layer selection or parameter update actions.
- * @property {(param: string, layer: string|number, mappingData: MIDIMappingData) => void} mapParameterToMIDI - Function to map a MIDI control to a specific parameter on a layer.
- */
-
 const defaultContextValue = {
   midiAccess: null, isConnected: false, isConnecting: false, error: null, midiInputs: [],
-  midiMap: {}, layerMappings: { "1": {}, "2": {}, "3": {} }, globalMappings: {},
+  midiMap: {}, layerMappings: { "1": {}, "2": {}, "3": {} },
   midiLearning: null, learningLayer: null, selectedChannel: 0, midiMonitorData: [],
   showMidiMonitor: false, pendingLayerSelect: null, pendingParamUpdate: null,
+  pendingGlobalAction: null,
   connectMIDI: async () => { if (import.meta.env.DEV) console.warn("connectMIDI called on default MIDIContext"); return null; },
   disconnectMIDI: () => { if (import.meta.env.DEV) console.warn("disconnectMIDI called on default MIDIContext"); },
   startMIDILearn: () => { if (import.meta.env.DEV) console.warn("startMIDILearn called on default MIDIContext"); },
   stopMIDILearn: () => { if (import.meta.env.DEV) console.warn("stopMIDILearn called on default MIDIContext"); },
   startLayerMIDILearn: () => { if (import.meta.env.DEV) console.warn("startLayerMIDILearn called on default MIDIContext"); },
   stopLayerMIDILearn: () => { if (import.meta.env.DEV) console.warn("stopLayerMIDILearn called on default MIDIContext"); },
+  startGlobalMIDILearn: () => { if (import.meta.env.DEV) console.warn("startGlobalMIDILearn called on default MIDIContext"); },
   clearAllMappings: () => { if (import.meta.env.DEV) console.warn("clearAllMappings called on default MIDIContext"); },
   setChannelFilter: () => { if (import.meta.env.DEV) console.warn("setChannelFilter called on default MIDIContext"); },
   clearMIDIMonitor: () => { if (import.meta.env.DEV) console.warn("clearMIDIMonitor called on default MIDIContext"); },
-  mapLayerToMIDI: () => { if (import.meta.env.DEV) console.warn("mapLayerToMIDI called on default MIDIContext"); },
   setShowMidiMonitor: () => { if (import.meta.env.DEV) console.warn("setShowMidiMonitor called on default MIDIContext"); },
   clearPendingActions: () => { if (import.meta.env.DEV) console.warn("clearPendingActions called on default MIDIContext"); },
   mapParameterToMIDI: () => { if (import.meta.env.DEV) console.warn("mapParameterToMIDI called on default MIDIContext"); },
@@ -133,22 +59,20 @@ const getMidiMessageType = (status) => {
 };
 
 export function MIDIProvider({ children }) {
-  // --- MODIFICATION: Get MIDI state and updaters from PresetManagementContext ---
   const { 
     activeMidiMap, 
-    updateGlobalMidiMap, 
+    updateGlobalMidiMap,
+    updateLayerMidiMappings,
     configLoadNonce, 
-    loadedLayerConfigsFromPreset 
+    loadedLayerConfigsFromPreset,
+    isInitiallyResolved
   } = usePresetManagement();
-  // --- END MODIFICATION ---
   
   const [midiAccess, setMidiAccess] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState(null);
   const [midiInputs, setMidiInputs] = useState([]);
-  const [layerMappings, setLayerMappings] = useState({ "1": {}, "2": {}, "3": {} });
-  const [globalMappings, setGlobalMappings] = useState({});
   const [midiLearning, setMidiLearning] = useState(null);
   const [learningLayer, setLearningLayer] = useState(null);
   const [selectedChannel, setSelectedChannel] = useState(0);
@@ -156,13 +80,11 @@ export function MIDIProvider({ children }) {
   const [showMidiMonitor, setShowMidiMonitor] = useState(false);
   const [pendingLayerSelect, setPendingLayerSelect] = useState(null);
   const [pendingParamUpdate, setPendingParamUpdate] = useState(null);
+  const [pendingGlobalAction, setPendingGlobalAction] = useState(null);
   const [catchModeTargetValues, setCatchModeTargetValues] = useState({});
 
   const catchModeTargetValuesRef = useRef(catchModeTargetValues);
-  // --- MODIFICATION: This ref now points to the map from the preset context ---
   const activeControllerMidiMapRef = useRef(activeMidiMap);
-  const layerMappingsRef = useRef(layerMappings);
-  const globalMappingsRef = useRef(globalMappings);
   const midiLearningRef = useRef(midiLearning);
   const learningLayerRef = useRef(learningLayer);
   const selectedChannelRef = useRef(selectedChannel);
@@ -172,13 +94,16 @@ export function MIDIProvider({ children }) {
   const isUnmountingRef = useRef(false);
   const midiAccessRefForCallbacks = useRef(midiAccess);
   const handleMIDIMessageRef = useRef(null);
+  const isConnectedRef = useRef(isConnected);
 
-  // --- MODIFICATION: Update ref when activeMidiMap from context changes ---
+  const layerMappings = useMemo(() => activeMidiMap?.layerSelects || {}, [activeMidiMap]);
+  const layerMappingsRef = useRef(layerMappings);
+
+  useEffect(() => { isConnectedRef.current = isConnected; }, [isConnected]);
   useEffect(() => { activeControllerMidiMapRef.current = activeMidiMap; }, [activeMidiMap]);
   useEffect(() => { catchModeTargetValuesRef.current = catchModeTargetValues; }, [catchModeTargetValues]);
   useEffect(() => { midiAccessRefForCallbacks.current = midiAccess; }, [midiAccess]);
   useEffect(() => { layerMappingsRef.current = layerMappings; }, [layerMappings]);
-  useEffect(() => { globalMappingsRef.current = globalMappings; }, [globalMappings]);
   useEffect(() => { midiLearningRef.current = midiLearning; }, [midiLearning]);
   useEffect(() => { learningLayerRef.current = learningLayer; }, [learningLayer]);
   useEffect(() => { selectedChannelRef.current = selectedChannel; }, [selectedChannel]);
@@ -187,6 +112,7 @@ export function MIDIProvider({ children }) {
     if (configLoadNonce > 0 && loadedLayerConfigsFromPreset && activeControllerMidiMapRef.current) {
       const newCatchTargets = {};
       for (const layerIdStr in activeControllerMidiMapRef.current) {
+        if (layerIdStr === 'global' || layerIdStr === 'layerSelects') continue;
         const layerParams = activeControllerMidiMapRef.current[layerIdStr];
         if (layerParams) {
           for (const paramName in layerParams) {
@@ -216,18 +142,18 @@ export function MIDIProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    if (pendingLayerSelect || pendingParamUpdate) {
+    if (pendingLayerSelect || pendingParamUpdate || pendingGlobalAction) {
       if (pendingTimeoutRef.current) clearTimeout(pendingTimeoutRef.current);
       pendingTimeoutRef.current = setTimeout(() => {
         setPendingLayerSelect(null);
         setPendingParamUpdate(null);
+        setPendingGlobalAction(null);
         pendingTimeoutRef.current = null;
       }, PENDING_ACTION_EXPIRY_MS);
     }
     return () => { if (pendingTimeoutRef.current) clearTimeout(pendingTimeoutRef.current); };
-  }, [pendingLayerSelect, pendingParamUpdate]);
+  }, [pendingLayerSelect, pendingParamUpdate, pendingGlobalAction]);
 
-  // --- MODIFICATION: This now calls the centralized updater from PresetManagementContext ---
   const mapParameterToMIDI = useCallback((param, layer, mappingData) => {
     const currentMap = activeMidiMap || {};
     const updatedActiveMap = {
@@ -242,19 +168,18 @@ export function MIDIProvider({ children }) {
 
   const clearAllMappings = useCallback(() => {
     if (window.confirm("Are you sure you want to reset ALL persistent MIDI parameter mappings? This will be staged until you save.")) {
-      updateGlobalMidiMap({}); // This now clears both staged and active maps
-      setLayerMappings({ "1": {}, "2": {}, "3": {} });
-      setGlobalMappings({});
-      setCatchModeTargetValues({});
+      updateGlobalMidiMap({});
     }
   }, [updateGlobalMidiMap]);
-  // --- END MODIFICATION ---
 
-  const mapLayerToMIDI = useCallback((layer, mappingData) => {
-    setLayerMappings(prev => ({ ...prev, [String(layer)]: { ...(prev[String(layer)] || {}), layerSelect: mappingData } }));
+  const startMIDILearn = useCallback((param, layer) => {
+    setMidiLearning({ type: 'param', param, layer });
+    setLearningLayer(null);
   }, []);
-
-  const startMIDILearn = useCallback((param, layer) => { setMidiLearning({ param: param, layer: layer }); setLearningLayer(null); }, []);
+  const startGlobalMIDILearn = useCallback((controlName) => {
+    setMidiLearning({ type: 'global', control: controlName });
+    setLearningLayer(null);
+  }, []);
   const stopMIDILearn = useCallback(() => { if (midiLearningRef.current) setMidiLearning(null); }, []);
   const startLayerMIDILearn = useCallback((layer) => { setLearningLayer(layer); setMidiLearning(null); }, []);
   const stopLayerMIDILearn = useCallback(() => { if (learningLayerRef.current !== null) setLearningLayer(null); }, []);
@@ -271,146 +196,170 @@ export function MIDIProvider({ children }) {
       const updated = [...prev, newEntry];
       return updated.length > MAX_MONITOR_ENTRIES ? updated.slice(-MAX_MONITOR_ENTRIES) : updated;
     });
-
+    
     if (selectedChannelRef.current > 0 && (msgChan + 1) !== selectedChannelRef.current) return;
 
     const isCC = msgType === 'Control Change';
     const isNoteOn = msgType === 'Note On' && data2 > 0;
     const isPitch = msgType === 'Pitch Bend';
-    const currentLearningState = midiLearningRef.current;
 
-    if (currentLearningState) {
+    if (midiLearningRef.current) {
       if (isCC || isNoteOn || isPitch) {
         const mappingData = { type: isCC ? 'cc' : (isNoteOn ? 'note' : 'pitchbend'), number: data1, channel: msgChan };
-        mapParameterToMIDI(currentLearningState.param, currentLearningState.layer, mappingData);
+        const currentLearningState = midiLearningRef.current;
+
+        if (currentLearningState.type === 'param' && currentLearningState.param && currentLearningState.layer) {
+          mapParameterToMIDI(currentLearningState.param, currentLearningState.layer, mappingData);
+        } else if (currentLearningState.type === 'global' && currentLearningState.control) {
+          const currentMap = activeControllerMidiMapRef.current || {};
+          const updatedActiveMap = {
+            ...currentMap,
+            global: {
+              ...(currentMap.global || {}),
+              [currentLearningState.control]: mappingData
+            }
+          };
+          updateGlobalMidiMap(updatedActiveMap);
+        }
+        
         stopMIDILearn();
       }
       return;
     }
+
     if (learningLayerRef.current !== null) {
       if (isNoteOn) {
         const mappingData = { type: 'note', number: data1, channel: msgChan };
-        mapLayerToMIDI(learningLayerRef.current, mappingData);
+        updateLayerMidiMappings(learningLayerRef.current, mappingData);
         stopLayerMIDILearn();
       }
       return;
     }
 
-    let actionTaken = false;
-    let catchStateModified = false;
+    if (!isCC && !isNoteOn && !isPitch) return;
+
+    const currentControllerMap = activeControllerMidiMapRef.current || {};
+    
+    const globalControls = currentControllerMap.global;
+    if (globalControls) {
+        const pLockMapping = globalControls['pLockToggle'];
+        if (pLockMapping) {
+          let isMatch = (pLockMapping.type === 'note' && isNoteOn && pLockMapping.number === data1 && (pLockMapping.channel === undefined || pLockMapping.channel === msgChan)) ||
+                        (pLockMapping.type === 'cc' && isCC && pLockMapping.number === data1 && (pLockMapping.channel === undefined || pLockMapping.channel === msgChan));
+          
+          if (isMatch) {
+            setPendingGlobalAction({ action: 'pLockToggle', timestamp });
+            return;
+          }
+        }
+    }
 
     if (isNoteOn) {
-      Object.entries(layerMappingsRef.current).forEach(([layerId, mapping]) => {
-        const lsm = mapping.layerSelect;
-        if (lsm?.type === 'note' && lsm.number === data1 && (lsm.channel === undefined || lsm.channel === msgChan)) {
-          actionTaken = true;
-          setPendingLayerSelect({ layer: parseInt(layerId, 10), timestamp });
-        }
-      });
-    }
-
-    if ((isCC || isPitch || isNoteOn) && !actionTaken) {
-      const currentControllerMap = activeControllerMidiMapRef.current || {};
-      Object.entries(currentControllerMap).forEach(([layerIdStr, layerParams]) => {
-        if (typeof layerParams !== 'object' || layerParams === null) return;
-        Object.entries(layerParams).forEach(([paramName, mappingData]) => {
-          if (!mappingData) return;
-          let isMatch = false;
-          let rawValue = data2;
-          let midiMsgTypeForNormalization = 'cc';
-
-          if (mappingData.type === 'cc' && isCC && mappingData.number === data1 && (mappingData.channel === undefined || mappingData.channel === msgChan)) {
-            isMatch = true; rawValue = data2; midiMsgTypeForNormalization = 'cc';
-          } else if (mappingData.type === 'note' && isNoteOn && mappingData.number === data1 && (mappingData.channel === undefined || mappingData.channel === msgChan)) {
-            isMatch = true; rawValue = data2; midiMsgTypeForNormalization = 'note';
-          } else if (mappingData.type === 'pitchbend' && isPitch && (mappingData.channel === undefined || mappingData.channel === msgChan)) {
-            isMatch = true; rawValue = (data2 << 7) | data1; midiMsgTypeForNormalization = 'pitchbend';
-          }
-
-          if (isMatch) {
-            actionTaken = true;
-            const currentNormalizedMidiVal = normalizeMIDIValue(rawValue, midiMsgTypeForNormalization);
-            const catchKey = `${layerIdStr}_${paramName}`;
-            const paramCatchState = catchModeTargetValuesRef.current[catchKey];
-
-            if (paramCatchState) {
-              let { value: presetValueActual, caught, lastMidiValue: lastNormalizedMidiVal } = paramCatchState;
-              if (!caught) {
-                const sliderConfig = sliderParams.find(p => p.prop === paramName);
-                if (sliderConfig) {
-                  const { min: sliderMin, max: sliderMax } = sliderConfig;
-                  let normalizedPresetValue = 0.5;
-                  if (sliderMax > sliderMin) {
-                    normalizedPresetValue = (presetValueActual - sliderMin) / (sliderMax - sliderMin);
-                    normalizedPresetValue = Math.max(0, Math.min(1, normalizedPresetValue));
-                  }
-
-                  let hasCaught = false;
-                  if (lastNormalizedMidiVal !== null) {
-                    const wentUpwards = lastNormalizedMidiVal <= normalizedPresetValue && currentNormalizedMidiVal >= normalizedPresetValue;
-                    const wentDownwards = lastNormalizedMidiVal >= normalizedPresetValue && currentNormalizedMidiVal <= normalizedPresetValue;
-                    hasCaught = wentUpwards || wentDownwards;
-                  } else {
-                    if (Math.abs(currentNormalizedMidiVal - normalizedPresetValue) < CATCH_MODE_NORMALIZATION_EPSILON) {
-                      hasCaught = true;
-                    }
-                  }
-
-                  if (hasCaught) {
-                    if(import.meta.env.DEV) console.log(`[MIDI Catch] L${layerIdStr}-${paramName} CAUGHT!`);
-                    catchModeTargetValuesRef.current[catchKey] = { ...paramCatchState, caught: true, lastMidiValue: currentNormalizedMidiVal };
-                    catchStateModified = true;
-                    setPendingParamUpdate({ layer: parseInt(layerIdStr, 10), param: paramName, value: currentNormalizedMidiVal, timestamp });
-                  } else {
-                    catchModeTargetValuesRef.current[catchKey] = { ...paramCatchState, lastMidiValue: currentNormalizedMidiVal };
-                    catchStateModified = true;
-                  }
-                } else {
-                  if(import.meta.env.DEV) console.warn(`[MIDI Catch] No sliderConfig for ${paramName}, applying MIDI directly.`);
-                  setPendingParamUpdate({ layer: parseInt(layerIdStr, 10), param: paramName, value: currentNormalizedMidiVal, timestamp });
-                }
-              } else {
-                catchModeTargetValuesRef.current[catchKey] = { ...paramCatchState, lastMidiValue: currentNormalizedMidiVal };
-                catchStateModified = true;
-                setPendingParamUpdate({ layer: parseInt(layerIdStr, 10), param: paramName, value: currentNormalizedMidiVal, timestamp });
-              }
-            } else {
-              setPendingParamUpdate({ layer: parseInt(layerIdStr, 10), param: paramName, value: currentNormalizedMidiVal, timestamp });
+        for (const layerId in layerMappingsRef.current) {
+            const lsm = layerMappingsRef.current[layerId];
+            if (lsm?.type === 'note' && lsm.number === data1 && (lsm.channel === undefined || lsm.channel === msgChan)) {
+                setPendingLayerSelect({ layer: parseInt(layerId, 10), timestamp });
+                return;
             }
-          }
-        });
-      });
+        }
     }
-    if (catchStateModified) {
-      setCatchModeTargetValues({ ...catchModeTargetValuesRef.current });
+    
+    for (const layerIdStr in currentControllerMap) {
+        if (layerIdStr === 'global' || layerIdStr === 'layerSelects') continue;
+
+        const layerParams = currentControllerMap[layerIdStr];
+        if (typeof layerParams !== 'object' || layerParams === null) continue;
+
+        for (const paramName in layerParams) {
+            const mappingData = layerParams[paramName];
+            if (!mappingData) continue;
+
+            let isMatch = false;
+            let rawValue = data2;
+            let midiMsgTypeForNormalization = 'cc';
+
+            if (mappingData.type === 'cc' && isCC && Number(mappingData.number) === Number(data1) && (mappingData.channel === undefined || Number(mappingData.channel) === Number(msgChan))) {
+                isMatch = true; rawValue = data2;
+            } else if (mappingData.type === 'note' && isNoteOn && Number(mappingData.number) === Number(data1) && (mappingData.channel === undefined || Number(mappingData.channel) === Number(msgChan))) {
+                isMatch = true; rawValue = data2;
+            } else if (mappingData.type === 'pitchbend' && isPitch && (mappingData.channel === undefined || Number(mappingData.channel) === Number(msgChan))) {
+                isMatch = true; rawValue = (data2 << 7) | data1; midiMsgTypeForNormalization = 'pitchbend';
+            }
+
+            if (isMatch) {
+                const currentNormalizedMidiVal = normalizeMIDIValue(rawValue, midiMsgTypeForNormalization);
+                const catchKey = `${layerIdStr}_${paramName}`;
+                const paramCatchState = catchModeTargetValuesRef.current[catchKey];
+
+                if (paramCatchState) {
+                    let { value: presetValueActual, caught, lastMidiValue: lastNormalizedMidiVal } = paramCatchState;
+                    if (!caught) {
+                        const sliderConfig = sliderParams.find(p => p.prop === paramName);
+                        if (sliderConfig) {
+                            const { min: sliderMin, max: sliderMax } = sliderConfig;
+                            let normalizedPresetValue = 0.5;
+                            if (sliderMax > sliderMin) {
+                                normalizedPresetValue = (presetValueActual - sliderMin) / (sliderMax - sliderMin);
+                                normalizedPresetValue = Math.max(0, Math.min(1, normalizedPresetValue));
+                            }
+
+                            let hasCaught = false;
+                            if (lastNormalizedMidiVal !== null) {
+                                hasCaught = (lastNormalizedMidiVal <= normalizedPresetValue && currentNormalizedMidiVal >= normalizedPresetValue) || (lastNormalizedMidiVal >= normalizedPresetValue && currentNormalizedMidiVal <= normalizedPresetValue);
+                            } else if (Math.abs(currentNormalizedMidiVal - normalizedPresetValue) < CATCH_MODE_NORMALIZATION_EPSILON) {
+                                hasCaught = true;
+                            }
+
+                            if (hasCaught) {
+                                setCatchModeTargetValues(prev => ({ ...prev, [catchKey]: { ...paramCatchState, caught: true, lastMidiValue: currentNormalizedMidiVal } }));
+                                setPendingParamUpdate({ layer: parseInt(layerIdStr, 10), param: paramName, value: currentNormalizedMidiVal, timestamp });
+                            } else {
+                                setCatchModeTargetValues(prev => ({ ...prev, [catchKey]: { ...paramCatchState, lastMidiValue: currentNormalizedMidiVal } }));
+                            }
+                        } else {
+                            setPendingParamUpdate({ layer: parseInt(layerIdStr, 10), param: paramName, value: currentNormalizedMidiVal, timestamp });
+                        }
+                    } else {
+                        setCatchModeTargetValues(prev => ({ ...prev, [catchKey]: { ...paramCatchState, lastMidiValue: currentNormalizedMidiVal } }));
+                        setPendingParamUpdate({ layer: parseInt(layerIdStr, 10), param: paramName, value: currentNormalizedMidiVal, timestamp });
+                    }
+                } else {
+                    setPendingParamUpdate({ layer: parseInt(layerIdStr, 10), param: paramName, value: currentNormalizedMidiVal, timestamp });
+                }
+                return;
+            }
+        }
     }
-  }, [mapLayerToMIDI, mapParameterToMIDI, stopMIDILearn, stopLayerMIDILearn]);
+  }, [mapParameterToMIDI, stopMIDILearn, updateGlobalMidiMap, stopLayerMIDILearn, updateLayerMidiMappings]);
 
   useEffect(() => { handleMIDIMessageRef.current = handleMIDIMessage; }, [handleMIDIMessage]);
-
-  const setupMIDIListeners = useCallback((access) => {
-    if (!access) return;
-    access.inputs.forEach(input => {
-      const messageHandlerWrapper = (message) => { if (handleMIDIMessageRef.current) { handleMIDIMessageRef.current(message); } };
-      if (input.onmidimessage) { input.onmidimessage = null; }
-      input.onmidimessage = messageHandlerWrapper;
-    });
-  }, []);
-
-  const handleStateChange = useCallback((event) => {
-    if (!event || !event.port || event.port.type !== "input") return;
-    const currentMidiAccess = midiAccessRefForCallbacks.current;
-    if (!currentMidiAccess) return;
-
+  
+  const processMidiInputs = useCallback((midiAccessObject) => {
+    if (!midiAccessObject) return;
     const currentInputs = [];
-    let anyConnected = false;
-    currentMidiAccess.inputs.forEach(input => {
+    let anyDevicePhysicallyConnected = false;
+    
+    const messageHandlerWrapper = (message) => { 
+      if (handleMIDIMessageRef.current) handleMIDIMessageRef.current(message); 
+    };
+
+    midiAccessObject.inputs.forEach(input => {
       currentInputs.push({ id: input.id, name: input.name || `Input ${input.id}`, manufacturer: input.manufacturer || 'Unknown', state: input.state });
+      
       if (input.state === 'connected') {
-        anyConnected = true;
-        const messageHandlerWrapper = (message) => { if (handleMIDIMessageRef.current) { handleMIDIMessageRef.current(message); } };
-        if (!input.onmidimessage) {
-          input.onmidimessage = messageHandlerWrapper;
+        anyDevicePhysicallyConnected = true;
+        if (isInitiallyResolved) {
+            try {
+                if (input.onmidimessage !== messageHandlerWrapper) {
+                    input.onmidimessage = messageHandlerWrapper;
+                }
+            } catch (e) {
+                if (import.meta.env.DEV) console.error(`[MIDI] FAILED to attach listener for device: ${input.name}. Error:`, e);
+            }
+        } else {
+            if (input.onmidimessage) {
+                input.onmidimessage = null;
+            }
         }
       } else {
         if (input.onmidimessage) {
@@ -418,19 +367,32 @@ export function MIDIProvider({ children }) {
         }
       }
     });
+
     setMidiInputs(currentInputs);
-    setIsConnected(wasConnected => {
-      if (wasConnected !== anyConnected) {
-        if (anyConnected) setError(null);
-        return anyConnected;
-      }
-      return wasConnected;
-    });
-  }, []);
+    
+    if (!anyDevicePhysicallyConnected) {
+      setError("No MIDI devices found or connected.");
+      setIsConnected(false);
+    } else {
+      setError(null);
+      setIsConnected(true);
+    }
+  }, [isInitiallyResolved]);
+
+  useEffect(() => {
+    if (isInitiallyResolved && midiAccess) {
+      processMidiInputs(midiAccess);
+    }
+  }, [isInitiallyResolved, midiAccess, processMidiInputs]);
+
+  const handleStateChange = useCallback((event) => {
+    const currentMidiAccess = midiAccessRefForCallbacks.current;
+    if (!currentMidiAccess) return;
+    processMidiInputs(currentMidiAccess);
+  }, [processMidiInputs]);
 
   const connectMIDI = useCallback(async () => {
-    if (connectionInProgressRef.current) return midiAccessRefForCallbacks.current;
-    if (isConnected && midiAccessRefForCallbacks.current) return midiAccessRefForCallbacks.current;
+    if (connectionInProgressRef.current || isConnectedRef.current) return midiAccessRefForCallbacks.current;
     if (typeof navigator === 'undefined' || !navigator.requestMIDIAccess) {
       setError("Web MIDI API not supported");
       return null;
@@ -438,74 +400,54 @@ export function MIDIProvider({ children }) {
     connectionInProgressRef.current = true;
     setIsConnecting(true);
     setError(null);
-
     if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
     connectTimeoutRef.current = setTimeout(() => {
-      if (isConnecting && connectionInProgressRef.current) {
+      if (connectionInProgressRef.current) {
         setError("MIDI connection timed out.");
         setIsConnecting(false);
         connectionInProgressRef.current = false;
       }
     }, MIDI_CONNECT_TIMEOUT_MS);
 
-    let access = null;
     try {
-      access = await navigator.requestMIDIAccess({ sysex: false });
+      const access = await navigator.requestMIDIAccess({ sysex: false });
       if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
-      connectTimeoutRef.current = null;
-
-      if (isUnmountingRef.current) {
-          connectionInProgressRef.current = false; setIsConnecting(false);
-          return null;
-      }
+      if (isUnmountingRef.current) return null;
 
       setMidiAccess(access);
-      const inputs = [];
-      let anyDeviceConnected = false;
-      access.inputs.forEach(input => {
-        inputs.push({ id: input.id, name: input.name || `Input ${input.id}`, manufacturer: input.manufacturer || 'Unknown', state: input.state });
-        if (input.state === 'connected') anyDeviceConnected = true;
-      });
-      setMidiInputs(inputs);
-      setupMIDIListeners(access);
       access.onstatechange = handleStateChange;
-
-      setIsConnected(anyDeviceConnected);
-      setIsConnecting(false);
-      connectionInProgressRef.current = false;
-      if (!anyDeviceConnected) {
-        setError("No MIDI devices found or connected.");
-      }
+      
+      processMidiInputs(access);
+      
       return access;
     } catch (err) {
       if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
-      connectTimeoutRef.current = null;
       const errorMessage = err.message || err.name || 'Unknown MIDI access error';
       setError(`MIDI access failed: ${errorMessage}`);
       setMidiAccess(null);
       setIsConnected(false);
-      setIsConnecting(false);
-      connectionInProgressRef.current = false;
       return null;
+    } finally {
+      if (connectionInProgressRef.current) {
+        setIsConnecting(false);
+        connectionInProgressRef.current = false;
+      }
     }
-  }, [isConnected, setupMIDIListeners, handleStateChange, isConnecting]);
-
+  }, [handleStateChange, processMidiInputs]);
+  
   const disconnectMIDI = useCallback((forceFullDisconnect = false) => {
     const isDevelopment = import.meta.env.DEV;
     const isFinalUnmount = isUnmountingRef.current && forceFullDisconnect;
     const currentMidiAccess = midiAccessRefForCallbacks.current;
-
     if (currentMidiAccess) {
       if (currentMidiAccess.onstatechange) currentMidiAccess.onstatechange = null;
       currentMidiAccess.inputs.forEach(input => {
         if (input.onmidimessage) input.onmidimessage = null;
       });
     }
-
     if (connectTimeoutRef.current) { clearTimeout(connectTimeoutRef.current); connectTimeoutRef.current = null; }
     if (pendingTimeoutRef.current) { clearTimeout(pendingTimeoutRef.current); pendingTimeoutRef.current = null; }
     connectionInProgressRef.current = false;
-
     if (forceFullDisconnect || isFinalUnmount || !isDevelopment) {
       setMidiAccess(null);
       setIsConnected(false);
@@ -523,11 +465,11 @@ export function MIDIProvider({ children }) {
       setSelectedChannel(ch);
     }
   }, []);
-
   const clearMIDIMonitor = useCallback(() => { setMidiMonitorData([]); }, []);
   const clearPendingActions = useCallback(() => {
     setPendingLayerSelect(null);
     setPendingParamUpdate(null);
+    setPendingGlobalAction(null);
     if (pendingTimeoutRef.current) {
       clearTimeout(pendingTimeoutRef.current);
       pendingTimeoutRef.current = null;
@@ -544,23 +486,25 @@ export function MIDIProvider({ children }) {
 
   const contextValue = useMemo(() => ({
     midiAccess, isConnected, isConnecting, error, midiInputs,
-    // --- MODIFICATION: midiMap now comes directly from the activeMidiMap state ---
     midiMap: activeMidiMap,
-    layerMappings, globalMappings, midiLearning, learningLayer, selectedChannel,
+    layerMappings, midiLearning, learningLayer, selectedChannel,
     midiMonitorData, showMidiMonitor, pendingLayerSelect, pendingParamUpdate,
+    pendingGlobalAction, 
     setShowMidiMonitor,
     connectMIDI, disconnectMIDI, startMIDILearn, stopMIDILearn,
     startLayerMIDILearn, stopLayerMIDILearn, clearAllMappings, setChannelFilter,
-    clearMIDIMonitor, mapParameterToMIDI, mapLayerToMIDI, clearPendingActions,
+    clearMIDIMonitor, mapParameterToMIDI, clearPendingActions,
+    startGlobalMIDILearn,
   }), [
     midiAccess, isConnected, isConnecting, error, midiInputs, 
-    // --- MODIFICATION: Add activeMidiMap to dependency array ---
     activeMidiMap,
-    layerMappings, globalMappings, midiLearning, learningLayer, selectedChannel,
+    layerMappings, midiLearning, learningLayer, selectedChannel,
     midiMonitorData, showMidiMonitor, pendingLayerSelect, pendingParamUpdate,
-    connectMIDI, disconnectMIDI, clearAllMappings, mapParameterToMIDI, mapLayerToMIDI,
+    pendingGlobalAction, 
+    connectMIDI, disconnectMIDI, clearAllMappings, mapParameterToMIDI,
     setChannelFilter, clearMIDIMonitor, setShowMidiMonitor, clearPendingActions, stopMIDILearn,
-    startMIDILearn, startLayerMIDILearn, stopLayerMIDILearn
+    startMIDILearn, startLayerMIDILearn, stopLayerMIDILearn,
+    startGlobalMIDILearn,
   ]);
 
   return (
@@ -577,11 +521,7 @@ MIDIProvider.propTypes = {
 export function useMIDI() {
   const context = useContext(MIDIContext);
   if (context === undefined) {
-    const err = new Error('useMIDI must be used within a MIDIProvider component.');
-    if (import.meta.env.DEV) {
-        console.error("useMIDI context details: Attempted to use context but found undefined. This usually means MIDIProvider is missing as an ancestor of the component calling useMIDI.", err.stack);
-    }
-    throw err;
+    throw new Error('useMIDI must be used within a MIDIProvider component.');
   }
   return context;
 }

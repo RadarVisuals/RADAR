@@ -198,9 +198,10 @@
 .token-display-area {
   flex-grow: 1;
   overflow-y: auto;
-  padding: var(--space-lg) var(--space-md); /* More top padding to prevent cropping */
+  padding: var(--space-lg) var(--space-md);
   scrollbar-width: thin;
   scrollbar-color: var(--color-primary-a30) rgba(0, 0, 0, 0.1);
+  scrollbar-gutter: stable;
 }
 
 .token-display-area::-webkit-scrollbar {
@@ -257,24 +258,14 @@
 }
 
 /* ==========================================================================
-   PERFORMANCE OPTIMIZATIONS FOR SMOOTH BACKGROUND ANIMATIONS
+   TOKEN GRID & ITEMS
    ========================================================================== */
 
-/* Reduce rendering complexity during overlay operations */
-.overlay.token-selector-overlay.visible ~ * {
-  /* Reduce background complexity while overlay is open */
-  will-change: auto;
-  transform: translateZ(0);
-}
-
-/* Optimize token rendering */
 .tokens-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
-  gap: 12px; /* Consistent gap for both horizontal and vertical */
-  contain: layout style paint size; /* Aggressive containment */
-  transform: translateZ(0); /* Force GPU layer */
-  padding: 8px; /* Add padding to prevent hover effect cropping */
+  gap: 12px;
+  padding: 8px;
 }
 
 .token-item {
@@ -286,54 +277,21 @@
   transition: all var(--transition-normal);
   text-align: center;
   width: 90px;
-  height: 90px; /* Make it square */
+  height: 90px;
   display: flex;
   flex-direction: column;
   user-select: none;
   -webkit-user-select: none;
-  /* Aggressive performance optimizations */
-  contain: layout style paint size;
-  transform: translateZ(0);
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-  /* Default hidden state - no animation initially */
-  opacity: 0;
-  transform: translateY(30px) scale(0.9) translateZ(0);
-  margin: 4px; /* Extra margin to ensure hover effects don't get cropped */
-}
-
-/* Only animate tokens that are explicitly loaded through our sequence */
-.token-item.loaded {
-  animation: tokenSlideIn 400ms ease-out both; /* Faster animation */
-}
-
-/* Tokens that have already been animated should not re-animate */
-.token-item.no-animate {
-  opacity: 1;
-  transform: translateY(0) scale(1) translateZ(0);
-  animation: none !important;
-}
-
-/* Tokens that appear due to scrolling get immediate appearance */
-.token-item:not(.loaded):not(.no-animate) {
-  opacity: 1;
-  transform: translateY(0) scale(1) translateZ(0);
-  transition: all var(--transition-fast); /* Faster transitions */
-}
-
-@keyframes tokenSlideIn {
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1) translateZ(0);
-  }
+  margin: 4px;
+  position: relative;
 }
 
 .token-item:hover {
   border-color: var(--color-primary-a50);
   background: var(--color-primary-a15);
-  transform: translateY(-4px) scale(1.02); /* Slightly more pronounced hover effect */
+  transform: translateY(-4px) scale(1.02);
   box-shadow: var(--shadow-sm);
-  z-index: 10; /* Ensure hover effect stays above other tokens */
+  z-index: 10;
 }
 
 .token-item.selected {
@@ -344,16 +302,11 @@
 
 .token-image-container {
   width: 100%;
-  height: 0;
-  padding-bottom: 100%;
+  height: 100%;
   position: relative;
-  margin-bottom: var(--space-xs);
   overflow: hidden;
   border-radius: var(--radius-sm);
   background-color: rgba(0, 0, 0, 0.3);
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-  flex-grow: 1; /* Take up remaining space to keep square aspect ratio */
 }
 
 .token-image {
@@ -365,8 +318,6 @@
   object-fit: cover;
   transition: transform var(--transition-normal);
   pointer-events: none;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
 }
 
 .token-item:hover .token-image {
@@ -402,274 +353,244 @@
   100% { transform: rotate(360deg); }
 }
 
-.status-message {
+/* ==========================================================================
+   PALETTE & COLLECTION MANAGEMENT
+   ========================================================================== */
+
+.palette-section {
+  background: rgba(0,0,0,0.2);
+  padding: var(--space-md);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-dark);
+}
+.create-palette-form {
+  display: flex;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
+}
+.create-palette-form .form-control {
+  flex-grow: 1;
+}
+.no-items-message {
+  color: var(--color-text-muted);
+  font-style: italic;
   text-align: center;
   padding: var(--space-md);
-  margin: var(--space-md);
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-sm);
-  font-weight: 500;
-  box-shadow: var(--shadow-sm);
 }
-
-.status-message.info {
-  background-color: var(--color-info-a10);
-  border: 1px solid var(--color-info-a30);
-  color: var(--color-info-a90);
+.collection-group {
+  margin-bottom: var(--space-sm);
 }
-
-/* ==========================================================================
-   BUTTON STYLES
-   ========================================================================== */
-
-.btn {
+.collection-header {
+  width: 100%;
+  background: var(--color-primary-a05);
+  border: 1px solid var(--color-border);
   padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-sm);
-  font-size: var(--font-size-sm);
+  text-align: left;
+  color: var(--color-primary-a90);
   font-weight: 500;
   cursor: pointer;
-  transition: all var(--transition-fast);
-  border: 1px solid;
-  text-decoration: none;
-  display: inline-flex;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.collection-header:hover {
+  background: var(--color-primary-a15);
+}
+.collection-toggle-button {
+  flex-grow: 1;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  padding: 0;
+}
+.delete-palette-btn {
+  background: none;
+  border: none;
+  color: var(--color-error-a70);
+  font-size: 1.2em;
+  cursor: pointer;
+  padding: 0 var(--space-xs);
+  transition: color var(--transition-fast);
+  flex-shrink: 0;
+}
+.delete-palette-btn:hover {
+  color: var(--color-error);
+}
+.chevron {
+  transition: transform var(--transition-fast);
+  font-size: 1.2em;
+}
+.chevron.expanded {
+  transform: rotate(90deg);
+}
+.add-to-palette-btn, .remove-from-palette-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.6);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-xs);
-  font-family: inherit;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
 }
-
-.btn.btn-sm {
-  padding: 4px var(--space-xs);
-  font-size: var(--font-size-xs);
+.token-item:hover .add-to-palette-btn,
+.token-item:hover .remove-from-palette-btn {
+  opacity: 1;
 }
-
-.btn.btn-outline {
-  background: transparent;
-  border-color: var(--color-border);
-  color: var(--color-text);
+.add-to-palette-btn {
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary-a30);
 }
-
-.btn.btn-outline:hover:not(:disabled) {
-  background: var(--color-primary-a10);
-  border-color: var(--color-primary-a30);
+.add-to-palette-btn:hover {
+  background: var(--color-primary-a30);
+}
+.remove-from-palette-btn {
+  color: var(--color-error);
+  border: 1px solid var(--color-error-a30);
+}
+.remove-from-palette-btn:hover {
+  background: var(--color-error-a30);
+}
+.palette-modal-overlay {
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: calc(var(--z-overlay) + 1);
+}
+.palette-modal-content {
+  background: var(--color-bg-light);
+  padding: var(--space-lg);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  width: 90%;
+  max-width: 300px;
+}
+.palette-modal-content h4 {
+  margin-top: 0;
   color: var(--color-primary);
 }
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.palette-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  max-height: 50vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-primary-a30) rgba(0, 0, 0, 0.1);
+  /* --- THIS IS THE FIX --- */
+  padding: 0 var(--space-xs); /* Symmetrical padding */
+}
+.palette-list::-webkit-scrollbar {
+  width: 6px;
+}
+.palette-list::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 3px;
+}
+.palette-list::-webkit-scrollbar-thumb {
+  background: var(--color-primary-a30);
+  border-radius: 3px;
+}
+.palette-list::-webkit-scrollbar-thumb:hover {
+  background: var(--color-primary-a50);
 }
 
-/* ==========================================================================
-   RESPONSIVE DESIGN
-   ========================================================================== */
-
-@media (max-width: 768px) {
-  .overlay.token-selector-overlay .overlay-content {
-    width: 95%;
-    height: 85vh;
-  }
-  
-  .token-display-area {
-    padding: var(--space-md) var(--space-sm);
-  }
-  
-  .tokens-grid {
-    grid-template-columns: repeat(auto-fill, minmax(75px, 1fr));
-    gap: 10px;
-  }
-  
-  .token-item {
-    width: 75px;
-    height: 75px;
-  }
-  
-  .layer-button {
-    width: 30px;
-    height: 30px;
-  }
-  
-  .layer-button-icon {
-    width: 18px;
-    height: 18px;
-  }
-  
-  .header-center-content {
-    padding: 0 var(--space-md);
-  }
-  
-  .token-section-header {
-    font-size: 1em;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--space-xs);
-  }
-  
-  .progress-info {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--space-xs);
-  }
-}
-
-@media (max-width: 480px) {
-  .overlay.token-selector-overlay .overlay-content {
-    width: 98%;
-    height: 90vh;
-  }
-  
-  .tokens-grid {
-    grid-template-columns: repeat(auto-fill, minmax(65px, 1fr));
-  }
-  
-  .token-item {
-    width: 65px;
-    height: 65px;
-    padding: 4px;
-  }
-  
-  .loading-progress-header {
-    padding: var(--space-xs) var(--space-sm);
-  }
-  
-  .progress-text {
-    font-size: var(--font-size-xs);
-  }
-  
-  .token-count {
-    font-size: 10px;
-  }
-}
-
-/* ==========================================================================
-   ACCESSIBILITY AND REDUCED MOTION
-   ========================================================================== */
-
-@media (prefers-reduced-motion: reduce) {
-  .token-item,
-  .token-image,
-  .overlay.token-selector-overlay,
-  .overlay.token-selector-overlay .overlay-content,
-  .progress-bar-fill,
-  .progress-bar-fill::after,
-  .loading-progress-header,
-  .spinner {
-    transition: none !important;
-    animation: none !important;
-  }
-  
-  .token-item:hover .token-image {
-    transform: none;
-  }
-  
-  .token-item:hover {
-    transform: none;
-  }
-  
-  .progress-bar-fill {
-    background: var(--color-primary);
-  }
-  
-  /* Show tokens immediately without staggered animation */
-  .token-item {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-/* Focus styles for accessibility */
-.layer-button:focus-visible,
-.close-button:focus-visible,
-.btn:focus-visible,
-.token-item:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-}
-
-/* High contrast mode support */
-@media (prefers-contrast: high) {
-  .token-item {
-    border-width: 2px;
-  }
-  
-  .token-item:hover,
-  .token-item.selected {
-    border-width: 3px;
-  }
-  
-  .progress-bar-container {
-    border: 1px solid var(--color-text);
-  }
-}
-
-/* ==========================================================================
-   PERFORMANCE OPTIMIZATIONS
-   ========================================================================== */
-
-/* Use GPU acceleration for smooth animations */
-.token-item,
-.token-image,
-.overlay.token-selector-overlay .overlay-content,
-.progress-bar-fill {
-  will-change: transform, opacity;
-}
-
-/* Remove will-change after animations complete */
-.token-item:not(:hover) {
-  will-change: auto;
-}
-
-/* Optimize for large token lists */
-.tokens-grid {
-  /* Enable CSS containment for better performance */
-  contain: layout style paint;
-}
-
-.token-item {
-  /* Enable individual containment for each token */
-  contain: layout style paint size;
-}
-
-/* ==========================================================================
-   DARK MODE ADJUSTMENTS (if using CSS variables)
-   ========================================================================== */
-
-@media (prefers-color-scheme: dark) {
-  .progress-bar-container {
-    box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.1);
-  }
-  
-  .loading-progress-header {
-    background: rgba(var(--color-bg-rgb, 16, 16, 24), 0.9);
-  }
-}
-
-/* ==========================================================================
-   UTILITY CLASSES
-   ========================================================================== */
-
-.token-name {
-  display: none; /* Hidden but available for screen readers */
-}
-
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
+/* --- Styles for LazyLoadImage Component --- */
+.lazy-image-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-sm);
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
 }
 
-/* ==========================================================================
-   ANIMATIONS
-   ========================================================================== */
+.lazy-image-container .token-image {
+  transition: opacity 300ms ease-in-out;
+}
 
-@keyframes pulse {
-  0% { opacity: 0.7; }
-  50% { opacity: 1; }
-  100% { opacity: 0.7; }
+.placeholder-shimmer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0) 20%,
+    rgba(255, 255, 255, 0.05) 50%,
+    rgba(255, 255, 255, 0) 80%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+/* --- Styles for Loading Progress Bar --- */
+.loading-progress-header {
+  padding: var(--space-xs) var(--space-md);
+  background: rgba(0,0,0,0.3);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+.progress-text {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-xs);
+  text-align: center;
+}
+.progress-bar-container {
+  height: 4px;
+  background: rgba(0,0,0,0.4);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: 2px;
+  transition: width 0.2s linear;
+}
+
+/* --- Styles for Sort Controls --- */
+.sort-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+.sort-controls label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.custom-select-sm {
+  padding: 2px 20px 2px 8px;
+  font-size: var(--font-size-sm);
+  background-position: right 6px center;
 }

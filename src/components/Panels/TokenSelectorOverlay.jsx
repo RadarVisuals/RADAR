@@ -3,233 +3,122 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import PropTypes from "prop-types";
 import { toplayerIcon, middlelayerIcon, bottomlayerIcon } from "../../assets";
 import { demoAssetMap } from "../../assets/DemoLayers/initLayers";
-import { manageOverlayDimmingEffect, safeRequestIdleCallback, safeCancelIdleCallback } from "../../utils/performanceHelpers";
+import { manageOverlayDimmingEffect } from "../../utils/performanceHelpers";
 import { globalAnimationFlags } from "../../utils/globalAnimationFlags";
 import { usePresetManagement } from "../../context/PresetManagementContext";
 import { useUserSession } from "../../context/UserSessionContext";
+import TokenGrid from "./TokenGrid";
+import LazyLoadImage from "./LazyLoadImage";
 import "./PanelStyles/TokenSelectorOverlay.css";
 
 const OPEN_CLOSE_ANIMATION_DURATION = 300;
-const LAZY_RENDER_DELAY = 80;
-const INITIAL_VISIBLE_COUNT = 8;
 
 const TokenSelectorOverlay = ({ isOpen, onClose, onTokenApplied, readOnly = false }) => {
   const [internalIsOpen, setInternalIsOpen] = useState(false);
   const [selectedLayer, setSelectedLayer] = useState(3);
   const [selectedTokens, setSelectedTokens] = useState({ 1: null, 2: null, 3: null });
   const [animationState, setAnimationState] = useState("hidden");
-  const [isPreviewMode, setIsPreviewMode] = useState(false); // For fade preview
-  
-  // Lazy rendering states
-  const [loadingSequence, setLoadingSequence] = useState([]);
-  const [isLazyLoading, setIsLazyLoading] = useState(false);
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [newPaletteName, setNewPaletteName] = useState("");
+  const [paletteModalState, setPaletteModalState] = useState({ isOpen: false, token: null });
+  const [expandedSections, setExpandedSections] = useState({});
+  const [collectionSort, setCollectionSort] = useState('name');
 
-  const { ownedTokens, isFetchingTokens, refreshOwnedTokens } = usePresetManagement();
+  const {
+    ownedTokens, tokenFetchProgress,
+    stagedWorkspace,
+    officialWhitelist = [],
+    addPalette, removePalette, addTokenToPalette, removeTokenFromPalette
+  } = usePresetManagement();
+
   const { visitorProfileAddress } = useUserSession();
 
   const isMountedRef = useRef(false);
-  const lazyRenderIdRef = useRef(null);
   const overlayContentRef = useRef(null);
-  const loadingCompleteRef = useRef(false);
-  const currentTokensRef = useRef({ owned: [], demo: [] }); // Cache tokens to prevent reloading
 
-  // Memoize demo tokens
   const demoTokens = useMemo(() => {
     return Object.entries(demoAssetMap).map(([key, src]) => ({
-      id: key, 
-      type: 'demo', 
-      metadata: { 
-        name: `Demo ${key.replace("DEMO_LAYER_", "Asset ")}`, 
-        image: src 
-      }
+      id: key, type: 'demo', metadata: { name: `Demo ${key.replace("DEMO_LAYER_", "Asset ")}`, image: src }
     }));
   }, []);
 
-  // Update token cache when tokens change, but don't trigger reload if overlay is open
-  useEffect(() => {
-    currentTokensRef.current = {
-      owned: ownedTokens || [],
-      demo: demoTokens || []
-    };
-  }, [ownedTokens, demoTokens]);
+  const userPalettes = useMemo(() => stagedWorkspace?.userPalettes || {}, [stagedWorkspace]);
+
+  const paletteTokens = useMemo(() => {
+    const palettes = {};
+    const combinedTokenMap = new Map();
+    ownedTokens.forEach(t => combinedTokenMap.set(t.id, t));
+    demoTokens.forEach(t => combinedTokenMap.set(t.id, t));
+
+    if (userPalettes) {
+      for (const paletteName in userPalettes) {
+        palettes[paletteName] = userPalettes[paletteName]
+          .map(tokenId => combinedTokenMap.get(tokenId))
+          .filter(Boolean);
+      }
+    }
+    return palettes;
+  }, [ownedTokens, demoTokens, userPalettes]);
+
+  const sortedCollectionLibrary = useMemo(() => {
+    if (!Array.isArray(officialWhitelist)) return [];
+    return [...officialWhitelist].sort((a, b) => {
+      if (collectionSort === 'name') {
+        return (a.name || '').localeCompare(b.name || '');
+      }
+      if (collectionSort === 'addedAt') {
+        return (b.addedAt || 0) - (a.addedAt || 0);
+      }
+      return 0;
+    });
+  }, [officialWhitelist, collectionSort]);
+
+  const collectionTokens = useMemo(() => {
+    const collections = {};
+    if (Array.isArray(officialWhitelist)) {
+      for (const collection of officialWhitelist) {
+        collections[collection.address] = [];
+      }
+    }
+    if (ownedTokens.length > 0) {
+        for (const token of ownedTokens) {
+            if (collections[token.address]) {
+                collections[token.address].push(token);
+            }
+        }
+    }
+    return collections;
+  }, [ownedTokens, officialWhitelist]);
+
 
   useEffect(() => {
     isMountedRef.current = true;
-    return () => { 
-      isMountedRef.current = false;
-      if (lazyRenderIdRef.current) {
-        safeCancelIdleCallback(lazyRenderIdRef.current);
-      }
-    };
+    return () => { isMountedRef.current = false; };
   }, []);
 
-  // Token loading function - stable reference
-  const initializeTokenLoading = useCallback(() => {
-    if (!isMountedRef.current || loadingCompleteRef.current) {
-      console.log(`🚫 Token loading blocked - mounted: ${isMountedRef.current}, complete: ${loadingCompleteRef.current}`);
-      return;
-    }
-    
-    console.log('🚀 Starting token loading...');
-    setIsLazyLoading(true);
-    
-    // Use cached token data to prevent dependency issues
-    const currentOwnedTokens = currentTokensRef.current.owned;
-    const currentDemoTokens = currentTokensRef.current.demo;
-    
-    // Create the proper loading sequence: owned tokens first, then demo tokens
-    const ownedWithSection = currentOwnedTokens.map((token, index) => ({
-      ...token, 
-      section: 'owned',
-      id: token.id || `owned-${index}-${Date.now()}`
-    }));
-    
-    const demoWithSection = currentDemoTokens.map((token, index) => ({
-      ...token, 
-      section: 'demo',
-      id: token.id || `demo-${index}-${Date.now()}`
-    }));
-    
-    const allTokensInOrder = [...ownedWithSection, ...demoWithSection];
-    
-    console.log(`📊 Total tokens to load: ${allTokensInOrder.length} (Owned: ${ownedWithSection.length}, Demo: ${demoWithSection.length})`);
-    
-    if (allTokensInOrder.length === 0) {
-      setIsLazyLoading(false);
-      loadingCompleteRef.current = true;
-      return;
-    }
-    
-    // Show initial batch immediately
-    const initialBatch = allTokensInOrder.slice(0, INITIAL_VISIBLE_COUNT);
-    setLoadingSequence(initialBatch);
-    console.log(`🎬 Initial batch loaded: ${initialBatch.length} tokens`);
-    
-    let currentIndex = INITIAL_VISIBLE_COUNT;
-    
-    const renderNextBatch = () => {
-      // Check if we should continue
-      if (!isMountedRef.current) {
-        console.log('🛑 Token loading cancelled - component unmounted');
-        return;
-      }
-
-      if (loadingCompleteRef.current) {
-        console.log('🛑 Token loading cancelled - already complete');
-        return;
-      }
-
-      if (currentIndex >= allTokensInOrder.length) {
-        console.log('✅ Token loading complete! All tokens loaded.');
-        setIsLazyLoading(false);
-        loadingCompleteRef.current = true;
-        return;
-      }
-
-      const nextToken = allTokensInOrder[currentIndex];
-      if (nextToken && nextToken.id) {
-        console.log(`➕ Loading token ${currentIndex + 1}/${allTokensInOrder.length}: ${nextToken.metadata?.name || nextToken.id}`);
-        setLoadingSequence(prev => {
-          // Prevent duplicates
-          if (prev.find(token => token.id === nextToken.id)) {
-            console.log(`⚠️ Duplicate token found: ${nextToken.id}`);
-            return prev;
-          }
-          return [...prev, nextToken];
-        });
-      }
-      
-      currentIndex++;
-      
-      // Continue loading next token
-      if (currentIndex < allTokensInOrder.length && isMountedRef.current && !loadingCompleteRef.current) {
-        lazyRenderIdRef.current = safeRequestIdleCallback(renderNextBatch, { timeout: 100 });
-      } else {
-        console.log('✅ Token loading complete!');
-        setIsLazyLoading(false);
-        loadingCompleteRef.current = true;
-      }
-    };
-    
-    // Start the loading process
-    if (currentIndex < allTokensInOrder.length) {
-      lazyRenderIdRef.current = safeRequestIdleCallback(renderNextBatch, { timeout: 50 });
-    } else {
-      console.log('✅ All tokens already loaded in initial batch');
-      setIsLazyLoading(false);
-      loadingCompleteRef.current = true;
-    }
-  }, []); // Empty dependency array - function is stable
-
-  // Main overlay state effect - ONLY depends on isOpen
   useEffect(() => {
-    console.log(`🔄 Overlay useEffect triggered - isOpen: ${isOpen}`);
-    
     if (isOpen) {
-      console.log('📂 Opening overlay...');
       globalAnimationFlags.isTokenSelectorOpening = true;
       setAnimationState("opening");
-      
-      // Reset loading states
-      setLoadingSequence([]);
-      setIsLazyLoading(false);
-      loadingCompleteRef.current = false;
-
-      // Cancel any existing loading
-      if (lazyRenderIdRef.current) {
-        safeCancelIdleCallback(lazyRenderIdRef.current);
-        lazyRenderIdRef.current = null;
-      }
-
-      // Minimal immediate setup
       const openTimeout = setTimeout(() => {
         if (isMountedRef.current) {
           setInternalIsOpen(true);
           setAnimationState("content");
-          
-          // Start token loading after overlay is visually open
-          const loadTimeout = setTimeout(() => {
-            if (isMountedRef.current && !loadingCompleteRef.current) {
-              console.log('⏰ Starting delayed token loading...');
-              initializeTokenLoading();
-            }
-          }, 150); // Slightly longer delay
-          
-          return () => clearTimeout(loadTimeout);
         }
       }, 50);
-
-      return () => {
-        clearTimeout(openTimeout);
-      };
-
+      return () => clearTimeout(openTimeout);
     } else {
-      console.log('📁 Closing overlay...');
       globalAnimationFlags.isTokenSelectorOpening = false;
-      
-      // Cancel any ongoing lazy rendering immediately
-      if (lazyRenderIdRef.current) {
-        safeCancelIdleCallback(lazyRenderIdRef.current);
-        lazyRenderIdRef.current = null;
-      }
-      
-      // Start exit animation
       setAnimationState("exiting");
-      
-      // Clean up after animation completes
       const closeTimeout = setTimeout(() => {
         if (isMountedRef.current) {
           setInternalIsOpen(false);
           setAnimationState("hidden");
-          setLoadingSequence([]);
-          setIsLazyLoading(false);
-          loadingCompleteRef.current = false;
         }
       }, OPEN_CLOSE_ANIMATION_DURATION);
-
       return () => clearTimeout(closeTimeout);
     }
-  }, [isOpen, initializeTokenLoading]); // Only depend on isOpen and stable function
+  }, [isOpen]);
 
   useEffect(() => {
     if (animationState === "opening" || animationState === "exiting") {
@@ -242,33 +131,21 @@ const TokenSelectorOverlay = ({ isOpen, onClose, onTokenApplied, readOnly = fals
     if (animationState === "exiting") return;
     onClose();
   }, [onClose, animationState]);
-  
-  // --- FIX: This new handler combines token application AND preview mode start ---
-  const handleTokenMouseDown = useCallback((token, e) => {
-    // Only proceed on left mouse button down
-    if (e.button !== 0) return;
 
-    // Part 1: Apply the token immediately
+  const handleTokenMouseDown = useCallback((token, e) => {
+    if (e.button !== 0) return;
     const tokenImage = token.metadata?.image;
     if (!tokenImage || !onTokenApplied) return;
     
-    const identifier = token.type === 'owned' 
-      ? { type: 'owned', address: token.address, iconUrl: token.metadata.image } 
-      : token.id;
-    
-    onTokenApplied(identifier, selectedLayer);
-    setSelectedTokens(prev => ({ ...prev, [selectedLayer]: tokenImage }));
+    // Pass the entire token object. The new `handleTokenApplied` knows how to process it correctly.
+    onTokenApplied(token, selectedLayer);
 
-    // Part 2: Start the preview mode fade
+    setSelectedTokens(prev => ({ ...prev, [selectedLayer]: tokenImage }));
     setIsPreviewMode(true);
   }, [onTokenApplied, selectedLayer]);
-  // --- END FIX ---
 
-  const handleMouseUp = useCallback(() => {
-    setIsPreviewMode(false);
-  }, []);
+  const handleMouseUp = useCallback(() => { setIsPreviewMode(false); }, []);
 
-  // Add global mouse up listener to catch mouse up outside the overlay
   useEffect(() => {
     if (isPreviewMode) {
       const handleGlobalMouseUp = () => setIsPreviewMode(false);
@@ -277,196 +154,185 @@ const TokenSelectorOverlay = ({ isOpen, onClose, onTokenApplied, readOnly = fals
     }
   }, [isPreviewMode]);
 
-  // Memoized token renderer
-  const TokenItem = useMemo(() => {
-    const TokenComponent = ({ token, sequenceIndex, isSelected, onMouseDown, onMouseUp }) => {
-      const tokenImageSrc = token.metadata?.image ?? '';
-      const [hasAnimated, setHasAnimated] = useState(false);
-      
-      useEffect(() => {
-        // Mark as animated after first render to prevent re-animation
-        const timer = setTimeout(() => setHasAnimated(true), sequenceIndex * LAZY_RENDER_DELAY + 400);
-        return () => clearTimeout(timer);
-      }, [sequenceIndex]);
-      
-      if (!tokenImageSrc) return null;
-      
-      return (
-        <div 
-          className={`token-item ${isSelected ? "selected" : ""} ${hasAnimated ? "no-animate" : "loaded"}`} 
-          onMouseDown={(e) => onMouseDown(token, e)} // Pass the token and event
-          onMouseUp={onMouseUp}
-          title={token.metadata.name}
-          style={{ 
-            animationDelay: hasAnimated ? '0ms' : `${sequenceIndex * LAZY_RENDER_DELAY}ms`
-          }}
-        >
-          <div className="token-image-container">
-            <img 
-              src={tokenImageSrc} 
-              alt={token.metadata.name} 
-              className="token-image" 
-              crossOrigin="anonymous" 
-              draggable="false"
-              loading="eager"
-              decoding="async"
-            />
-          </div>
-        </div>
-      );
-    };
-    
-    return React.memo(TokenComponent);
-  }, []);
-
-  // Separate refresh function that forces a reload
-  const handleRefreshTokens = useCallback(() => {
-    console.log('🔄 Manually refreshing tokens...');
-    
-    // Cancel current loading
-    if (lazyRenderIdRef.current) {
-      safeCancelIdleCallback(lazyRenderIdRef.current);
-      lazyRenderIdRef.current = null;
+  const handleCreatePalette = () => {
+    const name = newPaletteName.trim();
+    if (name) {
+      addPalette(name);
+      setNewPaletteName("");
     }
-    
-    // Reset and restart loading
-    setLoadingSequence([]);
-    setIsLazyLoading(false);
-    loadingCompleteRef.current = false;
-    
-    // Refresh from context first
-    refreshOwnedTokens(false);
-    
-    // Restart loading after context refresh
-    setTimeout(() => {
-      if (isMountedRef.current && isOpen) {
-        console.log('🔄 Restarting token loading after refresh...');
-        initializeTokenLoading();
-      }
-    }, 300);
-  }, [refreshOwnedTokens, isOpen, initializeTokenLoading]);
+  };
 
-  // Layer selection should NOT trigger any re-renders or effects
-  const handleLayerSelection = useCallback((layer) => {
-    console.log(`🎯 Layer selected: ${layer} (should NOT trigger token reload)`);
-    setSelectedLayer(layer);
-  }, []);
+  const handleRemovePalette = (paletteName) => {
+    if (window.confirm(`Are you sure you want to delete the "${paletteName}" palette? This cannot be undone.`)) {
+      removePalette(paletteName);
+    }
+  };
 
-  const overlayClassName = `overlay token-selector-overlay ${
-    internalIsOpen || animationState === 'exiting' ? 'visible' : ''
-  } state-${animationState} ${isPreviewMode ? 'preview-mode' : ''}`;
+  const handleRemoveTokenFromPalette = (paletteName, tokenId) => {
+    removeTokenFromPalette(paletteName, tokenId);
+  };
 
+  const handleAddToPaletteClick = (token) => {
+    setPaletteModalState({ isOpen: true, token });
+  };
+
+  const handleSelectPaletteForToken = (paletteName) => {
+    if (paletteModalState.token) {
+      addTokenToPalette(paletteName, paletteModalState.token.id);
+    }
+    setPaletteModalState({ isOpen: false, token: null });
+  };
+
+  const toggleSection = (sectionId) => {
+    setExpandedSections(prev => ({ ...prev, [sectionId]: !prev[sectionId] }));
+  };
+
+  const renderTokenItem = useCallback((token, { onAddToPalette, onRemoveFromPalette, paletteName } = {}) => {
+    const tokenImageSrc = token.metadata?.image ?? '';
+    if (!tokenImageSrc) return null;
+    return (
+      <div className={`token-item ${selectedTokens[selectedLayer] === tokenImageSrc ? "selected" : ""}`} onMouseDown={(e) => handleTokenMouseDown(token, e)} onMouseUp={handleMouseUp} title={token.metadata.name}>
+        <div className="token-image-container">
+          <LazyLoadImage
+            src={tokenImageSrc}
+            alt={token.metadata.name}
+            className="token-image"
+          />
+        </div>
+        {onAddToPalette && (
+          <button
+            className="add-to-palette-btn"
+            onClick={(e) => { e.stopPropagation(); onAddToPalette(token); }}
+            onMouseDown={(e) => e.stopPropagation()}
+            title="Add to Palette"
+          >+</button>
+        )}
+        {onRemoveFromPalette && paletteName && (
+          <button
+            className="remove-from-palette-btn"
+            onClick={(e) => { e.stopPropagation(); onRemoveFromPalette(paletteName, token.id); }}
+            onMouseDown={(e) => e.stopPropagation()}
+            title="Remove from Palette"
+          >-</button>
+        )}
+      </div>
+    );
+  }, [selectedLayer, selectedTokens, handleTokenMouseDown, handleMouseUp]);
+
+  const overlayClassName = `overlay token-selector-overlay ${internalIsOpen || animationState === 'exiting' ? 'visible' : ''} state-${animationState} ${isPreviewMode ? 'preview-mode' : ''}`;
   if (!isOpen && animationState === 'hidden') return null;
 
   return (
-    <div 
-      className={overlayClassName} 
-      onClick={handleClose}
-    >
+    <div className={overlayClassName} onClick={handleClose}>
       <div className="overlay-content" ref={overlayContentRef} onClick={(e) => e.stopPropagation()}>
         <div className="overlay-header token-selector-header">
           <div className="header-center-content">
             <div className="layer-buttons">
-              <button 
-                className={`layer-button ${selectedLayer === 3 ? "active" : ""}`} 
-                onClick={() => handleLayerSelection(3)} 
-                title="Select Top Layer"
-              > 
-                <img src={toplayerIcon} alt="L3" className="layer-button-icon" /> 
-              </button>
-              <button 
-                className={`layer-button ${selectedLayer === 2 ? "active" : ""}`} 
-                onClick={() => handleLayerSelection(2)} 
-                title="Select Middle Layer"
-              > 
-                <img src={middlelayerIcon} alt="L2" className="layer-button-icon" /> 
-              </button>
-              <button 
-                className={`layer-button ${selectedLayer === 1 ? "active" : ""}`} 
-                onClick={() => handleLayerSelection(1)} 
-                title="Select Bottom Layer"
-              > 
-                <img src={bottomlayerIcon} alt="L1" className="layer-button-icon" /> 
-              </button>
+              <button className={`layer-button ${selectedLayer === 3 ? "active" : ""}`} onClick={() => setSelectedLayer(3)} title="Select Top Layer"><img src={toplayerIcon} alt="L3" className="layer-button-icon" /></button>
+              <button className={`layer-button ${selectedLayer === 2 ? "active" : ""}`} onClick={() => setSelectedLayer(2)} title="Select Middle Layer"><img src={middlelayerIcon} alt="L2" className="layer-button-icon" /></button>
+              <button className={`layer-button ${selectedLayer === 1 ? "active" : ""}`} onClick={() => setSelectedLayer(1)} title="Select Bottom Layer"><img src={bottomlayerIcon} alt="L1" className="layer-button-icon" /></button>
             </div>
           </div>
           <button className="close-button" onClick={handleClose} aria-label="Close token selector">✕</button>
         </div>
-        
         <div className="overlay-body">
-          <div className="token-display-area">
-            {/* Owned Tokens Section */}
-            <div className="token-section">
-              <div className="token-section-header">
-                <h3>My Owned Tokens ({currentTokensRef.current.owned.length})</h3>
-                <button 
-                  className="btn btn-sm btn-outline" 
-                  onClick={handleRefreshTokens}
-                  disabled={isFetchingTokens || !visitorProfileAddress || isLazyLoading}
-                  title="Re-scan your profile for new tokens"
-                >
-                  {isFetchingTokens ? 'Refreshing...' : 'Refresh'}
-                </button>
+          {tokenFetchProgress.loading && (
+            <div className="loading-progress-header">
+              <div className="progress-text">
+                Loading Assets... ({tokenFetchProgress.loaded} / {tokenFetchProgress.total})
               </div>
-              
-              {isFetchingTokens && currentTokensRef.current.owned.length === 0 ? (
-                <div className="loading-message">
-                  <div className="spinner"></div>
-                  Loading your tokens...
-                </div>
-              ) : !isFetchingTokens && currentTokensRef.current.owned.length === 0 ? (
-                <div className="status-message info">
-                  {visitorProfileAddress ? "No tokens found in your library collections." : "Connect a profile to see your tokens."}
-                </div>
-              ) : (
-                <div className="tokens-grid">
-                  {loadingSequence
-                    .filter(token => token && token.section === 'owned')
-                    .map((token) => (
-                      <TokenItem 
-                        key={token.id} 
-                        token={token} 
-                        sequenceIndex={loadingSequence.findIndex(t => t && t.id === token.id)}
-                        isSelected={selectedTokens[selectedLayer] === token.metadata?.image}
-                        onMouseDown={handleTokenMouseDown}
-                        onMouseUp={handleMouseUp}
-                      />
-                    ))}
-                </div>
-              )}
+              <div className="progress-bar-container">
+                <div className="progress-bar-fill" style={{ width: `${tokenFetchProgress.total > 0 ? (tokenFetchProgress.loaded / tokenFetchProgress.total) * 100 : 0}%` }}></div>
+              </div>
             </div>
-            
-            {/* Demo Tokens Section */}
-            <div className="token-section">
-              <div className="token-section-header">
-                <h3>Demo Tokens ({demoTokens.length})</h3>
+          )}
+          <div className="token-display-area">
+            <div className="token-section palette-section">
+              <div className="token-section-header"><h3>My Palettes</h3></div>
+              <div className="create-palette-form">
+                <input type="text" value={newPaletteName} onChange={(e) => setNewPaletteName(e.target.value)} placeholder="New Palette Name" className="form-control" />
+                <button onClick={handleCreatePalette} className="btn btn-sm" disabled={!newPaletteName.trim()}>Create</button>
               </div>
-              <div className="tokens-grid">
-                {loadingSequence
-                  .filter(token => token && token.section === 'demo')
-                  .map((token) => (
-                    <TokenItem 
-                      key={token.id} 
-                      token={token} 
-                      sequenceIndex={loadingSequence.findIndex(t => t && t.id === token.id)}
-                      isSelected={selectedTokens[selectedLayer] === token.metadata?.image}
-                      onMouseDown={handleTokenMouseDown}
-                      onMouseUp={handleMouseUp}
-                    />
-                  ))}
-              </div>
+              {Object.keys(userPalettes).length > 0 ? (
+                Object.keys(userPalettes).map(paletteName => (
+                  <div key={paletteName} className="collection-group">
+                    <div className="collection-header">
+                      <button onClick={() => toggleSection(paletteName)} className="collection-toggle-button">
+                        {paletteName} ({paletteTokens[paletteName]?.length || 0})
+                        <span className={`chevron ${expandedSections[paletteName] ? 'expanded' : ''}`}>›</span>
+                      </button>
+                      <button onClick={() => handleRemovePalette(paletteName)} className="delete-palette-btn" title={`Delete "${paletteName}" palette`}>🗑️</button>
+                    </div>
+                    {expandedSections[paletteName] && (
+                      <TokenGrid tokens={paletteTokens[paletteName] || []} renderTokenItem={(token) => renderTokenItem(token, { onRemoveFromPalette: handleRemoveTokenFromPalette, paletteName })} />
+                    )}
+                  </div>
+                ))
+              ) : <p className="no-items-message">Create a palette to organize your favorite tokens.</p>}
             </div>
 
-            {/* Loading indicator */}
-            {isLazyLoading && (
-              <div className="loading-message">
-                <div className="spinner"></div>
-                Loading tokens... ({loadingSequence.length} of {currentTokensRef.current.owned.length + demoTokens.length} loaded)
+            <div className="token-section">
+              <div className="token-section-header">
+                <h3>My Collections</h3>
+                <div className="sort-controls">
+                  <label htmlFor="collection-sort">Sort by:</label>
+                  <select id="collection-sort" value={collectionSort} onChange={(e) => setCollectionSort(e.target.value)} className="custom-select custom-select-sm">
+                    <option value="name">Name</option>
+                    <option value="addedAt">Date Added</option>
+                  </select>
+                </div>
               </div>
-            )}
+              {sortedCollectionLibrary.length > 0 ? (
+                sortedCollectionLibrary.map(collection => (
+                  <div key={collection.address} className="collection-group">
+                    <button onClick={() => toggleSection(collection.address)} className="collection-header collection-toggle-button">
+                      {collection.name} ({collectionTokens[collection.address]?.length || 0})
+                      <span className={`chevron ${expandedSections[collection.address] ? 'expanded' : ''}`}>›</span>
+                    </button>
+                    {expandedSections[collection.address] && (
+                      <TokenGrid tokens={collectionTokens[collection.address] || []} renderTokenItem={(token) => renderTokenItem(token, { onAddToPalette: handleAddToPaletteClick })} />
+                    )}
+                  </div>
+                ))
+              ) : <p className="no-items-message">{!visitorProfileAddress ? "Connect a profile to see your tokens." : "No official collections found."}</p>}
+            </div>
+
+            <div className="token-section">
+              <div className="collection-group">
+                <button onClick={() => toggleSection('demo')} className="collection-header collection-toggle-button">
+                  Demo Tokens ({demoTokens.length})
+                  <span className={`chevron ${expandedSections['demo'] ? 'expanded' : ''}`}>›</span>
+                </button>
+                {expandedSections['demo'] && (
+                  <TokenGrid tokens={demoTokens} renderTokenItem={(token) => renderTokenItem(token, { onAddToPalette: handleAddToPaletteClick })} />
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>
+      {paletteModalState.isOpen && (
+        <div
+          className="palette-modal-overlay"
+          onClick={(e) => {
+            e.stopPropagation();
+            setPaletteModalState({ isOpen: false, token: null });
+          }}
+        >
+          <div className="palette-modal-content" onClick={(e) => e.stopPropagation()}>
+            <h4>Add to Palette</h4>
+            {Object.keys(userPalettes).length > 0 ? (
+              <div className="palette-list">
+                {Object.keys(userPalettes).map(paletteName => (
+                  <button key={paletteName} onClick={() => handleSelectPaletteForToken(paletteName)} className="btn btn-block">
+                    {paletteName}
+                  </button>
+                ))}
+              </div>
+            ) : <p>No palettes created yet.</p>}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

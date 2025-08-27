@@ -7,6 +7,7 @@ import { useUpProvider } from "../../context/UpProvider";
 import { useMIDI } from "../../context/MIDIContext";
 import { useCoreApplicationStateAndLifecycle } from '../../hooks/useCoreApplicationStateAndLifecycle';
 import { useAppInteractions } from '../../hooks/useAppInteractions';
+import { usePLockSequencer } from '../../hooks/usePLockSequencer';
 import {
   useVisualLayerState,
   useInteractionSettingsState,
@@ -34,19 +35,14 @@ import "./MainviewStyles/Mainview.css";
 const portalContainerNode = typeof document !== 'undefined' ? document.getElementById('portal-container') : null;
 const TOKEN_OVERLAY_ANIMATION_LOCK_DURATION = 500;
 
-/**
- * @typedef {object} MainViewProps
- * @property {string[]} [blendModes] - Array of available blend mode strings. Defaults to BLEND_MODES from global config.
- */
 const MainView = ({ blendModes = BLEND_MODES }) => {
   const { publicClient, walletClient } = useUpProvider();
 
-  // FIXED: Now we get updateTokenAssignment from useVisualLayerState
   const {
     layerConfigs: currentActiveLayerConfigs,
     tokenAssignments: currentActiveTokenAssignments,
     updateLayerConfig,
-    updateTokenAssignment,  // <-- ADDED THIS
+    updateTokenAssignment,
   } = useVisualLayerState();
 
   const { savedReactions, updateSavedReaction, deleteSavedReaction } = useInteractionSettingsState();
@@ -61,8 +57,6 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     loadedTokenAssignmentsFromPreset,
   } = usePresetManagementState();
 
-  const { pendingLayerSelect, pendingParamUpdate, clearPendingActions } = useMIDI();
-
   const rootRef = useRef(null);
   const canvasRef1 = useRef(null);
   const canvasRef2 = useRef(null);
@@ -75,22 +69,12 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   const animationLockTimerRef = useRef(null);
 
   const coreApp = useCoreApplicationStateAndLifecycle({
-    canvasRefs,
-    configServiceRef,
-    configLoadNonce,
-    currentActiveLayerConfigs,
-    currentActiveTokenAssignments,
-    loadedLayerConfigsFromPreset,
+    canvasRefs, configServiceRef, configLoadNonce, currentActiveLayerConfigs,
+    currentActiveTokenAssignments, loadedLayerConfigsFromPreset,
     loadedTokenAssignmentsFromPreset,
-    loadError,
-    upInitializationError,
-    upFetchStateError,
-    isConfigLoading,
-    isInitiallyResolved,
-    currentConfigName,
-    currentProfileAddress,
-    animatingPanel: localAnimatingPanel,
-    isBenignOverlayActive: localIsBenignOverlayActive,
+    loadError, upInitializationError, upFetchStateError, isConfigLoading,
+    isInitiallyResolved, currentConfigName, currentProfileAddress,
+    animatingPanel: localAnimatingPanel, isBenignOverlayActive: localIsBenignOverlayActive,
     animationLockForTokenOverlay,
   });
 
@@ -98,51 +82,76 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     containerRef, managerInstancesRef, audioState,
     renderState, loadingStatusMessage, isStatusFadingOut, showStatusDisplay,
     showRetryButton, isTransitioning, outgoingLayerIdsOnTransitionStart,
-    makeIncomingCanvasVisible, isAnimating, handleManualRetry,
+    makeIncomingCanvasVisible, handleManualRetry,
     managersReady, defaultImagesLoaded,
     setCanvasLayerImage,
     hasValidDimensions, isContainerObservedVisible, isFullscreenActive, enterFullscreen,
     isMountedRef,
   } = coreApp;
-  const { isAudioActive, audioSettings, handleAudioDataUpdate } = audioState;
-
-  // FIXED: Now passing updateTokenAssignment to useAppInteractions
-  const appInteractions = useAppInteractions({
-    updateLayerConfig,
-    currentProfileAddress,
-    savedReactions,
-    managerInstancesRef,
-    setCanvasLayerImage,
-    updateTokenAssignment,  // <-- ADDED THIS
-    configServiceRef,
-    pendingParamUpdate,
-    pendingLayerSelect,
-    clearPendingActions,
-    isMountedRef,
+  
+  const sequencer = usePLockSequencer({
+    onValueUpdate: (layerId, paramName, value) => {
+      const manager = managerInstancesRef.current?.[String(layerId)];
+      if (manager) {
+        manager.snapVisualProperty(paramName, value);
+        updateLayerConfig(layerId, paramName, value);
+      }
+    }
   });
 
-  const {
-    uiStateHook,
-    notificationData,
-    handleTokenApplied,
-    processEffect,
-    handleLayerPropChange,
-  } = appInteractions;
+  const handleTogglePLock = useCallback(() => {
+    sequencer.toggle(currentActiveLayerConfigs);
+  }, [sequencer, currentActiveLayerConfigs]);
+  
+  const handleClearPLocks = useCallback(() => {
+    sequencer.clear();
+  }, [sequencer]);
 
-  // --- REMOVED: handleSnapshotReady callback ---
-  // The callback for the CompositeAssetGenerator is no longer needed.
+  const handleUserLayerPropChange = useCallback((layerId, key, value, isMidiUpdate = false) => {
+    // --- THIS IS THE FIX ---
+    // Check if the specific parameter is locked before blocking the update.
+    const isParamLocked = sequencer.pLockState === 'playing' &&
+                          sequencer.animationDataRef.current?.[layerId]?.[key];
+    
+    // Always block manual changes during reset/pre-roll animations.
+    if (isParamLocked || sequencer.pLockState === 'resetting' || sequencer.pLockState === 'arming_to_play') {
+      return;
+    }
+    // --- END FIX ---
+    
+    if (typeof updateLayerConfig === 'function') {
+      updateLayerConfig(String(layerId), key, value);
+    }
+    
+    const manager = managerInstancesRef.current?.[String(layerId)];
+    if (!manager) return;
+
+    if (isMidiUpdate) {
+      if (typeof manager.setTargetValue === 'function') {
+        manager.setTargetValue(key, value);
+      }
+    } else {
+      if (typeof manager.updateConfigProperty === 'function') {
+        manager.updateConfigProperty(key, value);
+      }
+    }
+  }, [updateLayerConfig, managerInstancesRef, sequencer.pLockState, sequencer.animationDataRef]);
+
+  const appInteractions = useAppInteractions({
+    updateLayerConfig: handleUserLayerPropChange,
+    currentProfileAddress, savedReactions,
+    managerInstancesRef, setCanvasLayerImage, updateTokenAssignment,
+    isMountedRef,
+    onTogglePLock: handleTogglePLock,
+  });
+
+  const { uiStateHook } = appInteractions;
 
   useEffect(() => {
     setLocalAnimatingPanel(uiStateHook.animatingPanel);
-    const newIsBenign = uiStateHook.animatingPanel === 'tokens' ||
-                        uiStateHook.activePanel === 'tokens' ||
-                        uiStateHook.infoOverlayOpen;
+    const newIsBenign = uiStateHook.animatingPanel === 'tokens' || uiStateHook.activePanel === 'tokens' || uiStateHook.infoOverlayOpen;
     setLocalIsBenignOverlayActive(newIsBenign);
-  }, [
-    uiStateHook.animatingPanel,
-    uiStateHook.activePanel,
-    uiStateHook.infoOverlayOpen
-  ]);
+  }, [ uiStateHook.animatingPanel, uiStateHook.activePanel, uiStateHook.infoOverlayOpen ]);
 
   useEffect(() => {
     if (localAnimatingPanel === 'tokens') {
@@ -154,79 +163,62 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
       }, TOKEN_OVERLAY_ANIMATION_LOCK_DURATION);
     } else if (animationLockForTokenOverlay && localAnimatingPanel !== 'tokens') {
       setAnimationLockForTokenOverlay(false);
-      if (animationLockTimerRef.current) {
-        clearTimeout(animationLockTimerRef.current);
-        animationLockTimerRef.current = null;
-      }
+      if (animationLockTimerRef.current) { clearTimeout(animationLockTimerRef.current); animationLockTimerRef.current = null; }
     }
-    return () => {
-      if (animationLockTimerRef.current) clearTimeout(animationLockTimerRef.current);
-    };
+    return () => { if (animationLockTimerRef.current) clearTimeout(animationLockTimerRef.current); };
   }, [localAnimatingPanel, animationLockForTokenOverlay, isMountedRef]);
 
   const criticalErrorContent = (
-    <CriticalErrorDisplay
-      initializationError={upInitializationError}
-      fetchStateError={upFetchStateError}
-      publicClient={publicClient}
-      walletClient={walletClient}
-    />
+    <CriticalErrorDisplay initializationError={upInitializationError} fetchStateError={upFetchStateError} publicClient={publicClient} walletClient={walletClient} />
   );
-
   if (criticalErrorContent.props.initializationError || (criticalErrorContent.props.fetchStateError && !criticalErrorContent.props.publicClient && !criticalErrorContent.props.walletClient)) {
     return criticalErrorContent;
   }
-
+  
   const showFpsCounter = useMemo(() => renderState === 'rendered' && isContainerObservedVisible, [renderState, isContainerObservedVisible]);
 
   const configDataForUIOverlay = useMemo(() => ({
-    layerConfigs: currentActiveLayerConfigs, tokenAssignments: currentActiveTokenAssignments,
-    savedReactions, currentConfigName, isConfigLoading,
-    canSave, isPreviewMode, isParentAdmin, isProfileOwner, isVisitor, currentProfileAddress,
-    blendModes,
-    notifications: notificationData.notifications,
-    unreadCount: notificationData.unreadCount,
-    isTransitioning,
-    isBaseReady: (managersReady && defaultImagesLoaded && isInitiallyResolved && hasValidDimensions && isContainerObservedVisible),
+    layerConfigs: currentActiveLayerConfigs, tokenAssignments: currentActiveTokenAssignments, savedReactions, currentConfigName,
+    isConfigLoading, canSave, isPreviewMode, isParentAdmin, isProfileOwner, isVisitor, currentProfileAddress, blendModes,
+    notifications: appInteractions.notificationData.notifications, unreadCount: appInteractions.notificationData.unreadCount,
+    isTransitioning, isBaseReady: (managersReady && defaultImagesLoaded && isInitiallyResolved && hasValidDimensions && isContainerObservedVisible),
     renderState,
-  }), [
-    currentActiveLayerConfigs, currentActiveTokenAssignments, savedReactions, currentConfigName, isConfigLoading,
-    canSave, isPreviewMode, isParentAdmin, isProfileOwner, isVisitor, currentProfileAddress,
-    blendModes, notificationData.notifications, notificationData.unreadCount, isTransitioning,
-    managersReady, defaultImagesLoaded, isInitiallyResolved, hasValidDimensions, isContainerObservedVisible,
-    renderState,
-  ]);
-
+  }), [currentActiveLayerConfigs, currentActiveTokenAssignments, savedReactions, currentConfigName, isConfigLoading, canSave, isPreviewMode,
+    isParentAdmin, isProfileOwner, isVisitor, currentProfileAddress, blendModes, appInteractions.notificationData.notifications,
+    appInteractions.notificationData.unreadCount, isTransitioning, managersReady, defaultImagesLoaded, isInitiallyResolved,
+    hasValidDimensions, isContainerObservedVisible, renderState]);
+  
   const actionsForUIOverlay = useMemo(() => ({
-    onLayerConfigChange: handleLayerPropChange,
-    onSaveReaction: updateSavedReaction,
-    onRemoveReaction: deleteSavedReaction,
-    onPresetSelect: loadNamedConfig,
-    onEnhancedView: enterFullscreen,
-    onMarkNotificationRead: notificationData.markAsRead,
-    onClearAllNotifications: notificationData.clearAll,
-    onPreviewEffect: processEffect,
-    onTokenApplied: handleTokenApplied
-  }), [
-    handleLayerPropChange, updateSavedReaction, deleteSavedReaction, loadNamedConfig,
-    enterFullscreen, notificationData.markAsRead, notificationData.clearAll, processEffect, handleTokenApplied
-  ]);
+    onLayerConfigChange: handleUserLayerPropChange, onSaveReaction: updateSavedReaction, onRemoveReaction: deleteSavedReaction,
+    onPresetSelect: loadNamedConfig, onEnhancedView: enterFullscreen, onMarkNotificationRead: appInteractions.notificationData.markAsRead,
+    onClearAllNotifications: appInteractions.notificationData.clearAll, onPreviewEffect: appInteractions.processEffect,
+    onTokenApplied: appInteractions.handleTokenApplied
+  }), [handleUserLayerPropChange, updateSavedReaction, deleteSavedReaction, loadNamedConfig, enterFullscreen,
+    appInteractions.notificationData.markAsRead, appInteractions.notificationData.clearAll, appInteractions.processEffect,
+    appInteractions.handleTokenApplied]);
+
+  const pLockProps = useMemo(() => ({
+    pLockState: sequencer.pLockState,
+    loopProgress: sequencer.loopProgress,
+    hasLockedParams: sequencer.hasLockedParams,
+    onTogglePLock: handleTogglePLock,
+    onClearPLocks: handleClearPLocks,
+    pLockSpeed: sequencer.pLockSpeed,
+    onSetPLockSpeed: sequencer.setPLockSpeed,
+    animationDataRef: sequencer.animationDataRef,
+  }), [sequencer, handleTogglePLock, handleClearPLocks]);
 
   const displayConfigsForClassLogic = isTransitioning ? loadedLayerConfigsFromPreset : currentActiveLayerConfigs;
-
   const getCanvasClasses = (layerIdStr) => {
     let classes = `canvas layer-${layerIdStr}`;
-    const isThisLayerOutgoing = isTransitioning && outgoingLayerIdsOnTransitionStart && outgoingLayerIdsOnTransitionStart.has(layerIdStr);
+    const isThisLayerOutgoing = isTransitioning && outgoingLayerIdsOnTransitionStart?.has(layerIdStr);
     const isThisLayerIncomingAndReady = isTransitioning && makeIncomingCanvasVisible && displayConfigsForClassLogic?.[layerIdStr]?.enabled;
     const isThisLayerStableAndVisible = !isTransitioning && renderState === 'rendered' && currentActiveLayerConfigs?.[layerIdStr]?.enabled;
 
-    if (isThisLayerOutgoing) {
-      classes += ' is-fading-out';
-    } else if (isThisLayerIncomingAndReady || isThisLayerStableAndVisible) {
+    if (isThisLayerOutgoing) classes += ' is-fading-out';
+    else if (isThisLayerIncomingAndReady || isThisLayerStableAndVisible) {
       classes += ' visible';
-      if (isThisLayerIncomingAndReady) {
-        classes += ' is-fading-in';
-      }
+      if (isThisLayerIncomingAndReady) classes += ' is-fading-in';
     }
     return classes;
   };
@@ -254,33 +246,22 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
           configData={configDataForUIOverlay}
           actions={actionsForUIOverlay}
           passedSavedConfigList={presetSavedConfigList}
+          pLockProps={pLockProps}
         />
         <StatusIndicator
-            showStatusDisplay={showStatusDisplay}
-            isStatusFadingOut={isStatusFadingOut}
-            renderState={renderState}
-            loadingStatusMessage={loadingStatusMessage}
-            showRetryButton={showRetryButton}
-            onManualRetry={handleManualRetry}
+            showStatusDisplay={showStatusDisplay} isStatusFadingOut={isStatusFadingOut}
+            renderState={renderState} loadingStatusMessage={loadingStatusMessage}
+            showRetryButton={showRetryButton} onManualRetry={handleManualRetry}
         />
         <AudioAnalyzerWrapper
-          isAudioActive={isAudioActive}
-          managersReady={managersReady}
-          handleAudioDataUpdate={handleAudioDataUpdate}
-          layerConfigs={currentActiveLayerConfigs}
-          audioSettings={audioSettings}
-          configLoadNonce={configLoadNonce}
+          isAudioActive={audioState.isAudioActive} managersReady={managersReady}
+          handleAudioDataUpdate={audioState.handleAudioDataUpdate} layerConfigs={currentActiveLayerConfigs}
+          audioSettings={audioState.audioSettings} configLoadNonce={configLoadNonce}
           managerInstancesRef={managerInstancesRef}
         />
-        
-        {/* --- REMOVED: CompositeAssetGenerator is gone --- */}
       </div>
     </>
   );
 };
-
-MainView.propTypes = {
-  blendModes: PropTypes.arrayOf(PropTypes.string),
-};
-
+MainView.propTypes = { blendModes: PropTypes.arrayOf(PropTypes.string) };
 export default MainView;

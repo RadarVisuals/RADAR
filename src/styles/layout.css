@@ -280,10 +280,10 @@
   right: var(--space-lg);
   z-index: var(--z-controls);
   display: flex;
-  flex-direction: row; /* Ensures horizontal layout */
-  align-items: center;
-  gap: var(--space-sm); /* Spacing between icons */
-  pointer-events: auto; /* Container itself allows pointer events */
+  flex-direction: column-reverse; /* Stack vertically, bottom-to-top */
+  align-items: center; /* Center items horizontally in the stack */
+  gap: var(--space-sm); /* Vertical spacing between icons */
+  pointer-events: auto;
 }
 
 /* --- START: Styles for Sequencer/Randomizer Button --- */

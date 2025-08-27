@@ -1,12 +1,9 @@
-// src/context/VisualConfigContext.jsx
 import React, {
   createContext,
   useContext,
   useState,
   useCallback,
   useMemo,
-  useRef,
-  useEffect,
 } from "react";
 import PropTypes from "prop-types";
 import { usePresetManagement } from "./PresetManagementContext";
@@ -29,10 +26,6 @@ export const defaultVisualConfigContextValue = {
   updateLayerConfig: () => {},
   updateTokenAssignment: () => {},
   setLiveConfig: () => {},
-  getLiveConfig: () => ({
-    layerConfigs: getDefaultLayerConfigs(),
-    tokenAssignments: {},
-  }),
 };
 
 const VisualConfigContext = createContext(defaultVisualConfigContextValue);
@@ -42,35 +35,16 @@ export const VisualConfigProvider = ({ children }) => {
 
   const [layerConfigs, setLayerConfigsInternal] = useState(getDefaultLayerConfigs);
   const [tokenAssignments, setTokenAssignmentsInternal] = useState({});
-  
-  const liveStateRef = useRef({ layerConfigs, tokenAssignments });
-
-  // Update ref whenever state changes
-  useEffect(() => {
-    liveStateRef.current = { layerConfigs, tokenAssignments };
-  }, [layerConfigs, tokenAssignments]);
 
   const updateLayerConfig = useCallback(
     (layerId, key, value) => {
-      setLayerConfigsInternal(prevConfigs => {
-        const newConfigs = {
-          ...prevConfigs,
-          [String(layerId)]: {
-            ...(prevConfigs[String(layerId)] || getDefaultLayerConfigTemplate()),
-            [key]: value,
-          },
-        };
-        
-        // Update ref immediately with the new value
-        liveStateRef.current = {
-          ...liveStateRef.current,
-          layerConfigs: newConfigs
-        };
-        
-        console.log(`%c[VisualConfigContext] updateLayerConfig called for L${layerId}, key: ${key}. Ref is now:`, "color: orange;", JSON.parse(JSON.stringify(liveStateRef.current)));
-        
-        return newConfigs;
-      });
+      setLayerConfigsInternal(prevConfigs => ({
+        ...prevConfigs,
+        [String(layerId)]: {
+          ...(prevConfigs[String(layerId)] || getDefaultLayerConfigTemplate()),
+          [key]: value,
+        },
+      }));
       
       if (setHasPendingChanges) {
         setHasPendingChanges(true);
@@ -81,22 +55,10 @@ export const VisualConfigProvider = ({ children }) => {
 
   const updateTokenAssignment = useCallback(
     (layerId, tokenId) => {
-      setTokenAssignmentsInternal(prevAssignments => {
-        const newAssignments = {
-          ...prevAssignments,
-          [String(layerId)]: tokenId,
-        };
-        
-        // Update ref immediately with the new value
-        liveStateRef.current = {
-          ...liveStateRef.current,
-          tokenAssignments: newAssignments
-        };
-
-        console.log(`%c[VisualConfigContext] updateTokenAssignment called for L${layerId}. Ref is now:`, "color: magenta; font-weight: bold;", JSON.parse(JSON.stringify(liveStateRef.current)));
-
-        return newAssignments;
-      });
+      setTokenAssignmentsInternal(prevAssignments => ({
+        ...prevAssignments,
+        [String(layerId)]: tokenId,
+      }));
 
       if (setHasPendingChanges) {
         setHasPendingChanges(true);
@@ -113,29 +75,12 @@ export const VisualConfigProvider = ({ children }) => {
       setLayerConfigsInternal(finalLayerConfigs);
       setTokenAssignmentsInternal(finalTokenAssignments);
       
-      // Update ref immediately
-      liveStateRef.current = {
-        layerConfigs: finalLayerConfigs,
-        tokenAssignments: finalTokenAssignments,
-      };
-
-      console.log(`%c[VisualConfigContext] setLiveConfig called. Ref has been reset to:`, "color: blue; font-weight: bold;", JSON.parse(JSON.stringify(liveStateRef.current)));
-
       if (setHasPendingChanges) {
         setHasPendingChanges(false);
       }
     },
     [setHasPendingChanges]
   );
-
-  const getLiveConfig = useCallback(() => {
-    // Always return the current ref value which is kept in sync
-    console.log(`%c[VisualConfigContext] getLiveConfig called. Returning ref:`, "color: cyan;", JSON.parse(JSON.stringify(liveStateRef.current)));
-    return {
-      layerConfigs: { ...liveStateRef.current.layerConfigs },
-      tokenAssignments: { ...liveStateRef.current.tokenAssignments }
-    };
-  }, []);
 
   const contextValue = useMemo(
     () => ({
@@ -144,7 +89,6 @@ export const VisualConfigProvider = ({ children }) => {
       updateLayerConfig,
       updateTokenAssignment,
       setLiveConfig,
-      getLiveConfig,
     }),
     [
       layerConfigs,
@@ -152,7 +96,6 @@ export const VisualConfigProvider = ({ children }) => {
       updateLayerConfig,
       updateTokenAssignment,
       setLiveConfig,
-      getLiveConfig,
     ]
   );
 

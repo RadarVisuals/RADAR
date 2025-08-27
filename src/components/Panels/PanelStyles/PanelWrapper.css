@@ -1,0 +1,42 @@
+/* PanelWrapper.css */
+.panel-wrapper {
+  position: fixed;
+  top: 5px;
+  left: -20px;
+  z-index: 1000;
+  max-height: 90vh;
+  animation: panel-slide-in 0.5s ease-out forwards;
+  overflow: visible;
+  border: none !important;
+  outline: none !important;
+}
+
+.panel-wrapper.panel-from-toolbar {
+  /* Styles for panels originating from toolbar, if any, would go here */
+}
+
+.panel-wrapper.animating.closing {
+  animation: panel-slide-out 0.5s ease-in forwards;
+}
+
+@keyframes panel-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-150px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes panel-slide-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-150px);
+  }
+}

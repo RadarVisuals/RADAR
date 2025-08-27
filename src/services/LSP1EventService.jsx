@@ -1,4 +1,4 @@
-// src/services/LSP1EventService.js
+// src/services/LSP1EventService.jsx
 import {
   createPublicClient,
   webSocket,
@@ -324,47 +324,20 @@ class LSP1EventService {
         }
     }
 
-    // --- REVISED FOLLOWER ADDRESS EXTRACTION for LSP26 ---
     if ((eventTypeName === "follower_gained" || eventTypeName === "follower_lost")) {
-        let potentialFollowerAddr = null;
         const logCtx = `[LSP1 ${eventTypeName}]`;
 
-        if (import.meta.env.DEV) {
-            console.log(`${logCtx} Initial 'from' (UR caller): ${from}, receivedData: ${receivedData}`);
-        }
-
-        // Priority 1: Check if receivedData is the follower address (as per LSP26 spec)
-        if (typeof receivedData === "string" && receivedData.startsWith("0x")) {
-            try {
-                if (isAddress(receivedData)) { // isAddress checks length and format
-                    potentialFollowerAddr = getAddress(receivedData);
-                    if (import.meta.env.DEV) {
-                        console.log(`${logCtx} Attempt 1: Follower address from receivedData: ${potentialFollowerAddr}`);
-                    }
-                }
-            } catch { /* isAddress failed or getAddress failed - error ignored by ESLint due to _e */ }
-        }
-
-        // Priority 2 (Fallback): Check if 'from' (UR caller) is the follower address
-        if (!potentialFollowerAddr && from && isAddress(from)) {
-            const followerRegistryAddress = "0xf01103E5a9909Fc0DBe8166dA7085e0285daDDcA"; // From LSP26 spec
-            if (from.toLowerCase() !== followerRegistryAddress.toLowerCase()) {
-                potentialFollowerAddr = getAddress(from);
-                if (import.meta.env.DEV) {
-                    console.log(`${logCtx} Attempt 2: Follower address from 'from' field (UR caller): ${potentialFollowerAddr}`);
-                }
-            } else if (import.meta.env.DEV) {
-                 console.log(`${logCtx} 'from' field is the Follower Registry. Not using it as follower address.`);
+        if (typeof receivedData === "string" && isAddress(receivedData)) {
+            // Per LSP26, receivedData is the follower's address. This is the only reliable source.
+            const followerAddress = getAddress(receivedData);
+            decodedPayload.followerAddress = followerAddress;
+            if (import.meta.env.DEV) {
+                console.log(`${logCtx} Decoded follower address from receivedData: ${followerAddress}`);
             }
-        }
-        
-        if (potentialFollowerAddr) {
-            decodedPayload.followerAddress = potentialFollowerAddr;
         } else if (import.meta.env.DEV) {
-            console.warn(`${logCtx} Could not determine follower address from receivedData or 'from' field.`);
+            console.warn(`${logCtx} Could not determine follower address. 'receivedData' was not a valid address. Data:`, receivedData);
         }
     }
-    // --- END REVISED FOLLOWER ADDRESS EXTRACTION for LSP26 ---
 
 
     const eventObj = {

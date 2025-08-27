@@ -1,0 +1,13 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Location of your serverless functions
+[functions]
+  directory = "netlify/functions"
+
+# Rewrite rule to make functions accessible at a clean /api/* URL
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200

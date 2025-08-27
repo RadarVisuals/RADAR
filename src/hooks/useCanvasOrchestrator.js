@@ -233,91 +233,67 @@ export function useCanvasOrchestrator({ configServiceRef, canvasRefs, configLoad
     }, [managersReady, setLayerImageInternal]);
 
     const applyTokenAssignmentsToManagers = useCallback(async (assignments) => {
-        if (!isMountedRef.current || !managersReady || !managerInstancesRef.current || !assignments || !configServiceRef?.current) {
-            if (import.meta.env.DEV) {
-                console.warn("[CanvasOrchestrator applyTokenAssignmentsToManagers] Aborted due to unmet conditions:", {
-                    isMounted: isMountedRef.current, managersReady, hasManagerInstances: !!managerInstancesRef.current, hasAssignments: !!assignments, hasConfigService: !!configServiceRef?.current
-                });
-            }
-            return Promise.resolve();
-        }
-        const currentManagers = managerInstancesRef.current;
-        const imageLoadPromises = [];
-
-        for (const layerId of ['1', '2', '3']) {
-            const manager = currentManagers[layerId];
-            if (!manager) continue;
-
-            const assignmentValue = assignments[layerId];
-            const defaultAssetSrcForThisLayer = defaultAssets[layerId];
-            let imageSourceToApply = defaultAssetSrcForThisLayer;
-
-            try {
-                if (typeof assignmentValue === 'string' && assignmentValue.startsWith("DEMO_LAYER_")) {
-                    const demoAssetSource = demoAssetMap[assignmentValue];
-                    if (demoAssetSource) {
-                        imageSourceToApply = demoAssetSource;
-                    } else if (import.meta.env.DEV) {
-                        console.warn(`[CanvasOrchestrator] Demo key '${assignmentValue}' not found for L${layerId}. Using default: ${defaultAssetSrcForThisLayer}`);
-                    }
-                } else if (typeof assignmentValue === 'object' && assignmentValue?.type === 'owned' && assignmentValue.iconUrl) {
-                    imageSourceToApply = assignmentValue.iconUrl;
-                } else if (typeof assignmentValue === 'string' && isAddress(assignmentValue)) {
-                    const metadata = await resolveLsp4Metadata(configServiceRef.current, assignmentValue);
-                    let resolvedImageUrl = null;
-                    if (metadata?.LSP4Metadata) {
-                        const meta = metadata.LSP4Metadata;
-                        const url = meta.assets?.[0]?.url || meta.icon?.[0]?.url || meta.images?.[0]?.[0]?.url || null;
-                        if (url && typeof url === 'string') {
-                            const trimmedUrl = url.trim();
-                            if (trimmedUrl.startsWith('ipfs://')) resolvedImageUrl = `${IPFS_GATEWAY}${trimmedUrl.slice(7)}`;
-                            else if (trimmedUrl.startsWith('http') || trimmedUrl.startsWith('data:')) resolvedImageUrl = trimmedUrl;
-                        }
-                    }
-                    if (resolvedImageUrl) {
-                        imageSourceToApply = resolvedImageUrl;
-                    } else if (import.meta.env.DEV) {
-                        console.warn(`[CanvasOrchestrator] Could not resolve image URL from LSP4 for ${assignmentValue} on L${layerId}. Using default: ${defaultAssetSrcForThisLayer}`);
-                    }
-                } else if (typeof assignmentValue === 'string' && (assignmentValue.includes('/') || assignmentValue.startsWith('data:'))) {
-                     imageSourceToApply = assignmentValue;
-                } else if (assignmentValue === null || assignmentValue === undefined) {
-                    imageSourceToApply = defaultAssetSrcForThisLayer;
-                } else if (assignmentValue && import.meta.env.DEV) {
-                    console.warn(`[CanvasOrchestrator] Unhandled assignment type or value for L${layerId}:`, assignmentValue, `. Using default: ${defaultAssetSrcForThisLayer}`);
-                }
-
-                if (manager.setImage && imageSourceToApply) {
-                    imageLoadPromises.push(
-                        setLayerImageInternal(layerId, imageSourceToApply).catch(err => {
-                            if (import.meta.env.DEV) {
-                                console.error(`[CanvasOrchestrator] L${layerId}: Error setting image '${String(imageSourceToApply).substring(0,60)}...':`, err);
-                            }
-                            if (defaultAssetSrcForThisLayer && manager.setImage && imageSourceToApply !== defaultAssetSrcForThisLayer) {
-                                if (import.meta.env.DEV) {
-                                    console.log(`[CanvasOrchestrator] L${layerId}: Falling back to default asset '${defaultAssetSrcForThisLayer}' after error.`);
-                                }
-                                return setLayerImageInternal(layerId, defaultAssetSrcForThisLayer);
-                            }
-                            return Promise.reject(err);
-                        })
-                    );
-                } else if (!manager.setImage && import.meta.env.DEV) {
-                    console.warn(`[CanvasOrchestrator] L${layerId}: manager.setImage is not available.`);
-                }
-            } catch (errorAssignmentProcessing) {
-                if (import.meta.env.DEV) {
-                    console.error(`[CanvasOrchestrator] L${layerId}: Outer error processing assignment '${JSON.stringify(assignmentValue)}': `, errorAssignmentProcessing);
-                }
-                if (defaultAssetSrcForThisLayer && manager?.setImage) {
-                    imageLoadPromises.push(setLayerImageInternal(layerId, defaultAssetSrcForThisLayer));
-                }
-            }
-        }
-        if (imageLoadPromises.length > 0) {
-            await Promise.allSettled(imageLoadPromises);
-        }
-    }, [managersReady, configServiceRef, managerInstancesRef, setLayerImageInternal]);
+      if (!isMountedRef.current || !managersReady || !managerInstancesRef.current || !assignments) {
+          if (import.meta.env.DEV) {
+              console.warn("[CanvasOrchestrator applyTokenAssignmentsToManagers] Aborted due to unmet conditions:", {
+                  isMounted: isMountedRef.current, managersReady, hasManagerInstances: !!managerInstancesRef.current, hasAssignments: !!assignments
+              });
+          }
+          return Promise.resolve();
+      }
+      const currentManagers = managerInstancesRef.current;
+      const imageLoadPromises = [];
+  
+      for (const layerId of ['1', '2', '3']) {
+          const manager = currentManagers[layerId];
+          if (!manager) continue;
+  
+          const assignmentValue = assignments[layerId];
+          const defaultAssetSrcForThisLayer = defaultAssets[layerId];
+          let imageSourceToApply = defaultAssetSrcForThisLayer;
+  
+          try {
+              if (typeof assignmentValue === 'string' && assignmentValue.startsWith("DEMO_LAYER_")) {
+                  const demoAssetSource = demoAssetMap[assignmentValue];
+                  if (demoAssetSource) {
+                      imageSourceToApply = demoAssetSource;
+                  }
+              } else if (typeof assignmentValue === 'object' && assignmentValue !== null && assignmentValue.src) {
+                  // This is the new, correct path for owned tokens
+                  imageSourceToApply = assignmentValue.src;
+              } else if (assignmentValue && import.meta.env.DEV) {
+                  console.warn(`[CanvasOrchestrator] Unhandled assignment type for L${layerId}:`, assignmentValue, `. Using default.`);
+              }
+  
+              if (manager.setImage && imageSourceToApply) {
+                  imageLoadPromises.push(
+                      setLayerImageInternal(layerId, imageSourceToApply).catch(err => {
+                          if (import.meta.env.DEV) {
+                              console.error(`[CanvasOrchestrator] L${layerId}: Error setting image '${String(imageSourceToApply).substring(0,60)}...':`, err);
+                          }
+                          if (defaultAssetSrcForThisLayer && manager.setImage && imageSourceToApply !== defaultAssetSrcForThisLayer) {
+                              if (import.meta.env.DEV) {
+                                  console.log(`[CanvasOrchestrator] L${layerId}: Falling back to default asset after error.`);
+                              }
+                              return setLayerImageInternal(layerId, defaultAssetSrcForThisLayer);
+                          }
+                          return Promise.reject(err);
+                      })
+                  );
+              }
+          } catch (error) {
+              if (import.meta.env.DEV) {
+                  console.error(`[CanvasOrchestrator] L${layerId}: Outer error processing assignment '${JSON.stringify(assignmentValue)}': `, error);
+              }
+              if (defaultAssetSrcForThisLayer && manager?.setImage) {
+                  imageLoadPromises.push(setLayerImageInternal(layerId, defaultAssetSrcForThisLayer));
+              }
+          }
+      }
+      if (imageLoadPromises.length > 0) {
+          await Promise.allSettled(imageLoadPromises);
+      }
+    }, [managersReady, managerInstancesRef, setLayerImageInternal]);
 
     const applyConfigurationsToManagers = useCallback((configs) => {
         if (!managersReady) {

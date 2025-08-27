@@ -4,46 +4,48 @@ import { useUIState } from './useUIState';
 import { useNotifications } from './useNotifications';
 import { useVisualEffects } from './useVisualEffects';
 import { useLsp1Events } from './useLsp1Events';
-import { IPFS_GATEWAY } from "../config/global-config";
-import { demoAssetMap } from '../assets/DemoLayers/initLayers';
+import { useMIDI } from '../context/MIDIContext';
+import { useUserSession } from '../context/UserSessionContext';
 import { sliderParams } from '../components/Panels/EnhancedControlPanel';
-import { INTERPOLATED_MIDI_PARAMS } from '../config/midiConstants';
 import { scaleNormalizedValue } from "../utils/helpers";
-import { resolveLsp4Metadata } from '../utils/erc725.js';
-import { isAddress } from 'viem';
 
 export const useAppInteractions = (props) => {
   const {
-    updateLayerConfig,
+    updateLayerConfig, // This is now our combined handler passed from Mainview
     currentProfileAddress,
     savedReactions,
     managerInstancesRef,
     setCanvasLayerImage,
     updateTokenAssignment,
-    configServiceRef,
-    pendingParamUpdate,
-    pendingLayerSelect,
-    clearPendingActions,
     isMountedRef,
+    onTogglePLock,
   } = props;
 
+  const { visitorProfileAddress } = useUserSession();
   const uiStateHook = useUIState('tab1');
   const notificationData = useNotifications();
   const { addNotification } = notificationData;
   const { processEffect, createDefaultEffect } = useVisualEffects(updateLayerConfig);
+  
+  const { 
+    pendingParamUpdate, 
+    pendingLayerSelect, 
+    pendingGlobalAction,
+    clearPendingActions 
+  } = useMIDI();
 
-  const handleLayerPropChange = useCallback((layerId, key, value) => {
-    if (typeof updateLayerConfig === 'function') {
-      updateLayerConfig(String(layerId), key, value);
-    }
+  // Note: The `handleLayerPropChange` function is now defined and passed in from Mainview.jsx.
+  // This hook now uses it directly via the `updateLayerConfig` prop name.
+
+  const applyPlaybackValueToManager = useCallback((layerId, key, value) => {
     const manager = managerInstancesRef.current?.[String(layerId)];
     if (!manager) return;
-    if (INTERPOLATED_MIDI_PARAMS.includes(key)) {
-      if (typeof manager.setTargetValue === 'function') manager.setTargetValue(key, value);
-    } else {
-      if (typeof manager.updateConfigProperty === 'function') manager.updateConfigProperty(key, value);
+  
+    // During playback, we always snap. The sequencer provides the smooth values.
+    if (typeof manager.snapVisualProperty === 'function') {
+      manager.snapVisualProperty(key, value);
     }
-  }, [updateLayerConfig, managerInstancesRef]);
+  }, [managerInstancesRef]);
 
   const handleEventReceived = useCallback((event) => {
     if (!isMountedRef.current || !event?.typeId) return;
@@ -62,20 +64,18 @@ export const useAppInteractions = (props) => {
     }
   }, [isMountedRef, addNotification, savedReactions, processEffect, createDefaultEffect]);
 
-  useLsp1Events(currentProfileAddress, handleEventReceived);
+  useLsp1Events(visitorProfileAddress, handleEventReceived);
 
   useEffect(() => {
     let processed = false;
     if (pendingParamUpdate && managerInstancesRef.current) {
       const { layer, param, value: normalizedMidiValue } = pendingParamUpdate;
-      const manager = managerInstancesRef.current[String(layer)];
-      if (manager) {
-        const sliderConfig = sliderParams.find(p => p.prop === param);
-        if (sliderConfig) {
-          const scaledValue = scaleNormalizedValue(normalizedMidiValue, sliderConfig.min, sliderConfig.max);
-          handleLayerPropChange(String(layer), param, scaledValue);
-          processed = true;
-        }
+      const sliderConfig = sliderParams.find(p => p.prop === param);
+      if (sliderConfig) {
+        const scaledValue = scaleNormalizedValue(normalizedMidiValue, sliderConfig.min, sliderConfig.max);
+        // Here, updateLayerConfig is actually handleUserLayerPropChange from Mainview
+        updateLayerConfig(String(layer), param, scaledValue, true); // Pass true for isMidiUpdate
+        processed = true;
       }
     }
     if (pendingLayerSelect) {
@@ -87,50 +87,39 @@ export const useAppInteractions = (props) => {
         processed = true;
       }
     }
+    if (pendingGlobalAction) {
+      const actionName = pendingGlobalAction.action;
+      if (actionName === 'pLockToggle' && typeof onTogglePLock === 'function') {
+        onTogglePLock();
+        processed = true;
+      }
+    }
+
     if (processed && typeof clearPendingActions === 'function') {
       clearPendingActions();
     }
-  }, [pendingParamUpdate, pendingLayerSelect, handleLayerPropChange, uiStateHook.setActiveLayerTab, clearPendingActions, managerInstancesRef]);
+  }, [pendingParamUpdate, pendingLayerSelect, pendingGlobalAction, onTogglePLock, updateLayerConfig, uiStateHook, clearPendingActions, managerInstancesRef]);
 
-  // --- UPDATED to handle new object structure from owned tokens ---
-  const handleTokenApplied = useCallback(async (data, layerId) => {
+  const handleTokenApplied = useCallback(async (token, layerId) => {
     if (!isMountedRef.current) return;
   
-    let idToSaveInConfig = null;
-    let srcToLoadInCanvas = null;
+    const idToSave = token.id;
+    const srcToLoad = token.metadata?.image;
   
-    // Case 1: Owned Token (LSP7 or LSP8), passed as an object
-    if (typeof data === 'object' && data !== null && data.type === 'owned') {
-      idToSaveInConfig = data.address; // Save the collection address
-      srcToLoadInCanvas = data.iconUrl; // Use the pre-resolved image URL
-    } 
-    // Case 2: Demo Token, passed as a string key
-    else if (typeof data === 'string') {
-      idToSaveInConfig = data;
-      srcToLoadInCanvas = demoAssetMap[data];
-    }
+    if (!idToSave || !srcToLoad) return;
   
-    if (!idToSaveInConfig) {
-      if (import.meta.env.DEV) console.warn("[AppInteractions] Could not determine a valid identifier to save for the token assignment.");
-      return;
-    }
-  
-    // CRITICAL: Update the token assignment in the context FIRST.
+    const assignmentObject = { id: idToSave, src: srcToLoad };
+    
     if (typeof updateTokenAssignment === 'function') {
-      updateTokenAssignment(String(layerId), idToSaveInConfig);
+      updateTokenAssignment(String(layerId), assignmentObject);
     }
   
-    // Then, update the canvas image if we have a source URL.
-    if (srcToLoadInCanvas && typeof setCanvasLayerImage === 'function') {
+    if (typeof setCanvasLayerImage === 'function') {
       try {
-        await setCanvasLayerImage(String(layerId), srcToLoadInCanvas);
+        await setCanvasLayerImage(String(layerId), srcToLoad);
       } catch (e) {
-        if (import.meta.env.DEV) {
-          console.error(`[AppInteractions handleTokenApplied L${layerId}] setCanvasLayerImage failed for ${String(srcToLoadInCanvas).substring(0,60)}...:`, e);
-        }
+        // empty
       }
-    } else if (!srcToLoadInCanvas) {
-      if (import.meta.env.DEV) console.warn(`[AppInteractions] No valid image source to load for layer ${layerId}.`);
     }
   }, [isMountedRef, setCanvasLayerImage, updateTokenAssignment]);
 
@@ -140,9 +129,11 @@ export const useAppInteractions = (props) => {
     handleTokenApplied,
     processEffect,
     createDefaultEffect,
-    handleLayerPropChange,
+    handleLayerPropChange: updateLayerConfig, // Expose the passed-in handler
+    applyPlaybackValueToManager,
   }), [
     uiStateHook, notificationData, handleTokenApplied,
-    processEffect, createDefaultEffect, handleLayerPropChange
+    processEffect, createDefaultEffect, updateLayerConfig,
+    applyPlaybackValueToManager
   ]);
 };

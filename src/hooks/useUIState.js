@@ -1,5 +1,5 @@
 // src/hooks/useUIState.js
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 
 import { usePanelManager } from './usePanelManager'; // Local hook
 
@@ -18,45 +18,47 @@ import { usePanelManager } from './usePanelManager'; // Local hook
  * @property {() => void} closePanel - Function to close the currently active side panel. This is sourced from `usePanelManager`.
  * @property {(panelName: string) => void} toggleSidePanel - Function to toggle a specific side panel's visibility. This is sourced from `usePanelManager`.
  * @property {React.Dispatch<React.SetStateAction<string>>} setActiveLayerTab - Function to directly set the active layer control tab identifier.
+ * @property {() => number} getActiveLayerId - Function to get the numerical layer ID corresponding to the `activeLayerTab`.
  */
 
-/**
- * Consolidates management of various UI states including overall UI visibility,
- * modal-like overlays (Info, Whitelist), side panel visibility and animations
- * (by integrating `usePanelManager`), and the currently selected layer tab for controls.
- *
- * @param {string} [initialLayerTab='tab1'] - The identifier for the layer tab that should be active initially.
- * @returns {UIState} An object containing the current UI state values and functions to modify them.
- */
 export function useUIState(initialLayerTab = 'tab1') {
   const [isUiVisible, setIsUiVisible] = useState(true);
   const [infoOverlayOpen, setInfoOverlayOpen] = useState(false);
   const [whitelistPanelOpen, setWhitelistPanelOpen] = useState(false);
   const [activeLayerTab, setActiveLayerTab] = useState(initialLayerTab);
 
-  // Integrate usePanelManager for side panel state and animations
   const {
     activePanel,
     animatingPanel,
-    openPanel,    // Renamed from openPanelInternal for clarity
-    closePanel,   // Renamed from closePanelInternal for clarity
-    togglePanel: toggleSidePanel // Renamed to avoid conflict if a general togglePanel was added here
-  } = usePanelManager(null); // Start with no active panel
+    openPanel,
+    closePanel,
+    togglePanel: toggleSidePanel
+  } = usePanelManager(null);
 
-  /** Toggles the visibility of the main UI elements. */
   const toggleUiVisibility = useCallback(() => {
     setIsUiVisible((prev) => !prev);
-  }, []); // setIsUiVisible is stable
+  }, []);
 
-  /** Toggles the visibility of the informational overlay. */
   const toggleInfoOverlay = useCallback(() => {
     setInfoOverlayOpen((prev) => !prev);
-  }, []); // setInfoOverlayOpen is stable
-
-  /** Toggles the visibility of the whitelist panel. */
+  }, []);
+  
   const toggleWhitelistPanel = useCallback(() => {
-    setWhitelistPanelOpen((prev) => !prev);
-  }, []); // setWhitelistPanelOpen is stable
+    toggleSidePanel('whitelist');
+  }, [toggleSidePanel]);
+
+  // --- THIS IS THE FIX: ADDING THE MISSING FUNCTION AND ITS DEPENDENCY ---
+  const tabToLayerIdMap = useMemo(() => ({
+    'tab1': 3, // Top Layer
+    'tab2': 2, // Middle Layer
+    'tab3': 1  // Bottom Layer
+  }), []);
+
+  const getActiveLayerId = useCallback(() => {
+    return tabToLayerIdMap[activeLayerTab] || 3; // Default to top layer if something is wrong
+  }, [activeLayerTab, tabToLayerIdMap]);
+  // --- END FIX ---
+
 
   return useMemo(() => ({
     isUiVisible,
@@ -71,11 +73,15 @@ export function useUIState(initialLayerTab = 'tab1') {
     openPanel,
     closePanel,
     toggleSidePanel,
-    setActiveLayerTab, // Direct state setter from useState
+    setActiveLayerTab,
+    // --- AND EXPORTING IT ---
+    getActiveLayerId,
   }), [
     isUiVisible, infoOverlayOpen, whitelistPanelOpen,
     activePanel, animatingPanel, activeLayerTab,
     toggleUiVisibility, toggleInfoOverlay, toggleWhitelistPanel,
-    openPanel, closePanel, toggleSidePanel, setActiveLayerTab
+    openPanel, closePanel, toggleSidePanel, setActiveLayerTab,
+    // --- ADDING IT TO THE DEPENDENCY ARRAY ---
+    getActiveLayerId,
   ]);
 }

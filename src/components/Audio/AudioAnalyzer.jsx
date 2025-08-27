@@ -48,11 +48,6 @@ const AudioAnalyzer = ({
   /** @type {React.RefObject<number>} */
   const capturedNonceRef = useRef(-1); // Tracks the last processed configLoadNonce
   
-  // --- REMOVED: Transition refs ---
-  // const isTransitioningRef = useRef(false);
-  // const lastBandDataRef = useRef({ bass: 0, mid: 0, treble: 0 });
-  // const lastLevelRef = useRef(0);
-  
   /** @type {React.RefObject<AudioContext | null>} */
   const audioContextRef = useRef(null);
   /** @type {React.RefObject<AnalyserNode | null>} */
@@ -85,7 +80,6 @@ const AudioAnalyzer = ({
   // Update base layer values when a new preset is loaded
   useEffect(() => {
     if (layerConfigsProp && configLoadNonce !== capturedNonceRef.current) {
-        // --- REMOVED: Transition logic ---
         const newBaseValues = {};
         for (const layerIdStr of ['1', '2', '3']) { // Assuming fixed layer IDs
             const config = layerConfigsProp[layerIdStr] || {};
@@ -105,7 +99,6 @@ const AudioAnalyzer = ({
         return;
     }
 
-    // --- REMOVED: Transition logic ---
     const { bassIntensity = 1.0, midIntensity = 1.0, trebleIntensity = 1.0 } = currentSettings;
 
     // Apply bass frequency to layer 1 size
@@ -166,8 +159,6 @@ const AudioAnalyzer = ({
     const mid = Math.min(1, midCount > 0 ? (midSum / midCount / 255) : 0);
     const treble = Math.min(1, trebleCount > 0 ? (trebleSum / trebleCount / 255) : 0);
     
-    // --- REMOVED: Transition logic ---
-
     const newFrequencyBands = { bass, mid, treble };
     applyAudioToLayers(newFrequencyBands, averageLevel);
 
@@ -325,13 +316,16 @@ const AudioAnalyzer = ({
 
     if (audioContextRef.current) {
         if (audioContextRef.current.state === "running") {
-            audioContextRef.current.suspend().then(() => {
-                if (import.meta.env.DEV) console.log("[AudioAnalyzer cleanupAudio] AudioContext suspended.");
-                isCleanupScheduledRef.current = false;
-            }).catch((e) => {
-                if (import.meta.env.DEV) console.error("[AudioAnalyzer cleanupAudio] Error suspending AudioContext:", e);
-                isCleanupScheduledRef.current = false;
-            });
+            audioContextRef.current.suspend()
+                .then(() => {
+                    if (import.meta.env.DEV) console.log("[AudioAnalyzer cleanupAudio] AudioContext suspended.");
+                })
+                .catch((e) => {
+                    if (import.meta.env.DEV) console.error("[AudioAnalyzer cleanupAudio] Error suspending AudioContext:", e);
+                })
+                .finally(() => {
+                    isCleanupScheduledRef.current = false;
+                });
         } else {
             if (import.meta.env.DEV) console.log(`[AudioAnalyzer cleanupAudio] AudioContext not running (state: ${audioContextRef.current.state}), no suspend needed.`);
             isCleanupScheduledRef.current = false;

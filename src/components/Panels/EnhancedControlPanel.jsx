@@ -1,11 +1,17 @@
 // src/components/Panels/EnhancedControlPanel.jsx
-import React, { useCallback, useMemo, useEffect, useRef, useState } from "react";
+import React, { useCallback, useMemo } from "react";
 import PropTypes from "prop-types";
 
+// Local Component Imports
 import Panel from "./Panel";
-import { useProfileSessionState, useVisualLayerState } from "../../hooks/configSelectors";
-import { useMIDI } from "../../context/MIDIContext";
+import PLockController from './PLockController';
 
+// Hook Imports
+import { useProfileSessionState } from "../../hooks/configSelectors";
+import { useMIDI } from "../../context/MIDIContext";
+import { BLEND_MODES } from "../../config/global-config";
+
+// Asset Imports
 import {
   toplayerIcon,
   middlelayerIcon,
@@ -13,34 +19,18 @@ import {
   rotateIcon,
 } from "../../assets";
 
+// Styles
 import "./PanelStyles/EnhancedControlPanel.css";
 
 const getDefaultLayerConfigTemplate = () => ({
-  enabled: true,
-  blendMode: "normal",
-  opacity: 1.0,
-  size: 1.0,
-  speed: 0.01,
-  drift: 0,
-  driftSpeed: 0.1,
-  angle: 0,
-  xaxis: 0,
-  yaxis: 0,
-  direction: 1,
-  driftState: {
-    x: 0,
-    y: 0,
-    phase: Math.random() * Math.PI * 2,
-    enabled: false,
-  },
+  enabled: true, blendMode: "normal", opacity: 1.0, size: 1.0, speed: 0.01,
+  drift: 0, driftSpeed: 0.1, angle: 0, xaxis: 0, yaxis: 0, direction: 1,
+  driftState: { x: 0, y: 0, phase: Math.random() * Math.PI * 2, enabled: false },
 });
-
 
 const formatValue = (value, decimals = 1) => {
   const numValue = Number(value);
-  if (value === undefined || value === null || isNaN(numValue)) {
-    return "0".padEnd(decimals > 0 ? decimals + 2 : 1, "0");
-  }
+  if (value === undefined || value === null || isNaN(numValue)) return "0".padEnd(decimals > 0 ? decimals + 2 : 1, "0");
   return numValue.toFixed(decimals);
 };
 
@@ -57,419 +47,152 @@ export const sliderParams = [
 
 const tabToLayerIdMap = { tab1: 3, tab2: 2, tab3: 1 };
 
-/**
- * @typedef EnhancedControlPanelProps
- * @property {(layerId: string | number, key: string, value: any) => void} onLayerConfigChange - Callback to update a layer's configuration.
- * @property {Array<string>} blendModes - Array of available blend mode strings.
- * @property {() => void} onToggleMinimize - Callback to toggle the panel's minimized state.
- * @property {string} [activeTab="tab1"] - The currently active layer tab.
- * @property {(tabId: string) => void} [onTabChange] - Callback when a layer tab is changed.
- * @property {(newIntervalMs: number) => void} [onSetSequencerInterval] - Optional callback to set the sequencer interval.
- */
-
-/**
- * EnhancedControlPanel provides UI controls for manipulating parameters
- * of visual layers, MIDI mappings, and potentially other global settings like sequencer interval.
- *
- * @param {EnhancedControlPanelProps} props - Component props.
- * @returns {JSX.Element} The rendered EnhancedControlPanel.
- */
 const EnhancedControlPanel = ({
-  onLayerConfigChange,
-  blendModes,
   onToggleMinimize,
+  onLayerConfigChange,
+  layerConfigs,
   activeTab = "tab1",
   onTabChange,
-  onSetSequencerInterval,
+  pLockProps = {},
 }) => {
+  const { isProfileOwner } = useProfileSessionState();
   const {
-    isVisitor,
-    isParentAdmin,
-    isPreviewMode,
-    canSave,
-    isProfileOwner,
-    currentProfileAddress: hostProfileAddress
-  } = useProfileSessionState();
-  const { layerConfigs } = useVisualLayerState();
-
-  const disableHostLayerControls = useMemo(() => !hostProfileAddress, [hostProfileAddress]);
-
-  const {
-    isConnected: midiConnected,
-    midiLearning,
-    learningLayer,
-    selectedChannel,
-    showMidiMonitor,
-    midiMonitorData,
-    setShowMidiMonitor,
-    startMIDILearn,
-    stopMIDILearn,
-    startLayerMIDILearn,
-    stopLayerMIDILearn,
-    clearAllMappings,
-    setChannelFilter,
-    clearMIDIMonitor,
-    midiMap,
-    layerMappings,
+    isConnected: midiConnected, midiLearning, learningLayer,
+    startMIDILearn, startLayerMIDILearn,
+    midiMap, layerMappings,
+    startGlobalMIDILearn,
   } = useMIDI();
 
-  const activeLayer = useMemo(() => tabToLayerIdMap[activeTab] || 1, [activeTab]);
+  const activeLayer = useMemo(() => String(tabToLayerIdMap[activeTab] || 3), [activeTab]);
   const config = useMemo(() => layerConfigs?.[activeLayer] || getDefaultLayerConfigTemplate(), [layerConfigs, activeLayer]);
-
-  const midiMonitorRef = useRef(null);
-  const [localSequencerInterval, setLocalSequencerInterval] = useState("10");
-
-  useEffect(() => {
-    if (midiMonitorRef.current && showMidiMonitor) {
-      midiMonitorRef.current.scrollTop = midiMonitorRef.current.scrollHeight;
-    }
-  }, [midiMonitorData, showMidiMonitor]);
-
-  const handleEnterMIDILearnMode = useCallback(
-    (paramName) => {
-      if (!isProfileOwner) return;
-      if (!midiConnected) { alert("Please connect a MIDI device first to enable MIDI Learn."); return; }
-      const isValidParam = sliderParams.some((p) => p.prop === paramName);
-      if (!isValidParam) {
-        if (import.meta.env.DEV) console.warn(`[ECP] Attempted to learn MIDI for invalid param: ${paramName}`);
-        return;
-      }
-      startMIDILearn(paramName, activeLayer);
-    },
-    [isProfileOwner, midiConnected, startMIDILearn, activeLayer],
-  );
-
-  const handleEnterLayerMIDILearnMode = useCallback(
-    (layer) => {
-      if (!isProfileOwner) return;
-      if (!midiConnected) { alert("Please connect a MIDI device first."); return; }
-      startLayerMIDILearn(layer);
-    },
-    [isProfileOwner, midiConnected, startLayerMIDILearn],
-  );
-
-  const handleMidiChannelChange = useCallback((e) => { setChannelFilter(parseInt(e.target.value, 10)); }, [setChannelFilter]);
-  const handleClearMidiMonitor = useCallback(() => { clearMIDIMonitor(); }, [clearMIDIMonitor]);
-
-  const handleResetAllMappings = useCallback(() => {
-    if (disableHostLayerControls || !canSave) {
-      if (import.meta.env.DEV) {
-        console.warn("[ECP] Reset all MIDI mappings (for host profile) blocked. DisableHostControls:", disableHostLayerControls, "CanSave:", canSave);
-      }
-      return;
-    }
-    clearAllMappings();
-  }, [disableHostLayerControls, canSave, clearAllMappings]);
-
-  const handleToggleMonitor = useCallback(() => { setShowMidiMonitor(prev => !prev); }, [setShowMidiMonitor]);
-  const handleCancelMIDILearn = useCallback(() => { stopMIDILearn?.(); }, [stopMIDILearn]);
-  const handleCancelLayerMIDILearn = useCallback(() => { stopLayerMIDILearn?.(); }, [stopLayerMIDILearn]);
-
-  const displayMidiMapping = useCallback(
-    (layer, param) => {
-      const mapping = midiMap?.[String(layer)]?.[param];
-      if (!mapping) return "None";
-      const channelDisplay = mapping.channel !== undefined ? ` (Ch ${mapping.channel + 1})` : "";
-      if (mapping.type === "cc") return `CC ${mapping.number}${channelDisplay}`;
-      if (mapping.type === "note") return `Note ${mapping.number}${channelDisplay}`;
-      if (mapping.type === "pitchbend") return `Pitch${channelDisplay}`;
-      return "Unknown";
-    },
-    [midiMap],
-  );
-
-  const displayLayerMidiMapping = useCallback(
-    (layer) => {
-      const mapping = layerMappings[String(layer)]?.layerSelect;
-      if (!mapping) return "-";
-      const channelDisplay = mapping.channel !== undefined ? ` (Ch ${mapping.channel + 1})` : "";
-      if (mapping.type === "note") return `Note ${mapping.number}${channelDisplay}`;
-      return "Unknown";
-    },
-    [layerMappings],
-  );
-
+  
   const handleSliderChange = useCallback((e) => {
-    if (disableHostLayerControls) return;
     const { name, value } = e.target;
-    const parsedValue = parseFloat(value);
-    if (typeof onLayerConfigChange === 'function') {
-      onLayerConfigChange(activeLayer, name, parsedValue);
-    }
-  }, [disableHostLayerControls, onLayerConfigChange, activeLayer]);
+    onLayerConfigChange(activeLayer, name, parseFloat(value), false);
+  }, [onLayerConfigChange, activeLayer]);
 
-  const handleBlendModeChange = useCallback((e) => {
-    if (disableHostLayerControls) return;
-    const { value } = e.target;
-    if (typeof onLayerConfigChange === 'function') {
-      onLayerConfigChange(activeLayer, "blendMode", value);
-    }
-  }, [disableHostLayerControls, onLayerConfigChange, activeLayer]);
+  const handleEnterMIDILearnMode = useCallback((paramName) => {
+    if (!isProfileOwner || !midiConnected) return;
+    startMIDILearn(paramName, activeLayer);
+  }, [isProfileOwner, midiConnected, startMIDILearn, activeLayer]);
 
-  const handleDirectionToggle = useCallback(() => {
-    if (disableHostLayerControls) return;
-    const currentDirection = config.direction || 1;
-    const newDirection = -currentDirection;
-    if (typeof onLayerConfigChange === 'function') {
-      onLayerConfigChange(activeLayer, "direction", newDirection);
-    }
-  }, [disableHostLayerControls, config.direction, onLayerConfigChange, activeLayer]);
+  const handleEnterLayerMIDILearnMode = useCallback((layer) => {
+    if (!isProfileOwner || !midiConnected) return;
+    startLayerMIDILearn(layer);
+  }, [isProfileOwner, midiConnected, startLayerMIDILearn]);
 
-  const handleEnabledToggle = useCallback((e) => {
-    if (disableHostLayerControls) return;
-    const newEnabledState = e.target.checked;
-    if (typeof onLayerConfigChange === 'function') {
-      onLayerConfigChange(activeLayer, "enabled", newEnabledState);
-    }
-  }, [disableHostLayerControls, onLayerConfigChange, activeLayer]);
+  const handleEnterGlobalMIDILearnMode = useCallback((controlName) => {
+    if (!isProfileOwner || !midiConnected) return;
+    startGlobalMIDILearn(controlName);
+  }, [isProfileOwner, midiConnected, startGlobalMIDILearn]);
 
-  const handleSequencerIntervalInputChange = (e) => {
-    setLocalSequencerInterval(e.target.value);
-  };
+  const displayGlobalMidiMapping = useCallback((controlName) => {
+    const mapping = midiMap?.global?.[controlName];
+    if (!mapping) return "None";
+    const ch = mapping.channel !== undefined ? ` (Ch ${mapping.channel + 1})` : "";
+    if (mapping.type === "cc") return `CC ${mapping.number}${ch}`;
+    if (mapping.type === "note") return `Note ${mapping.number}${ch}`;
+    return "Unknown";
+  }, [midiMap]);
 
-  const applySequencerInterval = () => {
-    if (onSetSequencerInterval) {
-        const intervalSeconds = parseFloat(localSequencerInterval);
-        if (!isNaN(intervalSeconds) && intervalSeconds >= 1) {
-            onSetSequencerInterval(intervalSeconds * 1000);
-        } else {
-            console.warn("Invalid sequencer interval input.");
-            // Optionally, provide user feedback e.g., via a toast
-        }
-    }
-  };
+  const displayLayerMidiMapping = useCallback((layer) => {
+    const mapping = layerMappings[String(layer)];
+    if (!mapping?.type) return "-";
+    const ch = mapping.channel !== undefined ? ` (Ch ${mapping.channel + 1})` : "";
+    if (mapping.type === "note") return `Note ${mapping.number}${ch}`;
+    return "Unknown";
+  }, [layerMappings]);
 
-  const adminVisitorMessage = isVisitor && isParentAdmin && !disableHostLayerControls && !canSave && (
-    <div className="visitor-message info">
-      As an admin visitor, you can experiment with controls. Changes won't save to this profile.
-    </div>
-  );
-
-  const generalVisitorMessage = isVisitor && !isParentAdmin && !disableHostLayerControls && !canSave && (
-      <div className="visitor-message info">
-          Viewing another profile. Changes will not be saved.
-      </div>
-  );
-
-  const readOnlyUIMessage = (disableHostLayerControls || isPreviewMode) && (
-    <div className="visitor-message warning">
-      {isPreviewMode ? "Preview Mode: Controls are view-only." :
-       !hostProfileAddress ? "Connect or load a host profile to enable its layer controls." :
-       "Host layer controls are currently disabled."}
-    </div>
-  );
-
-  const getMIDILearnButtonTitle = (paramProp, paramLabel) => {
-    if (!isProfileOwner) return "MIDI Learn disabled when viewing another profile";
-    if (!midiConnected) return "Connect MIDI device to enable Learn";
-    if (disableHostLayerControls) return "MIDI Learn disabled as host controls are inactive";
-    return `Map MIDI to ${paramLabel}. Current: ${displayMidiMapping(String(activeLayer), paramProp)}`;
-  };
-
-  const getLayerMIDILearnButtonTitle = (layerNum) => {
-    if (!isProfileOwner) return "MIDI Learn for layer selection disabled when viewing another profile";
-    if (!midiConnected) return "Connect MIDI device to enable Learn";
-    if (disableHostLayerControls) return "MIDI Learn disabled as host controls are inactive";
-    return `Map MIDI to select Layer ${layerNum}`;
-  };
-
+  const handleBlendModeChange = useCallback((e) => onLayerConfigChange(activeLayer, "blendMode", e.target.value, false), [onLayerConfigChange, activeLayer]);
+  const handleDirectionToggle = useCallback(() => onLayerConfigChange(activeLayer, "direction", - (config.direction || 1), false), [onLayerConfigChange, activeLayer, config.direction]);
+  const handleEnabledToggle = useCallback((e) => onLayerConfigChange(activeLayer, "enabled", e.target.checked, false), [onLayerConfigChange, activeLayer]);
+  
+  const isPLockMidiLearning = midiLearning?.type === 'global' && midiLearning?.control === 'pLockToggle';
 
   return (
-    <Panel
-      title={`Layer ${activeLayer} Controls`}
-      onClose={onToggleMinimize}
-      className="panel-from-toolbar enhanced-control-panel"
-    >
+    <Panel title={`Layer ${activeLayer} Controls`} onClose={onToggleMinimize} className="panel-from-toolbar enhanced-control-panel">
       <div className="compact-panel-header">
         <div className="tab-navigation">
-          <button type="button" className={`tab-button ${activeTab === "tab1" ? "active" : ""}`} onClick={() => onTabChange && onTabChange("tab1")} title={`Layer 3 (Top)`} aria-label="Select Top Layer (Layer 3)"> <img src={toplayerIcon} alt="L3" className="tab-icon" /> </button>
-          <button type="button" className={`tab-button ${activeTab === "tab2" ? "active" : ""}`} onClick={() => onTabChange && onTabChange("tab2")} title={`Layer 2 (Middle)`} aria-label="Select Middle Layer (Layer 2)"> <img src={middlelayerIcon} alt="L2" className="tab-icon" /> </button>
-          <button type="button" className={`tab-button ${activeTab === "tab3" ? "active" : ""}`} onClick={() => onTabChange && onTabChange("tab3")} title={`Layer 1 (Bottom)`} aria-label="Select Bottom Layer (Layer 1)"> <img src={bottomlayerIcon} alt="L1" className="tab-icon" /> </button>
+          {[3, 2, 1].map(layerNum => (
+            <button key={layerNum} type="button" className={`tab-button ${activeLayer === String(layerNum) ? "active" : ""}`} onClick={() => onTabChange(Object.keys(tabToLayerIdMap).find(key => tabToLayerIdMap[key] === layerNum))} title={`Layer ${layerNum}`}>
+              <img src={layerNum === 3 ? toplayerIcon : layerNum === 2 ? middlelayerIcon : bottomlayerIcon} alt={`L${layerNum}`} className="tab-icon" />
+            </button>
+          ))}
         </div>
       </div>
 
-      {(midiLearning || learningLayer !== null) && (
-        <div className={`midi-learning-container ${learningLayer !== null ? "layer-learning" : ""}`} >
-          <span className="midi-learning-text">
-            {learningLayer !== null ? `Mapping: LAYER ${learningLayer} SELECTION` : `Mapping: ${midiLearning?.param?.toUpperCase()} for Layer ${midiLearning?.layer}`}
-          </span>
-          <button type="button" className="midi-cancel-btn" onClick={ learningLayer !== null ? handleCancelLayerMIDILearn : handleCancelMIDILearn } >
-            Cancel
-          </button>
-        </div>
-      )}
+      <PLockController
+        pLockState={pLockProps.pLockState}
+        loopProgress={pLockProps.loopProgress}
+        hasLockedParams={pLockProps.hasLockedParams}
+        pLockSpeed={pLockProps.pLockSpeed}
+        onSetPLockSpeed={pLockProps.onSetPLockSpeed}
+        onTogglePLock={pLockProps.onTogglePLock}
+        onClearPLocks={pLockProps.onClearPLocks}
+        isMidiLearning={isPLockMidiLearning}
+        onMapMidi={() => handleEnterGlobalMIDILearnMode('pLockToggle')}
+        midiMappingText={displayGlobalMidiMapping('pLockToggle')}
+      />
 
       <div className="vertical-layout control-panel-content">
         {midiConnected && (
           <div className="layer-mappings">
             <div className="layer-mapping-grid">
               {[3, 2, 1].map((layerNum) => (
-                <div key={`layer_mapping_${layerNum}`} className={`layer-mapping-item ${activeLayer === layerNum ? "active" : ""}`} >
+                <div key={`layer_mapping_${layerNum}`} className={`layer-mapping-item ${activeLayer === String(layerNum) ? "active" : ""}`}>
                   <div className="layer-mapping-label">Layer {layerNum}</div>
                   <div className="layer-mapping-controls">
-                    <span className="layer-mapping-text" title={displayLayerMidiMapping(String(layerNum))} >
-                      {displayLayerMidiMapping(String(layerNum))}
-                    </span>
-                    {isProfileOwner && (
-                      <button
-                        type="button"
-                        className={`midi-learn-btn small-action-button ${learningLayer === layerNum ? "learning" : ""}`}
-                        onClick={() => handleEnterLayerMIDILearnMode(layerNum)}
-                        disabled={disableHostLayerControls || !midiConnected || learningLayer !== null || (learningLayer !== null && learningLayer !== layerNum)}
-                        title={getLayerMIDILearnButtonTitle(layerNum)}
-                        aria-label={`Map MIDI to select Layer ${layerNum}`}
-                      >
-                        {learningLayer === layerNum ? "..." : "Map"}
-                      </button>
-                    )}
+                    <span className="layer-mapping-text" title={displayLayerMidiMapping(String(layerNum))}>{displayLayerMidiMapping(String(layerNum))}</span>
+                    {isProfileOwner && (<button type="button" className={`midi-learn-btn small-action-button ${learningLayer === layerNum ? "learning" : ""}`} onClick={() => handleEnterLayerMIDILearnMode(layerNum)} disabled={!midiConnected || !!midiLearning || (learningLayer !== null && learningLayer !== layerNum)} title={`Map MIDI to select Layer ${layerNum}`}> {learningLayer === layerNum ? "..." : "Map"} </button>)}
                   </div>
                 </div>
               ))}
             </div>
           </div>
         )}
-
-        {sliderParams.map(
-          (paramConfig) => {
-            const { prop, label, min, max, step, formatDecimals, defaultValue = 0 } = paramConfig;
-            const isLearningThis = midiLearning?.param === prop && midiLearning?.layer === activeLayer;
-            const currentValue = config[prop] !== undefined ? config[prop] : defaultValue;
+        
+        {sliderParams.map(({ prop, label, min, max, step, formatDecimals, defaultValue = 0 }) => {
+            const isLearningThis = midiLearning?.type === 'param' && midiLearning?.param === prop && midiLearning?.layer === activeLayer;
+            const isLocked = pLockProps.pLockState === 'playing' && pLockProps.animationDataRef?.current?.[activeLayer]?.[prop];
             return (
               <div key={prop} className="slider-container">
                 <div className="slider-header">
-                  <span className="slider-label">
-                    {label}
-                  </span>
+                  <span className="slider-label">{isLocked && <span className="plock-indicator" title="Parameter Locked">●</span>}{label}</span>
                   <div className="slider-controls">
-                    <span className="slider-value"> {formatValue(currentValue, formatDecimals)} </span>
-                    {midiConnected && isProfileOwner && (
-                      <button
-                        type="button"
-                        className={`midi-btn small-action-button ${isLearningThis ? "learning" : ""}`}
-                        onClick={() => handleEnterMIDILearnMode(prop)}
-                        disabled={disableHostLayerControls || !midiConnected || !!learningLayer || (midiLearning !== null && !(midiLearning?.param === prop && midiLearning?.layer === activeLayer))}
-                        title={getMIDILearnButtonTitle(prop, label)}
-                        aria-label={`Map MIDI to ${label}`}
-                      >
-                        {isLearningThis ? "..." : "M"}
-                      </button>
-                    )}
+                    <span className="slider-value">{formatValue(config[prop] ?? defaultValue, formatDecimals)}</span>
+                    {midiConnected && isProfileOwner && (<button type="button" className={`midi-btn small-action-button ${isLearningThis ? "learning" : ""}`} onClick={() => handleEnterMIDILearnMode(prop)} disabled={!midiConnected || !!learningLayer || (midiLearning !== null && !isLearningThis)} title={`Map MIDI to ${label}`}> {isLearningThis ? "..." : "M"} </button>)}
                   </div>
                 </div>
-                <input type="range" name={prop} min={min} max={max} step={step} value={currentValue} onChange={handleSliderChange} disabled={disableHostLayerControls || isLearningThis} className="horizontal-slider" aria-label={label} />
+                <input type="range" name={prop} min={min} max={max} step={step} value={config[prop] ?? defaultValue} onChange={handleSliderChange} disabled={isLearningThis || isLocked} className="horizontal-slider" aria-label={label} />
               </div>
             );
-          },
-        )}
+        })}
 
         <div className="controls-footer">
           <div className="blendmode-container">
             <label htmlFor={`blendModeVertical-${activeLayer}`}>BLEND MODE</label>
-            <select id={`blendModeVertical-${activeLayer}`} className="custom-select blend-mode-select" name="blendMode" value={config.blendMode || "normal"} onChange={handleBlendModeChange} disabled={disableHostLayerControls} aria-label="Select Blend Mode">
-              {blendModes.map((mode) => ( <option key={mode} value={mode}> {mode.charAt(0).toUpperCase() + mode.slice(1).replace("-", " ")} </option> ))}
+            <select id={`blendModeVertical-${activeLayer}`} className="custom-select blend-mode-select" name="blendMode" value={config.blendMode || "normal"} onChange={handleBlendModeChange} aria-label="Select Blend Mode">
+              {BLEND_MODES.map((mode) => (<option key={mode} value={mode}>{mode.charAt(0).toUpperCase() + mode.slice(1).replace("-", " ")}</option>))}
             </select>
           </div>
-          <button type="button" className="changerotation-btn icon-button" onClick={handleDirectionToggle} title="Change Rotation Direction" disabled={disableHostLayerControls} aria-label="Change Rotation Direction">
-            <img src={rotateIcon} className="changerotation-icon" alt="Change Rotation Direction" />
-          </button>
+          <button type="button" className="changerotation-btn icon-button" onClick={handleDirectionToggle} title="Change Rotation Direction" aria-label="Change Rotation Direction"><img src={rotateIcon} className="changerotation-icon" alt="Change Rotation" /></button>
           <div className="enabled-control-vertical">
             <label htmlFor={`enabled-v-${activeLayer}`}>Enabled</label>
-            <input type="checkbox" id={`enabled-v-${activeLayer}`} name="enabled" checked={config.enabled ?? true} onChange={handleEnabledToggle} disabled={disableHostLayerControls} />
+            <input type="checkbox" id={`enabled-v-${activeLayer}`} name="enabled" checked={config.enabled ?? true} onChange={handleEnabledToggle} />
           </div>
         </div>
-
-        {typeof onSetSequencerInterval === 'function' && (
-            <div className="sequencer-interval-control config-section"> {/* Added config-section for consistent styling */}
-                <h4 className="section-title">Sequencer Settings</h4> {/* Changed from h3 to h4 for hierarchy */}
-                <div className="form-group">
-                    <label htmlFor="sequencer-interval-input">Interval (seconds)</label>
-                    <div className="input-with-button">
-                        <input
-                            type="number"
-                            id="sequencer-interval-input"
-                            className="form-control"
-                            value={localSequencerInterval}
-                            onChange={handleSequencerIntervalInputChange}
-                            min="1" // Minimum 1 second
-                            step="1"
-                            disabled={disableHostLayerControls} // Example disable logic
-                        />
-                        <button
-                            type="button"
-                            className="btn btn-sm" // Use existing button style
-                            onClick={applySequencerInterval}
-                            disabled={disableHostLayerControls}
-                        >
-                            Set
-                        </button>
-                    </div>
-                </div>
-            </div>
-        )}
-
-
-        {midiConnected && (
-          <div className="midi-tools">
-              <button type="button" className="midi-monitor-btn" onClick={handleToggleMonitor}> {showMidiMonitor ? "Hide Monitor" : "Show Monitor"} </button>
-              <button
-                  type="button"
-                  className="midi-reset-btn"
-                  onClick={handleResetAllMappings}
-                  title="Reset all MIDI mappings for this controller (saved on host profile)"
-                  disabled={disableHostLayerControls || !canSave}
-              >
-                  Reset Mappings
-              </button>
-              <select className="midi-channel-select" value={selectedChannel} onChange={handleMidiChannelChange} title="Filter MIDI messages by channel" aria-label="Select MIDI Channel Filter" >
-                <option value="0">All Channels</option>
-                {[...Array(16)].map((_, i) => ( <option key={i + 1} value={i + 1}> Channel {i + 1} </option> ))}
-              </select>
-          </div>
-        )}
-        {!midiConnected && (
-            <p className="midi-disconnected-message">MIDI Disconnected. Connect a device to enable MIDI features.</p>
-        )}
       </div>
-
-      {midiConnected && showMidiMonitor && (
-        <div className="midi-monitor" ref={midiMonitorRef}>
-          <div className="midi-monitor-header">
-            <h4>MIDI Monitor</h4>
-            <button type="button" className="midi-clear-btn small-action-button" onClick={handleClearMidiMonitor}> Clear </button>
-          </div>
-          <div className="midi-monitor-content">
-            {midiMonitorData.length === 0 ? ( <div className="midi-monitor-empty"> No MIDI messages received yet. </div> ) : (
-              midiMonitorData.map((msg, index) => (
-                <div key={`${msg.timestamp}-${index}`} className="midi-monitor-msg">
-                  <span className="midi-monitor-time">{msg.timestamp}</span>
-                  <span className="midi-monitor-type">{msg.type}</span>
-                  <span className="midi-monitor-channel">Ch{msg.channel}</span>
-                  <span className="midi-monitor-data">D1:{msg.data1}</span>
-                  <span className="midi-monitor-data">D2:{msg.data2}</span>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-      {adminVisitorMessage}
-      {generalVisitorMessage}
-      {readOnlyUIMessage}
     </Panel>
   );
 };
 
 EnhancedControlPanel.propTypes = {
-  onLayerConfigChange: PropTypes.func.isRequired,
-  blendModes: PropTypes.arrayOf(PropTypes.string).isRequired,
   onToggleMinimize: PropTypes.func.isRequired,
+  onLayerConfigChange: PropTypes.func.isRequired,
+  layerConfigs: PropTypes.object.isRequired,
   activeTab: PropTypes.string,
   onTabChange: PropTypes.func,
-  onSetSequencerInterval: PropTypes.func,
-};
-EnhancedControlPanel.defaultProps = {
-  activeTab: "tab1",
-  onTabChange: () => {},
+  pLockProps: PropTypes.object,
 };
 
 export default React.memo(EnhancedControlPanel);

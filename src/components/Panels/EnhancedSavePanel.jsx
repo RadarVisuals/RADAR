@@ -17,7 +17,7 @@ const formatAddress = (address) => {
 
 const EnhancedSavePanel = ({ onClose }) => {
   const { hostProfileAddress, isPreviewMode, isHostProfileOwner, canSaveToHostProfile } = useUserSession();
-  const { getLiveConfig } = useVisualConfig();
+  const { layerConfigs, tokenAssignments } = useVisualConfig();
   const {
     stagedWorkspace,
     savedConfigList,
@@ -71,10 +71,8 @@ const EnhancedSavePanel = ({ onClose }) => {
       }
     }
 
-    const { layerConfigs, tokenAssignments } = getLiveConfig();
-    
     console.log(
-      `%c[EnhancedSavePanel] handleCreatePreset CLICKED. Capturing state via getLiveConfig():`,
+      `%c[EnhancedSavePanel] handleCreatePreset CLICKED. Capturing state from context:`,
       "background: #222; color: #bada55",
       {
         name,
@@ -90,7 +88,8 @@ const EnhancedSavePanel = ({ onClose }) => {
   }, [
     newPresetName,
     savedConfigList,
-    getLiveConfig,
+    layerConfigs,
+    tokenAssignments,
     addNewPresetToStagedWorkspace,
     displayStatus
   ]);
@@ -224,4 +223,4 @@ EnhancedSavePanel.propTypes = {
   onClose: PropTypes.func.isRequired,
 };
 
-export default React.memo(EnhancedSavePanel);
+export default EnhancedSavePanel;
