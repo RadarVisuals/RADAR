@@ -18,12 +18,13 @@ export const usePLockSequencer = ({ onValueUpdate }) => {
 
   const stateRef = useRef(pLockState);
   const animationDataRef = useRef({});
-  const transitionDataRef = useRef(null); // For pre-roll and reset animations
+  const transitionDataRef = useRef(null);
   const startTimeRef = useRef(0);
   const loopDurationRef = useRef(SPEED_DURATIONS.medium);
   const rafRef = useRef(null);
   const onValueUpdateRef = useRef(onValueUpdate);
   const initialStateSnapshotRef = useRef(null);
+  const prevProgressRef = useRef(0); // For tracking loop-around and mid-point
 
   useEffect(() => { stateRef.current = pLockState; }, [pLockState]);
   useEffect(() => { onValueUpdateRef.current = onValueUpdate; }, [onValueUpdate]);
@@ -35,6 +36,7 @@ export const usePLockSequencer = ({ onValueUpdate }) => {
     initialStateSnapshotRef.current = null;
     transitionDataRef.current = null;
     startTimeRef.current = 0;
+    prevProgressRef.current = 0;
   }, []);
 
   const armSequencer = useCallback((snapshot) => {
@@ -57,15 +59,19 @@ export const usePLockSequencer = ({ onValueUpdate }) => {
       if (!finalConfigs[layerId]) continue;
       const layerAnimationData = {};
       finalValues[layerId] = {};
+      
       for (const paramName in initialConfigs[layerId]) {
         const initialValue = initialConfigs[layerId][paramName];
         const finalValue = finalConfigs[layerId]?.[paramName];
         finalValues[layerId][paramName] = finalValue;
-        if (finalValue !== undefined && typeof initialValue === 'number' && Math.abs(initialValue - finalValue) > LERP_THRESHOLD) {
+        
+        // Record change if values are different, regardless of type
+        if (finalValue !== undefined && JSON.stringify(initialValue) !== JSON.stringify(finalValue)) {
           layerAnimationData[paramName] = { initialValue, targetValue: finalValue };
           hasChanges = true;
         }
       }
+      
       if (Object.keys(layerAnimationData).length > 0) {
         newAnimationData[layerId] = layerAnimationData;
       }
@@ -84,6 +90,7 @@ export const usePLockSequencer = ({ onValueUpdate }) => {
     };
     loopDurationRef.current = SPEED_DURATIONS[pLockSpeed];
     setPLockState('arming_to_play');
+    prevProgressRef.current = 0;
   }, [stopAndClear, pLockSpeed]);
 
   const initiateResetAnimation = useCallback(() => {
@@ -103,10 +110,13 @@ export const usePLockSequencer = ({ onValueUpdate }) => {
       for (const paramName in currentAnimationData[layerId]) {
         const { initialValue, targetValue } = currentAnimationData[layerId][paramName];
         initialValuesToRestore[layerId][paramName] = initialValue;
-        if (loopElapsedTime < performanceDuration) {
-          lastKnownValues[layerId][paramName] = lerp(initialValue, targetValue, loopElapsedTime / performanceDuration);
+        
+        if (typeof initialValue === 'number' && typeof targetValue === 'number') {
+            lastKnownValues[layerId][paramName] = loopElapsedTime < performanceDuration
+              ? lerp(initialValue, targetValue, loopElapsedTime / performanceDuration)
+              : lerp(targetValue, initialValue, (loopElapsedTime - performanceDuration) / performanceDuration);
         } else {
-          lastKnownValues[layerId][paramName] = lerp(targetValue, initialValue, (loopElapsedTime - performanceDuration) / performanceDuration);
+            lastKnownValues[layerId][paramName] = loopElapsedTime < performanceDuration ? initialValue : targetValue;
         }
       }
     }
@@ -150,17 +160,16 @@ export const usePLockSequencer = ({ onValueUpdate }) => {
           for (const paramName in transitionData.fromValues[layerId]) {
             const from = transitionData.fromValues[layerId][paramName];
             const to = transitionData.toValues[layerId][paramName];
-            const value = lerp(from, to, progress);
-            onValueUpdateRef.current(layerId, paramName, value);
+            
+            if (typeof from === 'number' && typeof to === 'number') {
+                onValueUpdateRef.current(layerId, paramName, lerp(from, to, progress));
+            } else {
+                onValueUpdateRef.current(layerId, paramName, progress < 1.0 ? from : to);
+            }
           }
         }
 
         if (progress >= 1.0) {
-          for (const layerId in transitionData.toValues) {
-            for (const paramName in transitionData.toValues[layerId]) {
-               onValueUpdateRef.current(layerId, paramName, transitionData.toValues[layerId][paramName]);
-            }
-          }
           if (currentState === 'arming_to_play') {
             setPLockState('playing');
             startTimeRef.current = performance.now();
@@ -174,19 +183,34 @@ export const usePLockSequencer = ({ onValueUpdate }) => {
         const duration = loopDurationRef.current;
         const startTime = startTimeRef.current;
         const loopElapsedTime = (timestamp - startTime) % duration;
-        setLoopProgress(loopElapsedTime / duration);
+        const currentProgress = loopElapsedTime / duration;
+        setLoopProgress(currentProgress);
+        
         const performanceDuration = duration / 2;
+        const isFirstHalf = loopElapsedTime < performanceDuration;
+        const justCrossedMidpoint = prevProgressRef.current < 0.5 && currentProgress >= 0.5;
+        const justStartedLoop = prevProgressRef.current > currentProgress;
 
         for (const layerId in animationDataRef.current) {
           const layerData = animationDataRef.current[layerId];
           for (const paramName in layerData) {
             const { initialValue, targetValue } = layerData[paramName];
-            const value = loopElapsedTime < performanceDuration
-              ? lerp(initialValue, targetValue, loopElapsedTime / performanceDuration)
-              : lerp(targetValue, initialValue, (loopElapsedTime - performanceDuration) / performanceDuration);
-            onValueUpdateRef.current(layerId, paramName, value);
+            
+            if (typeof initialValue === 'number' && typeof targetValue === 'number') {
+              const value = isFirstHalf
+                ? lerp(initialValue, targetValue, loopElapsedTime / performanceDuration)
+                : lerp(targetValue, initialValue, (loopElapsedTime - performanceDuration) / performanceDuration);
+              onValueUpdateRef.current(layerId, paramName, value);
+            } else {
+              if (justStartedLoop) {
+                onValueUpdateRef.current(layerId, paramName, initialValue);
+              } else if (justCrossedMidpoint) {
+                onValueUpdateRef.current(layerId, paramName, targetValue);
+              }
+            }
           }
         }
+        prevProgressRef.current = currentProgress;
       }
 
       if (continueLoop) rafRef.current = requestAnimationFrame(animationLoop);
@@ -195,7 +219,7 @@ export const usePLockSequencer = ({ onValueUpdate }) => {
 
     const shouldLoop = ['playing', 'resetting', 'arming_to_play'].includes(pLockState);
     if (shouldLoop && !rafRef.current) {
-      startTimeRef.current = performance.now();
+      if (pLockState !== 'resetting') startTimeRef.current = performance.now();
       rafRef.current = requestAnimationFrame(animationLoop);
     }
 
@@ -203,8 +227,9 @@ export const usePLockSequencer = ({ onValueUpdate }) => {
   }, [pLockState, stopAndClear]);
 
   const hasLockedParams = useMemo(() => {
-    return stateRef.current !== 'idle' && stateRef.current !== 'armed';
-  }, [pLockState]);
+    const data = animationDataRef.current;
+    return data && Object.keys(data).length > 0;
+  }, [pLockState]); // Re-evaluate whenever state changes
 
   return useMemo(() => ({
     pLockState, loopProgress, hasLockedParams, toggle, clear,

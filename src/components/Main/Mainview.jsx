@@ -108,16 +108,22 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   }, [sequencer]);
 
   const handleUserLayerPropChange = useCallback((layerId, key, value, isMidiUpdate = false) => {
-    // --- THIS IS THE FIX ---
-    // Check if the specific parameter is locked before blocking the update.
-    const isParamLocked = sequencer.pLockState === 'playing' &&
-                          sequencer.animationDataRef.current?.[layerId]?.[key];
-    
-    // Always block manual changes during reset/pre-roll animations.
-    if (isParamLocked || sequencer.pLockState === 'resetting' || sequencer.pLockState === 'arming_to_play') {
+    // --- START: BUG FIX ---
+    const pLockIsActive = sequencer.pLockState === 'playing' || 
+                          sequencer.pLockState === 'resetting' || 
+                          sequencer.pLockState === 'arming_to_play';
+
+    // If this is a manual change from the UI (not MIDI) and the P-Lock is active, block it completely.
+    if (!isMidiUpdate && pLockIsActive) {
       return;
     }
-    // --- END FIX ---
+    
+    // If this is a MIDI update, only block it if the specific parameter is part of the recorded automation.
+    const isParamRecorded = sequencer.animationDataRef.current?.[String(layerId)]?.[key];
+    if (isMidiUpdate && pLockIsActive && isParamRecorded) {
+      return;
+    }
+    // --- END: BUG FIX ---
     
     if (typeof updateLayerConfig === 'function') {
       updateLayerConfig(String(layerId), key, value);
