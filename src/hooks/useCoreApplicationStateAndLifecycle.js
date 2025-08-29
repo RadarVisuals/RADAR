@@ -5,13 +5,15 @@ import { useRenderLifecycle } from './useRenderLifecycle';
 import { useCanvasContainer } from './useCanvasContainer';
 import { useAudioVisualizer } from './useAudioVisualizer';
 import { useAnimationLifecycleManager } from './useAnimationLifecycleManager';
+import { usePLockSequencer } from './usePLockSequencer';
+import { useVisualConfig } from '../context/VisualConfigContext';
 
 /**
  * @typedef {import('../services/ConfigService').default} ConfigService
  * @typedef {import('../utils/CanvasManager').default} CanvasManager
  * @typedef {import('./useAudioVisualizer').AudioVisualizerAPI} AudioVisualizerState
  * @typedef {import('../context/VisualConfigContext').AllLayerConfigs} LayerConfigsType
- * @typedef {import('../context/VisualConfigContext').TokenAssignments} TokenAssignmentsType
+ * @typedef {import('../context/VisualConfig_types').TokenAssignments} TokenAssignmentsType
  */
 
 /**
@@ -64,6 +66,7 @@ import { useAnimationLifecycleManager } from './useAnimationLifecycleManager';
  * @property {boolean} isFullscreenActive
  * @property {() => void} enterFullscreen
  * @property {React.RefObject<boolean>} isMountedRef
+ * @property {object} sequencer
  */
 
 /**
@@ -93,6 +96,7 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     animationLockForTokenOverlay,
   } = props;
 
+  const { updateLayerConfig } = useVisualConfig();
   const isMountedRef = useRef(false);
   const internalResetLifecycleRef = useRef(null);
 
@@ -103,21 +107,43 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     };
   }, []);
 
-  // --- THIS IS THE FIX ---
-  // The onValueUpdate callback passed to the P-Lock sequencer is modified.
-  // It now ONLY updates the React state via `updateLayerConfig`.
-  // The direct call to `manager.snapVisualProperty` has been removed.
-  // This makes the `useCanvasOrchestrator` hook the single source of truth for applying state to the canvas,
-  // eliminating the race condition.
+  // --- START: MODIFIED SEQUENCER WIRING ---
   const {
     managersReady, defaultImagesLoaded, managerInstancesRef,
     applyConfigurationsToManagers, applyTokenAssignmentsToManagers,
     stopCanvasAnimations, restartCanvasAnimations,
     redrawAllCanvases, handleCanvasResize, setCanvasLayerImage,
+    applyPlaybackValue, clearAllPlaybackValues // <-- Get new functions from orchestrator
   } = useCanvasOrchestrator({
-    configServiceRef, canvasRefs, configLoadNonce, isInitiallyResolved // Pass isInitiallyResolved here
+    configServiceRef, canvasRefs, configLoadNonce, isInitiallyResolved,
+    pLockState: null // pLockState is from sequencer, so we pass null initially
   });
-  // --- END FIX ---
+
+  const sequencer = usePLockSequencer({
+    onValueUpdate: (layerId, paramName, value) => {
+      // Still update React state for UI display
+      updateLayerConfig(String(layerId), paramName, value); 
+      // Use the new dedicated method to apply playback values to the manager
+      if (applyPlaybackValue) {
+        applyPlaybackValue(String(layerId), paramName, value);
+      }
+    },
+    onAnimationEnd: (finalStateSnapshot) => {
+      // When animation ends, clear all playback overrides
+      if (clearAllPlaybackValues) {
+        clearAllPlaybackValues();
+      }
+      // And snap the final state to the main config
+      if (finalStateSnapshot) {
+        for (const layerId in finalStateSnapshot) {
+          for (const paramName in finalStateSnapshot[layerId]) {
+            updateLayerConfig(layerId, paramName, finalStateSnapshot[layerId][paramName]);
+          }
+        }
+      }
+    }
+  });
+  // --- END: MODIFIED SEQUENCER WIRING ---
 
   const audioState = useAudioVisualizer();
 
@@ -208,6 +234,7 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     isFullscreenActive,
     enterFullscreen,
     isMountedRef,
+    sequencer,
   }), [
     containerRef, managerInstancesRef, audioState, renderState, loadingStatusMessage,
     isStatusFadingOut, showStatusDisplay, showRetryButton, isTransitioning,
@@ -216,6 +243,6 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     stopCanvasAnimations, restartCanvasAnimations, applyConfigurationsToManagers,
     applyTokenAssignmentsToManagers, redrawAllCanvases, setCanvasLayerImage,
     hasValidDimensions, isContainerObservedVisible, isFullscreenActive, enterFullscreen,
-    isMountedRef
+    isMountedRef, sequencer
   ]);
 };

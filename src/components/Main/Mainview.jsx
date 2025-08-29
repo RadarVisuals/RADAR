@@ -7,7 +7,6 @@ import { useUpProvider } from "../../context/UpProvider";
 import { useMIDI } from "../../context/MIDIContext";
 import { useCoreApplicationStateAndLifecycle } from '../../hooks/useCoreApplicationStateAndLifecycle';
 import { useAppInteractions } from '../../hooks/useAppInteractions';
-import { usePLockSequencer } from '../../hooks/usePLockSequencer';
 import {
   useVisualLayerState,
   useInteractionSettingsState,
@@ -87,19 +86,9 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     setCanvasLayerImage,
     hasValidDimensions, isContainerObservedVisible, isFullscreenActive, enterFullscreen,
     isMountedRef,
+    sequencer, // The fully functional sequencer is now provided by the core hook.
   } = coreApp;
   
-  const sequencer = usePLockSequencer({
-    // This `onValueUpdate` callback is the critical change.
-    // By only calling `updateLayerConfig`, we ensure the sequencer's output
-    // flows through the standard React state management. The `useCanvasOrchestrator`
-    // hook will then pick up this state change and apply it to the canvas.
-    // This eliminates the direct, second update path that was causing the race condition.
-    onValueUpdate: (layerId, paramName, value) => {
-      updateLayerConfig(String(layerId), paramName, value);
-    }
-  });
-
   const handleTogglePLock = useCallback(() => {
     sequencer.toggle(currentActiveLayerConfigs);
   }, [sequencer, currentActiveLayerConfigs]);
@@ -122,21 +111,15 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
       return;
     }
     
-    if (typeof updateLayerConfig === 'function') {
-      updateLayerConfig(String(layerId), key, value);
-    }
+    updateLayerConfig(String(layerId), key, value);
     
     const manager = managerInstancesRef.current?.[String(layerId)];
     if (!manager) return;
 
     if (isMidiUpdate) {
-      if (typeof manager.setTargetValue === 'function') {
-        manager.setTargetValue(key, value);
-      }
+      manager.setTargetValue(key, value);
     } else {
-      if (typeof manager.updateConfigProperty === 'function') {
-        manager.updateConfigProperty(key, value);
-      }
+      manager.updateConfigProperty(key, value);
     }
   }, [updateLayerConfig, managerInstancesRef, sequencer.pLockState, sequencer.animationDataRef]);
 

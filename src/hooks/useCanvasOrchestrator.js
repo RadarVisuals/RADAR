@@ -47,9 +47,10 @@ const defaultAssets = {
  * @param {Object.<string, React.RefObject<HTMLCanvasElement>>} params.canvasRefs - Refs to the canvas elements for each layer.
  * @param {number} params.configLoadNonce - A nonce that changes when a new global configuration (preset) is loaded, used to coordinate updates.
  * @param {boolean} params.isInitiallyResolved - A flag from `PresetManagementContext` that is true only after the initial workspace has been loaded.
+ * @param {string} params.pLockState - The current state of the p-lock sequencer.
  * @returns {CanvasOrchestratorAPI} An API object for interacting with the orchestrated canvas managers.
  */
-export function useCanvasOrchestrator({ configServiceRef, canvasRefs, configLoadNonce, isInitiallyResolved }) {
+export function useCanvasOrchestrator({ configServiceRef, canvasRefs, configLoadNonce, isInitiallyResolved, pLockState }) {
     const isMountedRef = useRef(false);
     const [managersReady, setManagersReady] = useState(false);
     const [defaultImagesLoaded, setDefaultImagesLoaded] = useState(false);
@@ -137,14 +138,13 @@ export function useCanvasOrchestrator({ configServiceRef, canvasRefs, configLoad
 
     // This is the core reactive effect that applies visual changes.
     useEffect(() => {
-        // --- ADDED GUARD CLAUSE ---
-        // Do not proceed if the main application state has not yet been resolved.
-        // This prevents the orchestrator from incorrectly applying the initial `fallbackConfig`
-        // from VisualConfigContext before the real user workspace has been loaded.
         if (!isInitiallyResolved) {
             return;
         }
-        // --- END ADDED GUARD CLAUSE ---
+
+        if (pLockState === 'playing' || pLockState === 'resetting' || pLockState === 'arming_to_play') {
+            return;
+        }
 
         if (!managersReady || !currentContextLayerConfigs || !isMountedRef.current) {
             return;
@@ -220,7 +220,7 @@ export function useCanvasOrchestrator({ configServiceRef, canvasRefs, configLoad
             }
             prevLayerConfigsRef.current = JSON.parse(JSON.stringify(currentContextLayerConfigs));
         }
-    }, [currentContextLayerConfigs, managersReady, managerInstancesRef, configLoadNonce, isInitiallyResolved]); // ADDED isInitiallyResolved
+    }, [currentContextLayerConfigs, managersReady, managerInstancesRef, configLoadNonce, isInitiallyResolved, pLockState]);
 
     const setCanvasLayerImage = useCallback((layerId, src) => {
         if (!managersReady) {
@@ -259,7 +259,6 @@ export function useCanvasOrchestrator({ configServiceRef, canvasRefs, configLoad
                       imageSourceToApply = demoAssetSource;
                   }
               } else if (typeof assignmentValue === 'object' && assignmentValue !== null && assignmentValue.src) {
-                  // This is the new, correct path for owned tokens
                   imageSourceToApply = assignmentValue.src;
               } else if (assignmentValue && import.meta.env.DEV) {
                   console.warn(`[CanvasOrchestrator] Unhandled assignment type for L${layerId}:`, assignmentValue, `. Using default.`);

@@ -2,7 +2,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 
 const LERP_THRESHOLD = 1e-5;
-const TRANSITION_ANIMATION_DURATION = 250; // ms for smooth start and reset animations
+const TRANSITION_ANIMATION_DURATION = 1000; // ms for smooth start and reset animations
 const lerp = (start, end, t) => start * (1 - t) + end * t;
 
 const SPEED_DURATIONS = {
@@ -11,7 +11,7 @@ const SPEED_DURATIONS = {
   slow: 12000,
 };
 
-export const usePLockSequencer = ({ onValueUpdate }) => {
+export const usePLockSequencer = ({ onValueUpdate, onAnimationEnd }) => {
   const [pLockState, setPLockState] = useState('idle');
   const [loopProgress, setLoopProgress] = useState(0);
   const [pLockSpeed, setPLockSpeed] = useState('medium');
@@ -23,13 +23,19 @@ export const usePLockSequencer = ({ onValueUpdate }) => {
   const loopDurationRef = useRef(SPEED_DURATIONS.medium);
   const rafRef = useRef(null);
   const onValueUpdateRef = useRef(onValueUpdate);
+  const onAnimationEndRef = useRef(onAnimationEnd);
   const initialStateSnapshotRef = useRef(null);
   const prevProgressRef = useRef(0); // For tracking loop-around and mid-point
 
   useEffect(() => { stateRef.current = pLockState; }, [pLockState]);
   useEffect(() => { onValueUpdateRef.current = onValueUpdate; }, [onValueUpdate]);
+  useEffect(() => { onAnimationEndRef.current = onAnimationEnd; }, [onAnimationEnd]);
 
   const stopAndClear = useCallback(() => {
+    // --- MODIFIED: Use onAnimationEnd to clear playback values ---
+    if (onAnimationEndRef.current) {
+      onAnimationEndRef.current(initialStateSnapshotRef.current);
+    }
     setPLockState('idle');
     setLoopProgress(0);
     animationDataRef.current = {};
@@ -65,7 +71,6 @@ export const usePLockSequencer = ({ onValueUpdate }) => {
         const finalValue = finalConfigs[layerId]?.[paramName];
         finalValues[layerId][paramName] = finalValue;
         
-        // Record change if values are different, regardless of type
         if (finalValue !== undefined && JSON.stringify(initialValue) !== JSON.stringify(finalValue)) {
           layerAnimationData[paramName] = { initialValue, targetValue: finalValue };
           hasChanges = true;
@@ -90,7 +95,7 @@ export const usePLockSequencer = ({ onValueUpdate }) => {
     };
     loopDurationRef.current = SPEED_DURATIONS[pLockSpeed];
     setPLockState('arming_to_play');
-    prevProgressRef.current = 0;
+    prevProgressRef.current = 0.5; // Set to 0.5 to match the pre-wound clock
   }, [stopAndClear, pLockSpeed]);
 
   const initiateResetAnimation = useCallback(() => {
@@ -172,7 +177,7 @@ export const usePLockSequencer = ({ onValueUpdate }) => {
         if (progress >= 1.0) {
           if (currentState === 'arming_to_play') {
             setPLockState('playing');
-            startTimeRef.current = performance.now();
+            startTimeRef.current = performance.now() - loopDurationRef.current / 2;
           } else {
             stopAndClear();
           }
@@ -229,7 +234,7 @@ export const usePLockSequencer = ({ onValueUpdate }) => {
   const hasLockedParams = useMemo(() => {
     const data = animationDataRef.current;
     return data && Object.keys(data).length > 0;
-  }, [pLockState]); // Re-evaluate whenever state changes
+  }, [pLockState]);
 
   return useMemo(() => ({
     pLockState, loopProgress, hasLockedParams, toggle, clear,

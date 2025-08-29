@@ -8,11 +8,7 @@ const SETUP_CANVAS_POLL_TIMEOUT = 3000;
 const MAX_TOTAL_OFFSET = 10000;
 const DELTA_TIME_BUFFER_SIZE = 5;
 const MIDI_INTERPOLATION_DURATION = 80;
-
-// This is the fix. We cap the maximum time processed in a single frame to prevent
-// jerky movements when the browser throttles requestAnimationFrame, which is
-// common for applications running inside an iframe. 30fps is a safe cap.
-const MAX_DELTA_TIME = 1 / 30; // Maximum time slice is for 30fps
+const MAX_DELTA_TIME = 1 / 30;
 
 class CanvasManager {
     canvas = null;
@@ -32,11 +28,19 @@ class CanvasManager {
     smoothedDeltaTime = 1 / 60;
     
     interpolators = {};
+    playbackValues = {};
 
     continuousRotationAngle = 0;
     audioFrequencyFactor = 1.0;
     beatPulseFactor = 1.0;
     beatPulseEndTime = 0;
+
+    // NEW properties for handling transitions
+    isTransitioning = false;
+    transitionStartTime = 0;
+    transitionDuration = 1000; // 1-second crossfade
+    outgoingImage = null;
+    outgoingConfig = null;
 
     constructor(canvas, layerId) {
         if (!canvas || !(canvas instanceof HTMLCanvasElement)) {
@@ -53,6 +57,7 @@ class CanvasManager {
         this.layerId = layerId;
         this.config = this.getDefaultConfig();
         this.lastDPR = 1;
+        this.playbackValues = {};
 
         this.interpolators = {};
         sliderParams.forEach(param => {
@@ -61,6 +66,46 @@ class CanvasManager {
         });
 
         this.animationLoop = this.animationLoop.bind(this);
+    }
+
+    // NEW: The layer transition method
+    async transitionTo(newImageSrc, newConfig) {
+        if (this.isTransitioning) {
+            if (import.meta.env.DEV) console.warn(`[CM L${this.layerId}] Already transitioning, new request ignored.`);
+            return;
+        }
+
+        this.isTransitioning = true;
+        
+        // 1. Store the outgoing state
+        this.outgoingImage = this.image;
+        this.outgoingConfig = this.getConfigData();
+
+        // 2. Preload the new image
+        try {
+            await this.setImage(newImageSrc); // this.image is now the new image
+        } catch (error) {
+            if (import.meta.env.DEV) console.error(`[CM L${this.layerId}] Failed to load new image for transition:`, error);
+            this.isTransitioning = false;
+            this.image = this.outgoingImage; // Restore old image on failure
+            return;
+        }
+        
+        // 3. Apply the new base configuration
+        this.applyFullConfig(newConfig);
+
+        // 4. Start the transition clock
+        this.transitionStartTime = performance.now();
+
+        // 5. Return a promise that resolves when the transition is visually complete
+        return new Promise(resolve => {
+            setTimeout(() => {
+                this.isTransitioning = false;
+                this.outgoingImage = null;
+                this.outgoingConfig = null;
+                resolve();
+            }, this.transitionDuration);
+        });
     }
 
     getDefaultConfig() {
@@ -75,6 +120,16 @@ class CanvasManager {
         defaultConfig.direction = 1;
         defaultConfig.driftState = { x: 0, y: 0, phase: Math.random() * Math.PI * 2, enabled: false };
         return defaultConfig;
+    }
+
+    applyPlaybackValue(key, value) {
+        if (this.isDestroyed) return;
+        this.playbackValues[key] = value;
+    }
+
+    clearPlaybackValues() {
+        if (this.isDestroyed) return;
+        this.playbackValues = {};
     }
 
     async setupCanvas() {
@@ -275,7 +330,7 @@ class CanvasManager {
         });
         this.continuousRotationAngle = 0;
 
-        return this.draw(performance.now(), currentConfig);
+        return this.draw(performance.now());
     }
 
     async setImage(src) {
@@ -330,88 +385,111 @@ class CanvasManager {
     triggerBeatPulse(pulseFactor, duration) { if (this.isDestroyed) return; this.beatPulseFactor = Number(pulseFactor) || 1.0; this.beatPulseEndTime = performance.now() + (Number(duration) || 0); }
     resetAudioModifications() { if (this.isDestroyed) return; this.audioFrequencyFactor = 1.0; this.beatPulseFactor = 1.0; this.beatPulseEndTime = 0; }
     getConfigData() { return JSON.parse(JSON.stringify(this.config)); }
+    
+    _drawFrame(timestamp, image, config) {
+        if (!image || !config) return;
 
-    draw(timestamp, configToUse = null) {
-        const currentConfig = configToUse || this.config;
-        if (this.isDestroyed || !currentConfig?.enabled || this.isDrawing || !this.canvas || !this.ctx || !this.image || !this.image.complete || this.image.naturalWidth === 0 || this.lastValidWidth <= 0 || this.lastValidHeight <= 0) {
+        const width = this.lastValidWidth; const height = this.lastValidHeight;
+        const halfWidth = Math.floor(width / 2); const halfHeight = Math.floor(height / 2);
+        const remainingWidth = width - halfWidth; const remainingHeight = height - halfHeight;
+
+        const currentSize = config.size;
+        const currentX = config.xaxis;
+        const currentY = config.yaxis;
+        const baseAngle = config.angle;
+        
+        const imgNaturalWidth = image.naturalWidth; const imgNaturalHeight = image.naturalHeight;
+        const imgAspectRatio = (imgNaturalWidth > 0 && imgNaturalHeight > 0) ? imgNaturalWidth / imgNaturalHeight : 1;
+
+        let finalDrawSize = currentSize * this.audioFrequencyFactor;
+        if (this.beatPulseEndTime && timestamp < this.beatPulseEndTime) {
+            finalDrawSize *= this.beatPulseFactor;
+        } else if (this.beatPulseEndTime && timestamp >= this.beatPulseEndTime) {
+            this.beatPulseFactor = 1.0; this.beatPulseEndTime = 0;
+        }
+        finalDrawSize = Math.max(0.01, finalDrawSize);
+
+        let imgDrawWidth = halfWidth * finalDrawSize;
+        let imgDrawHeight = imgDrawWidth / imgAspectRatio;
+        if (imgAspectRatio > 0 && imgDrawHeight > halfHeight * finalDrawSize) {
+            imgDrawHeight = halfHeight * finalDrawSize; imgDrawWidth = imgDrawHeight * imgAspectRatio;
+        } else if (isNaN(imgDrawHeight) || imgAspectRatio <= 0) {
+            imgDrawWidth = halfWidth * finalDrawSize; imgDrawHeight = halfHeight * finalDrawSize;
+        }
+        imgDrawWidth = Math.max(1, Math.floor(imgDrawWidth));
+        imgDrawHeight = Math.max(1, Math.floor(imgDrawHeight));
+
+        this.updateDrift(config, this.smoothedDeltaTime);
+        const driftX = config.driftState?.x ?? 0;
+        const driftY = config.driftState?.y ?? 0;
+        
+        const offsetX = currentX / 10;
+        const offsetY = currentY / 10;
+        const finalAngle = baseAngle + this.continuousRotationAngle;
+        const angleRad = (finalAngle % 360) * Math.PI / 180;
+
+        const finalCenterX_TL = Math.max(-MAX_TOTAL_OFFSET, Math.min(MAX_TOTAL_OFFSET, halfWidth / 2 + offsetX + driftX));
+        const finalCenterY_TL = Math.max(-MAX_TOTAL_OFFSET, Math.min(MAX_TOTAL_OFFSET, halfHeight / 2 + offsetY + driftY));
+
+        const drawImageWithRotation = () => {
+             try {
+                this.ctx.save();
+                this.ctx.rotate(angleRad);
+                if (image?.complete && image?.naturalWidth > 0) {
+                    this.ctx.drawImage(image, 0, 0, imgNaturalWidth, imgNaturalHeight, -imgDrawWidth / 2, -imgDrawHeight / 2, imgDrawWidth, imgDrawHeight);
+                }
+                this.ctx.restore();
+            } catch (e) { if (import.meta.env.DEV) console.error(`[CM L${this.layerId}] draw: drawImage error:`, e); }
+        };
+
+        this.ctx.save(); this.ctx.beginPath(); this.ctx.rect(0,0,halfWidth,halfHeight); this.ctx.clip();
+        this.ctx.translate(finalCenterX_TL, finalCenterY_TL); drawImageWithRotation(); this.ctx.restore();
+
+        this.ctx.save(); this.ctx.beginPath(); this.ctx.rect(halfWidth,0,remainingWidth,halfHeight); this.ctx.clip();
+        this.ctx.translate(width,0); this.ctx.scale(-1,1);
+        this.ctx.translate(finalCenterX_TL, finalCenterY_TL); drawImageWithRotation(); this.ctx.restore();
+
+        this.ctx.save(); this.ctx.beginPath(); this.ctx.rect(0,halfHeight,halfWidth,remainingHeight); this.ctx.clip();
+        this.ctx.translate(0,height); this.ctx.scale(1,-1);
+        this.ctx.translate(finalCenterX_TL, finalCenterY_TL); drawImageWithRotation(); this.ctx.restore();
+
+        this.ctx.save(); this.ctx.beginPath(); this.ctx.rect(halfWidth,halfHeight,remainingWidth,remainingHeight); this.ctx.clip();
+        this.ctx.translate(width,height); this.ctx.scale(-1,-1);
+        this.ctx.translate(finalCenterX_TL, finalCenterY_TL); drawImageWithRotation(); this.ctx.restore();
+    }
+    
+    draw(timestamp) {
+        if (this.isDestroyed || !this.config?.enabled || this.isDrawing || !this.canvas || !this.ctx || this.lastValidWidth <= 0 || this.lastValidHeight <= 0) {
             this.isDrawing = false; return false;
         }
         this.isDrawing = true;
 
         try {
-            const width = this.lastValidWidth; const height = this.lastValidHeight;
-            const halfWidth = Math.floor(width / 2); const halfHeight = Math.floor(height / 2);
-            const remainingWidth = width - halfWidth; const remainingHeight = height - halfHeight;
+            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-            const currentSize = this.interpolators.size.getCurrentValue();
-            const currentOpacity = this.interpolators.opacity.getCurrentValue();
-            const currentX = this.interpolators.xaxis.getCurrentValue();
-            const currentY = this.interpolators.yaxis.getCurrentValue();
-            const baseAngle = this.interpolators.angle.getCurrentValue();
-            
-            const imgNaturalWidth = this.image.naturalWidth; const imgNaturalHeight = this.image.naturalHeight;
-            const imgAspectRatio = (imgNaturalWidth > 0 && imgNaturalHeight > 0) ? imgNaturalWidth / imgNaturalHeight : 1;
+            // NEW: Handle transition drawing
+            if (this.isTransitioning) {
+                const elapsed = timestamp - this.transitionStartTime;
+                const progress = Math.min(1, elapsed / this.transitionDuration);
 
-            let finalDrawSize = currentSize * this.audioFrequencyFactor;
-            if (this.beatPulseEndTime && timestamp < this.beatPulseEndTime) {
-                finalDrawSize *= this.beatPulseFactor;
-            } else if (this.beatPulseEndTime && timestamp >= this.beatPulseEndTime) {
-                this.beatPulseFactor = 1.0; this.beatPulseEndTime = 0;
+                // Draw outgoing frame with decreasing opacity
+                if (this.outgoingImage && this.outgoingConfig) {
+                    const outgoingOpacity = (this.outgoingConfig.opacity ?? 1.0) * (1 - progress);
+                    this.ctx.globalAlpha = outgoingOpacity;
+                    this._drawFrame(timestamp, this.outgoingImage, this.outgoingConfig);
+                }
+
+                // Draw incoming frame with increasing opacity
+                const incomingOpacity = (this.config.opacity ?? 1.0) * progress;
+                this.ctx.globalAlpha = incomingOpacity;
+                this._drawFrame(timestamp, this.image, this.config);
+
+            } else {
+                // Normal drawing logic
+                const currentOpacity = this.playbackValues.opacity ?? this.interpolators.opacity.getCurrentValue();
+                this.ctx.globalAlpha = currentOpacity;
+                this._drawFrame(timestamp, this.image, this.config);
             }
-            finalDrawSize = Math.max(0.01, finalDrawSize);
-
-            let imgDrawWidth = halfWidth * finalDrawSize;
-            let imgDrawHeight = imgDrawWidth / imgAspectRatio;
-            if (imgAspectRatio > 0 && imgDrawHeight > halfHeight * finalDrawSize) {
-                imgDrawHeight = halfHeight * finalDrawSize; imgDrawWidth = imgDrawHeight * imgAspectRatio;
-            } else if (isNaN(imgDrawHeight) || imgAspectRatio <= 0) {
-                imgDrawWidth = halfWidth * finalDrawSize; imgDrawHeight = halfHeight * finalDrawSize;
-            }
-            imgDrawWidth = Math.max(1, Math.floor(imgDrawWidth));
-            imgDrawHeight = Math.max(1, Math.floor(imgDrawHeight));
-
-            this.updateDrift(currentConfig, this.smoothedDeltaTime);
-            const driftX = currentConfig.driftState?.x ?? 0;
-            const driftY = currentConfig.driftState?.y ?? 0;
-            
-            const offsetX = currentX / 10;
-            const offsetY = currentY / 10;
-            const finalAngle = baseAngle + this.continuousRotationAngle;
-            const angleRad = (finalAngle % 360) * Math.PI / 180;
-
-            const finalCenterX_TL = Math.max(-MAX_TOTAL_OFFSET, Math.min(MAX_TOTAL_OFFSET, halfWidth / 2 + offsetX + driftX));
-            const finalCenterY_TL = Math.max(-MAX_TOTAL_OFFSET, Math.min(MAX_TOTAL_OFFSET, halfHeight / 2 + offsetY + driftY));
-
-            try { this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height); }
-            catch (e) { if (import.meta.env.DEV) console.error(`[CM L${this.layerId}] draw: Error clearing canvas:`, e); this.isDrawing = false; return false; }
-
-            this.ctx.globalAlpha = currentOpacity;
-
-            const drawImageWithRotation = () => {
-                 try {
-                    this.ctx.save();
-                    this.ctx.rotate(angleRad);
-                    if (this.image?.complete && this.image?.naturalWidth > 0) {
-                        this.ctx.drawImage(this.image, 0, 0, imgNaturalWidth, imgNaturalHeight, -imgDrawWidth / 2, -imgDrawHeight / 2, imgDrawWidth, imgDrawHeight);
-                    }
-                    this.ctx.restore();
-                } catch (e) { if (import.meta.env.DEV) console.error(`[CM L${this.layerId}] draw: drawImage error:`, e); }
-            };
-
-            this.ctx.save(); this.ctx.beginPath(); this.ctx.rect(0,0,halfWidth,halfHeight); this.ctx.clip();
-            this.ctx.translate(finalCenterX_TL, finalCenterY_TL); drawImageWithRotation(); this.ctx.restore();
-
-            this.ctx.save(); this.ctx.beginPath(); this.ctx.rect(halfWidth,0,remainingWidth,halfHeight); this.ctx.clip();
-            this.ctx.translate(width,0); this.ctx.scale(-1,1);
-            this.ctx.translate(finalCenterX_TL, finalCenterY_TL); drawImageWithRotation(); this.ctx.restore();
-
-            this.ctx.save(); this.ctx.beginPath(); this.ctx.rect(0,halfHeight,halfWidth,remainingHeight); this.ctx.clip();
-            this.ctx.translate(0,height); this.ctx.scale(1,-1);
-            this.ctx.translate(finalCenterX_TL, finalCenterY_TL); drawImageWithRotation(); this.ctx.restore();
-
-            this.ctx.save(); this.ctx.beginPath(); this.ctx.rect(halfWidth,halfHeight,remainingWidth,remainingHeight); this.ctx.clip();
-            this.ctx.translate(width,height); this.ctx.scale(-1,-1);
-            this.ctx.translate(finalCenterX_TL, finalCenterY_TL); drawImageWithRotation(); this.ctx.restore();
 
             this.ctx.globalAlpha = 1.0;
             this.isDrawing = false;
@@ -426,8 +504,8 @@ class CanvasManager {
     updateDrift(config, deltaTime) {
         if (!config?.driftState) return;
         const {driftState} = config;
-        const driftAmount = this.interpolators.drift.getCurrentValue();
-        const driftSpeed = this.interpolators.driftSpeed.getCurrentValue();
+        const driftAmount = config.drift; // Use direct config value for drift logic
+        const driftSpeed = config.driftSpeed;
 
         if(driftAmount > 0 && driftState.enabled){
             if(typeof driftState.phase !== "number" || isNaN(driftState.phase)) driftState.phase = Math.random() * Math.PI * 2;
@@ -451,7 +529,6 @@ class CanvasManager {
         const elapsed = timestamp - this.lastTimestamp;
         this.lastTimestamp = timestamp;
         
-        // This is where the deltaTime is capped to prevent animation jumps
         const rawDeltaTime = Math.min(elapsed / 1000.0, MAX_DELTA_TIME);
 
         this.deltaTimeBuffer.push(rawDeltaTime);
@@ -459,22 +536,25 @@ class CanvasManager {
         this.smoothedDeltaTime = this.deltaTimeBuffer.reduce((a,b) => a+b,0) / this.deltaTimeBuffer.length;
         
         if (this.lastValidWidth <= 0 || this.lastValidHeight <= 0 || !this.canvas || !this.ctx) {
-            this.setupCanvas().then(setupOk => { if (setupOk && this.config.enabled) this.draw(timestamp, this.config); });
+            this.setupCanvas().then(setupOk => { if (setupOk && this.config.enabled) this.draw(timestamp); });
             return;
         }
-        if (!this.image?.complete || this.image?.naturalWidth === 0) return;
+        
+        // During transition, we don't need to check for image completion for the new image,
+        // as transitionTo awaits it. The outgoing image will always be complete.
+        if (!this.isTransitioning && (!this.image?.complete || this.image?.naturalWidth === 0)) return;
 
         const now = performance.now();
         for (const key in this.interpolators) {
             this.interpolators[key].update(now);
         }
         
-        const speed = this.interpolators.speed.getCurrentValue();
+        const speed = this.playbackValues.speed ?? this.interpolators.speed.getCurrentValue();
         const direction = this.config.direction ?? 1;
         const angleDelta = speed * direction * this.smoothedDeltaTime * 600;
         this.continuousRotationAngle = (this.continuousRotationAngle + angleDelta) % 360;
 
-        this.draw(timestamp, this.config);
+        this.draw(timestamp);
     }
     
     async forceRedraw(configToUse = null) {
@@ -490,6 +570,7 @@ class CanvasManager {
         this.canvas = null;
         this.deltaTimeBuffer = [];
         this.interpolators = {};
+        this.playbackValues = {};
         this.lastDPR = 0;
         this.lastValidWidth = 0;
         this.lastValidHeight = 0;
