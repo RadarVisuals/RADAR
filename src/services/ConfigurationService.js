@@ -379,7 +379,6 @@ class ConfigurationService {
     }
   }
   
-  // --- START OF FIX: Revert to simple "get owned" function ---
   async getOwnedLSP8TokenIdsForCollection(userAddress, collectionAddress) {
       const logPrefix = `[CS getOwnedLSP8]`;
       const checksummedUserAddr = getChecksumAddressSafe(userAddress);
@@ -404,9 +403,7 @@ class ConfigurationService {
           return [];
       }
   }
-  // --- END OF FIX ---
 
-  // --- START OF FIX: Add new function to get ALL tokens ---
   async getAllLSP8TokenIdsForCollection(collectionAddress) {
       const logPrefix = `[CS getAllLSP8]`;
       const checksummedCollectionAddr = getChecksumAddressSafe(collectionAddress);
@@ -425,19 +422,17 @@ class ConfigurationService {
           });
           const totalAsNumber = Number(total);
           
-          const allTokenIds = Array.from({ length: totalAsNumber }, (_, i) => {
-              return '0x' + i.toString(16).padStart(64, '0');
-          });
+          const allTokenIndices = Array.from({ length: totalAsNumber }, (_, i) => i);
           
-          if (import.meta.env.DEV) console.log(`${logPrefix} Found ${totalAsNumber} total tokens.`);
-          return allTokenIds;
+          if (import.meta.env.DEV) console.log(`${logPrefix} Found ${totalAsNumber} total tokens. Returning indices.`);
+          return allTokenIndices;
       } catch (error) {
           if (import.meta.env.DEV) console.error(`${logPrefix} Failed to fetch all tokens. Does contract have 'totalSupply'?`, error);
           return [];
       }
   }
-  // --- END OF FIX ---
 
+  // --- FIX: This function is now upgraded to handle on-chain SVG data ---
   async getTokenMetadata(collectionAddress, tokenId) {
     const logPrefix = `[CS getTokenMetadata]`;
     const checksummedCollectionAddr = getChecksumAddressSafe(collectionAddress);
@@ -449,10 +444,25 @@ class ConfigurationService {
 
     try {
       const lsp4Key = ERC725YDataKeys.LSP4.LSP4Metadata;
-      let metadataUriBytes = await this.publicClient.readContract({
+      const metadataUriBytes = await this.publicClient.readContract({
           address: checksummedCollectionAddr, abi: LSP8_ABI, functionName: "getDataForTokenId", args: [tokenId, lsp4Key]
       }).catch(() => null);
 
+      // --- NEW LOGIC: START ---
+      // First, check if the returned data is directly an on-chain SVG
+      if (metadataUriBytes && metadataUriBytes !== '0x') {
+        const decodedString = hexToUtf8Safe(metadataUriBytes);
+        if (decodedString && decodedString.trim().startsWith('<svg')) {
+          if (import.meta.env.DEV) console.log(`${logPrefix} Detected on-chain SVG for tokenId ${tokenId.slice(0,10)}...`);
+          const base64Svg = Buffer.from(decodedString, 'utf8').toString('base64');
+          const imageUrl = `data:image/svg+xml;base64,${base64Svg}`;
+          const name = `Token #${Number(BigInt(tokenId))}`;
+          return { name, image: imageUrl };
+        }
+      }
+      // --- NEW LOGIC: END ---
+
+      // If it's not an on-chain SVG, proceed with the existing URL-resolving logic
       let finalMetadataUrl = '';
 
       if (metadataUriBytes && metadataUriBytes !== '0x') {
@@ -526,43 +536,46 @@ class ConfigurationService {
     }
   }
 
-  async getTokensMetadataBatch(tokensToFetch) {
-    const logPrefix = `[CS getTokensMetadataBatch]`;
-    if (!this.checkReadyForRead() || !tokensToFetch || tokensToFetch.length === 0) {
+  async getTokensMetadataForPage(collectionAddress, identifiers, page, pageSize) {
+    const logPrefix = `[CS getTokensMetadataForPage]`;
+    if (!this.checkReadyForRead() || !identifiers || identifiers.length === 0) {
         return [];
     }
 
-    const metadataFetchPromises = tokensToFetch.map(async (token) => {
-        const metadata = await this.getTokenMetadata(token.collectionAddress, token.tokenId);
-        return metadata ? { originalToken: token, metadata } : null;
+    const startIndex = page * pageSize;
+    const endIndex = startIndex + pageSize;
+    const pageIdentifiers = identifiers.slice(startIndex, endIndex);
+
+    if (pageIdentifiers.length === 0) return [];
+
+    const metadataFetchPromises = pageIdentifiers.map(async (identifier) => {
+        const tokenId = typeof identifier === 'number'
+            ? '0x' + identifier.toString(16).padStart(64, '0')
+            : identifier;
+        
+        const metadata = await this.getTokenMetadata(collectionAddress, tokenId);
+        return metadata ? { originalIdentifier: identifier, tokenId, metadata } : null;
     });
 
-    if (import.meta.env.DEV) console.log(`${logPrefix} Fetching metadata for ${tokensToFetch.length} tokens...`);
+    if (import.meta.env.DEV) console.log(`${logPrefix} Fetching metadata for ${pageIdentifiers.length} tokens on page ${page}.`);
     const settledMetadataResults = await Promise.allSettled(metadataFetchPromises);
   
     const finalTokenData = settledMetadataResults.map((result) => {
-        if (result.status === 'rejected' || !result.value) {
-            return null;
-        }
+      if (result.status === 'rejected' || !result.value) return null;
+      
+      const { tokenId, metadata } = result.value;
+      if (!metadata?.image) return null;
+
+      return {
+          id: `${collectionAddress}-${tokenId}`,
+          type: 'owned',
+          address: collectionAddress,
+          tokenId: tokenId,
+          metadata: { name: metadata.name || 'Unnamed', image: metadata.image },
+      };
+    }).filter(Boolean);
   
-        const { originalToken, metadata } = result.value;
-        const name = metadata.name || 'Unnamed Token';
-        const imageUrl = metadata.image;
-  
-        if (!imageUrl) {
-            return null;
-        }
-  
-        return {
-            id: originalToken.tokenId ? `${originalToken.collectionAddress}-${originalToken.tokenId}` : originalToken.collectionAddress,
-            type: 'owned',
-            address: originalToken.collectionAddress,
-            tokenId: originalToken.tokenId,
-            metadata: { name, image: imageUrl },
-        };
-    });
-  
-    return finalTokenData.filter(Boolean);
+    return finalTokenData;
   }
 }
 

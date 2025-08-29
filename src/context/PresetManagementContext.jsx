@@ -31,7 +31,7 @@ export const defaultWorkspaceManagementContextValue = {
   configServiceRef: { current: null }, configServiceInstanceReady: false,
   activeMidiMap: {},
   activeEventReactions: {},
-  ownedTokens: [],
+  ownedTokenIdentifiers: {},
   isFetchingTokens: false,
   tokenFetchProgress: { loaded: 0, total: 0, loading: false },
   refreshOwnedTokens: async () => {},
@@ -40,7 +40,7 @@ export const defaultWorkspaceManagementContextValue = {
   addNewPresetToStagedWorkspace: () => {}, deletePresetFromStagedWorkspace: () => {},
   setDefaultPresetInStagedWorkspace: () => {}, discardStagedChanges: () => {},
   updateGlobalMidiMap: () => {},
-  updateLayerMidiMappings: () => {}, // New function export
+  updateLayerMidiMappings: () => {}, 
   updateGlobalEventReactions: () => {}, deleteGlobalEventReaction: () => {},
   setHasPendingChanges: () => {},
   addPalette: () => {},
@@ -76,8 +76,8 @@ export const PresetManagementProvider = ({ children }) => {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [hasPendingChanges, setHasPendingChanges] = useState(false);
   const prevProfileAddressRef = useRef(null);
-
-  const [ownedTokens, setOwnedTokens] = useState([]);
+  
+  const [ownedTokenIdentifiers, setOwnedTokenIdentifiers] = useState({});
   const [isFetchingTokens, setIsFetchingTokens] = useState(false);
   const [tokenFetchProgress, setTokenFetchProgress] = useState({ loaded: 0, total: 0, loading: false });
 
@@ -149,58 +149,58 @@ export const PresetManagementProvider = ({ children }) => {
 
   const refreshOwnedTokens = useCallback(async (isSilent = false) => {
     const service = configServiceRef.current;
-    if (!hostProfileAddress || officialWhitelist.length === 0 || !service) {
-      setOwnedTokens([]);
+    const effectiveAddress = hostProfileAddress || visitorProfileAddress;
+
+    if (!effectiveAddress || officialWhitelist.length === 0 || !service) {
+      setOwnedTokenIdentifiers({});
       setTokenFetchProgress({ loaded: 0, total: 0, loading: false });
       return;
     }
 
     setIsFetchingTokens(true);
-    setTokenFetchProgress({ loaded: 0, total: 0, loading: true });
-    if (!isSilent) addToast("Refreshing token library...", "info", 2000);
+    setTokenFetchProgress({ loaded: 0, total: officialWhitelist.length, loading: true });
+    if (!isSilent) addToast("Fetching token libraries...", "info", 2000);
 
     try {
-      const shouldShowcaseAllTokens = hostProfileAddress.toLowerCase() === RADAR_OFFICIAL_ADMIN_ADDRESS.toLowerCase();
-
-      const collectionPromises = officialWhitelist.map(async (collection) => {
+      const isAdminShowcase = effectiveAddress.toLowerCase() === RADAR_OFFICIAL_ADMIN_ADDRESS.toLowerCase();
+      
+      const identifierPromises = officialWhitelist.map(async (collection) => {
         const standard = await service.detectCollectionStandard(collection.address);
+        let identifiers = [];
         if (standard === 'LSP8') {
-          const tokenIds = shouldShowcaseAllTokens
-            ? await service.getAllLSP8TokenIdsForCollection(collection.address)
-            : await service.getOwnedLSP8TokenIdsForCollection(hostProfileAddress, collection.address);
-            
-          return tokenIds.map(tokenId => ({ collectionAddress: collection.address, tokenId }));
-        } else if (standard === 'LSP7') {
-          const balance = await service.getLSP7Balance(hostProfileAddress, collection.address);
-          if (balance > 0n) {
-            return [{ collectionAddress: collection.address, tokenId: null }];
+          if (isAdminShowcase) {
+            identifiers = await service.getAllLSP8TokenIdsForCollection(collection.address);
+          } else {
+            identifiers = await service.getOwnedLSP8TokenIdsForCollection(effectiveAddress, collection.address);
           }
         }
-        return [];
+        setTokenFetchProgress(prev => ({ ...prev, loaded: prev.loaded + 1 }));
+        return { address: collection.address, identifiers };
       });
 
-      const tokenIdentifierArrays = await Promise.all(collectionPromises);
-      const tokensToFetch = tokenIdentifierArrays.flat();
+      const results = await Promise.all(identifierPromises);
+      
+      const newIdentifierMap = results.reduce((acc, result) => {
+        if (result.identifiers.length > 0) {
+          acc[result.address] = result.identifiers;
+        }
+        return acc;
+      }, {});
 
-      setTokenFetchProgress({ loaded: 0, total: tokensToFetch.length, loading: true });
+      setOwnedTokenIdentifiers(newIdentifierMap);
 
-      if (tokensToFetch.length > 0) {
-        const allTokens = await service.getTokensMetadataBatch(tokensToFetch);
-        setOwnedTokens(allTokens);
-        if (!isSilent) addToast(`Token library updated: ${allTokens.length} assets found.`, "success", 3000);
-      } else {
-        setOwnedTokens([]);
-        if (!isSilent) addToast(`Token library updated: 0 assets found.`, "info", 3000);
+      if (!isSilent) {
+        const totalIds = Object.values(newIdentifierMap).reduce((sum, ids) => sum + ids.length, 0);
+        addToast(`Token libraries loaded: ${totalIds} assets available.`, "success", 3000);
       }
-
     } catch (error) {
-      console.error("Failed to refresh owned tokens:", error);
-      if (!isSilent) addToast("Could not refresh token library.", "error");
+      console.error("Failed to refresh owned token identifiers:", error);
+      if (!isSilent) addToast("Could not load token libraries.", "error");
     } finally {
       setIsFetchingTokens(false);
-      setTokenFetchProgress(prev => ({ ...prev, loaded: prev.total, loading: false }));
+      setTokenFetchProgress(prev => ({ ...prev, loading: false }));
     }
-  }, [hostProfileAddress, officialWhitelist, addToast]);
+  }, [hostProfileAddress, visitorProfileAddress, officialWhitelist, addToast]);
 
   useEffect(() => {
     const currentAddress = hostProfileAddress;
@@ -222,7 +222,7 @@ export const PresetManagementProvider = ({ children }) => {
       setCurrentConfigName(null); setLoadError(null); setHasPendingChanges(false);
       setVisitorMidiMap({});
       setVisitorEventReactions({});
-      setOwnedTokens([]);
+      setOwnedTokenIdentifiers({});
     }
 
     const loadInitialData = async (address) => {
@@ -283,16 +283,11 @@ export const PresetManagementProvider = ({ children }) => {
       setConfigLoadNonce(prev => prev + 1);
     }
   }, [hostProfileAddress, visitorProfileAddress, configServiceInstanceReady, isInitiallyResolved, isHostProfileOwner, addToast, setLiveConfig]);
-
-  useEffect(() => {
-    refreshOwnedTokens(true);
-  }, [refreshOwnedTokens, officialWhitelist]);
   
   const activeMidiMap = useMemo(() => {
     if (!isHostProfileOwner && visitorProfileAddress) {
       return visitorMidiMap;
     }
-    // Correctly merge layer selects into the active map for the UI to read
     const baseMap = stagedWorkspace?.globalMidiMap || {};
     return baseMap;
   }, [isHostProfileOwner, visitorProfileAddress, visitorMidiMap, stagedWorkspace]);
@@ -365,7 +360,6 @@ export const PresetManagementProvider = ({ children }) => {
     }
   }, [isHostProfileOwner]);
 
-  // --- NEW FUNCTION TO HANDLE LAYER-SPECIFIC MAPPINGS ---
   const updateLayerMidiMappings = useCallback((layerId, mappingData) => {
     if (isHostProfileOwner) {
       setStagedWorkspace(prev => {
@@ -501,14 +495,14 @@ export const PresetManagementProvider = ({ children }) => {
     configServiceRef, configServiceInstanceReady,
     activeMidiMap,
     activeEventReactions,
-    ownedTokens,
+    ownedTokenIdentifiers,
     isFetchingTokens,
     tokenFetchProgress,
     refreshOwnedTokens,
     loadNamedConfig, saveWorkspace, addNewPresetToStagedWorkspace, deletePresetFromStagedWorkspace,
     setDefaultPresetInStagedWorkspace, discardStagedChanges,
     updateGlobalMidiMap,
-    updateLayerMidiMappings, // Export the new function
+    updateLayerMidiMappings,
     updateGlobalEventReactions, deleteGlobalEventReaction,
     addPalette, removePalette, addTokenToPalette, removeTokenFromPalette,
   }), [
@@ -519,11 +513,11 @@ export const PresetManagementProvider = ({ children }) => {
     configServiceRef, configServiceInstanceReady,
     activeMidiMap,
     activeEventReactions,
-    ownedTokens, isFetchingTokens, tokenFetchProgress, refreshOwnedTokens,
+    ownedTokenIdentifiers, isFetchingTokens, tokenFetchProgress, refreshOwnedTokens,
     loadNamedConfig, saveWorkspace, addNewPresetToStagedWorkspace, deletePresetFromStagedWorkspace,
     setDefaultPresetInStagedWorkspace, discardStagedChanges,
     updateGlobalMidiMap,
-    updateLayerMidiMappings, // Add to dependency array
+    updateLayerMidiMappings,
     updateGlobalEventReactions, deleteGlobalEventReaction,
     addPalette, removePalette, addTokenToPalette, removeTokenFromPalette,
   ]);
