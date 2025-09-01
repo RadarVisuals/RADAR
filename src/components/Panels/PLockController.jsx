@@ -10,7 +10,6 @@ const PLockController = ({
   pLockSpeed = 'medium',
   onSetPLockSpeed,
   onTogglePLock,
-  onClearPLocks,
   onMapMidi,
   isMidiLearning,
   midiMappingText,
@@ -19,8 +18,7 @@ const PLockController = ({
     switch (pLockState) {
       case 'armed': return 'ARM ●';
       case 'playing': return 'STOP ■';
-      case 'resetting': return '...';
-      case 'arming_to_play': return '...';
+      case 'stopping': return '...';
       default: return 'REC';
     }
   };
@@ -28,21 +26,20 @@ const PLockController = ({
   const getRecordButtonTitle = () => {
     switch (pLockState) {
       case 'armed': return 'Press again to capture snapshot and start playback.';
-      case 'playing': return 'Stop playback and smoothly reset parameters.';
-      case 'resetting': return 'Resetting parameters to their initial state...';
-      case 'arming_to_play': return 'Animating to start position...';
-      default: return 'Arm sequencer to record parameter changes.';
+      case 'playing': return 'Stop playback and rest at the final recorded position.';
+      case 'stopping': return 'Stopping and setting parameters to their final state...';
+      default: return 'Arm sequencer to record parameter changes. Clears any previous recording.';
     }
   };
 
   const getProgressBarColor = () => {
     if (pLockState === 'armed') return 'var(--color-error)';
     if (pLockState === 'playing') return 'var(--color-primary)';
-    if (pLockState === 'resetting' || pLockState === 'arming_to_play') return 'var(--color-warning)';
+    if (pLockState === 'stopping') return 'var(--color-warning)';
     return 'transparent';
   };
   
-  const isButtonDisabled = pLockState === 'resetting' || pLockState === 'arming_to_play';
+  const isButtonDisabled = pLockState === 'stopping';
 
   return (
     <>
@@ -55,11 +52,8 @@ const PLockController = ({
         <button className={`plock-button plock-record-button ${pLockState}`} onClick={onTogglePLock} title={getRecordButtonTitle()} disabled={isButtonDisabled}>
           {getRecordButtonText()}
         </button>
-        <button className="plock-button plock-clear-button" onClick={onClearPLocks} disabled={isButtonDisabled || (pLockState === 'idle' && !hasLockedParams)} title="Clear recorded automation.">
-          CLEAR
-        </button>
         <div className="plock-progress-bar-container">
-          {(pLockState === 'playing' || pLockState === 'armed' || pLockState === 'resetting' || pLockState === 'arming_to_play') && (
+          {(pLockState === 'playing' || pLockState === 'armed' || pLockState === 'stopping') && (
             <div
               className="plock-progress-bar"
               style={{
@@ -88,13 +82,12 @@ const PLockController = ({
 };
 
 PLockController.propTypes = {
-  pLockState: PropTypes.oneOf(['idle', 'armed', 'playing', 'resetting', 'arming_to_play']),
+  pLockState: PropTypes.oneOf(['idle', 'armed', 'playing', 'stopping']),
   loopProgress: PropTypes.number,
   hasLockedParams: PropTypes.bool,
   pLockSpeed: PropTypes.string,
   onSetPLockSpeed: PropTypes.func,
   onTogglePLock: PropTypes.func,
-  onClearPLocks: PropTypes.func,
   onMapMidi: PropTypes.func,
   isMidiLearning: PropTypes.bool,
   midiMappingText: PropTypes.string,

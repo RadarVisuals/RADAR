@@ -86,39 +86,33 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     setCanvasLayerImage,
     hasValidDimensions, isContainerObservedVisible, isFullscreenActive, enterFullscreen,
     isMountedRef,
-    sequencer, // The fully functional sequencer is now provided by the core hook.
+    sequencer, 
   } = coreApp;
   
   const handleTogglePLock = useCallback(() => {
     sequencer.toggle(currentActiveLayerConfigs);
   }, [sequencer, currentActiveLayerConfigs]);
   
-  const handleClearPLocks = useCallback(() => {
-    sequencer.clear();
-  }, [sequencer]);
-
   const handleUserLayerPropChange = useCallback((layerId, key, value, isMidiUpdate = false) => {
-    const pLockIsActive = sequencer.pLockState === 'playing' || 
-                          sequencer.pLockState === 'resetting' || 
-                          sequencer.pLockState === 'arming_to_play';
+    const pLockIsPlaying = sequencer.pLockState === 'playing';
+    const isParamLockedBySequencer = sequencer.animationDataRef.current?.[String(layerId)]?.[key];
 
-    if (!isMidiUpdate && pLockIsActive) {
+    if (pLockIsPlaying && isParamLockedBySequencer) {
       return;
     }
     
-    const isParamRecorded = sequencer.animationDataRef.current?.[String(layerId)]?.[key];
-    if (isMidiUpdate && pLockIsActive && isParamRecorded) {
-      return;
-    }
-    
+    // Update React state for the UI slider immediately.
     updateLayerConfig(String(layerId), key, value);
     
     const manager = managerInstancesRef.current?.[String(layerId)];
     if (!manager) return;
-
+    
+    // Dispatch to the CanvasManager with the correct method based on input type.
     if (isMidiUpdate) {
+      // Use smooth interpolation for MIDI changes.
       manager.setTargetValue(key, value);
     } else {
+      // Snap to the value for direct UI changes (mouse).
       manager.updateConfigProperty(key, value);
     }
   }, [updateLayerConfig, managerInstancesRef, sequencer.pLockState, sequencer.animationDataRef]);
@@ -188,11 +182,10 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     loopProgress: sequencer.loopProgress,
     hasLockedParams: sequencer.hasLockedParams,
     onTogglePLock: handleTogglePLock,
-    onClearPLocks: handleClearPLocks,
     pLockSpeed: sequencer.pLockSpeed,
     onSetPLockSpeed: sequencer.setPLockSpeed,
     animationDataRef: sequencer.animationDataRef,
-  }), [sequencer, handleTogglePLock, handleClearPLocks]);
+  }), [sequencer, handleTogglePLock]);
 
   const displayConfigsForClassLogic = isTransitioning ? loadedLayerConfigsFromPreset : currentActiveLayerConfigs;
   const getCanvasClasses = (layerIdStr) => {

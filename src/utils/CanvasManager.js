@@ -7,7 +7,7 @@ const SETUP_CANVAS_POLL_INTERVAL = 100;
 const SETUP_CANVAS_POLL_TIMEOUT = 3000;
 const MAX_TOTAL_OFFSET = 10000;
 const DELTA_TIME_BUFFER_SIZE = 5;
-const MIDI_INTERPOLATION_DURATION = 80;
+const MIDI_INTERPOLATION_DURATION = 200; // ms for smooth MIDI takeover
 const MAX_DELTA_TIME = 1 / 30;
 
 class CanvasManager {
@@ -35,7 +35,6 @@ class CanvasManager {
     beatPulseFactor = 1.0;
     beatPulseEndTime = 0;
 
-    // NEW properties for handling transitions
     isTransitioning = false;
     transitionStartTime = 0;
     transitionDuration = 1000; // 1-second crossfade
@@ -61,14 +60,15 @@ class CanvasManager {
 
         this.interpolators = {};
         sliderParams.forEach(param => {
-            const initialValue = this.config[param.prop] ?? param.defaultValue ?? 0;
-            this.interpolators[param.prop] = new ValueInterpolator(initialValue, MIDI_INTERPOLATION_DURATION);
+            if (typeof (this.config[param.prop]) === 'number') {
+                const initialValue = this.config[param.prop] ?? param.defaultValue ?? 0;
+                this.interpolators[param.prop] = new ValueInterpolator(initialValue, MIDI_INTERPOLATION_DURATION);
+            }
         });
 
         this.animationLoop = this.animationLoop.bind(this);
     }
 
-    // NEW: The layer transition method
     async transitionTo(newImageSrc, newConfig) {
         if (this.isTransitioning) {
             if (import.meta.env.DEV) console.warn(`[CM L${this.layerId}] Already transitioning, new request ignored.`);
@@ -77,27 +77,22 @@ class CanvasManager {
 
         this.isTransitioning = true;
         
-        // 1. Store the outgoing state
         this.outgoingImage = this.image;
         this.outgoingConfig = this.getConfigData();
 
-        // 2. Preload the new image
         try {
-            await this.setImage(newImageSrc); // this.image is now the new image
+            await this.setImage(newImageSrc); 
         } catch (error) {
             if (import.meta.env.DEV) console.error(`[CM L${this.layerId}] Failed to load new image for transition:`, error);
             this.isTransitioning = false;
-            this.image = this.outgoingImage; // Restore old image on failure
+            this.image = this.outgoingImage; 
             return;
         }
         
-        // 3. Apply the new base configuration
         this.applyFullConfig(newConfig);
 
-        // 4. Start the transition clock
         this.transitionStartTime = performance.now();
 
-        // 5. Return a promise that resolves when the transition is visually complete
         return new Promise(resolve => {
             setTimeout(() => {
                 this.isTransitioning = false;
@@ -278,6 +273,11 @@ class CanvasManager {
     }
 
     snapVisualProperty(key, value) {
+        // Guard Clause: If a MIDI-driven interpolation is in progress for this parameter, do not snap over it.
+        if (this.interpolators[key]?.isCurrentlyInterpolating()) {
+            return;
+        }
+
         if (this.isDestroyed) return;
         const defaultConfig = this.getDefaultConfig();
         if (!Object.prototype.hasOwnProperty.call(defaultConfig, key)) return;
@@ -296,11 +296,29 @@ class CanvasManager {
             if (!this.config.driftState.enabled) { this.config.driftState.x = 0; this.config.driftState.y = 0; }
         } else if (key === 'enabled') this.handleEnabledToggle(validatedValue);
     }
-
+    
+    // For UI-driven changes (instant)
     updateConfigProperty(key, value) {
         this.snapVisualProperty(key, value);
     }
     
+    // For MIDI-driven changes (smooth takeover)
+    setTargetValue(param, targetValue) {
+        if (this.isDestroyed) return;
+        
+        const validatedValue = this.validateValue(param, targetValue, this.config[param]);
+        
+        // Update the master config immediately so the UI slider reflects the target
+        this.config[param] = validatedValue;
+        
+        const interpolator = this.interpolators[param];
+        if (interpolator) {
+            interpolator.setTarget(validatedValue);
+        } else if (import.meta.env.DEV) {
+            console.warn(`[CM L${this.layerId}] No interpolator found for parameter '${param}' in setTargetValue.`);
+        }
+    }
+
     startAnimationLoop() {
         if (this.isDestroyed || this.animationFrameId !== null || !this.config.enabled) return;
         this.lastTimestamp = performance.now();
@@ -366,37 +384,23 @@ class CanvasManager {
             img.src = src;
         });
     }
-
-    setTargetValue(param, targetValue) {
-        if (this.isDestroyed) return;
-        const validatedValue = Number(targetValue);
-        if (isNaN(validatedValue)) return;
-        
-        const interpolator = this.interpolators[param];
-        if (interpolator) {
-            this.config[param] = validatedValue;
-            interpolator.setTarget(validatedValue);
-        } else if (import.meta.env.DEV) {
-            console.warn(`[CM L${this.layerId}] No interpolator found for parameter '${param}' in setTargetValue.`);
-        }
-    }
     
     setAudioFrequencyFactor(factor) { if (this.isDestroyed) return; this.audioFrequencyFactor = Number(factor) || 1.0; }
     triggerBeatPulse(pulseFactor, duration) { if (this.isDestroyed) return; this.beatPulseFactor = Number(pulseFactor) || 1.0; this.beatPulseEndTime = performance.now() + (Number(duration) || 0); }
     resetAudioModifications() { if (this.isDestroyed) return; this.audioFrequencyFactor = 1.0; this.beatPulseFactor = 1.0; this.beatPulseEndTime = 0; }
     getConfigData() { return JSON.parse(JSON.stringify(this.config)); }
     
-    _drawFrame(timestamp, image, config) {
-        if (!image || !config) return;
+    _drawFrame(timestamp, image, frameConfig) {
+        if (!image || !frameConfig) return;
 
         const width = this.lastValidWidth; const height = this.lastValidHeight;
         const halfWidth = Math.floor(width / 2); const halfHeight = Math.floor(height / 2);
         const remainingWidth = width - halfWidth; const remainingHeight = height - halfHeight;
 
-        const currentSize = config.size;
-        const currentX = config.xaxis;
-        const currentY = config.yaxis;
-        const baseAngle = config.angle;
+        const currentSize = frameConfig.size;
+        const currentX = frameConfig.xaxis;
+        const currentY = frameConfig.yaxis;
+        const baseAngle = frameConfig.angle;
         
         const imgNaturalWidth = image.naturalWidth; const imgNaturalHeight = image.naturalHeight;
         const imgAspectRatio = (imgNaturalWidth > 0 && imgNaturalHeight > 0) ? imgNaturalWidth / imgNaturalHeight : 1;
@@ -419,9 +423,9 @@ class CanvasManager {
         imgDrawWidth = Math.max(1, Math.floor(imgDrawWidth));
         imgDrawHeight = Math.max(1, Math.floor(imgDrawHeight));
 
-        this.updateDrift(config, this.smoothedDeltaTime);
-        const driftX = config.driftState?.x ?? 0;
-        const driftY = config.driftState?.y ?? 0;
+        this.updateDrift(frameConfig, this.smoothedDeltaTime);
+        const driftX = frameConfig.driftState?.x ?? 0;
+        const driftY = frameConfig.driftState?.y ?? 0;
         
         const offsetX = currentX / 10;
         const offsetY = currentY / 10;
@@ -467,28 +471,35 @@ class CanvasManager {
         try {
             this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-            // NEW: Handle transition drawing
             if (this.isTransitioning) {
                 const elapsed = timestamp - this.transitionStartTime;
                 const progress = Math.min(1, elapsed / this.transitionDuration);
 
-                // Draw outgoing frame with decreasing opacity
                 if (this.outgoingImage && this.outgoingConfig) {
                     const outgoingOpacity = (this.outgoingConfig.opacity ?? 1.0) * (1 - progress);
                     this.ctx.globalAlpha = outgoingOpacity;
                     this._drawFrame(timestamp, this.outgoingImage, this.outgoingConfig);
                 }
-
-                // Draw incoming frame with increasing opacity
-                const incomingOpacity = (this.config.opacity ?? 1.0) * progress;
+                
+                // For the incoming frame, we need its live interpolated values
+                const incomingFrameConfig = { ...this.config };
+                for (const key in this.interpolators) {
+                    incomingFrameConfig[key] = this.playbackValues[key] ?? this.interpolators[key].getCurrentValue();
+                }
+                const incomingOpacity = (incomingFrameConfig.opacity ?? 1.0) * progress;
                 this.ctx.globalAlpha = incomingOpacity;
-                this._drawFrame(timestamp, this.image, this.config);
+                this._drawFrame(timestamp, this.image, incomingFrameConfig);
 
             } else {
-                // Normal drawing logic
-                const currentOpacity = this.playbackValues.opacity ?? this.interpolators.opacity.getCurrentValue();
-                this.ctx.globalAlpha = currentOpacity;
-                this._drawFrame(timestamp, this.image, this.config);
+                // Normal drawing logic: build a config with live values
+                const currentFrameConfig = { ...this.config };
+                for (const key in this.interpolators) {
+                    // P-Lock values take precedence over interpolation
+                    currentFrameConfig[key] = this.playbackValues[key] ?? this.interpolators[key].getCurrentValue();
+                }
+
+                this.ctx.globalAlpha = currentFrameConfig.opacity;
+                this._drawFrame(timestamp, this.image, currentFrameConfig);
             }
 
             this.ctx.globalAlpha = 1.0;
@@ -504,7 +515,7 @@ class CanvasManager {
     updateDrift(config, deltaTime) {
         if (!config?.driftState) return;
         const {driftState} = config;
-        const driftAmount = config.drift; // Use direct config value for drift logic
+        const driftAmount = config.drift; 
         const driftSpeed = config.driftSpeed;
 
         if(driftAmount > 0 && driftState.enabled){
@@ -540,8 +551,6 @@ class CanvasManager {
             return;
         }
         
-        // During transition, we don't need to check for image completion for the new image,
-        // as transitionTo awaits it. The outgoing image will always be complete.
         if (!this.isTransitioning && (!this.image?.complete || this.image?.naturalWidth === 0)) return;
 
         const now = performance.now();

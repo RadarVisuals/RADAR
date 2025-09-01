@@ -10,7 +10,6 @@ import { sliderParams } from '../components/Panels/EnhancedControlPanel';
 const MAX_MONITOR_ENTRIES = 100;
 const PENDING_ACTION_EXPIRY_MS = 1000;
 const MIDI_CONNECT_TIMEOUT_MS = 10000;
-const CATCH_MODE_NORMALIZATION_EPSILON = 0.01;
 
 const defaultContextValue = {
   midiAccess: null, isConnected: false, isConnecting: false, error: null, midiInputs: [],
@@ -63,8 +62,6 @@ export function MIDIProvider({ children }) {
     activeMidiMap, 
     updateGlobalMidiMap,
     updateLayerMidiMappings,
-    configLoadNonce, 
-    loadedLayerConfigsFromPreset,
     isInitiallyResolved
   } = usePresetManagement();
   
@@ -81,9 +78,7 @@ export function MIDIProvider({ children }) {
   const [pendingLayerSelect, setPendingLayerSelect] = useState(null);
   const [pendingParamUpdate, setPendingParamUpdate] = useState(null);
   const [pendingGlobalAction, setPendingGlobalAction] = useState(null);
-  const [catchModeTargetValues, setCatchModeTargetValues] = useState({});
 
-  const catchModeTargetValuesRef = useRef(catchModeTargetValues);
   const activeControllerMidiMapRef = useRef(activeMidiMap);
   const midiLearningRef = useRef(midiLearning);
   const learningLayerRef = useRef(learningLayer);
@@ -101,32 +96,11 @@ export function MIDIProvider({ children }) {
 
   useEffect(() => { isConnectedRef.current = isConnected; }, [isConnected]);
   useEffect(() => { activeControllerMidiMapRef.current = activeMidiMap; }, [activeMidiMap]);
-  useEffect(() => { catchModeTargetValuesRef.current = catchModeTargetValues; }, [catchModeTargetValues]);
   useEffect(() => { midiAccessRefForCallbacks.current = midiAccess; }, [midiAccess]);
   useEffect(() => { layerMappingsRef.current = layerMappings; }, [layerMappings]);
   useEffect(() => { midiLearningRef.current = midiLearning; }, [midiLearning]);
   useEffect(() => { learningLayerRef.current = learningLayer; }, [learningLayer]);
   useEffect(() => { selectedChannelRef.current = selectedChannel; }, [selectedChannel]);
-
-  useEffect(() => {
-    if (configLoadNonce > 0 && loadedLayerConfigsFromPreset && activeControllerMidiMapRef.current) {
-      const newCatchTargets = {};
-      for (const layerIdStr in activeControllerMidiMapRef.current) {
-        if (layerIdStr === 'global' || layerIdStr === 'layerSelects') continue;
-        const layerParams = activeControllerMidiMapRef.current[layerIdStr];
-        if (layerParams) {
-          for (const paramName in layerParams) {
-            const presetValue = loadedLayerConfigsFromPreset[layerIdStr]?.[paramName];
-            if (typeof presetValue === 'number') {
-              const catchKey = `${layerIdStr}_${paramName}`;
-              newCatchTargets[catchKey] = { value: presetValue, caught: false, lastMidiValue: null };
-            }
-          }
-        }
-      }
-      setCatchModeTargetValues(newCatchTargets);
-    }
-  }, [configLoadNonce, loadedLayerConfigsFromPreset]);
 
   useEffect(() => {
     const handleForceEndLoading = () => {
@@ -288,44 +262,8 @@ export function MIDIProvider({ children }) {
 
             if (isMatch) {
                 const currentNormalizedMidiVal = normalizeMIDIValue(rawValue, midiMsgTypeForNormalization);
-                const catchKey = `${layerIdStr}_${paramName}`;
-                const paramCatchState = catchModeTargetValuesRef.current[catchKey];
-
-                if (paramCatchState) {
-                    let { value: presetValueActual, caught, lastMidiValue: lastNormalizedMidiVal } = paramCatchState;
-                    if (!caught) {
-                        const sliderConfig = sliderParams.find(p => p.prop === paramName);
-                        if (sliderConfig) {
-                            const { min: sliderMin, max: sliderMax } = sliderConfig;
-                            let normalizedPresetValue = 0.5;
-                            if (sliderMax > sliderMin) {
-                                normalizedPresetValue = (presetValueActual - sliderMin) / (sliderMax - sliderMin);
-                                normalizedPresetValue = Math.max(0, Math.min(1, normalizedPresetValue));
-                            }
-
-                            let hasCaught = false;
-                            if (lastNormalizedMidiVal !== null) {
-                                hasCaught = (lastNormalizedMidiVal <= normalizedPresetValue && currentNormalizedMidiVal >= normalizedPresetValue) || (lastNormalizedMidiVal >= normalizedPresetValue && currentNormalizedMidiVal <= normalizedPresetValue);
-                            } else if (Math.abs(currentNormalizedMidiVal - normalizedPresetValue) < CATCH_MODE_NORMALIZATION_EPSILON) {
-                                hasCaught = true;
-                            }
-
-                            if (hasCaught) {
-                                setCatchModeTargetValues(prev => ({ ...prev, [catchKey]: { ...paramCatchState, caught: true, lastMidiValue: currentNormalizedMidiVal } }));
-                                setPendingParamUpdate({ layer: parseInt(layerIdStr, 10), param: paramName, value: currentNormalizedMidiVal, timestamp });
-                            } else {
-                                setCatchModeTargetValues(prev => ({ ...prev, [catchKey]: { ...paramCatchState, lastMidiValue: currentNormalizedMidiVal } }));
-                            }
-                        } else {
-                            setPendingParamUpdate({ layer: parseInt(layerIdStr, 10), param: paramName, value: currentNormalizedMidiVal, timestamp });
-                        }
-                    } else {
-                        setCatchModeTargetValues(prev => ({ ...prev, [catchKey]: { ...paramCatchState, lastMidiValue: currentNormalizedMidiVal } }));
-                        setPendingParamUpdate({ layer: parseInt(layerIdStr, 10), param: paramName, value: currentNormalizedMidiVal, timestamp });
-                    }
-                } else {
-                    setPendingParamUpdate({ layer: parseInt(layerIdStr, 10), param: paramName, value: currentNormalizedMidiVal, timestamp });
-                }
+                // The "catch" logic has been removed. Dispatch the update immediately.
+                setPendingParamUpdate({ layer: parseInt(layerIdStr, 10), param: paramName, value: currentNormalizedMidiVal, timestamp });
                 return;
             }
         }

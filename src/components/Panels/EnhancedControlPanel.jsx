@@ -128,7 +128,6 @@ const EnhancedControlPanel = ({
         pLockSpeed={pLockProps.pLockSpeed}
         onSetPLockSpeed={pLockProps.onSetPLockSpeed}
         onTogglePLock={pLockProps.onTogglePLock}
-        onClearPLocks={pLockProps.onClearPLocks}
         isMidiLearning={isPLockMidiLearning}
         onMapMidi={() => handleEnterGlobalMIDILearnMode('pLockToggle')}
         midiMappingText={displayGlobalMidiMapping('pLockToggle')}
