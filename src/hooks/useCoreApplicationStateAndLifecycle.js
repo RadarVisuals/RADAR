@@ -35,6 +35,9 @@ import { useVisualConfig } from '../context/VisualConfigContext';
  * @property {boolean} isBenignOverlayActive
  * @property {string | null} animatingPanel
  * @property {boolean} animationLockForTokenOverlay
+ * @property {object} sideA
+ * @property {object} sideB
+ * @property {number} crossfaderValue
  */
 
 /**
@@ -94,6 +97,9 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     isBenignOverlayActive,
     animatingPanel,
     animationLockForTokenOverlay,
+    sideA,
+    sideB,
+    crossfaderValue,
   } = props;
 
   const { updateLayerConfig } = useVisualConfig();
@@ -107,33 +113,31 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     };
   }, []);
 
-  // --- START: MODIFIED SEQUENCER WIRING ---
   const {
     managersReady, defaultImagesLoaded, managerInstancesRef,
     applyConfigurationsToManagers, applyTokenAssignmentsToManagers,
     stopCanvasAnimations, restartCanvasAnimations,
     redrawAllCanvases, handleCanvasResize, setCanvasLayerImage,
-    applyPlaybackValue, clearAllPlaybackValues // <-- Get new functions from orchestrator
+    applyPlaybackValue, clearAllPlaybackValues
   } = useCanvasOrchestrator({
     configServiceRef, canvasRefs, configLoadNonce, isInitiallyResolved,
-    pLockState: null // pLockState is from sequencer, so we pass null initially
+    pLockState: null,
+    sideA,
+    sideB,
+    crossfaderValue,
   });
 
   const sequencer = usePLockSequencer({
     onValueUpdate: (layerId, paramName, value) => {
-      // Still update React state for UI display
       updateLayerConfig(String(layerId), paramName, value); 
-      // Use the new dedicated method to apply playback values to the manager
       if (applyPlaybackValue) {
         applyPlaybackValue(String(layerId), paramName, value);
       }
     },
     onAnimationEnd: (finalStateSnapshot) => {
-      // When animation ends, clear all playback overrides
       if (clearAllPlaybackValues) {
         clearAllPlaybackValues();
       }
-      // And snap the final state to the main config
       if (finalStateSnapshot) {
         for (const layerId in finalStateSnapshot) {
           for (const paramName in finalStateSnapshot[layerId]) {
@@ -143,7 +147,6 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
       }
     }
   });
-  // --- END: MODIFIED SEQUENCER WIRING ---
 
   const audioState = useAudioVisualizer();
 

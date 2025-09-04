@@ -92,6 +92,7 @@ const EnhancedControlPanel = ({
     const ch = mapping.channel !== undefined ? ` (Ch ${mapping.channel + 1})` : "";
     if (mapping.type === "cc") return `CC ${mapping.number}${ch}`;
     if (mapping.type === "note") return `Note ${mapping.number}${ch}`;
+    if (mapping.type === "pitchbend") return `Pitch${ch}`;
     return "Unknown";
   }, [midiMap]);
 
@@ -108,6 +109,7 @@ const EnhancedControlPanel = ({
   const handleEnabledToggle = useCallback((e) => onLayerConfigChange(activeLayer, "enabled", e.target.checked, false), [onLayerConfigChange, activeLayer]);
   
   const isPLockMidiLearning = midiLearning?.type === 'global' && midiLearning?.control === 'pLockToggle';
+  const isCrossfaderMidiLearning = midiLearning?.type === 'global' && midiLearning?.control === 'crossfader';
 
   return (
     <Panel title={`Layer ${activeLayer} Controls`} onClose={onToggleMinimize} className="panel-from-toolbar enhanced-control-panel">
@@ -128,28 +130,9 @@ const EnhancedControlPanel = ({
         pLockSpeed={pLockProps.pLockSpeed}
         onSetPLockSpeed={pLockProps.onSetPLockSpeed}
         onTogglePLock={pLockProps.onTogglePLock}
-        isMidiLearning={isPLockMidiLearning}
-        onMapMidi={() => handleEnterGlobalMIDILearnMode('pLockToggle')}
-        midiMappingText={displayGlobalMidiMapping('pLockToggle')}
       />
 
       <div className="vertical-layout control-panel-content">
-        {midiConnected && (
-          <div className="layer-mappings">
-            <div className="layer-mapping-grid">
-              {[3, 2, 1].map((layerNum) => (
-                <div key={`layer_mapping_${layerNum}`} className={`layer-mapping-item ${activeLayer === String(layerNum) ? "active" : ""}`}>
-                  <div className="layer-mapping-label">Layer {layerNum}</div>
-                  <div className="layer-mapping-controls">
-                    <span className="layer-mapping-text" title={displayLayerMidiMapping(String(layerNum))}>{displayLayerMidiMapping(String(layerNum))}</span>
-                    {isProfileOwner && (<button type="button" className={`midi-learn-btn small-action-button ${learningLayer === layerNum ? "learning" : ""}`} onClick={() => handleEnterLayerMIDILearnMode(layerNum)} disabled={!midiConnected || !!midiLearning || (learningLayer !== null && learningLayer !== layerNum)} title={`Map MIDI to select Layer ${layerNum}`}> {learningLayer === layerNum ? "..." : "Map"} </button>)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        
         {sliderParams.map(({ prop, label, min, max, step, formatDecimals, defaultValue = 0 }) => {
             const isLearningThis = midiLearning?.type === 'param' && midiLearning?.param === prop && midiLearning?.layer === activeLayer;
             const isLocked = pLockProps.pLockState === 'playing' && pLockProps.animationDataRef?.current?.[activeLayer]?.[prop];
@@ -181,6 +164,42 @@ const EnhancedControlPanel = ({
           </div>
         </div>
       </div>
+
+      {/* --- MOVED MIDI MAPPINGS SECTION TO THE BOTTOM --- */}
+      {midiConnected && (
+        <div className="midi-mappings-section">
+          <h4 className="midi-section-title">Global MIDI Mappings</h4>
+          <div className="global-mapping-grid">
+            {/* Crossfader Mapping */}
+            <div className="global-mapping-item">
+              <div className="global-mapping-label">Crossfader</div>
+              <div className="global-mapping-controls">
+                <span className="layer-mapping-text" title={displayGlobalMidiMapping('crossfader')}>{displayGlobalMidiMapping('crossfader')}</span>
+                <button type="button" className={`midi-learn-btn small-action-button ${isCrossfaderMidiLearning ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('crossfader')} disabled={!midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Crossfader">{isCrossfaderMidiLearning ? "..." : "Map"}</button>
+              </div>
+            </div>
+            {/* P-Lock Toggle Mapping */}
+            <div className="global-mapping-item">
+              <div className="global-mapping-label">P-Lock Toggle</div>
+              <div className="global-mapping-controls">
+                <span className="layer-mapping-text" title={displayGlobalMidiMapping('pLockToggle')}>{displayGlobalMidiMapping('pLockToggle')}</span>
+                <button type="button" className={`midi-learn-btn small-action-button ${isPLockMidiLearning ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('pLockToggle')} disabled={!midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to P-Lock Toggle">{isPLockMidiLearning ? "..." : "Map"}</button>
+              </div>
+            </div>
+          </div>
+          <div className="layer-mapping-grid">
+            {[3, 2, 1].map((layerNum) => (
+              <div key={`layer_mapping_${layerNum}`} className={`layer-mapping-item ${activeLayer === String(layerNum) ? "active" : ""}`}>
+                <div className="layer-mapping-label">Layer {layerNum}</div>
+                <div className="layer-mapping-controls">
+                  <span className="layer-mapping-text" title={displayLayerMidiMapping(String(layerNum))}>{displayLayerMidiMapping(String(layerNum))}</span>
+                  {isProfileOwner && (<button type="button" className={`midi-learn-btn small-action-button ${learningLayer === layerNum ? "learning" : ""}`} onClick={() => handleEnterLayerMIDILearnMode(layerNum)} disabled={!midiConnected || !!midiLearning || (learningLayer !== null && learningLayer !== layerNum)} title={`Map MIDI to select Layer ${layerNum}`}> {learningLayer === layerNum ? "..." : "Map"} </button>)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </Panel>
   );
 };

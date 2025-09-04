@@ -42,3 +42,15 @@ export const scaleNormalizedValue = (normalizedValue, min, max) => {
     return Math.max(maximum, Math.min(minimum, scaledValue));
   }
 };
+
+/**
+ * Performs linear interpolation between two values.
+ *
+ * @param {number} a - The starting value (when t=0).
+ * @param {number} b - The ending value (when t=1).
+ * @param {number} t - The interpolation factor, clamped between 0 and 1.
+ * @returns {number} The interpolated value.
+ */
+export const lerp = (a, b, t) => {
+  return a * (1 - t) + b * t;
+};

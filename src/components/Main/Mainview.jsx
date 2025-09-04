@@ -45,15 +45,19 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   } = useVisualLayerState();
 
   const { savedReactions, updateSavedReaction, deleteSavedReaction } = useInteractionSettingsState();
-  const { currentProfileAddress, isProfileOwner, canSave, isPreviewMode, isParentAdmin, isVisitor } = useProfileSessionState();
+  
+  const { currentProfileAddress, isProfileOwner, canSave, isPreviewMode, isParentAdmin, isVisitor, canInteract } = useProfileSessionState();
+  
   const { isInitiallyResolved, configLoadNonce, loadError, upInitializationError, upFetchStateError, configServiceRef, isLoading: isConfigLoading } = useConfigStatusState();
 
   const {
     loadNamedConfig,
     currentConfigName,
-    savedConfigList: presetSavedConfigList,
+    stagedWorkspace,
+    savedConfigList: presetNameList,
     loadedLayerConfigsFromPreset,
     loadedTokenAssignmentsFromPreset,
+    setActivePresetSilently,
   } = usePresetManagementState();
 
   const rootRef = useRef(null);
@@ -67,6 +71,90 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   const [animationLockForTokenOverlay, setAnimationLockForTokenOverlay] = useState(false);
   const animationLockTimerRef = useRef(null);
 
+  const [crossfaderValue, setCrossfaderValue] = useState(0.0);
+  const [sideA, setSideA] = useState({ index: 0, config: null });
+  const [sideB, setSideB] = useState({ index: 1, config: null });
+  const prevFaderValueRef = useRef(0.0);
+
+  const fullPresetList = useMemo(() => {
+    if (!stagedWorkspace?.presets) return [];
+
+    const validPresets = Object.values(stagedWorkspace.presets).filter(
+        (item) => item && typeof item.name === 'string'
+    );
+
+    return [...validPresets].sort((a, b) => {
+        const numA = parseInt(a.name.split('.')[1] || 'NaN', 10);
+        const numB = parseInt(b.name.split('.')[1] || 'NaN', 10);
+
+        const valA = isNaN(numA) ? Infinity : numA;
+        const valB = isNaN(numB) ? Infinity : numB;
+
+        if (valA !== Infinity && valB !== Infinity) {
+            return valA - valB;
+        }
+        if (valA !== Infinity) return -1;
+        if (valB !== Infinity) return 1;
+
+        return a.name.localeCompare(b.name);
+    });
+  }, [stagedWorkspace]);
+
+  // --- START MODIFICATION: Corrected dependency array to break feedback loop ---
+  useEffect(() => {
+    if (fullPresetList.length > 0 && isInitiallyResolved) {
+        let startIndex = fullPresetList.findIndex(p => p.name === currentConfigName);
+        if (startIndex === -1) startIndex = 0;
+        
+        const sideAIndex = startIndex;
+        const sideBIndex = (startIndex + 1) % fullPresetList.length;
+
+        setSideA({ index: sideAIndex, config: fullPresetList[sideAIndex] });
+        setSideB({ index: sideBIndex, config: fullPresetList[sideBIndex] });
+        setCrossfaderValue(0.0);
+        prevFaderValueRef.current = 0.0;
+    }
+  }, [fullPresetList, isInitiallyResolved, configLoadNonce]); // REMOVED `currentConfigName`
+  // --- END MODIFICATION ---
+  
+  useEffect(() => {
+    const prevValue = prevFaderValueRef.current;
+    const newValue = crossfaderValue;
+
+    if (newValue === 1.0 && prevValue < 1.0) {
+      if (sideB.config?.name) {
+        setActivePresetSilently(sideB.config.name);
+      }
+    } else if (newValue === 0.0 && prevValue > 0.0) {
+      if (sideA.config?.name) {
+        setActivePresetSilently(sideA.config.name);
+      }
+    }
+    
+    prevFaderValueRef.current = newValue;
+  }, [crossfaderValue, sideA.config, sideB.config, setActivePresetSilently]);
+
+  useEffect(() => {
+    if (!fullPresetList || fullPresetList.length < 2) return;
+
+    if (crossfaderValue === 1.0) {
+      const nextAIndex = (sideB.index + 1) % fullPresetList.length;
+      if (nextAIndex !== sideA.index) {
+        setSideA({ index: nextAIndex, config: fullPresetList[nextAIndex] });
+      }
+    } else if (crossfaderValue === 0.0) {
+      const nextBIndex = (sideA.index + 1) % fullPresetList.length;
+      if (nextBIndex !== sideB.index) {
+        setSideB({ index: nextBIndex, config: fullPresetList[nextBIndex] });
+      }
+    }
+  }, [crossfaderValue, fullPresetList, sideA.index, sideB.index]);
+  
+  const handleCrossfaderChange = useCallback((newValue) => {
+    setCrossfaderValue(newValue);
+  }, []);
+
+
   const coreApp = useCoreApplicationStateAndLifecycle({
     canvasRefs, configServiceRef, configLoadNonce, currentActiveLayerConfigs,
     currentActiveTokenAssignments, loadedLayerConfigsFromPreset,
@@ -75,6 +163,10 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     isInitiallyResolved, currentConfigName, currentProfileAddress,
     animatingPanel: localAnimatingPanel, isBenignOverlayActive: localIsBenignOverlayActive,
     animationLockForTokenOverlay,
+    sideA,
+    sideB,
+    crossfaderValue,
+    stagedWorkspace
   });
 
   const {
@@ -101,21 +193,41 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
       return;
     }
     
-    // Update React state for the UI slider immediately.
-    updateLayerConfig(String(layerId), key, value);
-    
     const manager = managerInstancesRef.current?.[String(layerId)];
     if (!manager) return;
     
-    // Dispatch to the CanvasManager with the correct method based on input type.
-    if (isMidiUpdate) {
-      // Use smooth interpolation for MIDI changes.
-      manager.setTargetValue(key, value);
-    } else {
-      // Snap to the value for direct UI changes (mouse).
-      manager.updateConfigProperty(key, value);
+    const targetDeck = crossfaderValue < 0.5 ? 'A' : 'B';
+    const activePresetNameInContext = currentConfigName;
+    const targetPresetName = targetDeck === 'A' ? sideA.config?.name : sideB.config?.name;
+
+    if (targetDeck === 'A') {
+      if (isMidiUpdate) {
+        manager.setTargetValue(key, value);
+      } else {
+        manager.updateConfigProperty(key, value);
+      }
+    } else { // Target is Deck B
+      if (isMidiUpdate) {
+        manager.setTargetValueB(key, value);
+      } else {
+        manager.updateConfigBProperty(key, value);
+      }
     }
-  }, [updateLayerConfig, managerInstancesRef, sequencer.pLockState, sequencer.animationDataRef]);
+
+    if (targetPresetName === activePresetNameInContext) {
+      updateLayerConfig(String(layerId), key, value);
+    }
+
+  }, [
+    updateLayerConfig, 
+    managerInstancesRef, 
+    sequencer.pLockState, 
+    sequencer.animationDataRef,
+    crossfaderValue,
+    currentConfigName,
+    sideA.config,
+    sideB.config
+  ]);
 
   const appInteractions = useAppInteractions({
     updateLayerConfig: handleUserLayerPropChange,
@@ -163,19 +275,27 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     notifications: appInteractions.notificationData.notifications, unreadCount: appInteractions.notificationData.unreadCount,
     isTransitioning, isBaseReady: (managersReady && defaultImagesLoaded && isInitiallyResolved && hasValidDimensions && isContainerObservedVisible),
     renderState,
+    canInteract,
+    crossfader: {
+      value: crossfaderValue,
+      sideA: sideA,
+      sideB: sideB,
+    },
   }), [currentActiveLayerConfigs, currentActiveTokenAssignments, savedReactions, currentConfigName, isConfigLoading, canSave, isPreviewMode,
     isParentAdmin, isProfileOwner, isVisitor, currentProfileAddress, blendModes, appInteractions.notificationData.notifications,
     appInteractions.notificationData.unreadCount, isTransitioning, managersReady, defaultImagesLoaded, isInitiallyResolved,
-    hasValidDimensions, isContainerObservedVisible, renderState]);
+    hasValidDimensions, isContainerObservedVisible, renderState, 
+    canInteract,
+    crossfaderValue, sideA, sideB]);
   
   const actionsForUIOverlay = useMemo(() => ({
     onLayerConfigChange: handleUserLayerPropChange, onSaveReaction: updateSavedReaction, onRemoveReaction: deleteSavedReaction,
     onPresetSelect: loadNamedConfig, onEnhancedView: enterFullscreen, onMarkNotificationRead: appInteractions.notificationData.markAsRead,
     onClearAllNotifications: appInteractions.notificationData.clearAll, onPreviewEffect: appInteractions.processEffect,
-    onTokenApplied: appInteractions.handleTokenApplied
+    onTokenApplied: appInteractions.handleTokenApplied, onCrossfaderChange: handleCrossfaderChange,
   }), [handleUserLayerPropChange, updateSavedReaction, deleteSavedReaction, loadNamedConfig, enterFullscreen,
     appInteractions.notificationData.markAsRead, appInteractions.notificationData.clearAll, appInteractions.processEffect,
-    appInteractions.handleTokenApplied]);
+    appInteractions.handleTokenApplied, handleCrossfaderChange]);
 
   const pLockProps = useMemo(() => ({
     pLockState: sequencer.pLockState,
@@ -224,18 +344,24 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
           audioState={audioState}
           configData={configDataForUIOverlay}
           actions={actionsForUIOverlay}
-          passedSavedConfigList={presetSavedConfigList}
+          passedSavedConfigList={presetNameList}
           pLockProps={pLockProps}
         />
         <StatusIndicator
-            showStatusDisplay={showStatusDisplay} isStatusFadingOut={isStatusFadingOut}
-            renderState={renderState} loadingStatusMessage={loadingStatusMessage}
-            showRetryButton={showRetryButton} onManualRetry={handleManualRetry}
+            showStatusDisplay={showStatusDisplay}
+            isStatusFadingOut={isStatusFadingOut}
+            renderState={renderState}
+            loadingStatusMessage={loadingStatusMessage}
+            showRetryButton={showRetryButton}
+            onManualRetry={handleManualRetry}
         />
         <AudioAnalyzerWrapper
-          isAudioActive={audioState.isAudioActive} managersReady={managersReady}
-          handleAudioDataUpdate={audioState.handleAudioDataUpdate} layerConfigs={currentActiveLayerConfigs}
-          audioSettings={audioState.audioSettings} configLoadNonce={configLoadNonce}
+          isAudioActive={audioState.isAudioActive}
+          managersReady={managersReady}
+          handleAudioDataUpdate={audioState.handleAudioDataUpdate}
+          layerConfigs={currentActiveLayerConfigs}
+          audioSettings={audioState.audioSettings}
+          configLoadNonce={configLoadNonce}
           managerInstancesRef={managerInstancesRef}
         />
       </div>

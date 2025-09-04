@@ -192,9 +192,14 @@ input[type="range"]:hover {
 
 /*---------- Panels ----------*/
 .panel {
-  background: var(--color-glass-bg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  /* --- MODIFIED FOR CONSISTENT GLASSMORPHISM --- */
+  background: var(--color-glass-bg-dark); /* Dark, semi-transparent base */
+  border: 1px solid var(--color-primary-a15); /* Softer, color-matched border */
+  border-radius: var(--radius-lg); /* Softer corners */
+  backdrop-filter: blur(12px); /* Increased blur */
+  -webkit-backdrop-filter: blur(12px);
+  /* --- END MODIFICATION --- */
+  
   color: var(--color-text);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
@@ -223,7 +228,6 @@ input[type="range"]:hover {
 .panel-content {
   padding: var(--space-md);
   overflow-y: auto;
-  /* Removed max-height rule - let flex handle sizing */
   flex-grow: 1; /* Allow content to take remaining space */
 }
 .panel-from-toolbar {

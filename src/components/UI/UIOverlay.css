@@ -1,0 +1,86 @@
+/* src/components/UI/UIOverlay.css */
+@import '../../styles/variables.css';
+
+.ui-elements-container {
+  /* This class already exists in layout.css, but we can add specific styles here if needed */
+}
+
+/* Container for both crossfader and its MIDI mapping controls */
+.crossfader-control-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--space-xs);
+  background: var(--color-button-secondary-a80);
+  backdrop-filter: blur(var(--blur-amount));
+  -webkit-backdrop-filter: blur(var(--blur-amount));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+/* Container for the mapping text and button */
+.crossfader-midi-map {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+/* Style for the text displaying the current MIDI mapping */
+.crossfader-midi-map .midi-mapping-text {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-dim);
+  background: var(--color-bg-alt);
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+}
+
+/* Re-using the small action button style for the new "Map" button */
+.crossfader-midi-map .midi-btn.small-action-button {
+  padding: 0 4px;
+  font-size: 9px;
+  background: var(--color-warning-a15);
+  border: 1px solid var(--color-warning-a30);
+  border-radius: var(--radius-sm);
+  color: var(--color-warning);
+  cursor: pointer;
+  outline: none;
+  line-height: 1.1;
+  min-height: 16px;
+  transition: all var(--transition-fast);
+}
+
+.crossfader-midi-map .midi-btn.small-action-button:hover:not(:disabled) {
+  background: var(--color-warning-a25);
+}
+
+.crossfader-midi-map .midi-btn.small-action-button.learning {
+  background: var(--color-accent-a20);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  animation: blink 1s infinite;
+}
+
+@keyframes blink {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
+}
+
+/* Other UI Overlay specific styles can go here */
+.preview-mode-indicator {
+    position: fixed;
+    bottom: var(--space-lg);
+    left: var(--space-lg);
+    background: var(--color-warning-a30);
+    color: var(--color-warning-a90);
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: var(--radius-md);
+    font-weight: bold;
+    font-size: var(--font-size-sm);
+    z-index: var(--z-top);
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+}

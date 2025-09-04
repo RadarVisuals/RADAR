@@ -131,6 +131,22 @@
 }
 
 
+/* --- START MODIFICATION --- */
+/* UI Controls Layout */
+.bottom-center-controls {
+  position: fixed;
+  bottom: var(--space-md);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-controls);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+}
+/* --- END MODIFICATION --- */
+
+
 /* Status Display (Loading/Error/Idle Messages) */
 .status-display {
   position: fixed;

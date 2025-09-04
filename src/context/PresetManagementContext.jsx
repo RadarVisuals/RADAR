@@ -36,6 +36,7 @@ export const defaultWorkspaceManagementContextValue = {
   tokenFetchProgress: { loaded: 0, total: 0, loading: false },
   refreshOwnedTokens: async () => {},
   loadNamedConfig: async () => ({ success: false, error: "Provider not initialized" }),
+  setActivePresetSilently: () => {},
   saveWorkspace: async () => ({ success: false, error: "Provider not initialized" }),
   addNewPresetToStagedWorkspace: () => {}, deletePresetFromStagedWorkspace: () => {},
   setDefaultPresetInStagedWorkspace: () => {}, discardStagedChanges: () => {},
@@ -131,9 +132,35 @@ export const PresetManagementProvider = ({ children }) => {
 
   const savedConfigList = useMemo(() => {
     if (!stagedWorkspace || !stagedWorkspace.presets) return [];
-    return Object.values(stagedWorkspace.presets)
-      .sort((a, b) => (a.ts || 0) - (b.ts || 0))
-      .map(preset => ({ name: preset.name }));
+  
+    // Get full preset objects and filter out any invalid ones
+    const validPresets = Object.values(stagedWorkspace.presets).filter(
+      (item) => item && typeof item.name === 'string'
+    );
+  
+    // Sort presets based on name, with special handling for numeric suffixes
+    const sortedPresets = [...validPresets].sort((a, b) => {
+      // Attempt to parse a number from the name after a '.'
+      const numA = parseInt(a.name.split('.')[1] || 'NaN', 10);
+      const numB = parseInt(b.name.split('.')[1] || 'NaN', 10);
+  
+      const valA = isNaN(numA) ? Infinity : numA;
+      const valB = isNaN(numB) ? Infinity : numB;
+  
+      // If both names parse to numbers, sort them numerically
+      if (valA !== Infinity && valB !== Infinity) {
+        return valA - valB;
+      }
+      // If only one parses to a number, it comes first
+      if (valA !== Infinity) return -1;
+      if (valB !== Infinity) return 1;
+  
+      // Otherwise, fall back to a standard alphabetical sort on the full name
+      return a.name.localeCompare(b.name);
+    });
+  
+    // Map to the final structure { name: string }
+    return sortedPresets.map(preset => ({ name: preset.name }));
   }, [stagedWorkspace]);
   
   const { loadedLayerConfigsFromPreset, loadedTokenAssignmentsFromPreset } = useMemo(() => {
@@ -305,8 +332,10 @@ export const PresetManagementProvider = ({ children }) => {
       newWorkspace.presets[newPresetName] = newPresetData;
       return newWorkspace;
     });
+    setLiveConfig(newPresetData.layers, newPresetData.tokenAssignments);
+    setCurrentConfigName(newPresetName);
     setHasPendingChanges(true);
-  }, []);
+  }, [setLiveConfig]);
 
   const deletePresetFromStagedWorkspace = useCallback((nameToDelete) => {
     setStagedWorkspace(prev => {
@@ -350,6 +379,20 @@ export const PresetManagementProvider = ({ children }) => {
     }
     return { success: true };
   }, [stagedWorkspace, currentConfigName, addToast, setLiveConfig]);
+
+  const setActivePresetSilently = useCallback((name) => {
+    if (!stagedWorkspace || !stagedWorkspace.presets[name]) {
+      if (import.meta.env.DEV) {
+        console.warn(`[PresetManagement] setActivePresetSilently called with non-existent preset: ${name}`);
+      }
+      return;
+    }
+    if (currentConfigName !== name) {
+      const preset = stagedWorkspace.presets[name];
+      setLiveConfig(preset.layers, preset.tokenAssignments);
+      setCurrentConfigName(name);
+    }
+  }, [stagedWorkspace, currentConfigName, setLiveConfig]);
 
   const updateGlobalMidiMap = useCallback((newMap) => {
     if (isHostProfileOwner) {
@@ -499,7 +542,9 @@ export const PresetManagementProvider = ({ children }) => {
     isFetchingTokens,
     tokenFetchProgress,
     refreshOwnedTokens,
-    loadNamedConfig, saveWorkspace, addNewPresetToStagedWorkspace, deletePresetFromStagedWorkspace,
+    loadNamedConfig,
+    setActivePresetSilently,
+    saveWorkspace, addNewPresetToStagedWorkspace, deletePresetFromStagedWorkspace,
     setDefaultPresetInStagedWorkspace, discardStagedChanges,
     updateGlobalMidiMap,
     updateLayerMidiMappings,
@@ -514,7 +559,9 @@ export const PresetManagementProvider = ({ children }) => {
     activeMidiMap,
     activeEventReactions,
     ownedTokenIdentifiers, isFetchingTokens, tokenFetchProgress, refreshOwnedTokens,
-    loadNamedConfig, saveWorkspace, addNewPresetToStagedWorkspace, deletePresetFromStagedWorkspace,
+    loadNamedConfig,
+    setActivePresetSilently,
+    saveWorkspace, addNewPresetToStagedWorkspace, deletePresetFromStagedWorkspace,
     setDefaultPresetInStagedWorkspace, discardStagedChanges,
     updateGlobalMidiMap,
     updateLayerMidiMappings,

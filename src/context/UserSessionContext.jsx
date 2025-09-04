@@ -28,11 +28,19 @@ export const UserSessionProvider = ({ children }) => {
   const [isPreviewMode, setIsPreviewMode] = useState(false);
 
   const hostProfileAddress = useMemo(() => {
-    const address = contextAccounts && contextAccounts.length > 0 && isAddress(contextAccounts[0])
-      ? contextAccounts[0]
-      : null;
-    return address;
-  }, [contextAccounts]);
+    // --- START: MODIFIED LOGIC ---
+    // Prioritize contextAccounts for when viewing another profile.
+    if (contextAccounts && contextAccounts.length > 0 && isAddress(contextAccounts[0])) {
+      return contextAccounts[0];
+    }
+    // Fallback to the visitor's own account if no specific context is provided.
+    if (accounts && accounts.length > 0 && isAddress(accounts[0])) {
+      return accounts[0];
+    }
+    // If neither is available, there's no host profile.
+    return null;
+    // --- END: MODIFIED LOGIC ---
+  }, [contextAccounts, accounts]); // <-- ADDED 'accounts' TO DEPENDENCY ARRAY
 
   const visitorProfileAddress = useMemo(() => {
     const address = accounts && accounts.length > 0 && isAddress(accounts[0])

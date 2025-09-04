@@ -10,9 +10,6 @@ const PLockController = ({
   pLockSpeed = 'medium',
   onSetPLockSpeed,
   onTogglePLock,
-  onMapMidi,
-  isMidiLearning,
-  midiMappingText,
 }) => {
   const getRecordButtonText = () => {
     switch (pLockState) {
@@ -66,17 +63,6 @@ const PLockController = ({
           )}
         </div>
       </div>
-      <div className="plock-midi-map">
-        <span className="midi-mapping-text" title={`Current mapping: ${midiMappingText}`}>{midiMappingText}</span>
-        <button
-          className={`midi-btn small-action-button ${isMidiLearning ? "learning" : ""}`}
-          onClick={onMapMidi}
-          disabled={isMidiLearning || isButtonDisabled}
-          title="Map MIDI to P-Lock Toggle"
-        >
-          {isMidiLearning ? "..." : "Map"}
-        </button>
-      </div>
     </>
   );
 };
@@ -88,9 +74,6 @@ PLockController.propTypes = {
   pLockSpeed: PropTypes.string,
   onSetPLockSpeed: PropTypes.func,
   onTogglePLock: PropTypes.func,
-  onMapMidi: PropTypes.func,
-  isMidiLearning: PropTypes.bool,
-  midiMappingText: PropTypes.string,
 };
 
 export default React.memo(PLockController);

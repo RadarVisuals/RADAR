@@ -462,7 +462,6 @@ class ConfigurationService {
       }
       // --- NEW LOGIC: END ---
 
-      // If it's not an on-chain SVG, proceed with the existing URL-resolving logic
       let finalMetadataUrl = '';
 
       if (metadataUriBytes && metadataUriBytes !== '0x') {

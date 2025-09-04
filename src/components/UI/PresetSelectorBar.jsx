@@ -60,22 +60,11 @@ const PresetSelectorBar = ({
   const [paginationDirection, setPaginationDirection] = useState(null); // 'prev', 'next', or null
 
   const sortedList = useMemo(() => {
-    const validList = savedConfigList.filter(
+    // The list from the context is now pre-sorted.
+    // We just filter to ensure all items are valid before rendering.
+    return savedConfigList.filter(
       (item) => item && typeof item.name === 'string'
     );
-    return [...validList].sort((a, b) => {
-      const numA = parseInt(a.name.split('.')[1] || '0', 10);
-      const numB = parseInt(b.name.split('.')[1] || '0', 10);
-      const valA = isNaN(numA) ? Infinity : numA;
-      const valB = isNaN(numB) ? Infinity : numB;
-      // If both are numbers, sort numerically
-      if (valA !== Infinity && valB !== Infinity) return valA - valB;
-      // If one is a number and the other isn't, number comes first
-      if (valA !== Infinity) return -1;
-      if (valB !== Infinity) return 1;
-      // If both are text (or non-standard), sort alphabetically by full name
-      return a.name.localeCompare(b.name);
-    });
   }, [savedConfigList]);
 
   useEffect(() => {
@@ -130,7 +119,7 @@ const PresetSelectorBar = ({
   const handleNext = () => {
     if (currentPage < totalPages - 1) {
       setPaginationDirection('next');
-      setCurrentPage((prev) => prev + 1); // Corrected from prev - 1
+      setCurrentPage((prev) => prev + 1);
     }
   };
 

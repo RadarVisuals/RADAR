@@ -35,6 +35,7 @@ const EnhancedSavePanel = ({ onClose }) => {
   const [newPresetName, setNewPresetName] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
   const [statusType, setStatusType] = useState("info");
+  
   const statusTimerRef = useRef(null);
   const isMountedRef = useRef(false);
   const canSave = canSaveToHostProfile;
@@ -58,7 +59,7 @@ const EnhancedSavePanel = ({ onClose }) => {
       }, duration);
     }
   }, []);
-
+  
   const handleCreatePreset = useCallback(() => {
     const name = newPresetName.trim();
     if (!name) {
@@ -71,19 +72,10 @@ const EnhancedSavePanel = ({ onClose }) => {
       }
     }
 
-    console.log(
-      `%c[EnhancedSavePanel] handleCreatePreset CLICKED. Capturing state from context:`,
-      "background: #222; color: #bada55",
-      {
-        name,
-        layerConfigs: JSON.parse(JSON.stringify(layerConfigs)),
-        tokenAssignments: JSON.parse(JSON.stringify(tokenAssignments)),
-      }
-    );
-
     const newPreset = { name, ts: Date.now(), layers: layerConfigs, tokenAssignments };
     addNewPresetToStagedWorkspace(name, newPreset);
-    displayStatus(`Preset "${name}" created and staged for saving.`, "info");
+    
+    displayStatus(`Preset "${name}" created and staged.`, "success");
     setNewPresetName("");
   }, [
     newPresetName,

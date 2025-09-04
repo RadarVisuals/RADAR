@@ -1,0 +1,101 @@
+/* src/components/UI/Crossfader.css */
+@import '../../styles/variables.css';
+
+.crossfader-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) 0;
+}
+
+.crossfader-label {
+  color: var(--color-text);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  min-width: 60px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- START MODIFICATION --- */
+/* Increased selector specificity and reduced width */
+input[type="range"].crossfader-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 250px; /* Decreased width by 50% from 250px */
+  height: 6px;
+  background: transparent;
+  outline: none;
+  cursor: grab;
+  margin: 0;
+  padding: 0;
+}
+/* --- END MODIFICATION --- */
+
+
+.crossfader-slider:active {
+  cursor: grabbing;
+}
+
+/* --- Webkit (Chrome, Safari) --- */
+.crossfader-slider::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 6px;
+  background: var(--color-bg-light);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  transition: var(--transition-fast);
+}
+
+.crossfader-slider:hover::-webkit-slider-runnable-track {
+  border-color: var(--color-border-light);
+}
+
+.crossfader-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-circle);
+  background: var(--color-primary);
+  border: 2px solid var(--color-bg-dark);
+  margin-top: -6px; /* (track-height - thumb-height) / 2 + border */
+  box-shadow: var(--shadow-primary-sm);
+  transition: transform var(--transition-fast);
+}
+
+.crossfader-slider:active::-webkit-slider-thumb {
+    transform: scale(1.1);
+}
+
+/* --- Mozilla (Firefox) --- */
+.crossfader-slider::-moz-range-track {
+  width: 100%;
+  height: 6px;
+  background: var(--color-bg-light);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  transition: var(--transition-fast);
+}
+
+.crossfader-slider:hover::-moz-range-track {
+  border-color: var(--color-border-light);
+}
+
+.crossfader-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-circle);
+  background: var(--color-primary);
+  border: 2px solid var(--color-bg-dark);
+  box-shadow: var(--shadow-primary-sm);
+  transition: transform var(--transition-fast);
+}
+
+.crossfader-slider:active::-moz-range-thumb {
+    transform: scale(1.1);
+}

@@ -10,12 +10,17 @@ const DELTA_TIME_BUFFER_SIZE = 5;
 const MIDI_INTERPOLATION_DURATION = 200; // ms for smooth MIDI takeover
 const MAX_DELTA_TIME = 1 / 30;
 
+const lerp = (start, end, t) => {
+    if (typeof start !== 'number' || typeof end !== 'number') return start;
+    return start * (1 - t) + end * t;
+};
+
 class CanvasManager {
     canvas = null;
     ctx = null;
     layerId;
-    image = null;
-    config;
+    imageA = null;
+    configA;
     animationFrameId = null;
     lastTimestamp = 0;
     isDrawing = false;
@@ -28,18 +33,28 @@ class CanvasManager {
     smoothedDeltaTime = 1 / 60;
     
     interpolators = {};
+    interpolatorsB = {};
     playbackValues = {};
 
-    continuousRotationAngle = 0;
+    continuousRotationAngleA = 0;
+    continuousRotationAngleB = 0;
+
+    driftStateA = { x: 0, y: 0, phase: 0 };
+    driftStateB = { x: 0, y: 0, phase: 0 };
+
     audioFrequencyFactor = 1.0;
     beatPulseFactor = 1.0;
     beatPulseEndTime = 0;
 
     isTransitioning = false;
     transitionStartTime = 0;
-    transitionDuration = 1000; // 1-second crossfade
+    transitionDuration = 1000;
     outgoingImage = null;
     outgoingConfig = null;
+
+    imageB = null;
+    configB = null;
+    crossfadeValue = 0.0;
 
     constructor(canvas, layerId) {
         if (!canvas || !(canvas instanceof HTMLCanvasElement)) {
@@ -54,15 +69,20 @@ class CanvasManager {
             throw new Error(`Failed to get 2D context for Layer ${layerId}: ${e.message}`);
         }
         this.layerId = layerId;
-        this.config = this.getDefaultConfig();
+        this.configA = this.getDefaultConfig();
         this.lastDPR = 1;
         this.playbackValues = {};
 
+        this.driftStateA = { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
+        this.driftStateB = { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
+
         this.interpolators = {};
+        this.interpolatorsB = {};
         sliderParams.forEach(param => {
-            if (typeof (this.config[param.prop]) === 'number') {
-                const initialValue = this.config[param.prop] ?? param.defaultValue ?? 0;
+            if (typeof (this.configA[param.prop]) === 'number') {
+                const initialValue = this.configA[param.prop] ?? param.defaultValue ?? 0;
                 this.interpolators[param.prop] = new ValueInterpolator(initialValue, MIDI_INTERPOLATION_DURATION);
+                this.interpolatorsB[param.prop] = new ValueInterpolator(initialValue, MIDI_INTERPOLATION_DURATION);
             }
         });
 
@@ -77,7 +97,7 @@ class CanvasManager {
 
         this.isTransitioning = true;
         
-        this.outgoingImage = this.image;
+        this.outgoingImage = this.imageA;
         this.outgoingConfig = this.getConfigData();
 
         try {
@@ -85,7 +105,7 @@ class CanvasManager {
         } catch (error) {
             if (import.meta.env.DEV) console.error(`[CM L${this.layerId}] Failed to load new image for transition:`, error);
             this.isTransitioning = false;
-            this.image = this.outgoingImage; 
+            this.imageA = this.outgoingImage; 
             return;
         }
         
@@ -103,6 +123,56 @@ class CanvasManager {
         });
     }
 
+    async setCrossfadeTarget(imageSrc, config) {
+        return new Promise((resolve, reject) => {
+            if (!imageSrc || typeof imageSrc !== 'string') {
+                this.imageB = null;
+                this.configB = config || null;
+                return reject(new Error("Invalid image source for crossfade target"));
+            }
+
+            const img = new Image();
+            if (imageSrc.startsWith('http') && !imageSrc.startsWith(window.location.origin)) {
+                img.crossOrigin = "anonymous";
+            }
+            img.onload = () => {
+                if (this.isDestroyed) return resolve();
+                if (img.naturalWidth === 0 || img.naturalHeight === 0) {
+                    this.imageB = null;
+                    this.configB = config;
+                    reject(new Error(`Loaded crossfade image has zero dimensions: ${imageSrc.substring(0, 100)}`));
+                    return;
+                }
+                this.imageB = img;
+                this.configB = config;
+
+                Object.keys(this.interpolatorsB).forEach(key => {
+                    const interpolator = this.interpolatorsB[key];
+                    const value = this.configB?.[key];
+                    if (interpolator && value !== undefined) {
+                        interpolator.snap(value);
+                    }
+                });
+
+                this.continuousRotationAngleB = 0;
+                this.driftStateB = { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
+                resolve();
+            };
+            img.onerror = (errEvent) => {
+                if (this.isDestroyed) return reject(new Error("Manager destroyed during crossfade image load"));
+                this.imageB = null;
+                this.configB = config;
+                const errorMsg = typeof errEvent === 'string' ? errEvent : (errEvent?.type || 'Unknown image load error');
+                reject(new Error(`Failed to load crossfade image: ${imageSrc.substring(0, 50)}... Error: ${errorMsg}`));
+            };
+            img.src = imageSrc;
+        });
+    }
+
+    setCrossfadeValue(value) {
+        this.crossfadeValue = Math.max(0, Math.min(1, Number(value) || 0));
+    }
+
     getDefaultConfig() {
         const defaultConfig = {};
         sliderParams.forEach(p => {
@@ -113,7 +183,6 @@ class CanvasManager {
         defaultConfig.enabled = true;
         defaultConfig.blendMode = 'normal';
         defaultConfig.direction = 1;
-        defaultConfig.driftState = { x: 0, y: 0, phase: Math.random() * Math.PI * 2, enabled: false };
         return defaultConfig;
     }
 
@@ -201,7 +270,7 @@ class CanvasManager {
         this.lastDPR = dprForBuffer;
 
         Object.keys(this.interpolators).forEach(key => {
-            this.interpolators[key]?.snap(this.config[key]);
+            this.interpolators[key]?.snap(this.configA[key]);
         });
         return true;
     }
@@ -221,19 +290,17 @@ class CanvasManager {
             }
         }
         if (!BLEND_MODES.includes(mergedConfig.blendMode)) { mergedConfig.blendMode = 'normal'; }
-        mergedConfig.driftState.enabled = (mergedConfig.drift || 0) > 0;
-        if (!mergedConfig.driftState.enabled) {
-            mergedConfig.driftState.x = 0;
-            mergedConfig.driftState.y = 0;
-        }
-        this.config = mergedConfig;
-        if (this.canvas?.style) this.canvas.style.mixBlendMode = this.config.blendMode || "normal";
+
+        this.configA = mergedConfig;
         
+        this.driftStateA = { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
+
         Object.keys(this.interpolators).forEach(key => {
-            this.interpolators[key]?.snap(this.config[key]);
+            this.interpolators[key]?.snap(this.configA[key]);
         });
-        this.continuousRotationAngle = 0;
-        this.handleEnabledToggle(this.config.enabled);
+        this.continuousRotationAngleA = 0;
+
+        this.handleEnabledToggle(this.configA.enabled);
     }
     
     validateValue(key, value, defaultValue) {
@@ -273,7 +340,6 @@ class CanvasManager {
     }
 
     snapVisualProperty(key, value) {
-        // Guard Clause: If a MIDI-driven interpolation is in progress for this parameter, do not snap over it.
         if (this.interpolators[key]?.isCurrentlyInterpolating()) {
             return;
         }
@@ -283,33 +349,41 @@ class CanvasManager {
         if (!Object.prototype.hasOwnProperty.call(defaultConfig, key)) return;
 
         const validatedValue = this.validateValue(key, value, defaultConfig[key]);
-        this.config[key] = validatedValue;
+        this.configA[key] = validatedValue;
 
         if (this.interpolators[key]) {
             this.interpolators[key].snap(validatedValue);
         }
 
         if (key === 'blendMode' && this.canvas?.style) this.canvas.style.mixBlendMode = validatedValue || 'normal';
-        else if (key === 'drift') {
-            if (!this.config.driftState) this.config.driftState = { x:0,y:0,phase:Math.random()*Math.PI*2,enabled:false };
-            this.config.driftState.enabled = validatedValue > 0;
-            if (!this.config.driftState.enabled) { this.config.driftState.x = 0; this.config.driftState.y = 0; }
-        } else if (key === 'enabled') this.handleEnabledToggle(validatedValue);
+        else if (key === 'enabled') this.handleEnabledToggle(validatedValue);
     }
     
-    // For UI-driven changes (instant)
     updateConfigProperty(key, value) {
         this.snapVisualProperty(key, value);
     }
+
+    updateConfigBProperty(key, value) {
+        if (this.interpolatorsB[key]?.isCurrentlyInterpolating()) {
+            return;
+        }
+        
+        if (this.isDestroyed || !this.configB) return;
+        const defaultConfig = this.getDefaultConfig();
+        if (!Object.prototype.hasOwnProperty.call(defaultConfig, key)) return;
+
+        const validatedValue = this.validateValue(key, value, defaultConfig[key]);
+        this.configB[key] = validatedValue;
+        
+        this.interpolatorsB[key]?.snap(validatedValue);
+    }
     
-    // For MIDI-driven changes (smooth takeover)
     setTargetValue(param, targetValue) {
         if (this.isDestroyed) return;
         
-        const validatedValue = this.validateValue(param, targetValue, this.config[param]);
+        const validatedValue = this.validateValue(param, targetValue, this.configA[param]);
         
-        // Update the master config immediately so the UI slider reflects the target
-        this.config[param] = validatedValue;
+        this.configA[param] = validatedValue;
         
         const interpolator = this.interpolators[param];
         if (interpolator) {
@@ -319,8 +393,23 @@ class CanvasManager {
         }
     }
 
+    setTargetValueB(param, targetValue) {
+        if (this.isDestroyed || !this.configB) return;
+        
+        const validatedValue = this.validateValue(param, targetValue, this.configB[param]);
+        
+        this.configB[param] = validatedValue;
+        
+        const interpolator = this.interpolatorsB[param];
+        if (interpolator) {
+            interpolator.setTarget(validatedValue);
+        } else if (import.meta.env.DEV) {
+            console.warn(`[CM L${this.layerId}] No interpolator found for parameter '${param}' in setTargetValueB.`);
+        }
+    }
+
     startAnimationLoop() {
-        if (this.isDestroyed || this.animationFrameId !== null || !this.config.enabled) return;
+        if (this.isDestroyed || this.animationFrameId !== null) return;
         this.lastTimestamp = performance.now();
         this.deltaTimeBuffer = [];
         this.smoothedDeltaTime = 1 / 60;
@@ -341,12 +430,13 @@ class CanvasManager {
         if (!setupSuccess) return false;
 
         this.smoothedDeltaTime = 1 / 60;
-        const currentConfig = configToUse || this.config;
+        const currentConfig = configToUse || this.configA;
 
         Object.keys(this.interpolators).forEach(key => {
             this.interpolators[key]?.snap(currentConfig[key]);
         });
-        this.continuousRotationAngle = 0;
+        this.continuousRotationAngleA = 0;
+        this.continuousRotationAngleB = 0;
 
         return this.draw(performance.now());
     }
@@ -355,10 +445,10 @@ class CanvasManager {
         if (this.isDestroyed) return Promise.reject(new Error("Manager destroyed"));
         return new Promise((resolve, reject) => {
             if (!src || typeof src !== 'string') {
-                this.image = null; this.lastImageSrc = null;
+                this.imageA = null; this.lastImageSrc = null;
                 return reject(new Error("Invalid image source"));
             }
-            if (src === this.lastImageSrc && this.image?.complete && this.image?.naturalWidth > 0) {
+            if (src === this.lastImageSrc && this.imageA?.complete && this.imageA?.naturalWidth > 0) {
                 return resolve();
             }
 
@@ -369,15 +459,15 @@ class CanvasManager {
             img.onload = () => {
                 if (this.isDestroyed) return resolve();
                 if (img.naturalWidth === 0 || img.naturalHeight === 0) {
-                    this.image = null; this.lastImageSrc = null;
+                    this.imageA = null; this.lastImageSrc = null;
                     reject(new Error(`Loaded image has zero dimensions: ${src.substring(0, 100)}`)); return;
                 }
-                this.image = img; this.lastImageSrc = src;
+                this.imageA = img; this.lastImageSrc = src;
                 resolve();
             };
             img.onerror = (errEvent) => {
                 if (this.isDestroyed) return reject(new Error("Manager destroyed during image load error"));
-                this.image = null; this.lastImageSrc = null;
+                this.imageA = null; this.lastImageSrc = null;
                 const errorMsg = typeof errEvent === 'string' ? errEvent : (errEvent?.type || 'Unknown image load error');
                 reject(new Error(`Failed to load image: ${src.substring(0, 50)}... Error: ${errorMsg}`));
             };
@@ -388,9 +478,9 @@ class CanvasManager {
     setAudioFrequencyFactor(factor) { if (this.isDestroyed) return; this.audioFrequencyFactor = Number(factor) || 1.0; }
     triggerBeatPulse(pulseFactor, duration) { if (this.isDestroyed) return; this.beatPulseFactor = Number(pulseFactor) || 1.0; this.beatPulseEndTime = performance.now() + (Number(duration) || 0); }
     resetAudioModifications() { if (this.isDestroyed) return; this.audioFrequencyFactor = 1.0; this.beatPulseFactor = 1.0; this.beatPulseEndTime = 0; }
-    getConfigData() { return JSON.parse(JSON.stringify(this.config)); }
+    getConfigData() { return JSON.parse(JSON.stringify(this.configA)); }
     
-    _drawFrame(timestamp, image, frameConfig) {
+    _drawFrame(timestamp, image, frameConfig, continuousRotationAngle, driftState) {
         if (!image || !frameConfig) return;
 
         const width = this.lastValidWidth; const height = this.lastValidHeight;
@@ -422,14 +512,13 @@ class CanvasManager {
         }
         imgDrawWidth = Math.max(1, Math.floor(imgDrawWidth));
         imgDrawHeight = Math.max(1, Math.floor(imgDrawHeight));
-
-        this.updateDrift(frameConfig, this.smoothedDeltaTime);
-        const driftX = frameConfig.driftState?.x ?? 0;
-        const driftY = frameConfig.driftState?.y ?? 0;
+        
+        const driftX = driftState?.x ?? 0;
+        const driftY = driftState?.y ?? 0;
         
         const offsetX = currentX / 10;
         const offsetY = currentY / 10;
-        const finalAngle = baseAngle + this.continuousRotationAngle;
+        const finalAngle = baseAngle + continuousRotationAngle;
         const angleRad = (finalAngle % 360) * Math.PI / 180;
 
         const finalCenterX_TL = Math.max(-MAX_TOTAL_OFFSET, Math.min(MAX_TOTAL_OFFSET, halfWidth / 2 + offsetX + driftX));
@@ -463,7 +552,7 @@ class CanvasManager {
     }
     
     draw(timestamp) {
-        if (this.isDestroyed || !this.config?.enabled || this.isDrawing || !this.canvas || !this.ctx || this.lastValidWidth <= 0 || this.lastValidHeight <= 0) {
+        if (this.isDestroyed || this.isDrawing || !this.canvas || !this.ctx || this.lastValidWidth <= 0 || this.lastValidHeight <= 0) {
             this.isDrawing = false; return false;
         }
         this.isDrawing = true;
@@ -471,35 +560,80 @@ class CanvasManager {
         try {
             this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-            if (this.isTransitioning) {
-                const elapsed = timestamp - this.transitionStartTime;
-                const progress = Math.min(1, elapsed / this.transitionDuration);
+            const liveConfigA = { ...this.configA };
+            for (const key in this.interpolators) {
+                liveConfigA[key] = this.playbackValues[key] ?? this.interpolators[key].getCurrentValue();
+            }
+            
+            const liveConfigB = this.configB ? { ...this.configB } : null;
+            if (liveConfigB) {
+                for (const key in this.interpolatorsB) {
+                    liveConfigB[key] = this.interpolatorsB[key].getCurrentValue();
+                }
+            }
 
-                if (this.outgoingImage && this.outgoingConfig) {
-                    const outgoingOpacity = (this.outgoingConfig.opacity ?? 1.0) * (1 - progress);
-                    this.ctx.globalAlpha = outgoingOpacity;
-                    this._drawFrame(timestamp, this.outgoingImage, this.outgoingConfig);
-                }
+            if (this.crossfadeValue > 0.001 && this.imageB && liveConfigB) {
+                const t = this.crossfadeValue;
                 
-                // For the incoming frame, we need its live interpolated values
-                const incomingFrameConfig = { ...this.config };
-                for (const key in this.interpolators) {
-                    incomingFrameConfig[key] = this.playbackValues[key] ?? this.interpolators[key].getCurrentValue();
+                const interpolatedConfig = {};
+                sliderParams.forEach(param => {
+                    const key = param.prop;
+                    const valA = liveConfigA[key] ?? 0;
+                    const valB = liveConfigB[key] ?? 0;
+                    if (typeof valA === 'number' && typeof valB === 'number') {
+                        interpolatedConfig[key] = lerp(valA, valB, t);
+                    } else {
+                        interpolatedConfig[key] = t < 0.5 ? valA : valB;
+                    }
+                });
+
+                // --- START: MODIFIED BLEND MODE & OPACITY LOGIC ---
+                const blendModesDiffer = liveConfigA.blendMode !== liveConfigB.blendMode;
+                const dipMultiplier = blendModesDiffer ? (Math.abs(t - 0.5) / 0.5) : 1.0;
+                
+                const currentBlendMode = t < 0.5 ? liveConfigA.blendMode : liveConfigB.blendMode;
+                this.canvas.style.mixBlendMode = currentBlendMode || "normal";
+                // --- END: MODIFIED BLEND MODE & OPACITY LOGIC ---
+
+                interpolatedConfig.direction = t < 0.5 ? liveConfigA.direction : liveConfigB.direction;
+                interpolatedConfig.enabled = liveConfigA.enabled || liveConfigB.enabled;
+
+                const interpolatedRotation = lerp(this.continuousRotationAngleA, this.continuousRotationAngleB, t);
+                const interpolatedDriftState = {
+                    x: lerp(this.driftStateA.x, this.driftStateB.x, t),
+                    y: lerp(this.driftStateA.y, this.driftStateB.y, t),
+                };
+
+                const isMorphing = this.imageA?.src && this.imageB?.src && this.imageA.src === this.imageB.src;
+
+                if (isMorphing) {
+                    if (interpolatedConfig.enabled && this.imageA) {
+                        this.ctx.globalAlpha = (interpolatedConfig.opacity ?? 1.0) * dipMultiplier;
+                        if (this.ctx.globalAlpha > 0.001) {
+                            this._drawFrame(timestamp, this.imageA, interpolatedConfig, interpolatedRotation, interpolatedDriftState);
+                        }
+                    }
+                } else {
+                    if (this.imageA && liveConfigA.enabled) {
+                        this.ctx.globalAlpha = (liveConfigA.opacity ?? 1.0) * (1 - t) * dipMultiplier;
+                        if (this.ctx.globalAlpha > 0.001) {
+                             this._drawFrame(timestamp, this.imageA, interpolatedConfig, interpolatedRotation, interpolatedDriftState);
+                        }
+                    }
+                    if (this.imageB && liveConfigB.enabled) {
+                        this.ctx.globalAlpha = (liveConfigB.opacity ?? 1.0) * t * dipMultiplier;
+                         if (this.ctx.globalAlpha > 0.001) {
+                            this._drawFrame(timestamp, this.imageB, interpolatedConfig, interpolatedRotation, interpolatedDriftState);
+                        }
+                    }
                 }
-                const incomingOpacity = (incomingFrameConfig.opacity ?? 1.0) * progress;
-                this.ctx.globalAlpha = incomingOpacity;
-                this._drawFrame(timestamp, this.image, incomingFrameConfig);
 
             } else {
-                // Normal drawing logic: build a config with live values
-                const currentFrameConfig = { ...this.config };
-                for (const key in this.interpolators) {
-                    // P-Lock values take precedence over interpolation
-                    currentFrameConfig[key] = this.playbackValues[key] ?? this.interpolators[key].getCurrentValue();
+                if (liveConfigA.enabled && this.imageA) {
+                    this.canvas.style.mixBlendMode = liveConfigA.blendMode || "normal";
+                    this.ctx.globalAlpha = liveConfigA.opacity ?? 1.0;
+                    this._drawFrame(timestamp, this.imageA, liveConfigA, this.continuousRotationAngleA, this.driftStateA);
                 }
-
-                this.ctx.globalAlpha = currentFrameConfig.opacity;
-                this._drawFrame(timestamp, this.image, currentFrameConfig);
             }
 
             this.ctx.globalAlpha = 1.0;
@@ -512,13 +646,12 @@ class CanvasManager {
         }
     }
 
-    updateDrift(config, deltaTime) {
-        if (!config?.driftState) return;
-        const {driftState} = config;
+    _updateInternalDrift(config, driftState, deltaTime) {
+        if (!config || !driftState) return;
         const driftAmount = config.drift; 
         const driftSpeed = config.driftSpeed;
 
-        if(driftAmount > 0 && driftState.enabled){
+        if(driftAmount > 0){
             if(typeof driftState.phase !== "number" || isNaN(driftState.phase)) driftState.phase = Math.random() * Math.PI * 2;
             driftState.phase += deltaTime * driftSpeed * 1.0;
             const calculatedX = Math.sin(driftState.phase) * driftAmount * 1.5;
@@ -534,7 +667,14 @@ class CanvasManager {
     animationLoop(timestamp) {
         if (this.isDestroyed || this.animationFrameId === null) return;
         this.animationFrameId = requestAnimationFrame(this.animationLoop);
-        if (!this.config.enabled) return;
+        
+        const isAnySideEnabled = this.configA?.enabled || (this.configB?.enabled && this.crossfadeValue > 0);
+        if (!isAnySideEnabled) {
+            if (this.ctx && this.canvas) {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            }
+            return;
+        }
 
         if (!this.lastTimestamp) this.lastTimestamp = timestamp;
         const elapsed = timestamp - this.lastTimestamp;
@@ -547,38 +687,54 @@ class CanvasManager {
         this.smoothedDeltaTime = this.deltaTimeBuffer.reduce((a,b) => a+b,0) / this.deltaTimeBuffer.length;
         
         if (this.lastValidWidth <= 0 || this.lastValidHeight <= 0 || !this.canvas || !this.ctx) {
-            this.setupCanvas().then(setupOk => { if (setupOk && this.config.enabled) this.draw(timestamp); });
+            this.setupCanvas().then(setupOk => { if (setupOk) this.draw(timestamp); });
             return;
         }
         
-        if (!this.isTransitioning && (!this.image?.complete || this.image?.naturalWidth === 0)) return;
+        if (!this.isTransitioning && (!this.imageA?.complete || this.imageA?.naturalWidth === 0)) return;
 
         const now = performance.now();
         for (const key in this.interpolators) {
             this.interpolators[key].update(now);
         }
+        for (const key in this.interpolatorsB) {
+            this.interpolatorsB[key].update(now);
+        }
         
-        const speed = this.playbackValues.speed ?? this.interpolators.speed.getCurrentValue();
-        const direction = this.config.direction ?? 1;
-        const angleDelta = speed * direction * this.smoothedDeltaTime * 600;
-        this.continuousRotationAngle = (this.continuousRotationAngle + angleDelta) % 360;
+        if (this.configA) {
+            const speedA = this.playbackValues.speed ?? this.interpolators.speed.getCurrentValue();
+            const directionA = this.configA.direction ?? 1;
+            const angleDeltaA = speedA * directionA * this.smoothedDeltaTime * 600;
+            this.continuousRotationAngleA = (this.continuousRotationAngleA + angleDeltaA) % 360;
+            this._updateInternalDrift(this.configA, this.driftStateA, this.smoothedDeltaTime);
+        }
+
+        if (this.configB) {
+            const speedB = this.interpolatorsB.speed.getCurrentValue();
+            const directionB = this.configB.direction ?? 1;
+            const angleDeltaB = speedB * directionB * this.smoothedDeltaTime * 600;
+            this.continuousRotationAngleB = (this.continuousRotationAngleB + angleDeltaB) % 360;
+            this._updateInternalDrift(this.configB, this.driftStateB, this.smoothedDeltaTime);
+        }
 
         this.draw(timestamp);
     }
     
     async forceRedraw(configToUse = null) {
         if (this.isDestroyed || this.isDrawing) return false;
-        return this.drawStaticFrame(configToUse || this.config);
+        return this.drawStaticFrame(configToUse || this.configA);
     }
 
     destroy() {
         this.isDestroyed = true;
         this.stopAnimationLoop();
-        this.image = null;
+        this.imageA = null;
+        this.imageB = null;
         this.ctx = null;
         this.canvas = null;
         this.deltaTimeBuffer = [];
         this.interpolators = {};
+        this.interpolatorsB = {};
         this.playbackValues = {};
         this.lastDPR = 0;
         this.lastValidWidth = 0;

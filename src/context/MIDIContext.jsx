@@ -17,6 +17,7 @@ const defaultContextValue = {
   midiLearning: null, learningLayer: null, selectedChannel: 0, midiMonitorData: [],
   showMidiMonitor: false, pendingLayerSelect: null, pendingParamUpdate: null,
   pendingGlobalAction: null,
+  pendingCrossfaderUpdate: null, // --- ADDED ---
   connectMIDI: async () => { if (import.meta.env.DEV) console.warn("connectMIDI called on default MIDIContext"); return null; },
   disconnectMIDI: () => { if (import.meta.env.DEV) console.warn("disconnectMIDI called on default MIDIContext"); },
   startMIDILearn: () => { if (import.meta.env.DEV) console.warn("startMIDILearn called on default MIDIContext"); },
@@ -78,6 +79,7 @@ export function MIDIProvider({ children }) {
   const [pendingLayerSelect, setPendingLayerSelect] = useState(null);
   const [pendingParamUpdate, setPendingParamUpdate] = useState(null);
   const [pendingGlobalAction, setPendingGlobalAction] = useState(null);
+  const [pendingCrossfaderUpdate, setPendingCrossfaderUpdate] = useState(null); // --- ADDED ---
 
   const activeControllerMidiMapRef = useRef(activeMidiMap);
   const midiLearningRef = useRef(midiLearning);
@@ -116,17 +118,18 @@ export function MIDIProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    if (pendingLayerSelect || pendingParamUpdate || pendingGlobalAction) {
+    if (pendingLayerSelect || pendingParamUpdate || pendingGlobalAction || pendingCrossfaderUpdate) { // --- MODIFIED ---
       if (pendingTimeoutRef.current) clearTimeout(pendingTimeoutRef.current);
       pendingTimeoutRef.current = setTimeout(() => {
         setPendingLayerSelect(null);
         setPendingParamUpdate(null);
         setPendingGlobalAction(null);
+        setPendingCrossfaderUpdate(null); // --- ADDED ---
         pendingTimeoutRef.current = null;
       }, PENDING_ACTION_EXPIRY_MS);
     }
     return () => { if (pendingTimeoutRef.current) clearTimeout(pendingTimeoutRef.current); };
-  }, [pendingLayerSelect, pendingParamUpdate, pendingGlobalAction]);
+  }, [pendingLayerSelect, pendingParamUpdate, pendingGlobalAction, pendingCrossfaderUpdate]); // --- MODIFIED ---
 
   const mapParameterToMIDI = useCallback((param, layer, mappingData) => {
     const currentMap = activeMidiMap || {};
@@ -214,19 +217,43 @@ export function MIDIProvider({ children }) {
 
     const currentControllerMap = activeControllerMidiMapRef.current || {};
     
+    // --- START: MODIFIED GLOBAL CONTROLS LOGIC ---
     const globalControls = currentControllerMap.global;
     if (globalControls) {
+        // Check for P-Lock Toggle
         const pLockMapping = globalControls['pLockToggle'];
         if (pLockMapping) {
           let isMatch = (pLockMapping.type === 'note' && isNoteOn && pLockMapping.number === data1 && (pLockMapping.channel === undefined || pLockMapping.channel === msgChan)) ||
                         (pLockMapping.type === 'cc' && isCC && pLockMapping.number === data1 && (pLockMapping.channel === undefined || pLockMapping.channel === msgChan));
-          
           if (isMatch) {
             setPendingGlobalAction({ action: 'pLockToggle', timestamp });
             return;
           }
         }
+
+        // Check for Crossfader
+        const crossfaderMapping = globalControls['crossfader'];
+        if (crossfaderMapping) {
+            let isMatch = false;
+            let rawValue = data2;
+            let midiMsgType = 'cc';
+
+            if (crossfaderMapping.type === 'cc' && isCC && Number(crossfaderMapping.number) === Number(data1) && (crossfaderMapping.channel === undefined || Number(crossfaderMapping.channel) === Number(msgChan))) {
+                isMatch = true;
+            } else if (crossfaderMapping.type === 'pitchbend' && isPitch && (crossfaderMapping.channel === undefined || Number(crossfaderMapping.channel) === Number(msgChan))) {
+                isMatch = true;
+                rawValue = (data2 << 7) | data1;
+                midiMsgType = 'pitchbend';
+            }
+
+            if(isMatch) {
+                const normalizedValue = normalizeMIDIValue(rawValue, midiMsgType);
+                setPendingCrossfaderUpdate({ value: normalizedValue, timestamp });
+                return;
+            }
+        }
     }
+    // --- END: MODIFIED GLOBAL CONTROLS LOGIC ---
 
     if (isNoteOn) {
         for (const layerId in layerMappingsRef.current) {
@@ -262,7 +289,6 @@ export function MIDIProvider({ children }) {
 
             if (isMatch) {
                 const currentNormalizedMidiVal = normalizeMIDIValue(rawValue, midiMsgTypeForNormalization);
-                // The "catch" logic has been removed. Dispatch the update immediately.
                 setPendingParamUpdate({ layer: parseInt(layerIdStr, 10), param: paramName, value: currentNormalizedMidiVal, timestamp });
                 return;
             }
@@ -408,6 +434,7 @@ export function MIDIProvider({ children }) {
     setPendingLayerSelect(null);
     setPendingParamUpdate(null);
     setPendingGlobalAction(null);
+    setPendingCrossfaderUpdate(null); // --- ADDED ---
     if (pendingTimeoutRef.current) {
       clearTimeout(pendingTimeoutRef.current);
       pendingTimeoutRef.current = null;
@@ -427,7 +454,7 @@ export function MIDIProvider({ children }) {
     midiMap: activeMidiMap,
     layerMappings, midiLearning, learningLayer, selectedChannel,
     midiMonitorData, showMidiMonitor, pendingLayerSelect, pendingParamUpdate,
-    pendingGlobalAction, 
+    pendingGlobalAction, pendingCrossfaderUpdate, // --- MODIFIED ---
     setShowMidiMonitor,
     connectMIDI, disconnectMIDI, startMIDILearn, stopMIDILearn,
     startLayerMIDILearn, stopLayerMIDILearn, clearAllMappings, setChannelFilter,
@@ -438,7 +465,7 @@ export function MIDIProvider({ children }) {
     activeMidiMap,
     layerMappings, midiLearning, learningLayer, selectedChannel,
     midiMonitorData, showMidiMonitor, pendingLayerSelect, pendingParamUpdate,
-    pendingGlobalAction, 
+    pendingGlobalAction, pendingCrossfaderUpdate, // --- MODIFIED ---
     connectMIDI, disconnectMIDI, clearAllMappings, mapParameterToMIDI,
     setChannelFilter, clearMIDIMonitor, setShowMidiMonitor, clearPendingActions, stopMIDILearn,
     startMIDILearn, startLayerMIDILearn, stopLayerMIDILearn,

@@ -1,4 +1,3 @@
-/* src/components/UI/ToolbarStyles/PresetSelectorBar.css (Example path) */
 @import "../../styles/variables.css"; /* Ensure this is at the very top */
 
 /* 
@@ -29,12 +28,9 @@
   --slide-duration: 300ms;
 }
 
+/* --- START MODIFICATION --- */
+/* Remove positioning from the bar itself. It will now be positioned by its parent flex container. */
 .preset-selector-bar {
-  position: fixed;
-  bottom: var(--space-md); /* Positioned at the bottom of the viewport */
-  left: 50%;
-  transform: translateX(-50%); /* Center horizontally */
-  z-index: var(--z-controls); /* Ensure it's above canvas but below modals */
   display: flex;
   align-items: center;
   gap: var(--space-xs);
@@ -45,8 +41,9 @@
   opacity: 1;
   visibility: visible;
   background: transparent; /* Bar background is transparent, buttons have their own */
-  /* perspective: 1000px; */ /* Optional: Add perspective for 3D transforms if used */
 }
+/* --- END MODIFICATION --- */
+
 
 .preset-buttons-container {
   display: flex;

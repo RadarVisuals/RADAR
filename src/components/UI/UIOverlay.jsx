@@ -16,12 +16,13 @@ import GlobalMIDIStatus from '../MIDI/GlobalMIDIStatus';
 import AudioStatusIcon from '../Audio/AudioStatusIcon';
 import PresetSelectorBar from './PresetSelectorBar';
 import LibraryPanel from '../Panels/LibraryPanel';
+import Crossfader from './Crossfader';
+import { useMIDI } from '../../context/MIDIContext';
 
-import { useAppInteractions } from '../../hooks/useAppInteractions';
 import { useProfileSessionState } from '../../hooks/configSelectors';
 import { useToast } from '../../context/ToastContext';
 import { ForwardIcon as SequencerIcon } from '@heroicons/react/24/outline';
-import { whitelistIcon } from '../../assets';
+import './UIOverlay.css';
 
 const MemoizedTopRightControls = React.memo(TopRightControls);
 const MemoizedVerticalToolbar = React.memo(VerticalToolbar);
@@ -30,6 +31,23 @@ const MemoizedAudioStatusIcon = React.memo(AudioStatusIcon);
 const MemoizedPresetSelectorBar = React.memo(PresetSelectorBar);
 
 const DEFAULT_SEQUENCER_INTERVAL = 10000;
+const MAX_BUTTON_LABEL_LENGTH = 3;
+
+const getPresetDisplayLabel = (fullName) => {
+  if (!fullName || typeof fullName !== 'string') return '?';
+  const nameParts = fullName.split('.');
+  if (nameParts.length > 1) {
+    const identifier = nameParts.slice(1).join('.');
+    if (/^\d+$/.test(identifier)) {
+      const num = parseInt(identifier, 10);
+      return num.toString();
+    } else {
+      return identifier.substring(0, MAX_BUTTON_LABEL_LENGTH).toUpperCase();
+    }
+  } else {
+    return fullName.substring(0, MAX_BUTTON_LABEL_LENGTH).toUpperCase();
+  }
+};
 
 const GeneralConnectPill = () => {
     return (
@@ -98,45 +116,46 @@ OverlayRenderer.propTypes = {
 const MemoizedOverlayRenderer = React.memo(OverlayRenderer);
 
 function UIOverlay(props) {
-  // --- THIS IS THE FIX ---
-  // We now accept the single `pLockProps` object passed down from MainView.
   const { 
-    uiState, audioState, configData: propConfigData, actions, passedSavedConfigList,
+    uiState, audioState, configData, actions, passedSavedConfigList,
     pLockProps 
   } = props;
   
   const { addToast } = useToast();
-  const { canInteract: sessionCanInteract, currentProfileAddress: sessionCurrentProfileAddress, visitorUPAddress } = useProfileSessionState();
-  const configData = useMemo(() => ({ ...propConfigData, canInteract: sessionCanInteract, currentProfileAddress: sessionCurrentProfileAddress }), [propConfigData, sessionCanInteract, sessionCurrentProfileAddress]);
+  const { visitorUPAddress } = useProfileSessionState();
   const { isUiVisible, activePanel, toggleSidePanel, toggleInfoOverlay, toggleUiVisibility } = uiState;
   const { isAudioActive } = audioState;
   
-  const { isParentAdmin, isPreviewMode, unreadCount, isTransitioning, isBaseReady, currentProfileAddress } = configData;
+  const { isParentAdmin, isPreviewMode, unreadCount, isTransitioning, isBaseReady, currentProfileAddress, crossfader } = configData;
 
-  const { onEnhancedView, onPresetSelect } = actions;
+  const { onEnhancedView, onPresetSelect, onCrossfaderChange } = actions;
   const [isSequencerActive, setIsSequencerActive] = useState(false);
   const sequencerIntervalRef = useRef(null);
   const nextPresetIndexRef = useRef(0);
   const [sequencerIntervalMs, setSequencerIntervalMs] = useState(DEFAULT_SEQUENCER_INTERVAL);
-  const configDataRef = useRef(configData);
-  useEffect(() => { configDataRef.current = configData; }, [configData]);
-  const savedConfigListRef = useRef(passedSavedConfigList);
-  useEffect(() => { savedConfigListRef.current = passedSavedConfigList; }, [passedSavedConfigList]);
-  const onPresetSelectRef = useRef(onPresetSelect);
-  useEffect(() => { onPresetSelectRef.current = onPresetSelect; }, [onPresetSelect]);
   const isMountedRef = useRef(false);
+  
+  const { pendingCrossfaderUpdate, clearPendingActions } = useMIDI();
+
+  useEffect(() => {
+    if (pendingCrossfaderUpdate) {
+        onCrossfaderChange(pendingCrossfaderUpdate.value);
+        clearPendingActions();
+    }
+  }, [pendingCrossfaderUpdate, onCrossfaderChange, clearPendingActions]);
+  
   useEffect(() => { isMountedRef.current = true; return () => { isMountedRef.current = false; } }, []);
   
   const loadNextPresetInSequence = useCallback(() => {
-    const currentList = savedConfigListRef.current;
+    const currentList = passedSavedConfigList;
     if (!currentList || currentList.length === 0) return;
     const nextIndex = nextPresetIndexRef.current % currentList.length;
     const nextPreset = currentList[nextIndex];
-    if (nextPreset?.name && onPresetSelectRef.current) {
-      onPresetSelectRef.current(nextPreset.name);
+    if (nextPreset?.name && onPresetSelect) {
+      onPresetSelect(nextPreset.name);
     }
     nextPresetIndexRef.current = nextIndex + 1;
-  }, []);
+  }, [passedSavedConfigList, onPresetSelect]);
 
   useEffect(() => {
     if (isSequencerActive) {
@@ -219,10 +238,16 @@ function UIOverlay(props) {
                 pLockProps={pLockProps} 
             />
             {showPresetBar && (
-              <MemoizedPresetSelectorBar
-                savedConfigList={passedSavedConfigList} currentConfigName={configData.currentConfigName}
-                onPresetSelect={onPresetSelect} isLoading={isTransitioning || configData.isConfigLoading}
-              />
+              <div className="bottom-center-controls">
+                <Crossfader
+                  value={crossfader.value}
+                  onChange={onCrossfaderChange}
+                />
+                <MemoizedPresetSelectorBar
+                  savedConfigList={passedSavedConfigList} currentConfigName={configData.currentConfigName}
+                  onPresetSelect={onPresetSelect} isLoading={isTransitioning || configData.isConfigLoading}
+                />
+              </div>
             )}
           </>
         )}
