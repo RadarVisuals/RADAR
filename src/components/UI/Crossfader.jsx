@@ -14,7 +14,7 @@ const Crossfader = ({ value, onChange }) => {
         type="range"
         min="0"
         max="1"
-        step="0.0001"
+        step="0.000001"
         value={value}
         onChange={handleOnChange}
         className="crossfader-slider"
