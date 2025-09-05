@@ -100,7 +100,6 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     });
   }, [stagedWorkspace]);
 
-  // --- START MODIFICATION: Corrected dependency array to break feedback loop ---
   useEffect(() => {
     if (fullPresetList.length > 0 && isInitiallyResolved) {
         let startIndex = fullPresetList.findIndex(p => p.name === currentConfigName);
@@ -114,8 +113,7 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
         setCrossfaderValue(0.0);
         prevFaderValueRef.current = 0.0;
     }
-  }, [fullPresetList, isInitiallyResolved, configLoadNonce]); // REMOVED `currentConfigName`
-  // --- END MODIFICATION ---
+  }, [fullPresetList, isInitiallyResolved, configLoadNonce]);
   
   useEffect(() => {
     const prevValue = prevFaderValueRef.current;
@@ -185,6 +183,7 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     sequencer.toggle(currentActiveLayerConfigs);
   }, [sequencer, currentActiveLayerConfigs]);
   
+  // --- START MODIFICATION: REMOVED THE FAULTY CONDITIONAL ---
   const handleUserLayerPropChange = useCallback((layerId, key, value, isMidiUpdate = false) => {
     const pLockIsPlaying = sequencer.pLockState === 'playing';
     const isParamLockedBySequencer = sequencer.animationDataRef.current?.[String(layerId)]?.[key];
@@ -197,8 +196,6 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     if (!manager) return;
     
     const targetDeck = crossfaderValue < 0.5 ? 'A' : 'B';
-    const activePresetNameInContext = currentConfigName;
-    const targetPresetName = targetDeck === 'A' ? sideA.config?.name : sideB.config?.name;
 
     if (targetDeck === 'A') {
       if (isMidiUpdate) {
@@ -214,9 +211,9 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
       }
     }
 
-    if (targetPresetName === activePresetNameInContext) {
-      updateLayerConfig(String(layerId), key, value);
-    }
+    // REMOVED: The faulty `if (targetPresetName === activePresetNameInContext)` check.
+    // The central state is now updated on every interaction, ensuring live edits are never lost.
+    updateLayerConfig(String(layerId), key, value);
 
   }, [
     updateLayerConfig, 
@@ -224,10 +221,8 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     sequencer.pLockState, 
     sequencer.animationDataRef,
     crossfaderValue,
-    currentConfigName,
-    sideA.config,
-    sideB.config
   ]);
+  // --- END MODIFICATION ---
 
   const appInteractions = useAppInteractions({
     updateLayerConfig: handleUserLayerPropChange,

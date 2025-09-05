@@ -135,54 +135,110 @@ function UIOverlay(props) {
   const [sequencerIntervalMs, setSequencerIntervalMs] = useState(DEFAULT_SEQUENCER_INTERVAL);
   const isMountedRef = useRef(false);
   
-  const { pendingCrossfaderUpdate, clearPendingActions } = useMIDI();
+  const { pendingCrossfaderUpdate, liveCrossfaderValue, clearPendingActions } = useMIDI();
+  
+  const [localCrossfaderValue, setLocalCrossfaderValue] = useState(crossfader.value);
 
   useEffect(() => {
+    if (liveCrossfaderValue !== null) {
+        setLocalCrossfaderValue(liveCrossfaderValue);
+        onCrossfaderChange(liveCrossfaderValue);
+    } else {
+        setLocalCrossfaderValue(crossfader.value);
+    }
+  }, [liveCrossfaderValue, crossfader.value, onCrossfaderChange]);
+
+  const handleCrossfaderInput = useCallback((newValue) => {
+    setLocalCrossfaderValue(newValue);
+    onCrossfaderChange(newValue);
+  }, [onCrossfaderChange]);
+
+  const handleCrossfaderChange = useCallback((newValue) => {
+    onCrossfaderChange(newValue);
     if (pendingCrossfaderUpdate) {
-        onCrossfaderChange(pendingCrossfaderUpdate.value);
         clearPendingActions();
     }
-  }, [pendingCrossfaderUpdate, onCrossfaderChange, clearPendingActions]);
+  }, [onCrossfaderChange, pendingCrossfaderUpdate, clearPendingActions]);
   
   useEffect(() => { isMountedRef.current = true; return () => { isMountedRef.current = false; } }, []);
   
+  // --- START MODIFICATION: Stabilize callbacks and consolidate useEffect ---
+
+  // Use refs to hold the latest callbacks and data without making them dependencies
+  const onPresetSelectRef = useRef(onPresetSelect);
+  const passedSavedConfigListRef = useRef(passedSavedConfigList);
+  useEffect(() => {
+    onPresetSelectRef.current = onPresetSelect;
+    passedSavedConfigListRef.current = passedSavedConfigList;
+  }, [onPresetSelect, passedSavedConfigList]);
+
+  // Make loadNextPresetInSequence a stable function with no dependencies
   const loadNextPresetInSequence = useCallback(() => {
-    const currentList = passedSavedConfigList;
+    const currentList = passedSavedConfigListRef.current;
     if (!currentList || currentList.length === 0) return;
+
     const nextIndex = nextPresetIndexRef.current % currentList.length;
     const nextPreset = currentList[nextIndex];
-    if (nextPreset?.name && onPresetSelect) {
-      onPresetSelect(nextPreset.name);
+
+    if (nextPreset?.name && onPresetSelectRef.current) {
+      onPresetSelectRef.current(nextPreset.name);
     }
     nextPresetIndexRef.current = nextIndex + 1;
-  }, [passedSavedConfigList, onPresetSelect]);
+  }, []);
 
-  useEffect(() => {
-    if (isSequencerActive) {
-      loadNextPresetInSequence();
-    }
-  }, [isSequencerActive, loadNextPresetInSequence]);
-
+  // Consolidate all sequencer logic into a single, clean useEffect hook
   useEffect(() => {
     if (sequencerIntervalRef.current) {
       clearInterval(sequencerIntervalRef.current);
-      sequencerIntervalRef.current = null;
     }
+
     if (isSequencerActive) {
-      sequencerIntervalRef.current = setInterval(loadNextPresetInSequence, sequencerIntervalMs);
       addToast(`Sequencer started. Interval: ${sequencerIntervalMs / 1000}s`, 'info', 3000);
+      
+      const tick = () => {
+        if (isMountedRef.current) {
+          loadNextPresetInSequence();
+        }
+      };
+      
+      // Load the first preset immediately upon activation
+      tick();
+      
+      // Then set the interval for subsequent presets
+      sequencerIntervalRef.current = setInterval(tick, sequencerIntervalMs);
+    } else if (sequencerIntervalRef.current) {
+        // This condition is met when isSequencerActive becomes false
+        addToast('Sequencer stopped.', 'info', 2000);
     }
+
+    // Cleanup function to clear the interval
     return () => {
       if (sequencerIntervalRef.current) {
         clearInterval(sequencerIntervalRef.current);
       }
     };
-  }, [isSequencerActive, loadNextPresetInSequence, addToast, sequencerIntervalMs]);
+  }, [isSequencerActive, sequencerIntervalMs, addToast, loadNextPresetInSequence]); // Dependencies are stable
 
   const handleToggleSequencer = () => {
     if (configData.isConfigLoading || !configData.currentProfileAddress) return;
-    setIsSequencerActive(prev => !prev);
+    
+    setIsSequencerActive(prev => {
+      const isActivating = !prev;
+      if (isActivating) {
+        const currentList = passedSavedConfigList;
+        if (currentList && currentList.length > 0) {
+          const currentIndex = currentList.findIndex(p => p.name === configData.currentConfigName);
+          // Set the ref to the index of the NEXT preset
+          nextPresetIndexRef.current = (currentIndex === -1 ? 0 : currentIndex + 1);
+        } else {
+          nextPresetIndexRef.current = 0;
+        }
+      }
+      return isActivating;
+    });
   };
+  
+  // --- END MODIFICATION ---
 
   const handleSetSequencerInterval = useCallback((newIntervalMs) => {
     if (typeof newIntervalMs === 'number' && newIntervalMs >= 1000) {
@@ -240,8 +296,9 @@ function UIOverlay(props) {
             {showPresetBar && (
               <div className="bottom-center-controls">
                 <Crossfader
-                  value={crossfader.value}
-                  onChange={onCrossfaderChange}
+                  value={localCrossfaderValue}
+                  onInput={handleCrossfaderInput}
+                  onChange={handleCrossfaderChange}
                 />
                 <MemoizedPresetSelectorBar
                   savedConfigList={passedSavedConfigList} currentConfigName={configData.currentConfigName}

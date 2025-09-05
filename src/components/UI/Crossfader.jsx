@@ -3,9 +3,19 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import './Crossfader.css';
 
-const Crossfader = ({ value, onChange }) => {
+const Crossfader = ({ value, onInput, onChange }) => {
+  const handleOnInput = (e) => {
+    // onInput fires continuously while the user is dragging the slider.
+    if (onInput) {
+      onInput(e.target.valueAsNumber);
+    }
+  };
+
   const handleOnChange = (e) => {
-    onChange(e.target.valueAsNumber);
+    // onChange typically fires only when the user releases the mouse.
+    if (onChange) {
+      onChange(e.target.valueAsNumber);
+    }
   };
 
   return (
@@ -14,9 +24,10 @@ const Crossfader = ({ value, onChange }) => {
         type="range"
         min="0"
         max="1"
-        step="0.000001"
+        step="0.001" // A reasonable step for high fidelity without event flooding.
         value={value}
-        onChange={handleOnChange}
+        onInput={handleOnInput}   // Use onInput for live, real-time updates.
+        onChange={handleOnChange} // Use onChange for the final, committed value.
         className="crossfader-slider"
       />
     </div>
@@ -25,6 +36,7 @@ const Crossfader = ({ value, onChange }) => {
 
 Crossfader.propTypes = {
   value: PropTypes.number.isRequired,
+  onInput: PropTypes.func, // The new handler for real-time updates.
   onChange: PropTypes.func.isRequired,
 };
 

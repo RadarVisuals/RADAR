@@ -1,5 +1,5 @@
 // src/components/Panels/EnhancedControlPanel.jsx
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 
 // Local Component Imports
@@ -54,6 +54,7 @@ const EnhancedControlPanel = ({
   activeTab = "tab1",
   onTabChange,
   pLockProps = {},
+  onSetSequencerInterval,
 }) => {
   const { isProfileOwner } = useProfileSessionState();
   const {
@@ -62,6 +63,19 @@ const EnhancedControlPanel = ({
     midiMap, layerMappings,
     startGlobalMIDILearn,
   } = useMIDI();
+
+  const [intervalInput, setIntervalInput] = useState('10');
+
+  const handleIntervalChange = (e) => {
+    setIntervalInput(e.target.value);
+  };
+
+  const handleSetInterval = () => {
+    const newIntervalSeconds = parseFloat(intervalInput);
+    if (!isNaN(newIntervalSeconds) && newIntervalSeconds > 0) {
+      onSetSequencerInterval(newIntervalSeconds * 1000);
+    }
+  };
 
   const activeLayer = useMemo(() => String(tabToLayerIdMap[activeTab] || 3), [activeTab]);
   const config = useMemo(() => layerConfigs?.[activeLayer] || getDefaultLayerConfigTemplate(), [layerConfigs, activeLayer]);
@@ -165,12 +179,29 @@ const EnhancedControlPanel = ({
         </div>
       </div>
 
-      {/* --- MOVED MIDI MAPPINGS SECTION TO THE BOTTOM --- */}
+      <div className="sequencer-interval-control">
+        <h4 className="section-title">Preset Sequencer</h4>
+        <div className="form-group">
+          <label htmlFor="sequencer-interval">Interval (seconds)</label>
+          <div className="input-with-button">
+            <input
+              id="sequencer-interval"
+              type="number"
+              value={intervalInput}
+              onChange={handleIntervalChange}
+              className="form-control"
+              min="1"
+              step="0.5"
+            />
+            <button onClick={handleSetInterval} className="btn btn-sm">Set</button>
+          </div>
+        </div>
+      </div>
+
       {midiConnected && (
         <div className="midi-mappings-section">
           <h4 className="midi-section-title">Global MIDI Mappings</h4>
           <div className="global-mapping-grid">
-            {/* Crossfader Mapping */}
             <div className="global-mapping-item">
               <div className="global-mapping-label">Crossfader</div>
               <div className="global-mapping-controls">
@@ -178,7 +209,6 @@ const EnhancedControlPanel = ({
                 <button type="button" className={`midi-learn-btn small-action-button ${isCrossfaderMidiLearning ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('crossfader')} disabled={!midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Crossfader">{isCrossfaderMidiLearning ? "..." : "Map"}</button>
               </div>
             </div>
-            {/* P-Lock Toggle Mapping */}
             <div className="global-mapping-item">
               <div className="global-mapping-label">P-Lock Toggle</div>
               <div className="global-mapping-controls">
@@ -211,6 +241,7 @@ EnhancedControlPanel.propTypes = {
   activeTab: PropTypes.string,
   onTabChange: PropTypes.func,
   pLockProps: PropTypes.object,
+  onSetSequencerInterval: PropTypes.func,
 };
 
 export default React.memo(EnhancedControlPanel);
