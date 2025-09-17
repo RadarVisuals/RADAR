@@ -1,0 +1,149 @@
+/* src/components/UI/SceneSelectorBar.css */
+@import "../../styles/variables.css";
+
+:root {
+  --color-preset-active-bg: rgba(255, 193, 7, 0.85);
+  --color-preset-active-border: rgba(255, 193, 7, 1.0);
+  --color-preset-active-text: #1a1a2e;
+
+  --color-preset-hover-bg: rgba(255, 204, 51, 0.8);
+  --color-preset-hover-border: rgba(255, 214, 82, 1.0);
+  --color-preset-hover-text: #1a1a2e;
+
+  --ping-duration: 1.5s;
+  --ping-color: rgba(255, 193, 7, 0.7);
+  --ping-spread: 5px;
+
+  --color-preset-default-border: var(--color-border);
+  --slide-duration: 300ms;
+}
+
+.preset-selector-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xxs);
+  border: none;
+  border-radius: var(--radius-md);
+  transition: opacity var(--transition-normal), visibility var(--transition-normal);
+  opacity: 1;
+  visibility: visible;
+  background: transparent;
+}
+
+.preset-buttons-container {
+  display: flex;
+  gap: var(--space-sm);
+  transition: transform var(--slide-duration) ease-in-out;
+  transform: translateX(0);
+}
+
+@keyframes slideInFromRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes slideInFromLeft {
+  from { transform: translateX(-100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.preset-buttons-container.slide-in-left {
+  animation: slideInFromLeft var(--slide-duration) ease-in-out forwards;
+}
+.preset-buttons-container.slide-in-right {
+  animation: slideInFromRight var(--slide-duration) ease-in-out forwards;
+}
+
+.preset-selector-button,
+.pagination-button {
+  font-family: var(--font-family);
+  font-weight: 600;
+  color: var(--color-text);
+  border: 1px solid var(--color-preset-default-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+  background: var(--color-button-secondary-a80);
+  backdrop-filter: blur(var(--blur-amount));
+  -webkit-backdrop-filter: blur(var(--blur-amount));
+  overflow: hidden;
+  position: relative;
+}
+
+.preset-selector-button {
+  font-size: var(--font-size-xs);
+  width: 28px;
+  height: 28px;
+}
+
+.pagination-button {
+  font-size: var(--font-size-sm);
+  width: 24px;
+  height: 24px;
+}
+
+.preset-selector-button:hover:not(:disabled):not(.active),
+.pagination-button:hover:not(:disabled) {
+  background: var(--color-preset-hover-bg);
+  border-color: var(--color-preset-hover-border);
+  color: var(--color-preset-hover-text);
+  transform: translateY(-1px);
+}
+
+.preset-selector-button:active:not(:disabled):not(.active),
+.pagination-button:active:not(:disabled) {
+  background: rgba(255, 180, 0, 0.9);
+  transform: translateY(0px);
+  box-shadow: none;
+}
+
+.preset-selector-button:disabled,
+.pagination-button:disabled {
+  color: var(--color-text);
+  border-color: var(--color-preset-default-border);
+  background: var(--color-button-secondary-a80);
+  backdrop-filter: blur(var(--blur-amount));
+  -webkit-backdrop-filter: blur(var(--blur-amount));
+  cursor: not-allowed;
+  pointer-events: none;
+  opacity: 0.8;
+  animation: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+@keyframes continuous-ping-animation {
+  0%, 100% {
+    box-shadow: 0 0 0 0px var(--ping-color);
+  }
+  50% {
+    box-shadow: 0 0 0 var(--ping-spread) rgba(255, 193, 7, 0);
+  }
+}
+
+.preset-selector-button.active {
+  background: var(--color-preset-active-bg);
+  border-color: var(--color-preset-active-border);
+  color: var(--color-preset-active-text);
+  cursor: default;
+  transform: translateY(0px);
+  animation: continuous-ping-animation var(--ping-duration) infinite ease-out;
+}
+
+.preset-selector-button.active:disabled {
+  background: var(--color-preset-active-bg);
+  border-color: var(--color-preset-active-border);
+  color: var(--color-preset-active-text);
+  opacity: 0.7;
+  animation: none;
+  box-shadow: none;
+  cursor: not-allowed;
+  pointer-events: none;
+  transform: none;
+}

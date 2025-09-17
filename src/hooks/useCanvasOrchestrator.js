@@ -1,40 +1,38 @@
 // src/hooks/useCanvasOrchestrator.js
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useVisualConfig } from '../context/VisualConfigContext';
 import { useCanvasManagers } from './useCanvasManagers';
 import debounce from '../utils/debounce';
-import { demoAssetMap } from '../assets/DemoLayers/initLayers';
 import { INTERPOLATED_MIDI_PARAMS } from '../config/midiConstants';
 import CanvasManager from '../utils/CanvasManager';
+import { resolveImageUrl } from '../utils/imageDecoder';
 
 const RESIZE_DEBOUNCE_DELAY = 250;
 
-const defaultAssets = {
-    1: demoAssetMap.DEMO_LAYER_4 || '',
-    2: demoAssetMap.DEMO_LAYER_4 || '',
-    3: demoAssetMap.DEMO_LAYER_4 || '',
-};
-
-export function useCanvasOrchestrator({ canvasRefs, configLoadNonce, isInitiallyResolved, pLockState, sideA, sideB, crossfaderValue }) {
+export function useCanvasOrchestrator({ canvasRefs, isTransitioning, isInitiallyResolved, pLockState, sideA, sideB, crossfaderValue, currentActiveLayerConfigs, currentActiveTokenAssignments, activeWorkspaceName }) {
     const isMountedRef = useRef(false);
     const [managersReady, setManagersReady] = useState(false);
-    const [defaultImagesLoaded, setDefaultImagesLoaded] = useState(false);
-    const lastProcessedNonceByOrchestratorRef = useRef(0);
-    const prevLayerConfigsRef = useRef(null);
     
-    const prevSideAConfigRef = useRef(null);
-    const prevSideBConfigRef = useRef(null);
+    // --- FIX: Store the entire side object to compare scene timestamps ---
+    const prevSideARef = useRef(null);
+    const prevSideBRef = useRef(null);
+    // -----------------------------------------------------------------
+    
+    const prevTokenAssignmentsRef = useRef(null);
+
+    const activeWorkspaceNameRef = useRef(activeWorkspaceName);
+    useEffect(() => {
+        activeWorkspaceNameRef.current = activeWorkspaceName;
+    }, [activeWorkspaceName]);
 
     const {
         managerInstancesRef,
         isInitialized: managersInitialized,
-        setLayerImage: setLayerImageInternal,
         applyConfigurations: applyConfigsToManagersInternal,
         stopAllAnimations: stopAllAnimationsInternal,
         restartAllAnimations: restartAllAnimationsInternal,
         forceRedrawAll: forceRedrawAllInternal,
         handleResize: handleResizeInternal,
-    } = useCanvasManagers(canvasRefs, defaultAssets);
+    } = useCanvasManagers(canvasRefs);
 
     const rawHandleResize = useRef(handleResizeInternal);
     const debouncedResizeHandler = useMemo(
@@ -55,85 +53,55 @@ export function useCanvasOrchestrator({ canvasRefs, configLoadNonce, isInitially
             setManagersReady(false);
         }
     }, [managersInitialized, canvasRefs, managersReady, managerInstancesRef]);
-
-    useEffect(() => {
-        if (!managersReady || !isMountedRef.current || defaultImagesLoaded) return;
-        const currentManagers = managerInstancesRef.current;
-        const loadImages = async () => {
-            const promises = Object.keys(currentManagers).map(layerId => {
-                const manager = currentManagers[layerId];
-                const src = defaultAssets[layerId];
-                if (manager && src && typeof manager.setImage === "function") {
-                    return manager.setImage(src).catch((e) => {
-                        if (import.meta.env.DEV) console.error(`[CanvasOrchestrator] Default Image Load FAILED L${layerId}:`, e);
-                        return Promise.reject(e);
-                    });
-                }
-                return Promise.resolve();
-            });
-            try {
-                await Promise.allSettled(promises);
-                if (isMountedRef.current) setDefaultImagesLoaded(true);
-            } catch (e) {
-                 if (import.meta.env.DEV) console.error("[CanvasOrchestrator] Unexpected error in Promise.allSettled for default images:", e);
-            }
-        };
-        loadImages();
-    }, [managersReady, defaultImagesLoaded, managerInstancesRef]);
-
-    const { layerConfigs: currentContextLayerConfigs } = useVisualConfig();
-
-    const resolveImageUrl = useCallback((assignment, layerId) => {
-        const fallbackSrc = defaultAssets[layerId] || defaultAssets['1'];
-        if (!assignment) return fallbackSrc;
-        if (typeof assignment === 'string' && assignment.startsWith("DEMO_LAYER_")) {
-            return demoAssetMap[assignment] || fallbackSrc;
-        }
-        if (typeof assignment === 'object' && assignment !== null && assignment.src) {
-            return assignment.src;
-        }
-        return fallbackSrc;
-    }, []);
-
+    
+    // --- START: THE DEFINITIVE FIX IS IN THIS useEffect ---
     useEffect(() => {
         if (!managersReady || !sideA?.config || !sideB?.config) return;
+        
         const managers = managerInstancesRef.current;
 
         const setupSideA = async () => {
-            const configA = sideA.config;
-            prevSideAConfigRef.current = configA;
+            console.log(`[CanvasOrchestrator] Setting up Deck A with scene: "${sideA.config.name}" from workspace: "${activeWorkspaceNameRef.current}"`);
             const setupPromises = Object.keys(managers).map(async (layerIdStr) => {
                 const manager = managers[layerIdStr];
                 if (!manager) return;
-                const layerConfigA = configA.layers?.[layerIdStr];
-                const tokenA = configA.tokenAssignments?.[layerIdStr];
-                if (!layerConfigA) return;
-                const imageUrlA = resolveImageUrl(tokenA, layerIdStr);
+                const layerConfigA = sideA.config.layers?.[layerIdStr];
+                const tokenA = sideA.config.tokenAssignments?.[layerIdStr];
+                const imageUrlA = resolveImageUrl(tokenA);
                 await manager.setImage(imageUrlA);
-                manager.applyFullConfig(layerConfigA);
+                manager.applyFullConfig(layerConfigA ? JSON.parse(JSON.stringify(layerConfigA)) : null);
             });
             await Promise.all(setupPromises);
         };
 
         const setupSideB = async () => {
-            const configB = sideB.config;
-            prevSideBConfigRef.current = configB;
+            console.log(`[CanvasOrchestrator] Setting up Deck B with scene: "${sideB.config.name}" from workspace: "${activeWorkspaceNameRef.current}"`);
             const setupPromises = Object.keys(managers).map(async (layerIdStr) => {
                 const manager = managers[layerIdStr];
                 if (!manager) return;
-                const layerConfigB = configB.layers?.[layerIdStr];
-                const tokenB = configB.tokenAssignments?.[layerIdStr];
-                if (!layerConfigB) return;
-                const imageUrlB = resolveImageUrl(tokenB, layerIdStr);
-                await manager.setCrossfadeTarget(imageUrlB, layerConfigB);
+                const layerConfigB = sideB.config.layers?.[layerIdStr];
+                const tokenB = sideB.config.tokenAssignments?.[layerIdStr];
+                const imageUrlB = resolveImageUrl(tokenB);
+                await manager.setCrossfadeTarget(imageUrlB, layerConfigB ? JSON.parse(JSON.stringify(layerConfigB)) : null);
             });
             await Promise.all(setupPromises);
         };
+        
+        // **THE FIX**: Compare the unique scene timestamp (`ts`), not the scene name or object reference.
+        if (sideA.config?.ts !== prevSideARef.current?.config?.ts) {
+            setupSideA();
+        }
+        if (sideB.config?.ts !== prevSideBRef.current?.config?.ts) {
+            setupSideB();
+        }
 
-        if (sideA.config !== prevSideAConfigRef.current) setupSideA();
-        if (sideB.config !== prevSideBConfigRef.current) setupSideB();
+        // Update the refs for the next render.
+        prevSideARef.current = sideA;
+        prevSideBRef.current = sideB;
 
-    }, [sideA.config, sideB.config, managersReady, managerInstancesRef, resolveImageUrl]);
+    }, [sideA, sideB, managersReady, managerInstancesRef]);
+    // --- END: THE DEFINITIVE FIX ---
+
 
     useEffect(() => {
         if (!managersReady) return;
@@ -142,102 +110,94 @@ export function useCanvasOrchestrator({ canvasRefs, configLoadNonce, isInitially
             managers[layerIdStr]?.setCrossfadeValue(crossfaderValue);
         }
     }, [crossfaderValue, managersReady, managerInstancesRef]);
-
+    
     useEffect(() => {
-        if (crossfaderValue > 0.0001 && crossfaderValue < 0.9999) {
+        if (!managersReady || !isInitiallyResolved || !currentActiveTokenAssignments) {
             return;
         }
-
-        if (!isInitiallyResolved || pLockState === 'playing' || !managersReady || !currentContextLayerConfigs || !isMountedRef.current) return;
-        if (configLoadNonce > lastProcessedNonceByOrchestratorRef.current) {
-            lastProcessedNonceByOrchestratorRef.current = configLoadNonce;
+    
+        if (JSON.stringify(prevTokenAssignmentsRef.current) === JSON.stringify(currentActiveTokenAssignments)) {
             return;
         }
-
+    
         const managers = managerInstancesRef.current;
-        const prevConfigs = prevLayerConfigsRef.current;
-        
         const activeDeckIsA = crossfaderValue < 0.5;
-
-        for (const layerIdStr of ['1', '2', '3']) {
-            const newConfig = currentContextLayerConfigs[layerIdStr];
-            const oldConfig = prevConfigs?.[layerIdStr];
+    
+        Object.keys(managers).forEach(layerIdStr => {
             const manager = managers[layerIdStr];
-            if (!manager || !newConfig) continue;
-
-            Object.keys(newConfig).forEach(key => {
-                if (JSON.stringify(newConfig[key]) !== JSON.stringify(oldConfig?.[key])) {
-                    if (activeDeckIsA) {
-                        if (INTERPOLATED_MIDI_PARAMS.includes(key)) manager.snapVisualProperty?.(key, newConfig[key]);
-                        else manager.updateConfigProperty?.(key, newConfig[key]);
-                    } else {
-                        manager.updateConfigBProperty?.(key, newConfig[key]);
-                    }
+            if (!manager) return;
+    
+            const newAssignment = currentActiveTokenAssignments[layerIdStr];
+            const oldAssignment = prevTokenAssignmentsRef.current?.[layerIdStr];
+    
+            if (JSON.stringify(newAssignment) !== JSON.stringify(oldAssignment)) {
+                const imageUrl = resolveImageUrl(newAssignment);
+                
+                if (activeDeckIsA) {
+                    manager.setImage(imageUrl).catch(e => console.error(`[Orchestrator] Error setting image for layer ${layerIdStr} on Deck A:`, e));
+                } else {
+                    const configBForLayer = sideB?.config?.layers?.[layerIdStr];
+                    const configBCopy = configBForLayer ? JSON.parse(JSON.stringify(configBForLayer)) : null;
+                    manager.setCrossfadeTarget(imageUrl, configBCopy).catch(e => console.error(`[Orchestrator] Error setting crossfade target for layer ${layerIdStr} on Deck B:`, e));
                 }
-            });
-        }
-        prevLayerConfigsRef.current = JSON.parse(JSON.stringify(currentContextLayerConfigs));
-    }, [currentContextLayerConfigs, managersReady, configLoadNonce, isInitiallyResolved, pLockState, managerInstancesRef, crossfaderValue]);
+            }
+        });
+    
+        prevTokenAssignmentsRef.current = JSON.parse(JSON.stringify(currentActiveTokenAssignments));
+    
+    }, [managersReady, isInitiallyResolved, currentActiveTokenAssignments, managerInstancesRef, crossfaderValue, sideB]);
 
-    // --- START MODIFICATION: Make setCanvasLayerImage crossfader-aware using existing methods ---
     const setCanvasLayerImage = useCallback((layerId, src) => {
         if (!managersReady) return Promise.reject(new Error("Managers not ready"));
-        
         const manager = managerInstancesRef.current?.[String(layerId)];
-        if (!manager) {
-            return Promise.reject(new Error(`Manager not found for layer ${layerId}`));
-        }
+        if (!manager) return Promise.reject(new Error(`Manager not found for layer ${layerId}`));
 
         if (crossfaderValue < 0.5) {
-            // Target Deck A when fader is on the left
             return manager.setImage(src);
         } else {
-            // Target Deck B when fader is on the right
             const configBForLayer = sideB?.config?.layers?.[String(layerId)];
-            if (configBForLayer) {
-                // Use existing method with the new image src and the OLD config for Deck B
-                return manager.setCrossfadeTarget(src, configBForLayer);
-            } else {
-                return Promise.reject(new Error(`Config for Deck B, layer ${layerId} not found.`));
-            }
+            const configBCopy = configBForLayer ? JSON.parse(JSON.stringify(configBForLayer)) : null;
+            return manager.setCrossfadeTarget(src, configBCopy);
         }
     }, [managersReady, managerInstancesRef, crossfaderValue, sideB]);
-    // --- END MODIFICATION ---
+    
+    const transitionToScene = useCallback(async (newSceneConfig) => {
+        if (!managersReady || !newSceneConfig || !newSceneConfig.layers || !newSceneConfig.tokenAssignments) return;
+        
+        const transitionPromises = Object.keys(managerInstancesRef.current).map(layerIdStr => {
+            const manager = managerInstancesRef.current[layerIdStr];
+            const layerConfig = newSceneConfig.layers[layerIdStr];
+            const tokenAssignment = newSceneConfig.tokenAssignments[layerIdStr];
+            const imageUrl = resolveImageUrl(tokenAssignment);
+            if (manager) return manager.transitionTo(imageUrl, layerConfig);
+            return Promise.resolve();
+        });
+        await Promise.all(transitionPromises);
+    }, [managersReady, managerInstancesRef]);
 
     const applyTokenAssignmentsToManagers = useCallback(async (assignments) => {
-        if (!isMountedRef.current || !managersReady || !managerInstancesRef.current || !assignments) return;
-        const currentManagers = managerInstancesRef.current;
+        if (!isMountedRef.current || !managersReady || !managerInstancesRef.current) return;
         
+        const safeAssignments = assignments || {};
+        const currentManagers = managerInstancesRef.current;
         const activeDeckIsA = crossfaderValue < 0.5;
 
         const imageLoadPromises = Object.keys(currentManagers).map(layerId => {
             const manager = currentManagers[layerId];
             if (!manager) return Promise.resolve();
-            const assignmentValue = assignments[layerId];
-            const defaultSrc = defaultAssets[layerId];
-            let srcToApply = defaultSrc;
-            if (typeof assignmentValue === 'string' && assignmentValue.startsWith("DEMO_LAYER_")) {
-                srcToApply = demoAssetMap[assignmentValue] || defaultSrc;
-            } else if (typeof assignmentValue === 'object' && assignmentValue?.src) {
-                srcToApply = assignmentValue.src;
-            }
 
+            const assignmentValue = safeAssignments[layerId];
+            const srcToApply = resolveImageUrl(assignmentValue);
+            
             let imageSetPromise;
             if (activeDeckIsA) {
                 imageSetPromise = manager.setImage(srcToApply);
             } else {
                 const configBForLayer = sideB?.config?.layers?.[String(layerId)];
-                if (configBForLayer) {
-                    imageSetPromise = manager.setCrossfadeTarget(srcToApply, configBForLayer);
-                } else {
-                    // Fallback to setting Deck A's image if B's config is missing, though this is less ideal.
-                    imageSetPromise = manager.setImage(srcToApply);
-                }
+                const configBCopy = configBForLayer ? JSON.parse(JSON.stringify(configBForLayer)) : null;
+                imageSetPromise = manager.setCrossfadeTarget(srcToApply, configBCopy);
             }
-            
-            return imageSetPromise.catch(() => 
-                activeDeckIsA ? manager.setImage(defaultSrc) : manager.setCrossfadeTarget(defaultSrc, sideB?.config?.layers?.[String(layerId)] || {})
-            );
+            return imageSetPromise.catch(e => console.error(`Error applying token to layer ${layerId}:`, e));
         });
         await Promise.allSettled(imageLoadPromises);
     }, [managersReady, managerInstancesRef, crossfaderValue, sideB]);
@@ -245,31 +205,17 @@ export function useCanvasOrchestrator({ canvasRefs, configLoadNonce, isInitially
     const applyConfigurationsToManagers = useCallback((configs) => {
         if (!managersReady) return;
         applyConfigsToManagersInternal(configs);
-        prevLayerConfigsRef.current = configs ? JSON.parse(JSON.stringify(configs)) : null;
-        lastProcessedNonceByOrchestratorRef.current = configLoadNonce;
-    }, [managersReady, applyConfigsToManagersInternal, configLoadNonce]);
+    }, [managersReady, applyConfigsToManagersInternal]);
 
     const stopCanvasAnimations = useCallback(() => stopAllAnimationsInternal(), [stopAllAnimationsInternal]);
-    const restartCanvasAnimations = useCallback(() => {
-        if (managersReady) restartAllAnimationsInternal();
-    }, [managersReady, restartAllAnimationsInternal]);
-    const redrawAllCanvases = useCallback(async (configs = null) => {
-        if (!managersReady) return false;
-        return forceRedrawAllInternal(configs);
-    }, [managersReady, forceRedrawAllInternal]);
+    const restartCanvasAnimations = useCallback(() => { if (managersReady) restartAllAnimationsInternal(); }, [managersReady, restartAllAnimationsInternal]);
+    const redrawAllCanvases = useCallback(async (configs = null) => { if (!managersReady) return false; return forceRedrawAllInternal(configs); }, [managersReady, forceRedrawAllInternal]);
     const handleCanvasResize = useCallback(() => debouncedResizeHandler(), [debouncedResizeHandler]);
-
-    const applyPlaybackValue = useCallback((layerId, key, value) => {
-        managerInstancesRef.current[layerId]?.applyPlaybackValue(key, value);
-    }, [managerInstancesRef]);
-
-    const clearAllPlaybackValues = useCallback(() => {
-        Object.values(managerInstancesRef.current).forEach(m => m.clearPlaybackValues());
-    }, [managerInstancesRef]);
+    const applyPlaybackValue = useCallback((layerId, key, value) => { managerInstancesRef.current[layerId]?.applyPlaybackValue(key, value); }, [managerInstancesRef]);
+    const clearAllPlaybackValues = useCallback(() => { Object.values(managerInstancesRef.current).forEach(m => m.clearPlaybackValues()); }, [managerInstancesRef]);
 
     return useMemo(() => ({
         managersReady,
-        defaultImagesLoaded,
         managerInstancesRef,
         applyConfigurationsToManagers,
         applyTokenAssignmentsToManagers,
@@ -280,10 +226,12 @@ export function useCanvasOrchestrator({ canvasRefs, configLoadNonce, isInitially
         setCanvasLayerImage,
         applyPlaybackValue,
         clearAllPlaybackValues,
+        transitionToScene,
     }), [
-        managersReady, defaultImagesLoaded, managerInstancesRef,
+        managersReady, managerInstancesRef,
         applyConfigurationsToManagers, applyTokenAssignmentsToManagers,
         stopCanvasAnimations, restartCanvasAnimations, redrawAllCanvases,
-        handleCanvasResize, setCanvasLayerImage, applyPlaybackValue, clearAllPlaybackValues
+        handleCanvasResize, setCanvasLayerImage, applyPlaybackValue, clearAllPlaybackValues,
+        transitionToScene
     ]);
 }

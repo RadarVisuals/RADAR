@@ -4,16 +4,17 @@ import PropTypes from "prop-types";
 
 import "./ToolbarStyles/TopRightControls.css";
 import {
-  whitelistIcon, // <-- BROUGHT BACK THIS ICON
+  whitelistIcon,
   enlargeIcon,
   learnIcon,
   eyeIcon,
   eyeopenIcon,
+  parallaxIcon,
 } from "../../assets";
 
 const TopRightControls = ({
-  isRadarProjectAdmin = false, // <-- ADDED PROP
-  onWhitelistClick, // <-- ADDED PROP
+  isRadarProjectAdmin = false,
+  onWhitelistClick,
   showInfo = true,
   showToggleUI = true,
   showEnhancedView = true,
@@ -21,6 +22,8 @@ const TopRightControls = ({
   onToggleUI,
   onEnhancedView,
   isUiVisible = true,
+  isParallaxEnabled,
+  onToggleParallax,
 }) => {
   return (
     <div className={`top-right-controls-container ${!isUiVisible ? "ui-hidden" : ""}`}>
@@ -39,7 +42,6 @@ const TopRightControls = ({
         </button>
       )}
 
-      {/* --- START MODIFICATION: Admin-only Whitelist Button --- */}
       {isRadarProjectAdmin && isUiVisible && (
         <button
           className="toolbar-icon"
@@ -54,7 +56,21 @@ const TopRightControls = ({
           />
         </button>
       )}
-      {/* --- END MODIFICATION --- */}
+
+      {isUiVisible && (
+        <button
+          className={`toolbar-icon ${isParallaxEnabled ? "active" : ""}`}
+          onClick={onToggleParallax}
+          title={isParallaxEnabled ? "Disable Parallax Effect" : "Enable Parallax Effect"}
+          aria-label={isParallaxEnabled ? "Disable Parallax Effect" : "Enable Parallax Effect"}
+        >
+          <img
+            src={parallaxIcon}
+            alt="Toggle Parallax"
+            className="icon-image"
+          />
+        </button>
+      )}
 
       {showInfo && isUiVisible && (
         <button
@@ -95,6 +111,8 @@ TopRightControls.propTypes = {
   onToggleUI: PropTypes.func,
   onEnhancedView: PropTypes.func,
   isUiVisible: PropTypes.bool,
+  isParallaxEnabled: PropTypes.bool,
+  onToggleParallax: PropTypes.func,
 };
 
 export default TopRightControls;

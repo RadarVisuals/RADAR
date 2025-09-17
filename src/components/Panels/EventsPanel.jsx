@@ -2,28 +2,20 @@
 import React, { useState, useCallback, useEffect, useMemo } from "react";
 import PropTypes from "prop-types";
 
-import Panel from "./Panel"; // Local component
-import { EVENT_TYPE_MAP } from "../../config/global-config"; // Local config
-import { useToast } from "../../context/ToastContext"; // Local context
-import { usePresetManagement } from "../../context/PresetManagementContext"; // Refactored to use this
+import Panel from "./Panel";
+import { EVENT_TYPE_MAP } from "../../config/global-config";
+import { useToast } from "../../context/ToastContext";
+import { useSetManagement } from "../../context/SetManagementContext";
 
-import "./PanelStyles/Eventspanel.css"; // Local styles
+import "./PanelStyles/Eventspanel.css";
 
-/**
- * Generates a sorted list of event type options for a dropdown selector.
- * It uses EVENT_TYPE_MAP as the sole source.
- * The option's 'value' will be the typeId (hex string), and 'label' will be human-readable.
- * @returns {Array<{value: string, label: string}>} A sorted array of event type options.
- */
 const generateEventOptions = () => {
     const optionsMap = new Map();
-    // Add options from EVENT_TYPE_MAP (which maps readable names to typeIds)
     Object.keys(EVENT_TYPE_MAP).forEach((readableKey) => {
-        const typeId = EVENT_TYPE_MAP[readableKey]; // typeId is the value for the option
-        // Use typeId as the unique key for the map to prevent duplicates if any typeId were mapped multiple times (though unlikely)
+        const typeId = EVENT_TYPE_MAP[readableKey];
         if (!optionsMap.has(typeId)) {
             optionsMap.set(typeId, {
-                value: typeId, // The actual typeId from the map
+                value: typeId,
                 label: readableKey.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()),
             });
         }
@@ -32,36 +24,6 @@ const generateEventOptions = () => {
     return Array.from(optionsMap.values()).sort((a, b) => a.label.localeCompare(b.label));
 };
 
-/**
- * @typedef {object} ReactionConfig
- * @property {string} event - The event type identifier (this will be the typeId/hex string).
- * @property {string} layer - The target layer for the effect (e.g., 'global', '1').
- * @property {string} effect - The type of visual effect (e.g., 'color_overlay').
- * @property {object} [config] - Configuration specific to the `effect` type.
- */
-
-/**
- * @typedef {Object.<string, ReactionConfig>} ReactionsMap
- * A map where keys are event type identifiers (typeIds/hex strings) and values are `ReactionConfig` objects.
- */
-
-/**
- * @typedef {object} EventsPanelProps
- * @property {() => void} onClose - Callback to close the panel.
- * @property {boolean} [readOnly=false] - If true, UI controls for modifying reactions are disabled.
- * @property {(effectConfig: object) => Promise<string | null>} [onPreviewEffect] - Callback to trigger a preview of the configured visual effect.
- */
-
-/**
- * EventsPanel: A UI component for configuring visual reactions to blockchain events.
- * Users can select an event type, choose a visual effect (currently 'color_overlay'),
- * configure the effect's parameters (color, pulse, duration), preview the effect,
- * and stage the reaction. Staged reactions are then saved globally via the main Save Panel.
- * The panel also displays currently saved global reactions for the profile.
- *
- * @param {EventsPanelProps} props - The component's props.
- * @returns {JSX.Element} The rendered EventsPanel component.
- */
 const EventsPanel = ({
   onClose,
   readOnly = false,
@@ -69,18 +31,18 @@ const EventsPanel = ({
 }) => {
   const { addToast } = useToast();
   const {
-    stagedWorkspace,
+    stagedActiveWorkspace,
     updateGlobalEventReactions,
     deleteGlobalEventReaction,
-  } = usePresetManagement();
+  } = useSetManagement();
 
-  const reactions = useMemo(() => stagedWorkspace?.globalEventReactions || {}, [stagedWorkspace]);
+  const reactions = useMemo(() => stagedActiveWorkspace?.globalEventReactions || {}, [stagedActiveWorkspace]);
   const onSaveReaction = updateGlobalEventReactions;
   const onRemoveReaction = deleteGlobalEventReaction;
 
   const allEventOptions = useMemo(() => generateEventOptions(), []);
 
-  const [selectedEvent, setSelectedEvent] = useState(allEventOptions[0]?.value || ""); // Value will be typeId
+  const [selectedEvent, setSelectedEvent] = useState(allEventOptions[0]?.value || "");
   const [selectedEffect, setSelectedEffect] = useState("color_overlay");
   const [effectConfig, setEffectConfig] = useState({
     color: "rgba(255, 165, 0, 0.4)", pulseCount: 2, duration: 2500,
@@ -89,7 +51,7 @@ const EventsPanel = ({
   const [previewStatus, setPreviewStatus] = useState("");
 
   useEffect(() => {
-    const existingReaction = reactions[selectedEvent]; // selectedEvent is now typeId
+    const existingReaction = reactions[selectedEvent];
     if (existingReaction) {
       setSelectedEffect(existingReaction.effect || "color_overlay");
       if (existingReaction.effect === "color_overlay" && existingReaction.config) {
@@ -142,11 +104,11 @@ const EventsPanel = ({
   const handleStageLocally = useCallback(() => {
     if (readOnly) { addToast("Read-only mode: Cannot stage changes.", "warning"); return; }
     if (typeof onSaveReaction !== "function") { addToast("Error: Staging function unavailable.", "error"); return; }
-    if (!selectedEvent) { addToast("Please select an event type.", "warning"); return; } // selectedEvent is typeId
+    if (!selectedEvent) { addToast("Please select an event type.", "warning"); return; }
 
-    const reactionId = selectedEvent; // reactionId is the typeId
+    const reactionId = selectedEvent;
     const reactionConfigToStage = {
-      event: selectedEvent, // Store the event typeId
+      event: selectedEvent,
       layer: "global",
       effect: selectedEffect,
       config: selectedEffect === "color_overlay" ? {
@@ -157,7 +119,7 @@ const EventsPanel = ({
     };
 
     try {
-      onSaveReaction(reactionId, reactionConfigToStage); // Pass typeId as reactionId
+      onSaveReaction(reactionId, reactionConfigToStage);
       const eventLabel = allEventOptions.find(opt => opt.value === selectedEvent)?.label || selectedEvent;
       addToast(`Reaction for '${eventLabel}' staged. Save globally via Save Panel.`, "success");
     } catch (error) {
@@ -232,9 +194,7 @@ const EventsPanel = ({
           <label htmlFor="event-select">Event Type</label>
           <select id="event-select" value={selectedEvent} onChange={handleEventChange} className="custom-select" disabled={readOnly} aria-label="Select Event Type">
             {allEventOptions.map((opt) => (
-              // --- MODIFIED LINE: Comment removed ---
               <option key={opt.value} value={opt.value}> {opt.label} </option>
-              // ------------------------------------
             ))}
           </select>
         </div>
@@ -279,7 +239,7 @@ const EventsPanel = ({
           <div className="no-reactions">No global reactions currently saved for this profile.</div>
         ) : (
           <div className="reactions-list">
-            {Object.entries(reactions).map(([typeId, reaction]) => { // Key is typeId
+            {Object.entries(reactions).map(([typeId, reaction]) => {
               const eventLabel = allEventOptions.find((opt) => opt.value === typeId)?.label || typeId.slice(0,10)+"...";
               return (
                 <div key={typeId} className="reaction-item" id={'reaction-' + typeId} >
@@ -295,7 +255,7 @@ const EventsPanel = ({
                   {!readOnly && typeof onRemoveReaction === 'function' && (
                       <button
                           className="btn-icon delete-reaction"
-                          onClick={() => handleRemoveStagedReaction(typeId)} // Use typeId
+                          onClick={() => handleRemoveStagedReaction(typeId)}
                           title={`Unstage reaction for ${eventLabel}`}
                           aria-label={`Unstage reaction for ${eventLabel}`}
                       >

@@ -2,12 +2,14 @@
 import { BLEND_MODES } from '../config/global-config';
 import ValueInterpolator from './ValueInterpolator';
 import { sliderParams } from '../components/Panels/EnhancedControlPanel';
+import { getDecodedImage } from './imageDecoder';
 
 const SETUP_CANVAS_POLL_INTERVAL = 100;
 const SETUP_CANVAS_POLL_TIMEOUT = 3000;
 const MAX_TOTAL_OFFSET = 10000;
 const DELTA_TIME_BUFFER_SIZE = 5;
-const MIDI_INTERPOLATION_DURATION = 200; // ms for smooth MIDI takeover
+
+const MIDI_INTERPOLATION_DURATION = 300; 
 const MAX_DELTA_TIME = 1 / 30;
 
 const lerp = (start, end, t) => {
@@ -19,7 +21,7 @@ class CanvasManager {
     canvas = null;
     ctx = null;
     layerId;
-    imageA = null;
+    imageA = null; // Will now hold an ImageBitmap
     configA;
     animationFrameId = null;
     lastTimestamp = 0;
@@ -48,13 +50,21 @@ class CanvasManager {
 
     isTransitioning = false;
     transitionStartTime = 0;
-    transitionDuration = 1000;
+    transitionDuration = 500;
     outgoingImage = null;
     outgoingConfig = null;
+    outgoingImageSrc = null; 
+    outgoingContinuousRotationAngle = 0;
+    outgoingDriftState = null;
 
-    imageB = null;
+    imageB = null; // Will now hold an ImageBitmap
     configB = null;
     crossfadeValue = 0.0;
+    
+    parallaxOffset = { x: 0, y: 0 }; 
+    renderedParallaxOffset = { x: 0, y: 0 };
+    parallaxFactor = 1;
+    internalParallaxFactor = 0;
 
     constructor(canvas, layerId) {
         if (!canvas || !(canvas instanceof HTMLCanvasElement)) {
@@ -69,6 +79,11 @@ class CanvasManager {
             throw new Error(`Failed to get 2D context for Layer ${layerId}: ${e.message}`);
         }
         this.layerId = layerId;
+        
+        if (layerId === '1') { this.parallaxFactor = 10; this.internalParallaxFactor = 10; }
+        if (layerId === '2') { this.parallaxFactor = 25; this.internalParallaxFactor = 20; }
+        if (layerId === '3') { this.parallaxFactor = 50; this.internalParallaxFactor =30; }
+
         this.configA = this.getDefaultConfig();
         this.lastDPR = 1;
         this.playbackValues = {};
@@ -88,29 +103,39 @@ class CanvasManager {
 
         this.animationLoop = this.animationLoop.bind(this);
     }
+    
+    setParallaxOffset(x, y) {
+        this.parallaxOffset.x = x;
+        this.parallaxOffset.y = y;
+    }
 
     async transitionTo(newImageSrc, newConfig) {
         if (this.isTransitioning) {
-            if (import.meta.env.DEV) console.warn(`[CM L${this.layerId}] Already transitioning, new request ignored.`);
+            this.isTransitioning = false;
+        }
+
+        this.outgoingImage = this.imageA;
+        this.outgoingConfig = this.getConfigData();
+        this.outgoingImageSrc = this.lastImageSrc; 
+        this.outgoingContinuousRotationAngle = this.continuousRotationAngleA;
+        this.outgoingDriftState = { ...this.driftStateA };
+
+        try {
+            await this.setImage(newImageSrc);
+            this.applyFullConfig(newConfig);
+        } catch (error) {
+            if (import.meta.env.DEV) console.error(`[CM L${this.layerId}] Failed to load new image/config for transition:`, error);
+            this.imageA = this.outgoingImage;
+            this.applyFullConfig(this.outgoingConfig);
+            this.outgoingImage = null;
+            this.outgoingConfig = null;
+            this.outgoingImageSrc = null; 
+            this.outgoingContinuousRotationAngle = 0;
+            this.outgoingDriftState = null;
             return;
         }
 
         this.isTransitioning = true;
-        
-        this.outgoingImage = this.imageA;
-        this.outgoingConfig = this.getConfigData();
-
-        try {
-            await this.setImage(newImageSrc); 
-        } catch (error) {
-            if (import.meta.env.DEV) console.error(`[CM L${this.layerId}] Failed to load new image for transition:`, error);
-            this.isTransitioning = false;
-            this.imageA = this.outgoingImage; 
-            return;
-        }
-        
-        this.applyFullConfig(newConfig);
-
         this.transitionStartTime = performance.now();
 
         return new Promise(resolve => {
@@ -118,55 +143,43 @@ class CanvasManager {
                 this.isTransitioning = false;
                 this.outgoingImage = null;
                 this.outgoingConfig = null;
+                this.outgoingImageSrc = null; 
+                this.outgoingContinuousRotationAngle = 0;
+                this.outgoingDriftState = null;
                 resolve();
             }, this.transitionDuration);
         });
     }
 
     async setCrossfadeTarget(imageSrc, config) {
-        return new Promise((resolve, reject) => {
-            if (!imageSrc || typeof imageSrc !== 'string') {
-                this.imageB = null;
-                this.configB = config || null;
-                return reject(new Error("Invalid image source for crossfade target"));
+        if (this.isDestroyed) throw new Error("Manager destroyed");
+        
+        if (!imageSrc || typeof imageSrc !== 'string') {
+            this.imageB = null; this.configB = config || null;
+            return;
+        }
+        
+        try {
+            const decodedBitmap = await getDecodedImage(imageSrc);
+            if (this.isDestroyed) return;
+            if (decodedBitmap.width === 0 || decodedBitmap.height === 0) {
+                 this.imageB = null; this.configB = config;
+                 throw new Error(`Loaded crossfade image bitmap has zero dimensions: ${imageSrc.substring(0, 100)}`);
             }
-
-            const img = new Image();
-            if (imageSrc.startsWith('http') && !imageSrc.startsWith(window.location.origin)) {
-                img.crossOrigin = "anonymous";
-            }
-            img.onload = () => {
-                if (this.isDestroyed) return resolve();
-                if (img.naturalWidth === 0 || img.naturalHeight === 0) {
-                    this.imageB = null;
-                    this.configB = config;
-                    reject(new Error(`Loaded crossfade image has zero dimensions: ${imageSrc.substring(0, 100)}`));
-                    return;
+            this.imageB = decodedBitmap;
+            this.configB = config;
+            Object.keys(this.interpolatorsB).forEach(key => {
+                const interpolator = this.interpolatorsB[key];
+                const value = this.configB?.[key];
+                if (interpolator && value !== undefined) {
+                    interpolator.snap(value);
                 }
-                this.imageB = img;
-                this.configB = config;
-
-                Object.keys(this.interpolatorsB).forEach(key => {
-                    const interpolator = this.interpolatorsB[key];
-                    const value = this.configB?.[key];
-                    if (interpolator && value !== undefined) {
-                        interpolator.snap(value);
-                    }
-                });
-
-                this.continuousRotationAngleB = 0;
-                this.driftStateB = { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
-                resolve();
-            };
-            img.onerror = (errEvent) => {
-                if (this.isDestroyed) return reject(new Error("Manager destroyed during crossfade image load"));
-                this.imageB = null;
-                this.configB = config;
-                const errorMsg = typeof errEvent === 'string' ? errEvent : (errEvent?.type || 'Unknown image load error');
-                reject(new Error(`Failed to load crossfade image: ${imageSrc.substring(0, 50)}... Error: ${errorMsg}`));
-            };
-            img.src = imageSrc;
-        });
+            });
+        } catch (error) {
+            if (this.isDestroyed) throw new Error("Manager destroyed during crossfade image load");
+            this.imageB = null; this.configB = config;
+            throw error;
+        }
     }
 
     setCrossfadeValue(value) {
@@ -183,6 +196,12 @@ class CanvasManager {
         defaultConfig.enabled = true;
         defaultConfig.blendMode = 'normal';
         defaultConfig.direction = 1;
+        // Add default FX config here
+        defaultConfig.fx = {
+            activeFilter: 'none',
+            intensity: 0,
+            grain: 0.02
+        };
         return defaultConfig;
     }
 
@@ -293,13 +312,13 @@ class CanvasManager {
 
         this.configA = mergedConfig;
         
-        this.driftStateA = { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
+        this.continuousRotationAngleA = this.continuousRotationAngleB;
+        this.driftStateA = { ...this.driftStateB };
 
         Object.keys(this.interpolators).forEach(key => {
             this.interpolators[key]?.snap(this.configA[key]);
         });
-        this.continuousRotationAngleA = 0;
-
+        
         this.handleEnabledToggle(this.configA.enabled);
     }
     
@@ -443,36 +462,32 @@ class CanvasManager {
 
     async setImage(src) {
         if (this.isDestroyed) return Promise.reject(new Error("Manager destroyed"));
-        return new Promise((resolve, reject) => {
-            if (!src || typeof src !== 'string') {
-                this.imageA = null; this.lastImageSrc = null;
-                return reject(new Error("Invalid image source"));
-            }
-            if (src === this.lastImageSrc && this.imageA?.complete && this.imageA?.naturalWidth > 0) {
-                return resolve();
-            }
+        
+        if (!src || typeof src !== 'string') {
+            this.imageA = null;
+            this.lastImageSrc = null;
+            return Promise.resolve();
+        }
 
-            const img = new Image();
-            if (src.startsWith('http') && !src.startsWith(window.location.origin)) {
-                img.crossOrigin = "anonymous";
-            }
-            img.onload = () => {
-                if (this.isDestroyed) return resolve();
-                if (img.naturalWidth === 0 || img.naturalHeight === 0) {
-                    this.imageA = null; this.lastImageSrc = null;
-                    reject(new Error(`Loaded image has zero dimensions: ${src.substring(0, 100)}`)); return;
-                }
-                this.imageA = img; this.lastImageSrc = src;
-                resolve();
-            };
-            img.onerror = (errEvent) => {
-                if (this.isDestroyed) return reject(new Error("Manager destroyed during image load error"));
+        if (src === this.lastImageSrc && this.imageA) {
+            return Promise.resolve();
+        }
+
+        try {
+            const decodedBitmap = await getDecodedImage(src);
+            if (this.isDestroyed) return;
+            if (decodedBitmap.width === 0 || decodedBitmap.height === 0) {
                 this.imageA = null; this.lastImageSrc = null;
-                const errorMsg = typeof errEvent === 'string' ? errEvent : (errEvent?.type || 'Unknown image load error');
-                reject(new Error(`Failed to load image: ${src.substring(0, 50)}... Error: ${errorMsg}`));
-            };
-            img.src = src;
-        });
+                throw new Error(`Loaded image bitmap has zero dimensions: ${src.substring(0, 100)}`);
+            }
+            this.imageA = decodedBitmap;
+            this.lastImageSrc = src;
+        } catch (error) {
+            if (this.isDestroyed) return;
+            this.imageA = null; this.lastImageSrc = null;
+            console.error(`[CM L${this.layerId}] setImage failed:`, error.message);
+            throw error;
+        }
     }
     
     setAudioFrequencyFactor(factor) { if (this.isDestroyed) return; this.audioFrequencyFactor = Number(factor) || 1.0; }
@@ -480,29 +495,52 @@ class CanvasManager {
     resetAudioModifications() { if (this.isDestroyed) return; this.audioFrequencyFactor = 1.0; this.beatPulseFactor = 1.0; this.beatPulseEndTime = 0; }
     getConfigData() { return JSON.parse(JSON.stringify(this.configA)); }
     
-    _drawFrame(timestamp, image, frameConfig, continuousRotationAngle, driftState) {
+    _drawFrame(image, frameConfig, continuousRotationAngle, driftState) {
         if (!image || !frameConfig) return;
+    
+        const fxConfig = frameConfig.fx;
+        const activeFilterId = fxConfig?.activeFilter;
+    
+        if (activeFilterId && activeFilterId !== 'none') {
+            const filterElement = document.getElementById(activeFilterId);
+            
+            if (filterElement) {
+                if (activeFilterId === 'filter-datamosh') {
+                    const displacementMap = filterElement.querySelector('feDisplacementMap');
+                    if (displacementMap) {
+                        const intensity = fxConfig.intensity || 0;
+                        displacementMap.setAttribute('scale', String(intensity));
+                    }
+                }
+                this.ctx.filter = `url(#${activeFilterId})`;
+            } else {
+                this.ctx.filter = 'none';
+            }
+        } else {
+            this.ctx.filter = 'none';
+        }
 
         const width = this.lastValidWidth; const height = this.lastValidHeight;
         const halfWidth = Math.floor(width / 2); const halfHeight = Math.floor(height / 2);
         const remainingWidth = width - halfWidth; const remainingHeight = height - halfHeight;
-
+    
         const currentSize = frameConfig.size;
         const currentX = frameConfig.xaxis;
         const currentY = frameConfig.yaxis;
         const baseAngle = frameConfig.angle;
         
-        const imgNaturalWidth = image.naturalWidth; const imgNaturalHeight = image.naturalHeight;
+        const imgNaturalWidth = image.width; const imgNaturalHeight = image.height;
         const imgAspectRatio = (imgNaturalWidth > 0 && imgNaturalHeight > 0) ? imgNaturalWidth / imgNaturalHeight : 1;
-
+    
         let finalDrawSize = currentSize * this.audioFrequencyFactor;
+        const timestamp = performance.now();
         if (this.beatPulseEndTime && timestamp < this.beatPulseEndTime) {
             finalDrawSize *= this.beatPulseFactor;
         } else if (this.beatPulseEndTime && timestamp >= this.beatPulseEndTime) {
             this.beatPulseFactor = 1.0; this.beatPulseEndTime = 0;
         }
         finalDrawSize = Math.max(0.01, finalDrawSize);
-
+    
         let imgDrawWidth = halfWidth * finalDrawSize;
         let imgDrawHeight = imgDrawWidth / imgAspectRatio;
         if (imgAspectRatio > 0 && imgDrawHeight > halfHeight * finalDrawSize) {
@@ -516,36 +554,40 @@ class CanvasManager {
         const driftX = driftState?.x ?? 0;
         const driftY = driftState?.y ?? 0;
         
+        const internalParallaxX = this.renderedParallaxOffset.x * this.internalParallaxFactor;
+        const internalParallaxY = this.renderedParallaxOffset.y * this.internalParallaxFactor;
+
         const offsetX = currentX / 10;
         const offsetY = currentY / 10;
+        
+        const finalCenterX_TL = Math.max(-MAX_TOTAL_OFFSET, Math.min(MAX_TOTAL_OFFSET, halfWidth / 2 + offsetX + driftX + internalParallaxX));
+        const finalCenterY_TL = Math.max(-MAX_TOTAL_OFFSET, Math.min(MAX_TOTAL_OFFSET, halfHeight / 2 + offsetY + driftY + internalParallaxY));
+
         const finalAngle = baseAngle + continuousRotationAngle;
         const angleRad = (finalAngle % 360) * Math.PI / 180;
-
-        const finalCenterX_TL = Math.max(-MAX_TOTAL_OFFSET, Math.min(MAX_TOTAL_OFFSET, halfWidth / 2 + offsetX + driftX));
-        const finalCenterY_TL = Math.max(-MAX_TOTAL_OFFSET, Math.min(MAX_TOTAL_OFFSET, halfHeight / 2 + offsetY + driftY));
-
+    
         const drawImageWithRotation = () => {
              try {
                 this.ctx.save();
                 this.ctx.rotate(angleRad);
-                if (image?.complete && image?.naturalWidth > 0) {
+                if (image) {
                     this.ctx.drawImage(image, 0, 0, imgNaturalWidth, imgNaturalHeight, -imgDrawWidth / 2, -imgDrawHeight / 2, imgDrawWidth, imgDrawHeight);
                 }
                 this.ctx.restore();
             } catch (e) { if (import.meta.env.DEV) console.error(`[CM L${this.layerId}] draw: drawImage error:`, e); }
         };
-
+    
         this.ctx.save(); this.ctx.beginPath(); this.ctx.rect(0,0,halfWidth,halfHeight); this.ctx.clip();
         this.ctx.translate(finalCenterX_TL, finalCenterY_TL); drawImageWithRotation(); this.ctx.restore();
-
+    
         this.ctx.save(); this.ctx.beginPath(); this.ctx.rect(halfWidth,0,remainingWidth,halfHeight); this.ctx.clip();
         this.ctx.translate(width,0); this.ctx.scale(-1,1);
         this.ctx.translate(finalCenterX_TL, finalCenterY_TL); drawImageWithRotation(); this.ctx.restore();
-
+    
         this.ctx.save(); this.ctx.beginPath(); this.ctx.rect(0,halfHeight,halfWidth,remainingHeight); this.ctx.clip();
         this.ctx.translate(0,height); this.ctx.scale(1,-1);
         this.ctx.translate(finalCenterX_TL, finalCenterY_TL); drawImageWithRotation(); this.ctx.restore();
-
+    
         this.ctx.save(); this.ctx.beginPath(); this.ctx.rect(halfWidth,halfHeight,remainingWidth,remainingHeight); this.ctx.clip();
         this.ctx.translate(width,height); this.ctx.scale(-1,-1);
         this.ctx.translate(finalCenterX_TL, finalCenterY_TL); drawImageWithRotation(); this.ctx.restore();
@@ -553,86 +595,128 @@ class CanvasManager {
     
     draw(timestamp) {
         if (this.isDestroyed || this.isDrawing || !this.canvas || !this.ctx || this.lastValidWidth <= 0 || this.lastValidHeight <= 0) {
-            this.isDrawing = false; return false;
+            this.isDrawing = false;
+            return false;
         }
         this.isDrawing = true;
-
+    
         try {
             this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-
-            const liveConfigA = { ...this.configA };
-            for (const key in this.interpolators) {
-                liveConfigA[key] = this.playbackValues[key] ?? this.interpolators[key].getCurrentValue();
-            }
-            
-            const liveConfigB = this.configB ? { ...this.configB } : null;
-            if (liveConfigB) {
-                for (const key in this.interpolatorsB) {
-                    liveConfigB[key] = this.interpolatorsB[key].getCurrentValue();
-                }
-            }
-
-            if (this.crossfadeValue > 0.001 && this.imageB && liveConfigB) {
-                const t = this.crossfadeValue;
-                
-                const interpolatedConfig = {};
-                sliderParams.forEach(param => {
-                    const key = param.prop;
-                    const valA = liveConfigA[key] ?? 0;
-                    const valB = liveConfigB[key] ?? 0;
-                    if (typeof valA === 'number' && typeof valB === 'number') {
-                        interpolatedConfig[key] = lerp(valA, valB, t);
-                    } else {
-                        interpolatedConfig[key] = t < 0.5 ? valA : valB;
+    
+            if (this.isTransitioning && this.outgoingImage && this.outgoingConfig) {
+                const elapsed = timestamp - this.transitionStartTime;
+                const progress = Math.min(1.0, elapsed / this.transitionDuration);
+                const easedProgress = 0.5 - 0.5 * Math.cos(progress * Math.PI);
+    
+                const imagesAreTheSame = this.outgoingImageSrc === this.lastImageSrc;
+                const blendModesAreEqual = this.outgoingConfig.blendMode === this.configA.blendMode;
+    
+                if (imagesAreTheSame && blendModesAreEqual) {
+                    this.canvas.style.mixBlendMode = this.configA.blendMode || "normal";
+                    this.ctx.globalAlpha = 1.0;
+                    
+                    const morphedConfig = {};
+                    for (const key in this.configA) {
+                        const startVal = this.outgoingConfig[key];
+                        const endVal = this.configA[key];
+                        if (typeof startVal === 'number' && typeof endVal === 'number') {
+                            morphedConfig[key] = lerp(startVal, endVal, easedProgress);
+                        } else {
+                            morphedConfig[key] = easedProgress < 0.5 ? startVal : endVal;
+                        }
                     }
-                });
+                    morphedConfig.fx = easedProgress < 0.5 ? this.outgoingConfig.fx : this.configA.fx;
+                    
+                    const morphedAngle = lerp(this.outgoingContinuousRotationAngle, this.continuousRotationAngleA, easedProgress);
+                    const morphedDrift = {
+                        x: lerp(this.outgoingDriftState.x, this.driftStateA.x, easedProgress),
+                        y: lerp(this.outgoingDriftState.y, this.driftStateA.y, easedProgress),
+                    };
 
-                // --- START: MODIFIED BLEND MODE & OPACITY LOGIC ---
-                const blendModesDiffer = liveConfigA.blendMode !== liveConfigB.blendMode;
-                const dipMultiplier = blendModesDiffer ? (Math.abs(t - 0.5) / 0.5) : 1.0;
-                
-                const currentBlendMode = t < 0.5 ? liveConfigA.blendMode : liveConfigB.blendMode;
-                this.canvas.style.mixBlendMode = currentBlendMode || "normal";
-                // --- END: MODIFIED BLEND MODE & OPACITY LOGIC ---
-
-                interpolatedConfig.direction = t < 0.5 ? liveConfigA.direction : liveConfigB.direction;
-                interpolatedConfig.enabled = liveConfigA.enabled || liveConfigB.enabled;
-
-                const interpolatedRotation = lerp(this.continuousRotationAngleA, this.continuousRotationAngleB, t);
-                const interpolatedDriftState = {
-                    x: lerp(this.driftStateA.x, this.driftStateB.x, t),
-                    y: lerp(this.driftStateA.y, this.driftStateB.y, t),
-                };
-
-                const isMorphing = this.imageA?.src && this.imageB?.src && this.imageA.src === this.imageB.src;
-
-                if (isMorphing) {
-                    if (interpolatedConfig.enabled && this.imageA) {
-                        this.ctx.globalAlpha = (interpolatedConfig.opacity ?? 1.0) * dipMultiplier;
+                    if (this.configA.enabled && this.imageA) {
+                         this._drawFrame(this.imageA, morphedConfig, morphedAngle, morphedDrift);
+                    }
+                } else if (blendModesAreEqual) {
+                    this.canvas.style.mixBlendMode = this.configA.blendMode || "normal";
+                    if (this.outgoingConfig.enabled) {
+                        this.ctx.globalAlpha = (this.outgoingConfig.opacity || 1) * (1 - easedProgress);
                         if (this.ctx.globalAlpha > 0.001) {
-                            this._drawFrame(timestamp, this.imageA, interpolatedConfig, interpolatedRotation, interpolatedDriftState);
+                            this._drawFrame(this.outgoingImage, this.outgoingConfig, this.outgoingContinuousRotationAngle, this.outgoingDriftState);
+                        }
+                    }
+                    if (this.configA.enabled && this.imageA) {
+                        this.ctx.globalAlpha = (this.configA.opacity || 1) * easedProgress;
+                        if (this.ctx.globalAlpha > 0.001) {
+                            this._drawFrame(this.imageA, this.configA, this.continuousRotationAngleA, this.driftStateA);
                         }
                     }
                 } else {
-                    if (this.imageA && liveConfigA.enabled) {
-                        this.ctx.globalAlpha = (liveConfigA.opacity ?? 1.0) * (1 - t) * dipMultiplier;
-                        if (this.ctx.globalAlpha > 0.001) {
-                             this._drawFrame(timestamp, this.imageA, interpolatedConfig, interpolatedRotation, interpolatedDriftState);
+                    if (easedProgress < 0.5) {
+                        const fadeOutProgress = easedProgress * 2;
+                        this.canvas.style.mixBlendMode = this.outgoingConfig.blendMode || "normal";
+                        this.ctx.globalAlpha = (this.outgoingConfig.opacity || 1) * (1 - fadeOutProgress);
+                         if (this.outgoingConfig.enabled && this.outgoingImage && this.ctx.globalAlpha > 0.001) {
+                            this._drawFrame(this.outgoingImage, this.outgoingConfig, this.outgoingContinuousRotationAngle, this.outgoingDriftState);
                         }
-                    }
-                    if (this.imageB && liveConfigB.enabled) {
-                        this.ctx.globalAlpha = (liveConfigB.opacity ?? 1.0) * t * dipMultiplier;
-                         if (this.ctx.globalAlpha > 0.001) {
-                            this._drawFrame(timestamp, this.imageB, interpolatedConfig, interpolatedRotation, interpolatedDriftState);
+                    } else {
+                        const fadeInProgress = (easedProgress - 0.5) * 2;
+                        this.canvas.style.mixBlendMode = this.configA.blendMode || "normal";
+                        this.ctx.globalAlpha = (this.configA.opacity || 1) * fadeInProgress;
+                         if (this.configA.enabled && this.imageA && this.ctx.globalAlpha > 0.001) {
+                            this._drawFrame(this.imageA, this.configA, this.continuousRotationAngleA, this.driftStateA);
                         }
                     }
                 }
-
+            } else if (this.crossfadeValue > 0.001 && this.imageB && this.configB) {
+                const liveConfigA = { ...this.configA };
+                for (const key in this.interpolators) liveConfigA[key] = this.playbackValues[key] ?? this.interpolators[key].getCurrentValue();
+                const liveConfigB = { ...this.configB };
+                for (const key in this.interpolatorsB) liveConfigB[key] = this.interpolatorsB[key].getCurrentValue();
+                const t = this.crossfadeValue;
+                const blendModesAreDifferent = liveConfigA.blendMode !== liveConfigB.blendMode;
+                const morphedConfig = {};
+                sliderParams.forEach(param => {
+                    const valA = liveConfigA[param.prop];
+                    const valB = liveConfigB[param.prop];
+                    if (typeof valA === 'number' && typeof valB === 'number') morphedConfig[param.prop] = lerp(valA, valB, t);
+                    else morphedConfig[param.prop] = t < 0.5 ? valA : valB;
+                });
+                morphedConfig.fx = {
+                    activeFilter: t < 0.5 ? liveConfigA.fx?.activeFilter : liveConfigB.fx?.activeFilter,
+                    intensity: lerp(liveConfigA.fx?.intensity || 0, liveConfigB.fx?.intensity || 0, t)
+                };
+                const interpolatedAngle = lerp(this.continuousRotationAngleA, this.continuousRotationAngleB, t);
+                const interpolatedDrift = { x: lerp(this.driftStateA.x, this.driftStateB.x, t), y: lerp(this.driftStateA.y, this.driftStateB.y, t) };
+                if (blendModesAreDifferent) {
+                    if (t < 0.5) {
+                        const progress = 1 - t * 2;
+                        this.canvas.style.mixBlendMode = liveConfigA.blendMode;
+                        this.ctx.globalAlpha = (liveConfigA.opacity ?? 1.0) * progress;
+                        if (this.imageA && liveConfigA.enabled && this.ctx.globalAlpha > 0.001) this._drawFrame(this.imageA, morphedConfig, interpolatedAngle, interpolatedDrift);
+                    } else {
+                        const progress = (t - 0.5) * 2;
+                        this.canvas.style.mixBlendMode = liveConfigB.blendMode;
+                        this.ctx.globalAlpha = (liveConfigB.opacity ?? 1.0) * progress;
+                        if (this.imageB && liveConfigB.enabled && this.ctx.globalAlpha > 0.001) this._drawFrame(this.imageB, morphedConfig, interpolatedAngle, interpolatedDrift);
+                    }
+                } else {
+                    this.canvas.style.mixBlendMode = liveConfigA.blendMode;
+                    if (this.imageA && liveConfigA.enabled) {
+                        this.ctx.globalAlpha = (liveConfigA.opacity ?? 1.0) * (1 - t);
+                        if (this.ctx.globalAlpha > 0.001) this._drawFrame(this.imageA, morphedConfig, interpolatedAngle, interpolatedDrift);
+                    }
+                    if (this.imageB && liveConfigB.enabled) {
+                        this.ctx.globalAlpha = (liveConfigB.opacity ?? 1.0) * t;
+                        if (this.ctx.globalAlpha > 0.001) this._drawFrame(this.imageB, morphedConfig, interpolatedAngle, interpolatedDrift);
+                    }
+                }
             } else {
+                const liveConfigA = { ...this.configA };
+                for (const key in this.interpolators) liveConfigA[key] = this.playbackValues[key] ?? this.interpolators[key].getCurrentValue();
                 if (liveConfigA.enabled && this.imageA) {
                     this.canvas.style.mixBlendMode = liveConfigA.blendMode || "normal";
                     this.ctx.globalAlpha = liveConfigA.opacity ?? 1.0;
-                    this._drawFrame(timestamp, this.imageA, liveConfigA, this.continuousRotationAngleA, this.driftStateA);
+                    if (this.ctx.globalAlpha > 0.001) this._drawFrame(this.imageA, liveConfigA, this.continuousRotationAngleA, this.driftStateA);
                 }
             }
 
@@ -643,12 +727,14 @@ class CanvasManager {
             if (import.meta.env.DEV) console.error(`[CM L${this.layerId}] draw: Unexpected draw error:`, e);
             this.isDrawing = false;
             return false;
+        } finally {
+            if (this.ctx) this.ctx.filter = 'none';
         }
     }
-
+    
     _updateInternalDrift(config, driftState, deltaTime) {
         if (!config || !driftState) return;
-        const driftAmount = config.drift; 
+        const driftAmount = config.drift;
         const driftSpeed = config.driftSpeed;
 
         if(driftAmount > 0){
@@ -659,17 +745,20 @@ class CanvasManager {
             driftState.x = Math.max(-MAX_TOTAL_OFFSET / 2, Math.min(MAX_TOTAL_OFFSET / 2, calculatedX));
             driftState.y = Math.max(-MAX_TOTAL_OFFSET / 2, Math.min(MAX_TOTAL_OFFSET / 2, calculatedY));
         } else {
-            driftState.x = 0;
-            driftState.y = 0;
+            const LERP_FACTOR = 0.05;
+            driftState.x = lerp(driftState.x, 0, LERP_FACTOR);
+            driftState.y = lerp(driftState.y, 0, LERP_FACTOR);
+            if (Math.abs(driftState.x) < 0.01) driftState.x = 0;
+            if (Math.abs(driftState.y) < 0.01) driftState.y = 0;
         }
     }
 
     animationLoop(timestamp) {
         if (this.isDestroyed || this.animationFrameId === null) return;
         this.animationFrameId = requestAnimationFrame(this.animationLoop);
-        
+
         const isAnySideEnabled = this.configA?.enabled || (this.configB?.enabled && this.crossfadeValue > 0);
-        if (!isAnySideEnabled) {
+        if (!isAnySideEnabled && !this.isTransitioning) {
             if (this.ctx && this.canvas) {
                 this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
             }
@@ -679,19 +768,17 @@ class CanvasManager {
         if (!this.lastTimestamp) this.lastTimestamp = timestamp;
         const elapsed = timestamp - this.lastTimestamp;
         this.lastTimestamp = timestamp;
-        
+
         const rawDeltaTime = Math.min(elapsed / 1000.0, MAX_DELTA_TIME);
 
         this.deltaTimeBuffer.push(rawDeltaTime);
         if (this.deltaTimeBuffer.length > DELTA_TIME_BUFFER_SIZE) this.deltaTimeBuffer.shift();
         this.smoothedDeltaTime = this.deltaTimeBuffer.reduce((a,b) => a+b,0) / this.deltaTimeBuffer.length;
-        
+
         if (this.lastValidWidth <= 0 || this.lastValidHeight <= 0 || !this.canvas || !this.ctx) {
             this.setupCanvas().then(setupOk => { if (setupOk) this.draw(timestamp); });
             return;
         }
-        
-        if (!this.isTransitioning && (!this.imageA?.complete || this.imageA?.naturalWidth === 0)) return;
 
         const now = performance.now();
         for (const key in this.interpolators) {
@@ -700,7 +787,17 @@ class CanvasManager {
         for (const key in this.interpolatorsB) {
             this.interpolatorsB[key].update(now);
         }
-        
+
+        const parallaxLerpFactor = 0.05;
+        this.renderedParallaxOffset.x = lerp(this.renderedParallaxOffset.x, this.parallaxOffset.x, parallaxLerpFactor);
+        this.renderedParallaxOffset.y = lerp(this.renderedParallaxOffset.y, this.parallaxOffset.y, parallaxLerpFactor);
+
+        if (this.canvas) {
+            const parallaxX = this.renderedParallaxOffset.x * this.parallaxFactor;
+            const parallaxY = this.renderedParallaxOffset.y * this.parallaxFactor;
+            this.canvas.style.transform = `translate(${parallaxX}px, ${parallaxY}px) scale(1)`;
+        }
+
         if (this.configA) {
             const speedA = this.playbackValues.speed ?? this.interpolators.speed.getCurrentValue();
             const directionA = this.configA.direction ?? 1;
@@ -719,7 +816,7 @@ class CanvasManager {
 
         this.draw(timestamp);
     }
-    
+
     async forceRedraw(configToUse = null) {
         if (this.isDestroyed || this.isDrawing) return false;
         return this.drawStaticFrame(configToUse || this.configA);
@@ -728,6 +825,8 @@ class CanvasManager {
     destroy() {
         this.isDestroyed = true;
         this.stopAnimationLoop();
+        this.imageA?.close();
+        this.imageB?.close();
         this.imageA = null;
         this.imageB = null;
         this.ctx = null;

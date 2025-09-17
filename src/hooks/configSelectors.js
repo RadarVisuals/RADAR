@@ -1,10 +1,9 @@
 // src/hooks/configSelectors.js
 import { useMemo } from 'react';
 
-// REMOVED: No longer importing from the deleted ConfigContext
 import { useUserSession } from '../context/UserSessionContext.jsx';
 import { useVisualConfig } from '../context/VisualConfigContext.jsx';
-import { usePresetManagement } from '../context/PresetManagementContext.jsx';
+import { useSetManagement } from '../context/SetManagementContext.jsx';
 import { useUpProvider } from '../context/UpProvider.jsx';
 
 /**
@@ -25,37 +24,36 @@ export const useVisualLayerState = () => {
 };
 
 /**
- * @typedef {object} PresetManagementState
- * This typedef is now slightly redundant as it mirrors usePresetManagement, but kept for documentation consistency.
+ * @typedef {object} SetManagementState
+ * This typedef mirrors useSetManagement for documentation consistency.
  */
-export const usePresetManagementState = () => {
-  // This hook now directly passes through usePresetManagement as it's the core state manager.
-  return usePresetManagement();
+export const useSetManagementState = () => {
+  // This hook now directly passes through useSetManagement.
+  return useSetManagement();
 };
 
 /**
  * @typedef {object} InteractionSettingsState
- * @property {object} savedReactions - User-defined reactions to blockchain events for the host profile.
- * @property {object} midiMap - User's global MIDI controller mappings stored on the host profile.
+ * @property {object} savedReactions - User-defined reactions to blockchain events for the active workspace.
+ * @property {object} midiMap - User's global MIDI controller mappings for the active workspace.
  * @property {(eventType: string, reactionData: object) => void} updateSavedReaction - Adds or updates a specific event reaction configuration.
  * @property {(eventType: string) => void} deleteSavedReaction - Removes an event reaction configuration.
  * @property {(newMap: object) => void} updateMidiMap - Replaces the entire MIDI map configuration.
  */
 export const useInteractionSettingsState = () => {
-  // UPDATED: Now uses usePresetManagement as the source of truth.
-  const presetCtx = usePresetManagement();
+  const setCtx = useSetManagement();
   return useMemo(() => ({
-    savedReactions: presetCtx.activeEventReactions || {},
-    midiMap: presetCtx.activeMidiMap || {},
-    updateSavedReaction: presetCtx.updateGlobalEventReactions,
-    deleteSavedReaction: presetCtx.deleteGlobalEventReaction,
-    updateMidiMap: presetCtx.updateGlobalMidiMap,
+    savedReactions: setCtx.activeEventReactions || {},
+    midiMap: setCtx.activeMidiMap || {},
+    updateSavedReaction: setCtx.updateGlobalEventReactions,
+    deleteSavedReaction: setCtx.deleteGlobalEventReaction,
+    updateMidiMap: setCtx.updateGlobalMidiMap,
   }), [
-    presetCtx.activeEventReactions,
-    presetCtx.activeMidiMap,
-    presetCtx.updateGlobalEventReactions,
-    presetCtx.deleteGlobalEventReaction,
-    presetCtx.updateGlobalMidiMap,
+    setCtx.activeEventReactions,
+    setCtx.activeMidiMap,
+    setCtx.updateGlobalEventReactions,
+    setCtx.deleteGlobalEventReaction,
+    setCtx.updateGlobalMidiMap,
   ]);
 };
 
@@ -107,42 +105,40 @@ export const useProfileSessionState = () => {
  * @property {React.Dispatch<React.SetStateAction<boolean>>} setHasPendingChanges - Manually sets the pending changes flag.
  */
 export const usePendingChangesState = () => {
-  // UPDATED: Now uses usePresetManagement.
-  const presetCtx = usePresetManagement();
+  const setCtx = useSetManagement();
   return useMemo(() => ({
-    hasPendingChanges: presetCtx.hasPendingChanges,
-    setHasPendingChanges: presetCtx.setHasPendingChanges,
-  }), [presetCtx.hasPendingChanges, presetCtx.setHasPendingChanges]);
+    hasPendingChanges: setCtx.hasPendingChanges,
+    setHasPendingChanges: setCtx.setHasPendingChanges,
+  }), [setCtx.hasPendingChanges, setCtx.setHasPendingChanges]);
 };
 
 /**
  * @typedef {object} ConfigStatusState
- * @property {boolean} isLoading - True if a preset for the host profile is currently being loaded.
+ * @property {boolean} isLoading - True if a setlist or workspace for the host profile is currently being loaded.
  * @property {boolean} isInitiallyResolved - True once the very first attempt to load the host profile's data is done.
  * @property {boolean} configServiceInstanceReady - True if ConfigurationService is instantiated and ready.
- * @property {number} configLoadNonce - Increments each time a new configuration preset for the host profile is applied.
+ * @property {number} sceneLoadNonce - Increments each time a new scene for the host profile is applied.
  * @property {React.RefObject<import('../services/ConfigurationService.js').default | null>} configServiceRef - Ref to the ConfigurationService instance.
- * @property {Error | string | null} loadError - Error from the last preset load attempt.
+ * @property {Error | string | null} loadError - Error from the last load attempt.
  * @property {Error | null} upInitializationError - Error from UpProvider initialization.
  * @property {Error | null} upFetchStateError - Error from UpProvider client fetching.
  */
 export const useConfigStatusState = () => {
-  // UPDATED: Now uses usePresetManagement for service ref and readiness.
-  const presetCtx = usePresetManagement();
+  const setCtx = useSetManagement();
   const upCtx = useUpProvider(); 
 
   return useMemo(() => ({
-    isLoading: presetCtx.isLoading,
-    isInitiallyResolved: presetCtx.isInitiallyResolved,
-    configServiceInstanceReady: presetCtx.configServiceInstanceReady,
-    configLoadNonce: presetCtx.configLoadNonce,
-    configServiceRef: presetCtx.configServiceRef,
-    loadError: presetCtx.loadError,
+    isLoading: setCtx.isLoading,
+    isInitiallyResolved: setCtx.isInitiallyResolved,
+    configServiceInstanceReady: setCtx.configServiceInstanceReady,
+    sceneLoadNonce: setCtx.sceneLoadNonce,
+    configServiceRef: setCtx.configServiceRef,
+    loadError: setCtx.loadError,
     upInitializationError: upCtx.initializationError, 
     upFetchStateError: upCtx.fetchStateError,       
   }), [
-    presetCtx.isLoading, presetCtx.isInitiallyResolved, presetCtx.configLoadNonce, presetCtx.loadError,
-    presetCtx.configServiceInstanceReady, presetCtx.configServiceRef,
+    setCtx.isLoading, setCtx.isInitiallyResolved, setCtx.sceneLoadNonce, setCtx.loadError,
+    setCtx.configServiceInstanceReady, setCtx.configServiceRef,
     upCtx.initializationError, upCtx.fetchStateError, 
   ]);
 };

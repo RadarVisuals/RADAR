@@ -65,5 +65,6 @@ export const TYPE_ID_TO_EVENT_MAP = Object.fromEntries(
  */
 export const BLEND_MODES = [
   "normal", "multiply", "screen", "overlay", "darken",
-  "lighten", "color-dodge", "color-burn", "difference", "exclusion",
+  "lighten", "color-dodge", "color-burn", "hard-light", "soft-light", 
+  "difference", "exclusion", "hue", "saturation", "color", "luminosity"
 ];

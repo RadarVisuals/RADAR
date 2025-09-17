@@ -1,5 +1,5 @@
 // src/components/Panels/EnhancedControlPanel.jsx
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState, useEffect } from "react";
 import PropTypes from "prop-types";
 
 // Local Component Imports
@@ -9,6 +9,9 @@ import PLockController from './PLockController';
 // Hook Imports
 import { useProfileSessionState } from "../../hooks/configSelectors";
 import { useMIDI } from "../../context/MIDIContext";
+import { useSetManagement } from "../../context/SetManagementContext";
+import { useVisualConfig } from "../../context/VisualConfigContext";
+import { useToast } from "../../context/ToastContext";
 import { BLEND_MODES } from "../../config/global-config";
 
 // Asset Imports
@@ -50,13 +53,25 @@ const tabToLayerIdMap = { tab1: 3, tab2: 2, tab3: 1 };
 const EnhancedControlPanel = ({
   onToggleMinimize,
   onLayerConfigChange,
-  layerConfigs,
   activeTab = "tab1",
   onTabChange,
   pLockProps = {},
+  onSceneSelect,
+  sequencerIntervalMs,
   onSetSequencerInterval,
+  crossfadeDurationMs,
+  onSetCrossfadeDuration,
+  isAutoFading,
 }) => {
   const { isProfileOwner } = useProfileSessionState();
+  const { addToast } = useToast();
+  const { layerConfigs, tokenAssignments } = useVisualConfig();
+  const {
+    stagedActiveWorkspace, savedSceneList, activeSceneName,
+    addNewSceneToStagedWorkspace, deleteSceneFromStagedWorkspace, setDefaultSceneInStagedWorkspace,
+    isSaving
+  } = useSetManagement();
+
   const {
     isConnected: midiConnected, midiLearning, learningLayer,
     startMIDILearn, startLayerMIDILearn,
@@ -64,17 +79,38 @@ const EnhancedControlPanel = ({
     startGlobalMIDILearn,
   } = useMIDI();
 
-  const [intervalInput, setIntervalInput] = useState('10');
+  const [newSceneName, setNewSceneName] = useState("");
+  const [localIntervalInput, setLocalIntervalInput] = useState(sequencerIntervalMs / 1000);
+  const [localDurationInput, setLocalDurationInput] = useState(crossfadeDurationMs / 1000);
 
-  const handleIntervalChange = (e) => {
-    setIntervalInput(e.target.value);
-  };
+  useEffect(() => {
+    setLocalIntervalInput(sequencerIntervalMs / 1000);
+  }, [sequencerIntervalMs]);
+
+  useEffect(() => {
+    setLocalDurationInput(crossfadeDurationMs / 1000);
+  }, [crossfadeDurationMs]);
 
   const handleSetInterval = () => {
-    const newIntervalSeconds = parseFloat(intervalInput);
-    if (!isNaN(newIntervalSeconds) && newIntervalSeconds > 0) {
-      onSetSequencerInterval(newIntervalSeconds * 1000);
+    const newIntervalSeconds = parseFloat(localIntervalInput);
+    if (isNaN(newIntervalSeconds) || newIntervalSeconds < 0) {
+      addToast("Interval must be 0 or greater.", "error");
+      setLocalIntervalInput(sequencerIntervalMs / 1000);
+      return;
     }
+    onSetSequencerInterval(newIntervalSeconds * 1000);
+    addToast(`Sequencer interval set to ${newIntervalSeconds}s.`, "success");
+  };
+
+  const handleSetDuration = () => {
+    const newDurationSeconds = parseFloat(localDurationInput);
+    if (isNaN(newDurationSeconds) || newDurationSeconds < 0.1) {
+      addToast("Crossfade duration must be at least 0.1 seconds.", "error");
+      setLocalDurationInput(crossfadeDurationMs / 1000);
+      return;
+    }
+    onSetCrossfadeDuration(newDurationSeconds * 1000);
+    addToast(`Crossfade duration set to ${newDurationSeconds}s.`, "success");
   };
 
   const activeLayer = useMemo(() => String(tabToLayerIdMap[activeTab] || 3), [activeTab]);
@@ -84,6 +120,38 @@ const EnhancedControlPanel = ({
     const { name, value } = e.target;
     onLayerConfigChange(activeLayer, name, parseFloat(value), false);
   }, [onLayerConfigChange, activeLayer]);
+
+  const handleCreateScene = useCallback(() => {
+    const name = newSceneName.trim();
+    if (!name) {
+      addToast("Scene name cannot be empty.", "warning");
+      return;
+    }
+    if (savedSceneList.some(p => p.name === name)) {
+      if (!window.confirm(`A scene named "${name}" already exists. Do you want to overwrite it?`)) {
+        return;
+      }
+    }
+    
+    const newSceneData = {
+      name,
+      ts: Date.now(),
+      layers: JSON.parse(JSON.stringify(layerConfigs)),
+      tokenAssignments: JSON.parse(JSON.stringify(tokenAssignments)),
+    };
+
+    addNewSceneToStagedWorkspace(name, newSceneData);
+    addToast(`Scene "${name}" created and staged.`, "success");
+    setNewSceneName("");
+    
+  }, [newSceneName, savedSceneList, layerConfigs, tokenAssignments, addNewSceneToStagedWorkspace, addToast]);
+
+  const handleDeleteScene = useCallback((nameToDelete) => {
+    if (window.confirm(`Are you sure you want to delete the scene "${nameToDelete}"? This will be staged for the next save.`)) {
+      deleteSceneFromStagedWorkspace(nameToDelete);
+      addToast(`Scene "${nameToDelete}" was deleted. Save your workspace to confirm.`, "info");
+    }
+  }, [deleteSceneFromStagedWorkspace, addToast]);
 
   const handleEnterMIDILearnMode = useCallback((paramName) => {
     if (!isProfileOwner || !midiConnected) return;
@@ -122,8 +190,9 @@ const EnhancedControlPanel = ({
   const handleDirectionToggle = useCallback(() => onLayerConfigChange(activeLayer, "direction", - (config.direction || 1), false), [onLayerConfigChange, activeLayer, config.direction]);
   const handleEnabledToggle = useCallback((e) => onLayerConfigChange(activeLayer, "enabled", e.target.checked, false), [onLayerConfigChange, activeLayer]);
   
-  const isPLockMidiLearning = midiLearning?.type === 'global' && midiLearning?.control === 'pLockToggle';
-  const isCrossfaderMidiLearning = midiLearning?.type === 'global' && midiLearning?.control === 'crossfader';
+  // --- ADDED: Helper booleans for learning state ---
+  const isLearning = (type, control) => midiLearning?.type === type && midiLearning?.control === control;
+  // ------------------------------------------------
 
   return (
     <Panel title={`Layer ${activeLayer} Controls`} onClose={onToggleMinimize} className="panel-from-toolbar enhanced-control-panel">
@@ -137,14 +206,7 @@ const EnhancedControlPanel = ({
         </div>
       </div>
 
-      <PLockController
-        pLockState={pLockProps.pLockState}
-        loopProgress={pLockProps.loopProgress}
-        hasLockedParams={pLockProps.hasLockedParams}
-        pLockSpeed={pLockProps.pLockSpeed}
-        onSetPLockSpeed={pLockProps.onSetPLockSpeed}
-        onTogglePLock={pLockProps.onTogglePLock}
-      />
+      <PLockController {...pLockProps} />
 
       <div className="vertical-layout control-panel-content">
         {sliderParams.map(({ prop, label, min, max, step, formatDecimals, defaultValue = 0 }) => {
@@ -179,48 +241,127 @@ const EnhancedControlPanel = ({
         </div>
       </div>
 
-      <div className="sequencer-interval-control">
-        <h4 className="section-title">Preset Sequencer</h4>
-        <div className="form-group">
-          <label htmlFor="sequencer-interval">Interval (seconds)</label>
-          <div className="input-with-button">
-            <input
-              id="sequencer-interval"
-              type="number"
-              value={intervalInput}
-              onChange={handleIntervalChange}
-              className="form-control"
-              min="1"
-              step="0.5"
-            />
-            <button onClick={handleSetInterval} className="btn btn-sm">Set</button>
+      <div className="scene-management-section">
+        <h4>Scene Management</h4>
+        {isProfileOwner && (
+          <div className="scene-create-form">
+            <input type="text" value={newSceneName} onChange={(e) => setNewSceneName(e.target.value)} className="form-control" placeholder="New Scene Name" disabled={isSaving} />
+            <button className="btn btn-sm" onClick={handleCreateScene} disabled={isSaving || !newSceneName.trim()}>Create</button>
           </div>
+        )}
+        {savedSceneList.length > 0 ? (
+          <ul className="scene-list">
+            {savedSceneList.map((scene) => (
+              <li key={scene.name} className={scene.name === activeSceneName ? "active" : ""}>
+                <div className="scene-main-content">
+                  <button className="scene-name" onClick={() => onSceneSelect(scene.name)} disabled={isSaving} title={`Load "${scene.name}"`}>
+                    {scene.name}
+                  </button>
+                  {stagedActiveWorkspace?.defaultPresetName === scene.name && (<span className="default-scene-tag">(Default)</span>)}
+                </div>
+                {isProfileOwner && (
+                  <div className="scene-actions">
+                    <button className="btn-icon" onClick={() => setDefaultSceneInStagedWorkspace(scene.name)} disabled={isSaving || stagedActiveWorkspace?.defaultPresetName === scene.name} title="Set as Default">★</button>
+                    <button className="btn-icon delete-scene" onClick={() => handleDeleteScene(scene.name)} disabled={isSaving} title={`Delete "${scene.name}"`}>×</button>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : <p className="no-scenes-message">No scenes saved in this workspace.</p>}
+      </div>
+
+      <div className="sequencer-settings-section">
+        <h4 className="midi-section-title">Scene Sequencer Settings</h4>
+        <div className="sequencer-interval-form">
+            <label htmlFor="crossfade-duration-input">Crossfade Duration:</label>
+            <input
+                id="crossfade-duration-input"
+                type="number"
+                className="form-control interval-input"
+                value={localDurationInput}
+                onChange={(e) => setLocalDurationInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSetDuration()}
+                min="0.1"
+                step="0.1"
+                disabled={isAutoFading}
+            />
+            <span className="interval-unit">s</span>
+            <button className="btn btn-sm interval-set-button" onClick={handleSetDuration} disabled={isAutoFading}>Set</button>
+        </div>
+        <div className="sequencer-interval-form">
+            <label htmlFor="sequencer-interval-input">Interval Between Fades:</label>
+            <input
+                id="sequencer-interval-input"
+                type="number"
+                className="form-control interval-input"
+                value={localIntervalInput}
+                onChange={(e) => setLocalIntervalInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSetInterval()}
+                min="0"
+                step="0.1"
+                disabled={isAutoFading}
+            />
+            <span className="interval-unit">s</span>
+            <button className="btn btn-sm interval-set-button" onClick={handleSetInterval} disabled={isAutoFading}>Set</button>
         </div>
       </div>
 
+      {/* --- START: MODIFIED MIDI MAPPING SECTION --- */}
       {midiConnected && (
         <div className="midi-mappings-section">
-          <h4 className="midi-section-title">Global MIDI Mappings</h4>
+          <h4 className="midi-section-title">Global & Layer MIDI Mappings</h4>
           <div className="global-mapping-grid">
+            {/* Row 1 */}
             <div className="global-mapping-item">
               <div className="global-mapping-label">Crossfader</div>
               <div className="global-mapping-controls">
                 <span className="layer-mapping-text" title={displayGlobalMidiMapping('crossfader')}>{displayGlobalMidiMapping('crossfader')}</span>
-                <button type="button" className={`midi-learn-btn small-action-button ${isCrossfaderMidiLearning ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('crossfader')} disabled={!midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Crossfader">{isCrossfaderMidiLearning ? "..." : "Map"}</button>
+                <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'crossfader') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('crossfader')} disabled={!midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Crossfader">{isLearning('global', 'crossfader') ? "..." : "Map"}</button>
               </div>
             </div>
             <div className="global-mapping-item">
               <div className="global-mapping-label">P-Lock Toggle</div>
               <div className="global-mapping-controls">
                 <span className="layer-mapping-text" title={displayGlobalMidiMapping('pLockToggle')}>{displayGlobalMidiMapping('pLockToggle')}</span>
-                <button type="button" className={`midi-learn-btn small-action-button ${isPLockMidiLearning ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('pLockToggle')} disabled={!midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to P-Lock Toggle">{isPLockMidiLearning ? "..." : "Map"}</button>
+                <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'pLockToggle') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('pLockToggle')} disabled={!midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to P-Lock Toggle">{isLearning('global', 'pLockToggle') ? "..." : "Map"}</button>
+              </div>
+            </div>
+            {/* Row 2 */}
+            <div className="global-mapping-item">
+              <div className="global-mapping-label">Previous Scene</div>
+              <div className="global-mapping-controls">
+                <span className="layer-mapping-text" title={displayGlobalMidiMapping('prevScene')}>{displayGlobalMidiMapping('prevScene')}</span>
+                <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'prevScene') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('prevScene')} disabled={!midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Previous Scene">{isLearning('global', 'prevScene') ? "..." : "Map"}</button>
+              </div>
+            </div>
+            <div className="global-mapping-item">
+              <div className="global-mapping-label">Next Scene</div>
+              <div className="global-mapping-controls">
+                <span className="layer-mapping-text" title={displayGlobalMidiMapping('nextScene')}>{displayGlobalMidiMapping('nextScene')}</span>
+                <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'nextScene') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('nextScene')} disabled={!midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Next Scene">{isLearning('global', 'nextScene') ? "..." : "Map"}</button>
+              </div>
+            </div>
+            {/* Row 3 */}
+            <div className="global-mapping-item">
+              <div className="global-mapping-label">Previous Workspace</div>
+              <div className="global-mapping-controls">
+                <span className="layer-mapping-text" title={displayGlobalMidiMapping('prevWorkspace')}>{displayGlobalMidiMapping('prevWorkspace')}</span>
+                <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'prevWorkspace') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('prevWorkspace')} disabled={!midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Previous Workspace">{isLearning('global', 'prevWorkspace') ? "..." : "Map"}</button>
+              </div>
+            </div>
+            <div className="global-mapping-item">
+              <div className="global-mapping-label">Next Workspace</div>
+              <div className="global-mapping-controls">
+                <span className="layer-mapping-text" title={displayGlobalMidiMapping('nextWorkspace')}>{displayGlobalMidiMapping('nextWorkspace')}</span>
+                <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'nextWorkspace') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('nextWorkspace')} disabled={!midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Next Workspace">{isLearning('global', 'nextWorkspace') ? "..." : "Map"}</button>
               </div>
             </div>
           </div>
           <div className="layer-mapping-grid">
             {[3, 2, 1].map((layerNum) => (
               <div key={`layer_mapping_${layerNum}`} className={`layer-mapping-item ${activeLayer === String(layerNum) ? "active" : ""}`}>
-                <div className="layer-mapping-label">Layer {layerNum}</div>
+                <div className="layer-mapping-label">Layer {layerNum} Select</div>
                 <div className="layer-mapping-controls">
                   <span className="layer-mapping-text" title={displayLayerMidiMapping(String(layerNum))}>{displayLayerMidiMapping(String(layerNum))}</span>
                   {isProfileOwner && (<button type="button" className={`midi-learn-btn small-action-button ${learningLayer === layerNum ? "learning" : ""}`} onClick={() => handleEnterLayerMIDILearnMode(layerNum)} disabled={!midiConnected || !!midiLearning || (learningLayer !== null && learningLayer !== layerNum)} title={`Map MIDI to select Layer ${layerNum}`}> {learningLayer === layerNum ? "..." : "Map"} </button>)}
@@ -230,6 +371,7 @@ const EnhancedControlPanel = ({
           </div>
         </div>
       )}
+      {/* --- END: MODIFIED MIDI MAPPING SECTION --- */}
     </Panel>
   );
 };
@@ -237,11 +379,16 @@ const EnhancedControlPanel = ({
 EnhancedControlPanel.propTypes = {
   onToggleMinimize: PropTypes.func.isRequired,
   onLayerConfigChange: PropTypes.func.isRequired,
-  layerConfigs: PropTypes.object.isRequired,
+  layerConfigs: PropTypes.object,
   activeTab: PropTypes.string,
   onTabChange: PropTypes.func,
   pLockProps: PropTypes.object,
+  onSceneSelect: PropTypes.func,
+  sequencerIntervalMs: PropTypes.number,
   onSetSequencerInterval: PropTypes.func,
+  crossfadeDurationMs: PropTypes.number,
+  onSetCrossfadeDuration: PropTypes.func,
+  isAutoFading: PropTypes.bool,
 };
 
 export default React.memo(EnhancedControlPanel);

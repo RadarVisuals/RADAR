@@ -27,34 +27,31 @@ export const UserSessionProvider = ({ children }) => {
   const { accounts, contextAccounts } = useUpProvider();
   const [isPreviewMode, setIsPreviewMode] = useState(false);
 
+  // --- START: CORRECTED LOGIC ---
   const hostProfileAddress = useMemo(() => {
-    // --- START: MODIFIED LOGIC ---
-    // Prioritize contextAccounts for when viewing another profile.
+    // The profile being viewed (the "host") is always the one provided by the extension's context.
     if (contextAccounts && contextAccounts.length > 0 && isAddress(contextAccounts[0])) {
       return contextAccounts[0];
     }
-    // Fallback to the visitor's own account if no specific context is provided.
-    if (accounts && accounts.length > 0 && isAddress(accounts[0])) {
-      return accounts[0];
-    }
-    // If neither is available, there's no host profile.
     return null;
-    // --- END: MODIFIED LOGIC ---
-  }, [contextAccounts, accounts]); // <-- ADDED 'accounts' TO DEPENDENCY ARRAY
+  }, [contextAccounts]);
 
   const visitorProfileAddress = useMemo(() => {
-    const address = accounts && accounts.length > 0 && isAddress(accounts[0])
-      ? accounts[0]
-      : null;
-    return address;
-  }, [accounts]);
+    // The "visitor's" identity is also their active Universal Profile from the context.
+    // In this app's design, the host and visitor are the same entity.
+    if (contextAccounts && contextAccounts.length > 0 && isAddress(contextAccounts[0])) {
+      return contextAccounts[0];
+    }
+    return null;
+  }, [contextAccounts]);
 
   const isHostProfileOwner = useMemo(() => {
-    if (!visitorProfileAddress || !hostProfileAddress) {
-      return false;
-    }
-    return visitorProfileAddress.toLowerCase() === hostProfileAddress.toLowerCase();
-  }, [visitorProfileAddress, hostProfileAddress]);
+    // For the UI, we determine "ownership" by checking if a controller wallet (EOA) is connected.
+    // The UP extension ensures this EOA has permissions for the active UP (hostProfileAddress).
+    const hasController = accounts && accounts.length > 0 && isAddress(accounts[0]);
+    return !!hasController && !!hostProfileAddress;
+  }, [accounts, hostProfileAddress]);
+  // --- END: CORRECTED LOGIC ---
 
   const isRadarProjectAdmin = useMemo(() => {
     if (!visitorProfileAddress || !RADAR_OFFICIAL_ADMIN_ADDRESS) return false;

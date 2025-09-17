@@ -1,0 +1,46 @@
+/* src/components/UI/WorkspaceSelectorDots.css */
+@import '../../styles/variables.css';
+
+.workspace-dots-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) 0;
+  width: 100%;
+}
+
+.workspace-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-circle);
+  border: 2px solid var(--color-primary-a30);
+  background-color: transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.workspace-dot:hover:not(:disabled) {
+  background-color: var(--color-primary-a50);
+  transform: scale(1.2);
+}
+
+.workspace-dot.active {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  transform: scale(1.25);
+  box-shadow: var(--shadow-primary-md);
+  cursor: default;
+}
+
+.workspace-dot:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: scale(1);
+}
+
+.workspace-dot.active:disabled {
+    opacity: 1; /* Keep active dot fully visible even if disabled */
+}

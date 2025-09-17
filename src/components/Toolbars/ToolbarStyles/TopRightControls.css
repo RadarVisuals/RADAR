@@ -40,6 +40,15 @@
   box-shadow: var(--shadow-primary-sm);
 }
 
+/* --- NEW PARALLAX TOGGLE --- */
+/* Style for any active button in this toolbar */
+.top-right-controls-container .toolbar-icon.active {
+  background: rgba(0, 243, 255, 0.15);
+  border-color: rgba(0, 243, 255, 0.5);
+  box-shadow: var(--shadow-primary-md);
+}
+/* --- END NEW PARALLAX TOGGLE --- */
+
 .top-right-controls-container .icon-image {
   width: var(--icon-size-md);
   height: var(--icon-size-md);

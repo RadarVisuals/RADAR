@@ -8,103 +8,33 @@ import { useAnimationLifecycleManager } from './useAnimationLifecycleManager';
 import { usePLockSequencer } from './usePLockSequencer';
 import { useVisualConfig } from '../context/VisualConfigContext';
 
-/**
- * @typedef {import('../services/ConfigService').default} ConfigService
- * @typedef {import('../utils/CanvasManager').default} CanvasManager
- * @typedef {import('./useAudioVisualizer').AudioVisualizerAPI} AudioVisualizerState
- * @typedef {import('../context/VisualConfigContext').AllLayerConfigs} LayerConfigsType
- * @typedef {import('../context/VisualConfig_types').TokenAssignments} TokenAssignmentsType
- */
-
-/**
- * @typedef {object} UseCoreApplicationStateAndLifecycleProps
- * @property {{ "1": React.RefObject<HTMLCanvasElement>, "2": React.RefObject<HTMLCanvasElement>, "3": React.RefObject<HTMLCanvasElement> }} canvasRefs
- * @property {React.RefObject<ConfigService | null>} configServiceRef
- * @property {number} configLoadNonce
- * @property {LayerConfigsType} currentActiveLayerConfigs
- * @property {TokenAssignmentsType} currentActiveTokenAssignments
- * @property {LayerConfigsType | null} loadedLayerConfigsFromPreset
- * @property {TokenAssignmentsType | null} loadedTokenAssignmentsFromPreset
- * @property {Error | string | null} loadError
- * @property {Error | null} upInitializationError
- * @property {Error | null} upFetchStateError
- * @property {boolean} isConfigLoading
- * @property {boolean} isInitiallyResolved
- * @property {string | null} currentConfigName
- * @property {string | null} currentProfileAddress
- * @property {boolean} isBenignOverlayActive
- * @property {string | null} animatingPanel
- * @property {boolean} animationLockForTokenOverlay
- * @property {object} sideA
- * @property {object} sideB
- * @property {number} crossfaderValue
- */
-
-/**
- * @typedef {object} CoreApplicationStateAndLifecycle
- * @property {React.RefObject<HTMLDivElement>} containerRef
- * @property {React.RefObject<{[key: string]: CanvasManager}>} managerInstancesRef
- * @property {AudioVisualizerState} audioState
- * @property {string} renderState
- * @property {string} loadingStatusMessage
- * @property {boolean} isStatusFadingOut
- * @property {boolean} showStatusDisplay
- * @property {boolean} showRetryButton
- * @property {boolean} isTransitioning
- * @property {Set<string> | null} outgoingLayerIdsOnTransitionStart
- * @property {boolean} makeIncomingCanvasVisible
- * @property {boolean} isAnimating
- * @property {() => void} handleManualRetry
- * @property {() => void} resetLifecycle
- * @property {boolean} managersReady
- * @property {boolean} defaultImagesLoaded
- * @property {() => void} stopCanvasAnimations
- * @property {() => void} restartCanvasAnimations
- * @property {(configs: LayerConfigsType) => void} applyConfigurationsToManagers
- * @property {(assignments: TokenAssignmentsType) => Promise<void>} applyTokenAssignmentsToManagers
- * @property {(configs?: LayerConfigsType | null) => Promise<boolean>} redrawAllCanvases
- * @property {(layerId: string, src: string) => Promise<void>} setCanvasLayerImage
- * @property {boolean} hasValidDimensions
- * @property {boolean} isContainerObservedVisible
- * @property {boolean} isFullscreenActive
- * @property {() => void} enterFullscreen
- * @property {React.RefObject<boolean>} isMountedRef
- * @property {object} sequencer
- */
-
-/**
- * Consolidates and manages the primary operational state and lifecycle logic
- * for the application's core visual and interactive elements.
- * @param {UseCoreApplicationStateAndLifecycleProps} props
- * @returns {CoreApplicationStateAndLifecycle}
- */
 export const useCoreApplicationStateAndLifecycle = (props) => {
   const {
     canvasRefs,
-    configServiceRef,
     configLoadNonce,
     currentActiveLayerConfigs,
     currentActiveTokenAssignments,
-    loadedLayerConfigsFromPreset,
-    loadedTokenAssignmentsFromPreset,
+    loadedLayerConfigsFromScene,
+    loadedTokenAssignmentsFromScene, // Correctly receive this prop
     loadError,
     upInitializationError,
     upFetchStateError,
-    isConfigLoading,
     isInitiallyResolved,
-    currentConfigName,
+    activeSceneName,
     currentProfileAddress,
     isBenignOverlayActive,
     animatingPanel,
-    animationLockForTokenOverlay,
     sideA,
     sideB,
     crossfaderValue,
+    isFullyLoaded, 
+    activeWorkspaceName, // <-- ADD THIS LINE
   } = props;
 
-  const { updateLayerConfig } = useVisualConfig();
+  const { updateLayerConfig, setLiveConfig } = useVisualConfig();
   const isMountedRef = useRef(false);
   const internalResetLifecycleRef = useRef(null);
+  const lastProcessedNonceRef = useRef(0);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -114,17 +44,20 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
   }, []);
 
   const {
-    managersReady, defaultImagesLoaded, managerInstancesRef,
-    applyConfigurationsToManagers, applyTokenAssignmentsToManagers,
+    managersReady, managerInstancesRef,
     stopCanvasAnimations, restartCanvasAnimations,
     redrawAllCanvases, handleCanvasResize, setCanvasLayerImage,
-    applyPlaybackValue, clearAllPlaybackValues
+    applyPlaybackValue, clearAllPlaybackValues,
+    transitionToScene,
   } = useCanvasOrchestrator({
-    configServiceRef, canvasRefs, configLoadNonce, isInitiallyResolved,
-    pLockState: null,
+    canvasRefs,
     sideA,
     sideB,
     crossfaderValue,
+    isInitiallyResolved,
+    currentActiveLayerConfigs,
+    currentActiveTokenAssignments,
+    activeWorkspaceName, // <-- PASS IT DOWN
   });
 
   const sequencer = usePLockSequencer({
@@ -169,20 +102,21 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
   });
 
   const renderLifecycleData = useRenderLifecycle({
-    managersReady, defaultImagesLoaded, isInitiallyResolved, hasValidDimensions,
-    isContainerObservedVisible, configLoadNonce, currentConfigName, currentProfileAddress,
+    managersReady,
+    isInitiallyResolved,
+    hasValidDimensions,
+    isContainerObservedVisible,
+    configLoadNonce,
+    currentProfileAddress,
     layerConfigs: currentActiveLayerConfigs,
-    tokenAssignments: currentActiveTokenAssignments,
-    targetLayerConfigsForPreset: loadedLayerConfigsFromPreset,
-    targetTokenAssignmentsForPreset: loadedTokenAssignmentsFromPreset,
-    loadError, upInitializationError, upFetchStateError,
+    targetLayerConfigsForPreset: loadedLayerConfigsFromScene, // Pass down layers
+    targetTokenAssignmentsForPreset: loadedTokenAssignmentsFromScene, // Pass down tokens
+    loadError,
+    upInitializationError,
+    upFetchStateError,
     stopAllAnimations: stopCanvasAnimations,
-    applyConfigurationsToManagers: applyConfigurationsToManagers,
-    applyTokenAssignments: applyTokenAssignmentsToManagers,
-    redrawAllCanvases: redrawAllCanvases,
     restartCanvasAnimations: restartCanvasAnimations,
-    isLoading: isConfigLoading,
-    managerInstancesRef,
+    isFullyLoaded, 
   });
   const {
     renderState, loadingStatusMessage, isStatusFadingOut, showStatusDisplay,
@@ -196,6 +130,19 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     internalResetLifecycleRef.current = resetLifecycle;
   }, [resetLifecycle]);
 
+  useEffect(() => {
+    if (isTransitioning && configLoadNonce > lastProcessedNonceRef.current) {
+      const targetSceneConfig = {
+        layers: loadedLayerConfigsFromScene,
+        tokenAssignments: loadedTokenAssignmentsFromScene, // Use correct variable
+      };
+      if (transitionToScene && targetSceneConfig.layers && targetSceneConfig.tokenAssignments) {
+        transitionToScene(targetSceneConfig);
+        lastProcessedNonceRef.current = configLoadNonce;
+      }
+    }
+  }, [isTransitioning, configLoadNonce, loadedLayerConfigsFromScene, loadedTokenAssignmentsFromScene, transitionToScene]);
+
   useAnimationLifecycleManager({
     isMounted: isMountedRef.current,
     renderState,
@@ -206,7 +153,6 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     isTransitioning,
     restartCanvasAnimations,
     stopCanvasAnimations,
-    animationLockForTokenOverlay,
   });
 
   return useMemo(() => ({
@@ -225,11 +171,8 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     handleManualRetry,
     resetLifecycle,
     managersReady,
-    defaultImagesLoaded,
     stopCanvasAnimations,
     restartCanvasAnimations,
-    applyConfigurationsToManagers,
-    applyTokenAssignmentsToManagers,
     redrawAllCanvases,
     setCanvasLayerImage,
     hasValidDimensions,
@@ -242,9 +185,9 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     containerRef, managerInstancesRef, audioState, renderState, loadingStatusMessage,
     isStatusFadingOut, showStatusDisplay, showRetryButton, isTransitioning,
     outgoingLayerIdsOnTransitionStart, makeIncomingCanvasVisible, isAnimating,
-    handleManualRetry, resetLifecycle, managersReady, defaultImagesLoaded,
-    stopCanvasAnimations, restartCanvasAnimations, applyConfigurationsToManagers,
-    applyTokenAssignmentsToManagers, redrawAllCanvases, setCanvasLayerImage,
+    handleManualRetry,
+    resetLifecycle, managersReady,
+    stopCanvasAnimations, restartCanvasAnimations, redrawAllCanvases, setCanvasLayerImage,
     hasValidDimensions, isContainerObservedVisible, isFullscreenActive, enterFullscreen,
     isMountedRef, sequencer
   ]);

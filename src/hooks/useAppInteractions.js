@@ -11,7 +11,7 @@ import { scaleNormalizedValue } from "../utils/helpers";
 
 export const useAppInteractions = (props) => {
   const {
-    updateLayerConfig, // This is now our combined handler passed from Mainview
+    updateLayerConfig,
     currentProfileAddress,
     savedReactions,
     managerInstancesRef,
@@ -34,22 +34,16 @@ export const useAppInteractions = (props) => {
     clearPendingActions 
   } = useMIDI();
 
-  // Note: The `handleLayerPropChange` function is now defined and passed in from Mainview.jsx.
-  // This hook now uses it directly via the `updateLayerConfig` prop name.
-
   const applyPlaybackValueToManager = useCallback((layerId, key, value) => {
     const manager = managerInstancesRef.current?.[String(layerId)];
-    if (!manager) return;
-  
-    // During playback, we always snap. The sequencer provides the smooth values.
-    if (typeof manager.snapVisualProperty === 'function') {
+    if (manager?.snapVisualProperty) {
       manager.snapVisualProperty(key, value);
     }
   }, [managerInstancesRef]);
 
   const handleEventReceived = useCallback((event) => {
     if (!isMountedRef.current || !event?.typeId) return;
-    if (typeof addNotification === 'function') addNotification(event);
+    if (addNotification) addNotification(event);
     const reactionsMap = savedReactions || {};
     const typeIdToMatch = event.typeId.toLowerCase();
     const matchingReactions = Object.values(reactionsMap).filter(
@@ -57,9 +51,9 @@ export const useAppInteractions = (props) => {
     );
     if (matchingReactions.length > 0) {
       matchingReactions.forEach(reactionConfig => {
-        if (typeof processEffect === 'function') processEffect({ ...reactionConfig, originEvent: event });
+        if (processEffect) processEffect({ ...reactionConfig, originEvent: event });
       });
-    } else if (typeof createDefaultEffect === 'function') {
+    } else if (createDefaultEffect) {
       createDefaultEffect(event.type);
     }
   }, [isMountedRef, addNotification, savedReactions, processEffect, createDefaultEffect]);
@@ -71,10 +65,18 @@ export const useAppInteractions = (props) => {
     if (pendingParamUpdate && managerInstancesRef.current) {
       const { layer, param, value: normalizedMidiValue } = pendingParamUpdate;
       const sliderConfig = sliderParams.find(p => p.prop === param);
-      if (sliderConfig) {
+      const manager = managerInstancesRef.current?.[String(layer)];
+      
+      if (sliderConfig && manager) {
         const scaledValue = scaleNormalizedValue(normalizedMidiValue, sliderConfig.min, sliderConfig.max);
-        // Here, updateLayerConfig is actually handleUserLayerPropChange from Mainview
-        updateLayerConfig(String(layer), param, scaledValue, true); // Pass true for isMidiUpdate
+        
+        // --- THIS IS THE FIX ---
+        // We now call the main update handler with a flag indicating this is a MIDI update.
+        // This allows the handler in MainView.jsx to choose the correct interpolation method
+        // for either Deck A or Deck B based on the crossfader position.
+        updateLayerConfig(String(layer), param, scaledValue, true); // The 'true' is for 'isMidiUpdate'
+        // --- END FIX ---
+
         processed = true;
       }
     }
@@ -82,44 +84,33 @@ export const useAppInteractions = (props) => {
       const { layer } = pendingLayerSelect;
       const layerToTabMap = { 1: 'tab3', 2: 'tab2', 3: 'tab1' };
       const targetTab = layerToTabMap[layer];
-      if (targetTab && typeof uiStateHook.setActiveLayerTab === 'function') {
+      if (targetTab && uiStateHook.setActiveLayerTab) {
         uiStateHook.setActiveLayerTab(targetTab);
         processed = true;
       }
     }
     if (pendingGlobalAction) {
       const actionName = pendingGlobalAction.action;
-      if (actionName === 'pLockToggle' && typeof onTogglePLock === 'function') {
+      if (actionName === 'pLockToggle' && onTogglePLock) {
         onTogglePLock();
         processed = true;
       }
     }
 
-    if (processed && typeof clearPendingActions === 'function') {
+    if (processed && clearPendingActions) {
       clearPendingActions();
     }
   }, [pendingParamUpdate, pendingLayerSelect, pendingGlobalAction, onTogglePLock, updateLayerConfig, uiStateHook, clearPendingActions, managerInstancesRef]);
 
   const handleTokenApplied = useCallback(async (token, layerId) => {
     if (!isMountedRef.current) return;
-  
     const idToSave = token.id;
     const srcToLoad = token.metadata?.image;
-  
     if (!idToSave || !srcToLoad) return;
-  
     const assignmentObject = { id: idToSave, src: srcToLoad };
-    
-    if (typeof updateTokenAssignment === 'function') {
-      updateTokenAssignment(String(layerId), assignmentObject);
-    }
-  
-    if (typeof setCanvasLayerImage === 'function') {
-      try {
-        await setCanvasLayerImage(String(layerId), srcToLoad);
-      } catch (e) {
-        // empty
-      }
+    if (updateTokenAssignment) updateTokenAssignment(String(layerId), assignmentObject);
+    if (setCanvasLayerImage) {
+      try { await setCanvasLayerImage(String(layerId), srcToLoad); } catch (e) { /* empty */ }
     }
   }, [isMountedRef, setCanvasLayerImage, updateTokenAssignment]);
 
@@ -129,11 +120,10 @@ export const useAppInteractions = (props) => {
     handleTokenApplied,
     processEffect,
     createDefaultEffect,
-    handleLayerPropChange: updateLayerConfig, // Expose the passed-in handler
     applyPlaybackValueToManager,
   }), [
     uiStateHook, notificationData, handleTokenApplied,
-    processEffect, createDefaultEffect, updateLayerConfig,
+    processEffect, createDefaultEffect,
     applyPlaybackValueToManager
   ]);
 };

@@ -22,11 +22,11 @@
 }
 
 /* --- START MODIFICATION --- */
-/* Increased selector specificity and reduced width */
+/* Increased selector specificity and adjusted width */
 input[type="range"].crossfader-slider {
   -webkit-appearance: none;
   appearance: none;
-  width: 250px; /* Decreased width by 50% from 250px */
+  width: 250px; 
   height: 6px;
   background: transparent;
   outline: none;

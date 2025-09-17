@@ -38,7 +38,6 @@ export { default as saveconfigIcon } from "./saveconfig.webp";
 export { default as saveconfigurationIcon } from "./saveconfiguration.svg";
 export { default as scrollIcon } from "./scroll.webp";
 export { default as showUiIcon } from "./show-ui.svg";
-export { default as slidersIcon } from "./sliders.webp";
 export { default as tokenselectIcon } from "./tokenselect.svg";
 export { default as tokenselectorIcon } from "./tokenselector.webp";
 export { default as topIcon } from "./top.webp";
@@ -49,3 +48,7 @@ export { default as wavezIcon } from "./wavez.svg";
 export { default as whitelistIcon } from "./whitelist.svg";
 export { default as writeIcon } from "./write.svg";
 export { default as ufoIcon } from "./UFO.svg"; // Added missing
+export { default as setsIcon } from './sets.webp';
+export { default as R } from './R.webp';
+export { default as parallaxIcon } from './parallax.webp';
+export { default as FXIcon } from './FX.webp';

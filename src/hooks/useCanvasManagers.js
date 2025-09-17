@@ -23,43 +23,29 @@ import CanvasManager from '../utils/CanvasManager'; // Assuming CanvasManager ad
  * one for each visual layer. It handles their creation, initialization,
  * and cleanup. It provides centralized functions to control all managed canvases
  * (e.g., applying full configurations, setting images, animation control).
- *
- * The `updateLayerProperty` function is kept for potential direct, non-reactive updates
- * to non-interpolated properties if needed by orchestrator logic. However, primary layer
- * parameter updates are expected to be reactive, driven by `VisualConfigContext` changes
- * handled in `useCanvasOrchestrator`.
- *
- * @param {Object.<string, React.RefObject<HTMLCanvasElement>>} canvasRefs - An object where keys are layer IDs ('1', '2', '3') and values are React refs to the corresponding canvas elements.
- * @param {Object.<string, string>} defaultAssets - An object mapping layer IDs to their default image source URLs.
- * @returns {CanvasManagersAPI} An object containing the manager instances, initialization status, and control functions.
  */
 export function useCanvasManagers(canvasRefs, defaultAssets) {
     const [isInitialized, setIsInitialized] = useState(false);
-    // 'managers' state might be useful if components need to react to the set of managers changing,
-    // but managerInstancesRef is generally used for direct interaction.
     const [managers, setManagers] = useState({});
     /** @type {React.RefObject<Object.<string, CanvasManager>>} */
     const managerInstancesRef = useRef({});
     /** @type {React.RefObject<ReturnType<typeof setTimeout> | null>} */
     const resizeTimeoutRef = useRef(null);
     /** @type {React.RefObject<boolean>} */
-    const initRunRef = useRef(false); // To prevent re-running initialization effect unnecessarily
+    const initRunRef = useRef(false);
 
     useEffect(() => {
-        if (initRunRef.current) return; // Only run initialization once per canvasRefs/defaultAssets change
+        if (initRunRef.current) return;
         initRunRef.current = true;
 
         const newManagers = {};
-        const createdManagerInstancesList = []; // To keep track for cleanup
+        const createdManagerInstancesList = [];
         let managersCreatedCount = 0;
         const totalLayersExpected = Object.keys(canvasRefs).length;
 
         if (totalLayersExpected === 0) {
-            if (import.meta.env.DEV) {
-                console.warn("[useCanvasManagers] No canvas refs provided during initialization.");
-            }
-            setIsInitialized(true); // Considered initialized if no canvases are expected
-            initRunRef.current = false; // Allow re-init if refs change later
+            setIsInitialized(true);
+            initRunRef.current = false;
             return;
         }
 
@@ -72,155 +58,91 @@ export function useCanvasManagers(canvasRefs, defaultAssets) {
                     createdManagerInstancesList.push(manager);
                     managersCreatedCount++;
                 } catch (error) {
-                    if (import.meta.env.DEV) {
-                        console.error(`[useCanvasManagers] Failed to create CanvasManager for layer ${layerId}:`, error);
-                    }
-                }
-            } else {
-                if (import.meta.env.DEV) {
-                    console.warn(`[useCanvasManagers] Canvas ref not available for layer ${layerId} during initialization attempt.`);
+                    if (import.meta.env.DEV) console.error(`[useCanvasManagers] Failed to create CanvasManager for layer ${layerId}:`, error);
                 }
             }
         });
 
         managerInstancesRef.current = newManagers;
-        setManagers(newManagers); // Update state
+        setManagers(newManagers);
 
-        if (managersCreatedCount !== totalLayersExpected) {
-             if (import.meta.env.DEV) {
-                 console.warn(`[useCanvasManagers] Manager creation mismatch. Expected: ${totalLayersExpected}, Created: ${managersCreatedCount}. isInitialized may be false or reflect partial setup.`);
-             }
-        }
-        setIsInitialized(managersCreatedCount > 0 || totalLayersExpected === 0); // Initialized if any manager created or none expected
+        setIsInitialized(managersCreatedCount > 0 || totalLayersExpected === 0);
 
-        initRunRef.current = false; // Reset for potential future re-initializations if deps change
+        initRunRef.current = false;
 
-        // Resize handler
         const handleResizeCallback = () => {
             if (resizeTimeoutRef.current) cancelAnimationFrame(resizeTimeoutRef.current);
             resizeTimeoutRef.current = requestAnimationFrame(() => {
                 Object.values(managerInstancesRef.current).forEach(manager => {
-                    if (manager && typeof manager.resize === 'function') {
-                         manager.resize().catch(err => {
-                             if(import.meta.env.DEV) console.error(`Error during resize for layer ${manager.layerId}:`, err)
-                         });
-                    } else if (manager && typeof manager.setupCanvas === 'function') { // Fallback if resize isn't available
-                         manager.setupCanvas().catch(err => {
-                             if(import.meta.env.DEV) console.error(`Error during setupCanvas fallback for layer ${manager.layerId} on resize:`, err)
-                         });
-                    }
+                    if (manager?.resize) manager.resize().catch(err => { if(import.meta.env.DEV) console.error(`Error during resize for layer ${manager.layerId}:`, err) });
+                    else if (manager?.setupCanvas) manager.setupCanvas().catch(err => { if(import.meta.env.DEV) console.error(`Error during setupCanvas fallback for layer ${manager.layerId} on resize:`, err) });
                 });
             });
         };
         window.addEventListener('resize', handleResizeCallback, { passive: true });
 
-        // Cleanup function
         return () => {
             window.removeEventListener('resize', handleResizeCallback);
             if (resizeTimeoutRef.current) cancelAnimationFrame(resizeTimeoutRef.current);
-            // Use the list of instances created during *this specific effect run* for cleanup
             createdManagerInstancesList.forEach(manager => {
-                 if (manager && typeof manager.destroy === 'function') {
-                     manager.destroy();
-                 }
+                 if (manager?.destroy) manager.destroy();
             });
-            initRunRef.current = false; // Ensure reset on unmount too
+            initRunRef.current = false;
         };
-    }, [canvasRefs, defaultAssets]); // Re-run if canvasRefs or defaultAssets change
+    }, [canvasRefs, defaultAssets]);
 
     const setLayerImage = useCallback(async (layerId, src) => {
         const manager = managerInstancesRef.current?.[String(layerId)];
-        if (!manager) {
-            if (import.meta.env.DEV) console.warn(`[useCanvasManagers setLayerImage] No manager for layer ${layerId}`);
-            return Promise.reject(new Error(`No manager for layer ${layerId}`));
-        }
-        if (typeof manager.setImage !== 'function') {
-            if (import.meta.env.DEV) console.warn(`[useCanvasManagers setLayerImage] Manager for layer ${layerId} has no setImage method.`);
-            return Promise.reject(new Error(`Manager for layer ${layerId} has no setImage method.`));
-        }
+        if (!manager) return Promise.reject(new Error(`No manager for layer ${layerId}`));
+        if (typeof manager.setImage !== 'function') return Promise.reject(new Error(`Manager for layer ${layerId} has no setImage method.`));
         return manager.setImage(src);
-    }, []); // managerInstancesRef is stable
+    }, []);
 
-    // loadTokenImage seems to have been removed from CanvasManager, if it was specific to TokenService, this can be removed.
-    // If it's a general image loading with metadata, its implementation in CanvasManager would be needed.
-    // For now, assuming it's not part of CanvasManager's direct API.
-
-    /** Applies a full configuration object to a single specified CanvasManager instance. */
     const applyLayerConfig = useCallback((layerId, config) => {
         const manager = managerInstancesRef.current?.[String(layerId)];
-        if (manager && typeof manager.applyFullConfig === 'function') {
-            manager.applyFullConfig(config);
-        } else {
-            if (import.meta.env.DEV) {
-                console.warn(`[useCanvasManagers applyLayerConfig] Cannot apply full config: Manager or method missing for layer ${layerId}`);
-            }
-        }
+        if (manager?.applyFullConfig) manager.applyFullConfig(config);
     }, []);
 
-    /**
-     * Applies a full configuration object to each corresponding CanvasManager instance.
-     * This is typically used when a new preset is loaded.
-     */
+    // --- THIS IS THE CORRECTED, ROBUST VERSION ---
     const applyConfigurations = useCallback((configs) => {
-        if (!configs || typeof configs !== 'object') {
-            if (import.meta.env.DEV) {
-                console.warn("[useCanvasManagers applyConfigurations] Invalid or no configs object provided.");
-            }
-            return;
-        }
         const currentManagers = managerInstancesRef.current || {};
-        Object.entries(configs).forEach(([layerId, config]) => {
-            const manager = currentManagers[String(layerId)];
+        const safeConfigs = configs || {};
+
+        // Iterate over all existing managers (e.g., '1', '2', '3')
+        Object.keys(currentManagers).forEach(layerId => {
+            const manager = currentManagers[layerId];
+            const newConfigForLayer = safeConfigs[layerId];
+
             if (manager && typeof manager.applyFullConfig === 'function') {
-                manager.applyFullConfig(config);
-            } else {
-                 if (import.meta.env.DEV) {
-                    // console.warn(`[useCanvasManagers applyConfigurations] No manager or applyFullConfig for layer ${layerId} when applying new configs.`);
-                 }
-            }
-        });
-        // Ensure layers not in the incoming config are handled (e.g., set to a default enabled state)
-        Object.entries(currentManagers).forEach(([layerId, manager]) => {
-            if (!configs[String(layerId)] && manager && typeof manager.applyFullConfig === 'function') {
-                const currentManagerConfig = manager.getConfigData?.() || {};
-                // Apply existing config but ensure 'enabled' is true, or apply a default enabled config
-                manager.applyFullConfig({ ...(manager.getDefaultConfig?.() || {}), ...currentManagerConfig, enabled: true });
+                if (newConfigForLayer) {
+                    // If a config exists for this layer in the new scene, apply it.
+                    manager.applyFullConfig(newConfigForLayer);
+                } else {
+                    // If no config exists, it means this layer should be disabled.
+                    // We apply its default config but explicitly set `enabled` to false.
+                    const defaultConfig = manager.getDefaultConfig ? manager.getDefaultConfig() : {};
+                    manager.applyFullConfig({ ...defaultConfig, enabled: false });
+                }
             }
         });
     }, []);
+    // --- END CORRECTION ---
 
-    /**
-     * Directly updates a single non-interpolated configuration property on a specific CanvasManager.
-     * This is intended for use by `useCanvasOrchestrator` if it needs to make direct updates
-     * for properties not driven by interpolation (e.g., 'speed', 'opacity', 'blendMode').
-     */
     const updateLayerProperty = useCallback((layerId, key, value) => {
         const manager = managerInstancesRef.current?.[String(layerId)];
-        if (!manager) {
-            if (import.meta.env.DEV) {
-                console.warn(`[useCanvasManagers updateLayerProperty] Manager missing for layer ${layerId}`);
-            }
-            return;
-        }
-        if (typeof manager.updateConfigProperty === 'function') {
-            manager.updateConfigProperty(key, value);
-        } else {
-            if (import.meta.env.DEV) {
-                console.error(`[useCanvasManagers updateLayerProperty] No updateConfigProperty method on manager for layer ${layerId}.`);
-            }
-        }
-    }, []); // managerInstancesRef is stable
+        if (manager?.updateConfigProperty) manager.updateConfigProperty(key, value);
+    }, []);
 
     const stopAllAnimations = useCallback(() => {
         Object.values(managerInstancesRef.current || {}).forEach(manager => {
-            if (manager && typeof manager.stopAnimationLoop === 'function') manager.stopAnimationLoop();
+            if (manager?.stopAnimationLoop) manager.stopAnimationLoop();
         });
     }, []);
 
     const restartAllAnimations = useCallback(() => {
         Object.values(managerInstancesRef.current || {}).forEach(manager => {
             const config = manager?.getConfigData?.();
-            if (manager && typeof manager.startAnimationLoop === 'function' && config?.enabled) {
+            if (manager?.startAnimationLoop && config?.enabled) {
                 manager.startAnimationLoop();
             }
         });
@@ -235,16 +157,9 @@ export function useCanvasManagers(canvasRefs, defaultAssets) {
                 try {
                     const configForLayer = configs ? configs[layerId] : null;
                     if (typeof manager.forceRedraw === 'function') {
-                        const result = await manager.forceRedraw(configForLayer);
-                        results.push(result);
-                    } else {
-                        if (import.meta.env.DEV) console.warn(`[useCanvasManagers forceRedrawAll] forceRedraw missing on manager L${layerId}`);
-                        results.push(false);
-                    }
-                } catch (e) {
-                    if (import.meta.env.DEV) console.error(`[useCanvasManagers forceRedrawAll] Error redrawing layer ${layerId}:`, e);
-                    results.push(false);
-                }
+                        results.push(await manager.forceRedraw(configForLayer));
+                    } else { results.push(false); }
+                } catch (e) { results.push(false); }
             }
         }
         return results.every(Boolean);
@@ -254,13 +169,8 @@ export function useCanvasManagers(canvasRefs, defaultAssets) {
         const currentManagers = managerInstancesRef.current || {};
         for (const layerId in currentManagers) {
             const manager = currentManagers[layerId];
-            if (manager?.resize) {
-                try { await manager.resize(); }
-                catch (error) { if(import.meta.env.DEV) console.error(`[useCanvasManagers handleResize] Error resizing layer ${layerId}:`, error); }
-            } else if (manager?.setupCanvas) { // Fallback if resize isn't available
-                 try { await manager.setupCanvas(); }
-                 catch (error) { if(import.meta.env.DEV) console.error(`[useCanvasManagers handleResize] Error setting up canvas for layer ${layerId} during resize:`, error); }
-            }
+            if (manager?.resize) await manager.resize().catch(console.error);
+            else if (manager?.setupCanvas) await manager.setupCanvas().catch(console.error);
         }
     }, []);
 
@@ -274,8 +184,8 @@ export function useCanvasManagers(canvasRefs, defaultAssets) {
     }, []);
 
     return useMemo(() => ({
-        managers, // The state variable (might have a slight delay from ref)
-        managerInstancesRef, // Ref for immediate access
+        managers,
+        managerInstancesRef,
         isInitialized,
         setLayerImage,
         applyLayerConfig,

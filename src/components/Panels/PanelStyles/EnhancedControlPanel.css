@@ -1,4 +1,5 @@
 /* src/components/Panels/PanelStyles/EnhancedControlPanel.css */
+@import "../../../styles/variables.css";
 
 /* --- ADDED FOR CONSISTENT GLASSMORPHISM --- */
 .enhanced-control-panel.panel {
@@ -141,7 +142,6 @@
   box-shadow: 0 0 4px rgba(0, 243, 255, 0.4);
 }
 
-/* MIDI 'M' Button - Tiny orange button */
 .midi-btn {
   padding: 0 2px;
   font-size: 8px;
@@ -270,17 +270,17 @@
   padding: var(--space-xs) var(--space-sm);
 }
 
-/* --- START: NEW AND UPDATED MIDI MAPPING STYLES --- */
 .midi-mappings-section {
   background: var(--color-bg-alt);
   padding: var(--space-sm);
   border-radius: var(--radius-md);
-  margin-bottom: var(--space-xs);
+  margin-top: var(--space-lg);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
 }
-
 .midi-section-title {
   margin: 0 0 var(--space-xs) 0;
   font-size: 10px;
@@ -290,14 +290,12 @@
   text-transform: uppercase;
   font-weight: bold;
 }
-
 .global-mapping-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--space-sm);
   margin-bottom: var(--space-xs);
 }
-
 .global-mapping-item,
 .layer-mapping-item {
   background: var(--color-bg);
@@ -305,33 +303,27 @@
   border-radius: var(--radius-sm);
   padding: var(--space-xs);
 }
-
 .global-mapping-label,
 .layer-mapping-label {
   font-weight: bold;
   margin-bottom: var(--space-xs);
   font-size: 10px;
 }
-
 .global-mapping-controls,
 .layer-mapping-controls {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
-/* --- END: NEW AND UPDATED MIDI MAPPING STYLES --- */
-
 .layer-mapping-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: var(--space-xs);
 }
-
 .layer-mapping-item.active {
   border-color: var(--color-primary-a50);
   background: var(--color-primary-a10);
 }
-
 .layer-mapping-text {
   font-size: 9px;
   color: var(--color-text-dim);
@@ -361,184 +353,6 @@
   color: var(--color-accent);
   animation: blink 1s infinite;
 }
-.midi-learning-container {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin: var(--space-xs) 0;
-  padding: 5px var(--space-xs);
-  background: var(--color-accent-a05);
-  border: 1px solid var(--color-accent-a15);
-  border-radius: var(--radius-md);
-}
-.midi-learning-container.layer-learning {
-  background: var(--color-warning-a05);
-  border: 1px solid var(--color-warning-a15);
-}
-.midi-learning {
-  color: var(--color-accent);
-  font-weight: bold;
-  animation: blink 1s infinite;
-  font-size: var(--font-size-sm);
-}
-.layer-learning .midi-learning {
-  color: var(--color-warning);
-}
-.midi-cancel-btn {
-  background: var(--color-error-a15);
-  color: var(--color-error);
-  border: 1px solid var(--color-error-a30);
-  border-radius: var(--radius-sm);
-  padding: 3px 8px;
-  font-size: var(--font-size-sm);
-  cursor: pointer;
-  outline: none;
-}
-.midi-cancel-btn:focus {
-  outline: none;
-  box-shadow: none;
-}
-.midi-cancel-btn:hover {
-  background: var(--color-error-a25);
-}
-.midi-tools {
-  display: flex;
-  gap: var(--space-xs);
-  margin-top: var(--space-sm);
-  justify-content: space-between;
-  flex-wrap: wrap;
-  padding-top: var(--space-xs);
-  border-top: 1px solid var(--color-border);
-}
-.midi-monitor-btn,
-.midi-clear-btn,
-.midi-reset-btn {
-  background: var(--color-primary-a15);
-  color: var(--color-primary);
-  border: 1px solid var(--color-primary-a30);
-  border-radius: var(--radius-sm);
-  padding: 3px 8px;
-  font-size: var(--font-size-sm);
-  cursor: pointer;
-  outline: none;
-  flex-shrink: 0;
-  transition: background-color var(--transition-fast);
-}
-.midi-monitor-btn:focus,
-.midi-clear-btn:focus,
-.midi-reset-btn:focus {
-  outline: none;
-  box-shadow: none;
-}
-.midi-monitor-btn:hover,
-.midi-clear-btn:hover,
-.midi-reset-btn:hover {
-  background: var(--color-primary-a25);
-}
-.midi-reset-btn {
-  background: var(--color-warning-a15);
-  color: var(--color-warning);
-  border-color: var(--color-warning-a30);
-}
-.midi-reset-btn:hover {
-  background: var(--color-warning-a25);
-}
-.midi-monitor {
-  margin-top: var(--space-sm);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  max-height: 100px;
-  display: flex;
-  flex-direction: column;
-}
-.midi-monitor-header {
-  background: var(--color-bg-alt);
-  padding: var(--space-xs);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid var(--color-border);
-}
-.midi-monitor-header h4 {
-  margin: 0;
-  font-size: var(--font-size-sm);
-  color: var(--color-text);
-}
-.midi-monitor-content {
-  flex: 1;
-  overflow-y: auto;
-  padding: var(--space-xs);
-  font-size: var(--font-size-xs);
-  font-family: monospace;
-  background: var(--color-bg);
-}
-.midi-monitor-empty {
-  padding: var(--space-sm);
-  text-align: center;
-  color: var(--color-text-dim);
-  font-size: var(--font-size-xs);
-}
-.midi-monitor-msg {
-  padding: 1px 0;
-  display: flex;
-  border-bottom: 1px solid var(--color-border-light);
-}
-.midi-monitor-time {
-  width: 55px;
-  color: var(--color-text-dim);
-}
-.midi-monitor-type {
-  width: 75px;
-  color: var(--color-primary);
-}
-.midi-monitor-channel {
-  width: 35px;
-  color: var(--color-accent);
-}
-.midi-monitor-data {
-  width: 25px;
-  text-align: right;
-  color: var(--color-text);
-  margin-right: var(--space-xs);
-}
-
-/* Custom Scrollbar for MIDI Monitor */
-.midi-monitor-content::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-.midi-monitor-content::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.1);
-  border-radius: 3px;
-}
-.midi-monitor-content::-webkit-scrollbar-thumb {
-  background: var(--color-primary-a30);
-  border-radius: 3px;
-}
-.midi-monitor-content::-webkit-scrollbar-thumb:hover {
-  background: var(--color-primary-a50);
-}
-.midi-monitor-content {
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-primary-a30) rgba(0, 0, 0, 0.1);
-}
-
-.visitor-message {
-  margin-top: var(--space-md);
-  padding: var(--space-sm);
-  background: var(--color-primary-a05);
-  border: 1px solid var(--color-primary-a15);
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-sm);
-  color: var(--color-primary-a90);
-  text-align: center;
-}
-.visitor-message.warning {
-    background: var(--color-warning-a05);
-    border-color: var(--color-warning-a15);
-    color: var(--color-warning-a90);
-}
 
 @keyframes blink {
   0% { opacity: 1; }
@@ -546,135 +360,183 @@
   100% { opacity: 1; }
 }
 
-.midi-tools {
-  display: flex;
-  gap: var(--space-xs);
-  margin-top: var(--space-sm);
-  justify-content: space-between; /* Adjusted for better spacing */
-  flex-wrap: wrap;
-  padding-top: var(--space-xs);
-  border-top: 1px solid var(--color-border);
-}
-
-/* Style for the new disconnect button */
-.midi-disconnect-btn {
-  background: var(--color-error-a15);
-  color: var(--color-error);
-  border: 1px solid var(--color-error-a30);
-  border-radius: var(--radius-sm);
-  padding: 3px 8px;
-  font-size: var(--font-size-sm);
-  cursor: pointer;
-  outline: none;
-  flex-shrink: 0;
-  transition: background-color var(--transition-fast);
-}
-
-.midi-disconnect-btn:focus {
-  outline: none;
-  box-shadow: none;
-}
-
-.midi-disconnect-btn:hover {
-  background: var(--color-error-a25);
-}
-
-.midi-disconnected-message {
-  font-size: var(--font-size-sm);
-  color: var(--color-text-muted);
-  text-align: center;
-  width: 100%;
-  padding: var(--space-xs) 0;
-}
-
-/* --- START: Styles for Sequencer Interval Control --- */
-.sequencer-interval-control {
+/* --- SCENE MANAGEMENT STYLES --- */
+.scene-management-section {
   margin-top: var(--space-lg);
   padding-top: var(--space-md);
   border-top: 1px solid var(--color-border);
 }
 
-.sequencer-interval-control .section-title { /* Re-style h4 if needed, or use existing */
-  margin-bottom: var(--space-sm);
-  font-size: var(--font-size-sm); /* Smaller title for this section */
+.scene-management-section h4 {
+  margin: 0 0 var(--space-sm) 0;
+  font-size: var(--font-size-sm);
   color: var(--color-primary-a90);
   text-transform: uppercase;
-  font-weight: 500; /* Match other section titles if needed */
+  font-weight: 500;
   letter-spacing: 0.5px;
-  border-bottom: none; /* Remove double border if .config-section already has one */
-  padding-bottom: 0;
 }
 
-.sequencer-interval-control .form-group {
-  margin-bottom: 0; /* Remove bottom margin if it's the only element */
+.scene-create-form {
+  display: flex;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
 }
 
-.sequencer-interval-control .input-with-button {
+.scene-create-form .form-control {
+  flex-grow: 1;
+  padding: var(--space-xs) var(--space-sm);
+}
+
+.scene-create-form .btn {
+  flex-shrink: 0;
+  padding: var(--space-xs) var(--space-sm);
+}
+
+.scene-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 150px; /* Adjust as needed */
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background-color: var(--color-bg-inset);
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-primary-a30) rgba(0, 0, 0, 0.1);
+}
+
+.scene-list::-webkit-scrollbar { width: 6px; }
+.scene-list::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.1); }
+.scene-list::-webkit-scrollbar-thumb { background-color: var(--color-primary-a30); }
+
+.scene-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--color-border-dark);
+  gap: var(--space-sm);
+}
+.scene-list li:last-child { border-bottom: none; }
+.scene-list li.active { background-color: var(--color-primary-a15); }
+
+.scene-main-content {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-}
-
-.sequencer-interval-control .input-with-button .form-control {
   flex-grow: 1;
-  /* Optional: make number input smaller if desired */
-  /* max-width: 80px; */
+  overflow: hidden;
 }
 
-.sequencer-interval-control .input-with-button .btn {
-  flex-shrink: 0; /* Prevent button from shrinking */
-}
-/* --- END: Styles for Sequencer Interval Control --- */
-
-.plock-midi-section {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  justify-content: space-between; 
-}
-
-.plock-midi-section .plock-controls-container {
+.scene-name {
   flex-grow: 1;
-  margin-bottom: 0;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--color-primary-a90);
+  cursor: pointer;
+  padding: 0;
+  font-size: var(--font-size-md);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scene-list li.active .scene-name { font-weight: bold; color: var(--color-primary); }
+.scene-name:hover:not(:disabled) { color: var(--color-primary); }
+.scene-name:disabled { cursor: not-allowed; }
+
+.default-scene-tag {
+  font-size: var(--font-size-xs);
+  color: var(--color-primary);
+  font-weight: bold;
+  background-color: var(--color-primary-a15);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
 }
 
-.plock-midi-map {
+.scene-actions {
   display: flex;
   align-items: center;
   gap: var(--space-xs);
   flex-shrink: 0;
 }
 
-.slider-wrapper {
-  position: relative;
-  width: 100%;
+.scene-actions .btn-icon {
+  font-size: 1.2em;
+  color: var(--color-text-muted);
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.scene-actions .btn-icon:hover:not(:disabled) {
+  color: var(--color-primary);
+  transform: scale(1.1);
+}
+
+.scene-actions .delete-scene {
+  color: var(--color-error-a70);
+}
+.scene-actions .delete-scene:hover:not(:disabled) {
+  color: var(--color-error);
+}
+
+.no-scenes-message {
+  font-style: italic;
+  color: var(--color-text-muted);
+  padding: var(--space-sm);
+  text-align: center;
+}
+
+/* --- SCENE SEQUENCER CONTROLS --- */
+.sequencer-settings-section {
+  margin-top: var(--space-lg);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-border);
   display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.sequencer-interval-form {
+  display: grid;
+  /* --- THIS IS THE FIX --- */
+  /* The first column (label) now takes up the flexible space, pushing the controls to the right. */
+  grid-template-columns: 1fr auto auto auto;
+  /* --- END FIX --- */
   align-items: center;
+  gap: var(--space-sm);
 }
 
-.slider-container.out-of-sync .horizontal-slider::-webkit-slider-thumb {
-  background: var(--color-text-dim);
-  box-shadow: none;
-}
-.slider-container.out-of-sync .horizontal-slider::-moz-range-thumb {
-  background: var(--color-text-dim);
-  box-shadow: none;
+.sequencer-interval-form label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  white-space: nowrap;
 }
 
-.slider-value-indicator {
-  position: absolute;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 8px;
-  height: 8px;
-  background-color: var(--color-primary);
-  border-radius: 50%;
-  box-shadow: 0 0 5px var(--color-primary);
-  pointer-events: none;
-  z-index: 2;
-  transition: background-color 0.2s ease;
+.sequencer-interval-form .interval-input {
+  /* --- THIS IS THE FIX --- */
+  /* Set a specific width for the input field to prevent it from stretching. */
+  width: 60px;
+  /* --- END FIX --- */
+  text-align: right;
+  padding-right: var(--space-xs);
 }
 
-.slider-container.out-of-sync:hover .slider-value-indicator {
-  background-color: white;
+.sequencer-interval-form .interval-input::-webkit-outer-spin-button,
+.sequencer-interval-form .interval-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.sequencer-interval-form .interval-input[type=number] {
+  -moz-appearance: textfield;
+}
+
+.sequencer-interval-form .interval-unit {
+  font-size: var(--font-size-md);
+  color: var(--color-text-muted);
+  font-weight: bold;
+}
+
+.sequencer-interval-form .interval-set-button {
+  flex-shrink: 0;
 }

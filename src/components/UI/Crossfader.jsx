@@ -3,7 +3,7 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import './Crossfader.css';
 
-const Crossfader = ({ value, onInput, onChange }) => {
+const Crossfader = ({ value, onInput, onChange, disabled = false }) => {
   const handleOnInput = (e) => {
     // onInput fires continuously while the user is dragging the slider.
     if (onInput) {
@@ -29,6 +29,7 @@ const Crossfader = ({ value, onInput, onChange }) => {
         onInput={handleOnInput}   // Use onInput for live, real-time updates.
         onChange={handleOnChange} // Use onChange for the final, committed value.
         className="crossfader-slider"
+        disabled={disabled}
       />
     </div>
   );
@@ -37,7 +38,8 @@ const Crossfader = ({ value, onInput, onChange }) => {
 Crossfader.propTypes = {
   value: PropTypes.number.isRequired,
   onInput: PropTypes.func, // The new handler for real-time updates.
-  onChange: PropTypes.func.isRequired,
+  onChange: PropTypes.func,
+  disabled: PropTypes.bool,
 };
 
 export default Crossfader;

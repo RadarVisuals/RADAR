@@ -23,7 +23,12 @@
   visibility: visible;
   background: radial-gradient( circle at center, var(--color-bg-light) 0%, #000000 100% );
   z-index: 1;
-  transition: opacity 0.15s linear; /* For dimming when overlay-animating is removed */
+  transition: opacity 0.5s ease-in-out; /* This is our fade duration */
+}
+
+/* New class for the workspace fade-out state */
+.canvas-container.workspace-fading-out {
+  opacity: 0;
 }
 
 .main-view.overlay-animating .canvas-container {
@@ -42,22 +47,27 @@
   pointer-events: none;
 }
 
+/* --- START: PARALLAX BORDER FIX --- */
 .canvas {
   position: absolute;
-  top: 0; left: 0;
-  width: 100% !important;
-  height: 100% !important;
+  /* Make the canvas larger than the viewport to create a bleed area */
+  width: 110% !important;
+  height: 110% !important;
+  /* Reposition the oversized canvas so it's centered */
+  top: -5%; 
+  left: -5%;
   display: block;
   backface-visibility: hidden;
   will-change: transform, opacity;
 
   /* Default state: hidden, ready for transition-in */
   opacity: 0;
-  visibility: hidden; /* Start hidden, JS will make it visible for transition */
-  transform: scale(1.15) translateY(-15px); /* Initial transform for transition */
-
-  /* Base z-index, JS will override for the active/topmost layer during transition */
+  visibility: hidden;
+  /* The initial transform from the preset fade-in is now just scale */
+  transform: scale(1.15); 
 }
+/* --- END: PARALLAX BORDER FIX --- */
+
 .canvas.layer-1 { z-index: 3; }
 .canvas.layer-2 { z-index: 4; }
 .canvas.layer-3 { z-index: 5; }
@@ -69,9 +79,7 @@
 */
 .canvas {
   transition-property: opacity, transform;
-  /* --- MODIFIED DURATION --- */
-  transition-duration: 500ms; /* Example: 0.5 seconds */
-  /* ------------------------- */
+  transition-duration: 500ms; /* This MUST match CANVAS_FADE_DURATION in JS */
   transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
@@ -82,40 +90,37 @@
 .canvas.visible {
   opacity: 1;
   visibility: visible;
-  transform: translateY(0) scale(1);
+  /* The final transform for a visible canvas is its external parallax position,
+     which is handled by inline styles in CanvasManager.js.
+     We set a base scale here. */
+  transform: scale(1);
 }
 
 /*
-  JS-Controlled Transition Classes (for Strategy 1 - Z-index management)
-  These are dynamically added and removed by MainView.jsx based on useRenderLifecycle state.
+  A fading-out canvas is one that is already `.visible` but needs to animate to hidden.
+  This class overrides the opacity to trigger the transition defined on the base `.canvas` rule.
 */
-
-/* Applied to the canvas that is FADING OUT */
 .canvas.is-fading-out {
-  /* The opacity and transform targets are implicitly opacity:0 and the initial transform */
-  /* because this class is added to an element that was .visible (opacity:1, transform: initial) */
-  /* and then JS will remove .visible, causing it to transition to the base .canvas styles. */
-  z-index: 100 !important; /* CRITICAL: Keep on top during its fade out */
+  opacity: 0 !important;
+  transform: scale(0.95) !important;
+  z-index: 100 !important; /* Keep on top during its fade out */
 }
+
 
 /* Applied to the canvas that is FADING IN */
 .canvas.is-fading-in {
-  /* This class is added to a canvas that starts with base .canvas styles (opacity:0, transform: initial-offscreen) */
-  /* Then JS will also add .visible to it, triggering the transition to opacity:1 and transform: final-onscreen. */
-  /* z-index should be lower than .is-fading-out, e.g., its default or a value like 90 */
-  /* The default z-index from .layer-N should suffice if the outgoing has a higher z-index. */
-  visibility: visible !important; /* Ensure it's visible to start its animation if JS hasn't added .visible yet */
+  visibility: visible !important;
 }
 
 
 /* Entity Logo */
 .entity-logo {
   position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-  height: 40px; z-index: 150; /* Ensure logo is above all transitioning canvases */
+  height: 40px; z-index: 150;
   opacity: 1; visibility: visible;
 }
 
-/* Status Display, FPS Counter, etc. (styles remain the same) */
+/* Status Display, FPS Counter, etc. */
 .status-display {
   position: fixed;
   top: 75%; 

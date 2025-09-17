@@ -4,7 +4,7 @@ import React, {
 } from 'react';
 import PropTypes from 'prop-types';
 
-import { usePresetManagement } from './PresetManagementContext';
+import { useSetManagement } from './SetManagementContext';
 import { sliderParams } from '../components/Panels/EnhancedControlPanel';
 
 const MAX_MONITOR_ENTRIES = 100;
@@ -18,7 +18,13 @@ const defaultContextValue = {
   showMidiMonitor: false, pendingLayerSelect: null, pendingParamUpdate: null,
   pendingGlobalAction: null,
   pendingCrossfaderUpdate: null,
-  liveCrossfaderValue: null, // <-- ADDED
+  liveCrossfaderValue: null,
+  // --- ADD NEW DEFAULTS ---
+  pendingNextScene: null,
+  pendingPrevScene: null,
+  pendingNextWorkspace: null,
+  pendingPrevWorkspace: null,
+  // -------------------------
   connectMIDI: async () => { if (import.meta.env.DEV) console.warn("connectMIDI called on default MIDIContext"); return null; },
   disconnectMIDI: () => { if (import.meta.env.DEV) console.warn("disconnectMIDI called on default MIDIContext"); },
   startMIDILearn: () => { if (import.meta.env.DEV) console.warn("startMIDILearn called on default MIDIContext"); },
@@ -65,7 +71,7 @@ export function MIDIProvider({ children }) {
     updateGlobalMidiMap,
     updateLayerMidiMappings,
     isInitiallyResolved
-  } = usePresetManagement();
+  } = useSetManagement();
   
   const [midiAccess, setMidiAccess] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -81,7 +87,13 @@ export function MIDIProvider({ children }) {
   const [pendingParamUpdate, setPendingParamUpdate] = useState(null);
   const [pendingGlobalAction, setPendingGlobalAction] = useState(null);
   const [pendingCrossfaderUpdate, setPendingCrossfaderUpdate] = useState(null);
-  const [liveCrossfaderValue, setLiveCrossfaderValue] = useState(null); // <-- ADDED
+  const [liveCrossfaderValue, setLiveCrossfaderValue] = useState(null);
+  // --- ADD NEW STATES ---
+  const [pendingNextScene, setPendingNextScene] = useState(null);
+  const [pendingPrevScene, setPendingPrevScene] = useState(null);
+  const [pendingNextWorkspace, setPendingNextWorkspace] = useState(null);
+  const [pendingPrevWorkspace, setPendingPrevWorkspace] = useState(null);
+  // ---------------------
 
   const activeControllerMidiMapRef = useRef(activeMidiMap);
   const midiLearningRef = useRef(midiLearning);
@@ -120,19 +132,28 @@ export function MIDIProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    if (pendingLayerSelect || pendingParamUpdate || pendingGlobalAction || pendingCrossfaderUpdate) {
+    // --- ADD NEW STATES TO DEPENDENCY ARRAY ---
+    if (pendingLayerSelect || pendingParamUpdate || pendingGlobalAction || pendingCrossfaderUpdate || pendingNextScene || pendingPrevScene || pendingNextWorkspace || pendingPrevWorkspace) {
+    // ------------------------------------------
       if (pendingTimeoutRef.current) clearTimeout(pendingTimeoutRef.current);
       pendingTimeoutRef.current = setTimeout(() => {
         setPendingLayerSelect(null);
         setPendingParamUpdate(null);
         setPendingGlobalAction(null);
         setPendingCrossfaderUpdate(null);
-        setLiveCrossfaderValue(null); // <-- ADDED: Clear live value after timeout
+        setLiveCrossfaderValue(null);
+        // --- ADD NEW STATES TO TIMEOUT CLEAR ---
+        setPendingNextScene(null);
+        setPendingPrevScene(null);
+        setPendingNextWorkspace(null);
+        setPendingPrevWorkspace(null);
+        // ------------------------------------
         pendingTimeoutRef.current = null;
       }, PENDING_ACTION_EXPIRY_MS);
     }
     return () => { if (pendingTimeoutRef.current) clearTimeout(pendingTimeoutRef.current); };
-  }, [pendingLayerSelect, pendingParamUpdate, pendingGlobalAction, pendingCrossfaderUpdate]);
+    // --- ADD NEW STATES TO DEPENDENCY ARRAY ---
+  }, [pendingLayerSelect, pendingParamUpdate, pendingGlobalAction, pendingCrossfaderUpdate, pendingNextScene, pendingPrevScene, pendingNextWorkspace, pendingPrevWorkspace]);
 
   const mapParameterToMIDI = useCallback((param, layer, mappingData) => {
     const currentMap = activeMidiMap || {};
@@ -220,6 +241,27 @@ export function MIDIProvider({ children }) {
 
     const currentControllerMap = activeControllerMidiMapRef.current || {};
     
+    // --- START: ADDED LOGIC FOR NEW GLOBAL ACTIONS ---
+    if (currentControllerMap.global && isNoteOn) { // Assume pads send Note On
+        const globalMappings = currentControllerMap.global;
+        const actions = {
+            'nextScene': setPendingNextScene,
+            'prevScene': setPendingPrevScene,
+            'nextWorkspace': setPendingNextWorkspace,
+            'prevWorkspace': setPendingPrevWorkspace,
+            'pLockToggle': (ts) => setPendingGlobalAction({ action: 'pLockToggle', timestamp: ts })
+        };
+
+        for (const actionName in actions) {
+            const mapping = globalMappings[actionName];
+            if (mapping && mapping.type === 'note' && mapping.number === data1 && (mapping.channel === undefined || mapping.channel === msgChan)) {
+                actions[actionName]({ timestamp });
+                return; // Action handled, exit
+            }
+        }
+    }
+    // --- END: ADDED LOGIC ---
+
     const globalControls = currentControllerMap.global;
     if (globalControls) {
         const pLockMapping = globalControls['pLockToggle'];
@@ -248,9 +290,7 @@ export function MIDIProvider({ children }) {
 
             if(isMatch) {
                 const normalizedValue = normalizeMIDIValue(rawValue, midiMsgType);
-                // --- MODIFIED: Set live value for immediate feedback ---
                 setLiveCrossfaderValue(normalizedValue);
-                // --------------------------------------------------------
                 setPendingCrossfaderUpdate({ value: normalizedValue, timestamp });
                 return;
             }
@@ -437,7 +477,13 @@ export function MIDIProvider({ children }) {
     setPendingParamUpdate(null);
     setPendingGlobalAction(null);
     setPendingCrossfaderUpdate(null);
-    setLiveCrossfaderValue(null); // <-- ADDED
+    setLiveCrossfaderValue(null);
+    // --- ADD NEW STATES TO CLEAR ---
+    setPendingNextScene(null);
+    setPendingPrevScene(null);
+    setPendingNextWorkspace(null);
+    setPendingPrevWorkspace(null);
+    // -----------------------------
     if (pendingTimeoutRef.current) {
       clearTimeout(pendingTimeoutRef.current);
       pendingTimeoutRef.current = null;
@@ -457,7 +503,10 @@ export function MIDIProvider({ children }) {
     midiMap: activeMidiMap,
     layerMappings, midiLearning, learningLayer, selectedChannel,
     midiMonitorData, showMidiMonitor, pendingLayerSelect, pendingParamUpdate,
-    pendingGlobalAction, pendingCrossfaderUpdate, liveCrossfaderValue, // <-- MODIFIED
+    pendingGlobalAction, pendingCrossfaderUpdate, liveCrossfaderValue,
+    // --- EXPORT NEW STATES ---
+    pendingNextScene, pendingPrevScene, pendingNextWorkspace, pendingPrevWorkspace,
+    // -----------------------
     setShowMidiMonitor,
     connectMIDI, disconnectMIDI, startMIDILearn, stopMIDILearn,
     startLayerMIDILearn, stopLayerMIDILearn, clearAllMappings, setChannelFilter,
@@ -468,7 +517,10 @@ export function MIDIProvider({ children }) {
     activeMidiMap,
     layerMappings, midiLearning, learningLayer, selectedChannel,
     midiMonitorData, showMidiMonitor, pendingLayerSelect, pendingParamUpdate,
-    pendingGlobalAction, pendingCrossfaderUpdate, liveCrossfaderValue, // <-- MODIFIED
+    pendingGlobalAction, pendingCrossfaderUpdate, liveCrossfaderValue,
+    // --- ADD NEW STATES TO DEPENDENCY ARRAY ---
+    pendingNextScene, pendingPrevScene, pendingNextWorkspace, pendingPrevWorkspace,
+    // ------------------------------------------
     connectMIDI, disconnectMIDI, clearAllMappings, mapParameterToMIDI,
     setChannelFilter, clearMIDIMonitor, setShowMidiMonitor, clearPendingActions, stopMIDILearn,
     startMIDILearn, startLayerMIDILearn, stopLayerMIDILearn,

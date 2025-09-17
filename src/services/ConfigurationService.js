@@ -167,50 +167,78 @@ class ConfigurationService {
     return this.writeReady;
   }
 
+  async _loadWorkspaceFromCID(cid) {
+    const logPrefix = `[CS _loadWorkspaceFromCID CID:${cid.slice(0, 10)}]`;
+    if (!cid) return null;
+    try {
+        const gatewayUrl = `${IPFS_GATEWAY}${cid}`;
+        if (import.meta.env.DEV) console.log(`${logPrefix} Fetching workspace from ${gatewayUrl}`);
+        const response = await fetch(gatewayUrl);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch from IPFS gateway: ${response.status} ${response.statusText}`);
+        }
+        const workspaceData = await response.json();
+        if (typeof workspaceData !== 'object' || workspaceData === null || !('presets' in workspaceData)) {
+            throw new Error('Fetched data is not a valid workspace object.');
+        }
+        return workspaceData;
+    } catch (error) {
+        if (import.meta.env.DEV) console.error(`${logPrefix} Failed to load workspace:`, error);
+        return null;
+    }
+  }
+
   async loadWorkspace(profileAddress) {
-    const defaultWorkspace = { presets: {}, defaultPresetName: null, globalMidiMap: {}, globalEventReactions: {}, personalCollectionLibrary: [] };
-    if (!this.checkReadyForRead()) { return defaultWorkspace; }
+    const defaultSetlist = { defaultWorkspaceName: null, workspaces: {}, globalUserMidiMap: {} };
+    if (!this.checkReadyForRead()) return defaultSetlist;
     const checksummedProfileAddr = getChecksumAddressSafe(profileAddress);
-    if (!checksummedProfileAddr) { return defaultWorkspace; }
-    const logPrefix = `[CS loadWorkspace Addr:${checksummedProfileAddr.slice(0, 6)}]`;
+    if (!checksummedProfileAddr) return defaultSetlist;
+
+    const logPrefix = `[CS loadWorkspace(Setlist) Addr:${checksummedProfileAddr.slice(0, 6)}]`;
     try {
-      const pointerHex = await this.loadDataFromKey(checksummedProfileAddr, RADAR_ROOT_STORAGE_POINTER_KEY);
-      if (!pointerHex || pointerHex === '0x') { return defaultWorkspace; }
-      const ipfsUri = hexToUtf8Safe(pointerHex);
-      if (!ipfsUri || !ipfsUri.startsWith('ipfs://')) { return defaultWorkspace; }
-      const cid = ipfsUri.substring(7);
-      const gatewayUrl = `${IPFS_GATEWAY}${cid}`;
-      if (import.meta.env.DEV) console.log(`${logPrefix} Fetching workspace from ${gatewayUrl}`);
-      const response = await fetch(gatewayUrl);
-      if (!response.ok) { throw new Error(`Failed to fetch from IPFS gateway: ${response.status} ${response.statusText}`); }
-      const workspace = await response.json();
-      if (typeof workspace !== 'object' || workspace === null || !('presets' in workspace)) { throw new Error('Fetched data is not a valid workspace object.'); }
-      if (import.meta.env.DEV) console.log(`${logPrefix} Successfully loaded and parsed workspace.`);
-      return workspace;
+        const pointerHex = await this.loadDataFromKey(checksummedProfileAddr, RADAR_ROOT_STORAGE_POINTER_KEY);
+        if (!pointerHex || pointerHex === '0x') return defaultSetlist;
+        
+        const ipfsUri = hexToUtf8Safe(pointerHex);
+        if (!ipfsUri || !ipfsUri.startsWith('ipfs://')) return defaultSetlist;
+
+        const cid = ipfsUri.substring(7);
+        const gatewayUrl = `${IPFS_GATEWAY}${cid}`;
+        if (import.meta.env.DEV) console.log(`${logPrefix} Fetching setlist from ${gatewayUrl}`);
+        
+        const response = await fetch(gatewayUrl);
+        if (!response.ok) throw new Error(`Failed to fetch from IPFS gateway: ${response.status} ${response.statusText}`);
+
+        const setlist = await response.json();
+        if (typeof setlist !== 'object' || setlist === null || !('workspaces' in setlist)) {
+            throw new Error('Fetched data is not a valid setlist object.');
+        }
+
+        // --- MIGRATION LOGIC ---
+        if (typeof setlist === 'object' && setlist !== null && !setlist.globalUserMidiMap) {
+          if (import.meta.env.DEV) console.log(`${logPrefix} Old setlist format detected. Attempting to migrate MIDI map.`);
+          const defaultWorkspaceName = setlist.defaultWorkspaceName || Object.keys(setlist.workspaces)[0];
+          if (defaultWorkspaceName && setlist.workspaces[defaultWorkspaceName]?.cid) {
+              const defaultWorkspace = await this._loadWorkspaceFromCID(setlist.workspaces[defaultWorkspaceName].cid);
+              if (defaultWorkspace?.globalMidiMap) {
+                  if (import.meta.env.DEV) console.log(`${logPrefix} Found MIDI map in default workspace. Promoting to setlist level.`);
+                  setlist.globalUserMidiMap = defaultWorkspace.globalMidiMap;
+              }
+          }
+        }
+        // --- END MIGRATION LOGIC ---
+
+        if (import.meta.env.DEV) console.log(`${logPrefix} Successfully loaded and parsed setlist.`);
+        return setlist;
+
     } catch (error) {
-      if (import.meta.env.DEV) { console.error(`${logPrefix} Failed to load workspace:`, error); }
-      return defaultWorkspace;
+        if (import.meta.env.DEV) console.error(`${logPrefix} Failed to load setlist:`, error);
+        return defaultSetlist;
     }
   }
 
-  async loadMidiMapForProfile(profileAddress) {
-    const logPrefix = `[CS loadMidiMap Addr:${profileAddress?.slice(0, 6)}]`;
-    try {
-      const workspace = await this.loadWorkspace(profileAddress);
-      if (import.meta.env.DEV) {
-        console.log(`${logPrefix} Loaded workspace, extracting MIDI map.`);
-      }
-      return workspace?.globalMidiMap || {};
-    } catch (error) {
-      if (import.meta.env.DEV) {
-        console.error(`${logPrefix} Failed to load MIDI map:`, error);
-      }
-      return {};
-    }
-  }
-
-  async saveWorkspace(targetProfileAddress, workspaceObject) {
-    const logPrefix = `[CS saveWorkspace Addr:${targetProfileAddress?.slice(0, 6)}]`;
+  async saveSetlist(targetProfileAddress, setlistObject) {
+    const logPrefix = `[CS saveSetlist Addr:${targetProfileAddress?.slice(0, 6)}]`;
     if (!this.checkReadyForWrite()) {
       throw new Error("Client not ready for writing.");
     }
@@ -218,8 +246,8 @@ class ConfigurationService {
     if (!checksummedTargetAddr) {
       throw new Error("Invalid target profile address format.");
     }
-    if (!workspaceObject || typeof workspaceObject !== 'object' || !('presets' in workspaceObject)) {
-      throw new Error("Invalid or malformed workspaceObject provided.");
+    if (!setlistObject || typeof setlistObject !== 'object' || !('workspaces' in setlistObject)) {
+      throw new Error("Invalid or malformed setlistObject provided.");
     }
     const userAddress = this.walletClient.account.address;
     if (userAddress?.toLowerCase() !== checksummedTargetAddr?.toLowerCase()) {
@@ -233,21 +261,20 @@ class ConfigurationService {
         const oldIpfsUri = hexToUtf8Safe(oldPointerHex);
         if (oldIpfsUri && oldIpfsUri.startsWith('ipfs://')) {
           oldCidToUnpin = oldIpfsUri.substring(7);
-          if (import.meta.env.DEV) console.log(`${logPrefix} Found old CID to unpin later: ${oldCidToUnpin}`);
+          if (import.meta.env.DEV) console.log(`${logPrefix} Found old Setlist CID to unpin later: ${oldCidToUnpin}`);
         }
       }
     } catch (e) {
-      if (import.meta.env.DEV) console.warn(`${logPrefix} Could not retrieve old CID, will proceed without unpinning. Error:`, e);
+      if (import.meta.env.DEV) console.warn(`${logPrefix} Could not retrieve old Setlist CID, will proceed without unpinning. Error:`, e);
     }
 
     try {
-      const jsonData = workspaceObject;
-      if (import.meta.env.DEV) console.log(`${logPrefix} Uploading new workspace JSON to IPFS...`);
-      const newIpfsCid = await uploadJsonToPinata(jsonData);
+      if (import.meta.env.DEV) console.log(`${logPrefix} Uploading new setlist JSON to IPFS...`);
+      const newIpfsCid = await uploadJsonToPinata(setlistObject, 'RADAR_Setlist');
       if (!newIpfsCid) {
         throw new Error("IPFS upload failed: received no CID from PinataService.");
       }
-      if (import.meta.env.DEV) console.log(`${logPrefix} IPFS upload successful. New CID: ${newIpfsCid}`);
+      if (import.meta.env.DEV) console.log(`${logPrefix} IPFS upload successful. New Setlist CID: ${newIpfsCid}`);
 
       const newIpfsUri = `ipfs://${newIpfsCid}`;
       const valueHex = stringToHex(newIpfsUri);
@@ -256,7 +283,7 @@ class ConfigurationService {
       if (import.meta.env.DEV) console.log(`${logPrefix} On-chain update successful. TxHash: ${result.hash}`);
       
       if (oldCidToUnpin && oldCidToUnpin !== newIpfsCid) {
-        if (import.meta.env.DEV) console.log(`${logPrefix} Triggering unpinning of old CID: ${oldCidToUnpin}`);
+        if (import.meta.env.DEV) console.log(`${logPrefix} Triggering unpinning of old Setlist CID: ${oldCidToUnpin}`);
         
         fetch('/api/unpin', {
             method: 'POST',
@@ -270,7 +297,7 @@ class ConfigurationService {
       return result;
 
     } catch (error) {
-      if (import.meta.env.DEV) { console.error(`${logPrefix} Error during saveWorkspace:`, error); }
+      if (import.meta.env.DEV) { console.error(`${logPrefix} Error during saveSetlist:`, error); }
       throw new Error(error.message || "An unexpected error occurred during the save process.");
     }
   }
@@ -432,7 +459,6 @@ class ConfigurationService {
       }
   }
 
-  // --- FIX: This function is now upgraded to handle on-chain SVG data ---
   async getTokenMetadata(collectionAddress, tokenId) {
     const logPrefix = `[CS getTokenMetadata]`;
     const checksummedCollectionAddr = getChecksumAddressSafe(collectionAddress);
@@ -448,8 +474,6 @@ class ConfigurationService {
           address: checksummedCollectionAddr, abi: LSP8_ABI, functionName: "getDataForTokenId", args: [tokenId, lsp4Key]
       }).catch(() => null);
 
-      // --- NEW LOGIC: START ---
-      // First, check if the returned data is directly an on-chain SVG
       if (metadataUriBytes && metadataUriBytes !== '0x') {
         const decodedString = hexToUtf8Safe(metadataUriBytes);
         if (decodedString && decodedString.trim().startsWith('<svg')) {
@@ -460,7 +484,6 @@ class ConfigurationService {
           return { name, image: imageUrl };
         }
       }
-      // --- NEW LOGIC: END ---
 
       let finalMetadataUrl = '';
 

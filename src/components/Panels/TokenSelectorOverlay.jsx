@@ -5,7 +5,7 @@ import { toplayerIcon, middlelayerIcon, bottomlayerIcon } from "../../assets";
 import { demoAssetMap } from "../../assets/DemoLayers/initLayers";
 import { manageOverlayDimmingEffect } from "../../utils/performanceHelpers";
 import { globalAnimationFlags } from "../../utils/globalAnimationFlags";
-import { usePresetManagement } from "../../context/PresetManagementContext";
+import { useSetManagement } from "../../context/SetManagementContext";
 import { useUserSession } from "../../context/UserSessionContext";
 import TokenGrid from "./TokenGrid";
 import LazyLoadImage from "./LazyLoadImage";
@@ -33,12 +33,12 @@ const TokenSelectorOverlay = ({ isOpen, onClose, onTokenApplied, readOnly = fals
   const {
     ownedTokenIdentifiers,
     tokenFetchProgress,
-    stagedWorkspace,
+    stagedActiveWorkspace,
     officialWhitelist = [],
     addPalette, removePalette, addTokenToPalette, removeTokenFromPalette,
     configServiceRef,
     refreshOwnedTokens, 
-  } = usePresetManagement();
+  } = useSetManagement();
 
   const { visitorProfileAddress } = useUserSession();
 
@@ -47,14 +47,11 @@ const TokenSelectorOverlay = ({ isOpen, onClose, onTokenApplied, readOnly = fals
   const overlayContentRef = useRef(null);
   const tokenDisplayAreaRef = useRef(null);
 
-  // --- NEW: This is the trigger for fetching token identifiers on-demand ---
   useEffect(() => {
-    // Only fetch if the overlay is opening and we haven't fetched before.
-    // The check for ownedTokenIdentifiers length prevents re-fetching on simple re-opens.
     if (isOpen && !hasFetchedInitialIdentifiers.current) {
       if (import.meta.env.DEV) console.log("[TokenSelectorOverlay] Opened, triggering token identifier fetch.");
-      refreshOwnedTokens(); // Call the fetch function from the context
-      hasFetchedInitialIdentifiers.current = true; // Mark as fetched for this session
+      refreshOwnedTokens();
+      hasFetchedInitialIdentifiers.current = true;
     }
   }, [isOpen, refreshOwnedTokens]);
 
@@ -64,7 +61,7 @@ const TokenSelectorOverlay = ({ isOpen, onClose, onTokenApplied, readOnly = fals
     }));
   }, []);
 
-  const userPalettes = useMemo(() => stagedWorkspace?.userPalettes || {}, [stagedWorkspace]);
+  const userPalettes = useMemo(() => stagedActiveWorkspace?.userPalettes || {}, [stagedActiveWorkspace]);
 
   const paletteTokens = useMemo(() => {
     const palettes = {};
