@@ -63,7 +63,7 @@
   /* Default state: hidden, ready for transition-in */
   opacity: 0;
   visibility: hidden;
-  /* The initial transform from the preset fade-in is now just scale */
+  /* The initial transform from the scene fade-in is now just scale */
   transform: scale(1.15); 
 }
 /* --- END: PARALLAX BORDER FIX --- */
@@ -75,7 +75,7 @@
 
 /*
   Core transition applied when opacity or transform changes.
-  This is the master duration for preset fades.
+  This is the master duration for scene fades.
 */
 .canvas {
   transition-property: opacity, transform;

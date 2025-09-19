@@ -93,7 +93,9 @@ const SceneSelectorBar = ({
   const handleNext = () => {
     if (currentPage < totalPages - 1) {
       setPaginationDirection('next');
+      // --- THIS IS THE FIX ---
       setCurrentPage((prev) => prev + 1);
+      // --- END FIX ---
     }
   };
 
@@ -107,7 +109,7 @@ const SceneSelectorBar = ({
                          paginationDirection === 'prev' ? 'slide-in-right' : '';
 
   return (
-    <div className="preset-selector-bar">
+    <div className="scene-selector-bar">
       <button
         type="button"
         className="pagination-button"
@@ -118,7 +120,7 @@ const SceneSelectorBar = ({
       >
         {'<'}
       </button>
-      <div className={`preset-buttons-container ${animationClass}`}>
+      <div className={`scene-buttons-container ${animationClass}`}>
         {visibleScenes.map((scene) => {
           const isActive = scene.name === currentSceneName;
           const displayLabel = getSceneDisplayLabel(scene.name);
@@ -126,7 +128,7 @@ const SceneSelectorBar = ({
             <button
               type="button"
               key={scene.name}
-              className={`preset-selector-button ${isActive ? 'active' : ''}`}
+              className={`scene-selector-button ${isActive ? 'active' : ''}`}
               onClick={() => onSceneSelect(scene.name)}
               disabled={isLoading}
               title={`Load: ${scene.name}`}

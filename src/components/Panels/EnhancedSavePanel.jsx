@@ -3,7 +3,7 @@ import React, { useCallback } from "react";
 import PropTypes from "prop-types";
 
 import Panel from "./Panel";
-import { useSetManagement } from "../../context/SetManagementContext";
+import { useAppContext } from "../../context/AppContext";
 import { useUserSession } from "../../context/UserSessionContext";
 
 import "./PanelStyles/EnhancedSavePanel.css";
@@ -23,7 +23,7 @@ const EnhancedSavePanel = ({ onClose }) => {
     isLoading: isWorkspaceLoading,
     isSaving,
     hasPendingChanges,
-  } = useSetManagement();
+  } = useAppContext();
   
   const canSave = canSaveToHostProfile;
   const isFirstSave = !activeWorkspaceName;

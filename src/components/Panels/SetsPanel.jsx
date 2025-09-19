@@ -1,9 +1,9 @@
 // src/components/Panels/SetsPanel.jsx
-import React, { useState, useCallback } from "react";
+import React, { useState } from "react";
 import PropTypes from "prop-types";
 
 import Panel from "./Panel";
-import { useSetManagement } from "../../context/SetManagementContext";
+import { useAppContext } from "../../context/AppContext";
 import { useUserSession } from "../../context/UserSessionContext";
 
 import "./PanelStyles/SetsPanel.css";
@@ -21,7 +21,7 @@ const SetsPanel = ({ onClose }) => {
     isLoading,
     isSaving,
     preloadWorkspace, 
-  } = useSetManagement();
+  } = useAppContext();
 
   const [editingName, setEditingName] = useState(null);
   const [newName, setNewName] = useState("");

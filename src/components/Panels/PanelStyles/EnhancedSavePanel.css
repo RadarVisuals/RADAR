@@ -228,7 +228,7 @@
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0; }
 
 /* --- NEW STYLES ADDED FOR REFACTORED SAVE PANEL --- */
-.preset-main-content {
+.scene-main-content {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
@@ -236,7 +236,7 @@
   overflow: hidden;
 }
 
-.default-preset-tag {
+.default-scene-tag {
   font-size: var(--font-size-xs);
   color: var(--color-primary);
   font-weight: bold;
@@ -246,25 +246,25 @@
   flex-shrink: 0;
 }
 
-.preset-actions {
+.scene-actions {
   display: flex;
   align-items: center;
   gap: var(--space-xs);
   flex-shrink: 0;
 }
 
-.preset-actions .btn-icon {
+.scene-actions .btn-icon {
   font-size: 1.2em;
   color: var(--color-text-muted);
   transition: color 0.2s ease, transform 0.2s ease;
 }
 
-.preset-actions .btn-icon:hover:not(:disabled) {
+.scene-actions .btn-icon:hover:not(:disabled) {
   color: var(--color-primary);
   transform: scale(1.1);
 }
 
-.preset-actions .btn-icon[title*="Default"]:hover:not(:disabled) {
+.scene-actions .btn-icon[title*="Default"]:hover:not(:disabled) {
   color: var(--color-warning);
 }
 /* --- END NEW STYLES --- */

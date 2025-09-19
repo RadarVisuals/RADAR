@@ -483,13 +483,13 @@ This method allows selective audio routing for the visualizer without needing to
 import React, { useEffect, useState, useCallback } from "react";
 import MainView from "./components/Main/Mainview";
 import StartVeil from "./components/UI/StartVeil";
-import { useSetManagement } from "./context/SetManagementContext"; // Import the hook
+import { useAppContext } from "./context/AppContext"; // Import the hook
 
 function App() {
   const [hasUserInitiated, setHasUserInitiated] = useState(false);
   
   // Get the context function to manually trigger the load
-  const { startLoadingProcess } = useSetManagement();
+  const { startLoadingProcess } = useAppContext();
 
   useEffect(() => {
     const staticLoader = document.querySelector('.static-loader');
@@ -500,7 +500,7 @@ function App() {
 
   const handleStart = useCallback(() => {
     setHasUserInitiated(true);
-    // When the user clicks "Enter", we explicitly tell the SetManagementProvider to begin loading.
+    // When the user clicks "Enter", we explicitly tell the AppProvider to begin loading.
     if (startLoadingProcess) {
       startLoadingProcess();
     }
@@ -540,7 +540,7 @@ const FFT_SIZE = 2048; // Standard FFT size for frequency analysis
  * @property {boolean} [isActive=false] - If true, the component attempts to access the microphone and start audio analysis.
  * @property {import('../../context/VisualConfigContext').AllLayerConfigs} [layerConfigs] - Current configurations for all visual layers. Used to get base values for audio-reactive parameters.
  * @property {import('../../hooks/useAudioVisualizer').AudioVisualizerSettings} [audioSettings] - Current settings for audio processing and analysis (e.g., intensity multipliers, smoothing factor).
- * @property {number} [configLoadNonce] - A nonce that changes when a new global configuration (preset) is loaded. Used to detect preset changes and potentially reset or adjust audio reactivity baselines.
+ * @property {number} [configLoadNonce] - A nonce that changes when a new global configuration (scene) is loaded. Used to detect scene changes and potentially reset or adjust audio reactivity baselines.
  * @property {React.RefObject<Object.<string, import('../../utils/CanvasManager').default>>} managerInstancesRef - Ref to the canvas manager instances, used to apply audio-driven visual modifications directly.
  */
 
@@ -602,7 +602,7 @@ const AudioAnalyzer = ({
     }
   }, [audioSettingsProp]);
 
-  // Update base layer values when a new preset is loaded
+  // Update base layer values when a new scene is loaded
   useEffect(() => {
     if (layerConfigsProp && configLoadNonce !== capturedNonceRef.current) {
         const newBaseValues = {};
@@ -2514,8 +2514,8 @@ import PropTypes from "prop-types";
 import { useProfileSessionState } from "../../hooks/configSelectors"; // Local hook
 import { useMIDI } from "../../context/MIDIContext"; // Local context
 
-// Import sliderParams from EnhancedControlPanel or a shared constants file
-import { sliderParams } from "./EnhancedControlPanel"; // Assuming it's exported from here or a shared util
+// Import sliderParams from its direct source file
+import { sliderParams } from "../../config/sliderParams";
 
 import { midiIcon, rotateIcon } from "../../assets"; // Local assets
 
@@ -3273,16 +3273,10 @@ import PropTypes from "prop-types";
 
 // Custom Hooks
 import { useUpProvider } from "../../context/UpProvider";
-import { useMIDI } from "../../context/MIDIContext";
 import { useCoreApplicationStateAndLifecycle } from '../../hooks/useCoreApplicationStateAndLifecycle';
 import { useAppInteractions } from '../../hooks/useAppInteractions';
-import {
-  useVisualLayerState,
-  useInteractionSettingsState,
-  useProfileSessionState,
-  useConfigStatusState,
-  useSetManagementState,
-} from "../../hooks/configSelectors";
+import { useProfileSessionState } from "../../hooks/configSelectors";
+import { useAppContext } from "../../context/AppContext";
 
 // UI Components
 import ToastContainer from "../Notifications/ToastContainer";
@@ -3296,21 +3290,9 @@ import CriticalErrorDisplay from '../MainViewParts/CriticalErrorDisplay';
 // Config & Assets
 import { BLEND_MODES } from "../../config/global-config";
 import { PING_COLOR, PING_STROKE_WIDTH, NO_PING_SELECTORS } from "../../config/uiConstants";
-import { lerp } from '../../utils/helpers';
-import { INTERPOLATED_MIDI_PARAMS } from '../../config/midiConstants';
 
 // Styles
 import "./MainviewStyles/Mainview.css";
-
-// --- START: UTILITY HOOK ---
-const usePrevious = (value) => {
-  const ref = useRef();
-  useEffect(() => {
-    ref.current = value;
-  });
-  return ref.current;
-};
-// --- END: UTILITY HOOK ---
 
 const LoadingIndicatorPill = ({ message, isVisible }) => {
   return (
@@ -3327,34 +3309,41 @@ LoadingIndicatorPill.propTypes = {
 
 const portalContainerNode = typeof document !== 'undefined' ? document.getElementById('portal-container') : null;
 const TOKEN_OVERLAY_ANIMATION_LOCK_DURATION = 500;
-const AUTO_FADE_DURATION_MS = 1000;
-const CROSSFADER_LERP_FACTOR = 0.2;
 
 const MainView = ({ blendModes = BLEND_MODES }) => {
   const { publicClient, walletClient } = useUpProvider();
-  const { liveCrossfaderValue, clearPendingActions } = useMIDI();
 
   const {
-    updateLayerConfig,
-    updateTokenAssignment,
-  } = useVisualLayerState();
-
-  const { savedReactions, updateSavedReaction, deleteSavedReaction } = useInteractionSettingsState();
-  const { currentProfileAddress, isProfileOwner, canSave, isPreviewMode, isParentAdmin, isVisitor, canInteract } = useProfileSessionState();
-  const { isInitiallyResolved, sceneLoadNonce, loadError, upInitializationError, upFetchStateError, configServiceRef, isLoading: isConfigLoading } = useConfigStatusState();
-  const {
+    currentProfileAddress,
+    isInitiallyResolved,
+    sceneLoadNonce,
+    loadError,
+    upInitializationError,
+    upFetchStateError,
+    configServiceRef,
+    isLoading: isConfigLoading,
     activeSceneName,
-    stagedActiveWorkspace,
     activeWorkspaceName,
+    stagedActiveWorkspace,
     savedSceneList,
     loadedLayerConfigsFromScene,
     loadedTokenAssignmentsFromScene,
-    setActiveSceneSilently,
     isFullyLoaded,
     loadingMessage,
     isWorkspaceTransitioning,
-    _executeLoadAfterFade,
-  } = useSetManagementState();
+    _executeLoadAfterFade, // <<< GET THE FUNCTION FROM CONTEXT
+    sideA,
+    sideB,
+    renderedCrossfaderValue,
+    uiControlConfig,
+    isAutoFading,
+    registerManagerInstancesRef,
+    registerCanvasUpdateFns,
+    updateLayerConfig, 
+    updateTokenAssignment, 
+  } = useAppContext();
+  
+  const { canInteract } = useProfileSessionState();
 
   const rootRef = useRef(null);
   const canvasRef1 = useRef(null);
@@ -3369,38 +3358,18 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   const [localIsBenignOverlayActive, setLocalIsBenignOverlayActive] = useState(false);
   const [animationLockForTokenOverlay, setAnimationLockForTokenOverlay] = useState(false);
   const animationLockTimerRef = useRef(null);
-
-  const [targetCrossfaderValue, setTargetCrossfaderValue] = useState(0.0);
-  const [renderedCrossfaderValue, setRenderedCrossfaderValue] = useState(0.0);
-  const renderedValueRef = useRef(0.0);
-  const faderAnimationRef = useRef();
-
-  const [sideA, setSideA] = useState({ config: null });
-  const [sideB, setSideB] = useState({ config: null });
-  const [uiControlConfig, setUiControlConfig] = useState(null);
-
-  const prevFaderValueRef = useRef(0.0);
-  const [isAutoFading, setIsAutoFading] = useState(false);
-  const autoFadeRef = useRef(null);
   
   const mousePositionRef = useRef({ x: 0, y: 0 });
   const parallaxRafIdRef = useRef(null);
 
-  const prevSceneListLengthRef = useRef(savedSceneList.length);
-
-  const fullSceneList = useMemo(() => {
-    if (!stagedActiveWorkspace?.presets) return [];
-    const validScenes = Object.values(stagedActiveWorkspace.presets).filter(
-        (item) => item && typeof item.name === 'string'
-    );
-    return [...validScenes].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-  }, [stagedActiveWorkspace]);
-
+  // --- THIS IS THE FIX ---
   useEffect(() => {
     let fadeOutTimer = null;
     if (isWorkspaceTransitioning) {
+      // This timeout should match your CSS fade-out duration for the canvas container
       fadeOutTimer = setTimeout(() => {
-        if (typeof _executeLoadAfterFade === 'function') {
+        // After the visual transition, call the function to actually load the data
+        if (_executeLoadAfterFade) {
           _executeLoadAfterFade();
         }
       }, 500);
@@ -3411,207 +3380,7 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
       }
     };
   }, [isWorkspaceTransitioning, _executeLoadAfterFade]);
-
-  useEffect(() => {
-    if (liveCrossfaderValue !== null) {
-      setTargetCrossfaderValue(liveCrossfaderValue);
-      clearPendingActions();
-    }
-  }, [liveCrossfaderValue, clearPendingActions]);
-  
-  useEffect(() => {
-    const animateFader = () => {
-      const current = renderedValueRef.current;
-      const target = targetCrossfaderValue;
-      if (Math.abs(target - current) > 0.0001) {
-        const newRendered = lerp(current, target, CROSSFADER_LERP_FACTOR);
-        renderedValueRef.current = newRendered;
-        setRenderedCrossfaderValue(newRendered);
-      } else if (current !== target) {
-        renderedValueRef.current = target;
-        setRenderedCrossfaderValue(target);
-      }
-      faderAnimationRef.current = requestAnimationFrame(animateFader);
-    };
-    faderAnimationRef.current = requestAnimationFrame(animateFader);
-    return () => { if (faderAnimationRef.current) cancelAnimationFrame(faderAnimationRef.current); };
-  }, [targetCrossfaderValue]);
-
-  useEffect(() => {
-    const activeConfig = renderedCrossfaderValue < 0.5 ? sideA.config : sideB.config;
-    setUiControlConfig(activeConfig);
-  }, [renderedCrossfaderValue, sideA, sideB]);
-
-  const animateCrossfade = useCallback((startTime, startValue, endValue, duration) => {
-    const now = performance.now();
-    const elapsed = now - startTime;
-    const progress = Math.min(elapsed / duration, 1);
-    const newCrossfaderValue = startValue + (endValue - startValue) * progress;
-    setTargetCrossfaderValue(newCrossfaderValue);
-    if (progress < 1) autoFadeRef.current = requestAnimationFrame(() => animateCrossfade(startTime, startValue, endValue, duration));
-    else { setIsAutoFading(false); autoFadeRef.current = null; }
-  }, [setIsAutoFading, setTargetCrossfaderValue]);
-
-  // --- START: THE DEFINITIVE FIX FOR INITIAL LOAD & WORKSPACE SWITCHING ---
-  const prevIsWorkspaceTransitioning = usePrevious(isWorkspaceTransitioning);
-  const prevIsFullyLoaded = usePrevious(isFullyLoaded);
-
-  useEffect(() => {
-    const initialLoadJustFinished = !prevIsFullyLoaded && isFullyLoaded;
-    const transitionJustFinished = prevIsWorkspaceTransitioning && !isWorkspaceTransitioning;
-
-    if (initialLoadJustFinished || transitionJustFinished) {
-      const reason = initialLoadJustFinished ? "Initial Load Finished" : `Workspace Transition Finished for "${activeWorkspaceName}"`;
-      console.log(`[MainView] Resetting decks. Reason: ${reason}.`);
-      
-      if (!fullSceneList || fullSceneList.length === 0) {
-        setSideA({ config: null });
-        setSideB({ config: null });
-        return;
-      }
-      
-      const initialSceneName = stagedActiveWorkspace.defaultPresetName || fullSceneList[0]?.name;
-      let startIndex = fullSceneList.findIndex(p => p.name === initialSceneName);
-      if (startIndex === -1) startIndex = 0;
-      
-      const nextIndex = (startIndex + 1) % fullSceneList.length;
-  
-      const startSceneConfig = JSON.parse(JSON.stringify(fullSceneList[startIndex]));
-      const nextSceneConfig = fullSceneList.length > 1
-        ? JSON.parse(JSON.stringify(fullSceneList[nextIndex]))
-        : JSON.parse(JSON.stringify(fullSceneList[startIndex]));
-  
-      // **THE FIX**: Check which side was active and load the new workspace onto that side.
-      const activeSideIsA = renderedValueRef.current < 0.5;
-
-      if (activeSideIsA) {
-        setSideA({ config: startSceneConfig });
-        setSideB({ config: nextSceneConfig });
-        setTargetCrossfaderValue(0.0);
-      } else {
-        setSideB({ config: startSceneConfig });
-        setSideA({ config: nextSceneConfig });
-        setTargetCrossfaderValue(1.0);
-      }
-    }
-  }, [isWorkspaceTransitioning, isFullyLoaded, stagedActiveWorkspace, activeWorkspaceName, fullSceneList]);
-  // --- END: THE DEFINITIVE FIX ---
-
-  useEffect(() => {
-    if (!fullSceneList || fullSceneList.length < 2) return;
-
-    const prevValue = prevFaderValueRef.current;
-    const newValue = renderedCrossfaderValue;
-    
-    if (prevValue < 1.0 && newValue >= 0.999) {
-      const sceneBInCurrentList = fullSceneList.some(p => p.ts === sideB.config?.ts);
-      if (!sceneBInCurrentList) return;
-
-      const currentBIndex = fullSceneList.findIndex(p => p.ts === sideB.config?.ts);
-      if (currentBIndex !== -1) {
-        const nextAIndex = (currentBIndex + 1) % fullSceneList.length;
-        if (fullSceneList[nextAIndex]?.ts !== sideA.config?.ts) {
-          setSideA({ config: JSON.parse(JSON.stringify(fullSceneList[nextAIndex])) });
-        }
-      }
-    } 
-    else if (prevValue > 0.0 && newValue <= 0.001) {
-      const sceneAInCurrentList = fullSceneList.some(p => p.ts === sideA.config?.ts);
-      if (!sceneAInCurrentList) return;
-
-      const currentAIndex = fullSceneList.findIndex(p => p.ts === sideA.config?.ts);
-      if (currentAIndex !== -1) {
-        const nextBIndex = (currentAIndex + 1) % fullSceneList.length;
-        if (fullSceneList[nextBIndex]?.ts !== sideB.config?.ts) {
-          setSideB({ config: JSON.parse(JSON.stringify(fullSceneList[nextBIndex])) });
-        }
-      }
-    }
-    
-    prevFaderValueRef.current = newValue;
-  }, [renderedCrossfaderValue, fullSceneList, sideA, sideB]);
-
-  useEffect(() => {
-    if (!fullSceneList || fullSceneList.length === 0) return;
-    const target = targetCrossfaderValue;
-  
-    if (target >= 0.999) {
-      const sceneNameB = sideB.config?.name;
-      if (sceneNameB && fullSceneList.some(s => s.name === sceneNameB)) {
-        setActiveSceneSilently(sceneNameB);
-      }
-    } else if (target <= 0.001) {
-      const sceneNameA = sideA.config?.name;
-      if (sceneNameA && fullSceneList.some(s => s.name === sceneNameA)) {
-        setActiveSceneSilently(sceneNameA);
-      }
-    }
-  }, [targetCrossfaderValue, sideA.config, sideB.config, fullSceneList, setActiveSceneSilently]);
-
-  const handleSceneSelect = useCallback((sceneName, duration = AUTO_FADE_DURATION_MS) => {
-    if (isAutoFading || !fullSceneList || fullSceneList.length === 0) return;
-    
-    const targetScene = fullSceneList.find(s => s.name === sceneName);
-    if (!targetScene) return;
-
-    if (sideA.config?.name === sceneName || sideB.config?.name === sceneName) {
-        const targetValue = sideA.config?.name === sceneName ? 0.0 : 1.0;
-        if (Math.abs(targetCrossfaderValue - targetValue) < 0.001) return;
-        setIsAutoFading(true);
-        if (autoFadeRef.current) cancelAnimationFrame(autoFadeRef.current);
-        animateCrossfade(performance.now(), targetCrossfaderValue, targetValue, duration);
-        return;
-    }
-
-    const currentActiveSide = renderedCrossfaderValue < 0.5 ? 'A' : 'B';
-
-    if (currentActiveSide === 'A') {
-      setSideB({ config: JSON.parse(JSON.stringify(targetScene)) });
-      setIsAutoFading(true);
-      if (autoFadeRef.current) cancelAnimationFrame(autoFadeRef.current);
-      animateCrossfade(performance.now(), targetCrossfaderValue, 1.0, duration);
-    } else {
-      setSideA({ config: JSON.parse(JSON.stringify(targetScene)) });
-      setIsAutoFading(true);
-      if (autoFadeRef.current) cancelAnimationFrame(autoFadeRef.current);
-      animateCrossfade(performance.now(), targetCrossfaderValue, 0.0, duration);
-    }
-  }, [isAutoFading, fullSceneList, sideA.config, sideB.config, targetCrossfaderValue, renderedCrossfaderValue, animateCrossfade]);
-  
-  const handleInstantSceneSwitch = useCallback((sceneName) => {
-    if (!fullSceneList || fullSceneList.length === 0) return;
-    const targetScene = fullSceneList.find(s => s.name === sceneName);
-    if (!targetScene) return;
-  
-    const activeSide = renderedCrossfaderValue < 0.5 ? 'A' : 'B';
-  
-    if (activeSide === 'A') {
-      setSideA({ config: JSON.parse(JSON.stringify(targetScene)) });
-      setTargetCrossfaderValue(0.0);
-    } else {
-      setSideB({ config: JSON.parse(JSON.stringify(targetScene)) });
-      setTargetCrossfaderValue(1.0);
-    }
-  }, [fullSceneList, renderedCrossfaderValue]);
-
-  useEffect(() => {
-    const newListLength = savedSceneList.length;
-    const prevListLength = prevSceneListLengthRef.current;
-
-    if (newListLength === prevListLength + 1 && activeSceneName) {
-      const isNewSceneOnDecks = sideA.config?.name === activeSceneName || sideB.config?.name === activeSceneName;
-      
-      if (!isNewSceneOnDecks) {
-        handleInstantSceneSwitch(activeSceneName);
-      }
-    }
-    
-    prevSceneListLengthRef.current = newListLength;
-  }, [savedSceneList, activeSceneName, handleInstantSceneSwitch, sideA.config, sideB.config]);
-  
-  const handleCrossfaderChange = useCallback((newValue) => {
-    setTargetCrossfaderValue(newValue);
-  }, []);
+  // --- END FIX ---
 
   const coreApp = useCoreApplicationStateAndLifecycle({
     canvasRefs, configServiceRef, sceneLoadNonce, 
@@ -3640,6 +3409,16 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     isMountedRef,
     sequencer, 
   } = coreApp;
+
+  useEffect(() => {
+    if (registerManagerInstancesRef) {
+        registerManagerInstancesRef(managerInstancesRef);
+    }
+    if (registerCanvasUpdateFns) {
+        registerCanvasUpdateFns({ setCanvasLayerImage });
+    }
+  }, [registerManagerInstancesRef, registerCanvasUpdateFns, managerInstancesRef, setCanvasLayerImage]);
+
 
   useEffect(() => {
     const handleMouseMove = (e) => {
@@ -3673,83 +3452,12 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   }, [managerInstancesRef, isParallaxEnabled]);
 
   const handleTogglePLock = useCallback(() => { sequencer.toggle(uiControlConfig?.layers); }, [sequencer, uiControlConfig]);
-  
-  const handleUserLayerPropChange = useCallback((layerId, key, value, isMidiUpdate = false) => {
-    const pLockIsPlaying = sequencer.pLockState === 'playing';
-    const isParamLockedBySequencer = sequencer.animationDataRef.current?.[String(layerId)]?.[key];
-    if (pLockIsPlaying && isParamLockedBySequencer) return;
-
-    const manager = managerInstancesRef.current?.[String(layerId)];
-    if (!manager) return;
-    
-    const activeDeck = renderedCrossfaderValue < 0.5 ? 'A' : 'B';
-
-    if (isMidiUpdate && INTERPOLATED_MIDI_PARAMS.includes(key)) {
-      if (activeDeck === 'A') {
-        manager.setTargetValue(key, value);
-      } else {
-        manager.setTargetValueB(key, value);
-      }
-    } else {
-      if (activeDeck === 'A') {
-        manager.updateConfigProperty(key, value);
-      } else {
-        manager.updateConfigBProperty(key, value);
-      }
-    }
-    
-    const stateSetter = activeDeck === 'A' ? setSideA : setSideB;
-    stateSetter(prev => {
-      if (!prev.config) return prev;
-      const newConfig = JSON.parse(JSON.stringify(prev.config));
-      if (!newConfig.layers[layerId]) {
-        newConfig.layers[layerId] = {};
-      }
-      newConfig.layers[layerId][key] = value;
-      return { ...prev, config: newConfig };
-    });
-    
-    updateLayerConfig(String(layerId), key, value);
-
-  }, [updateLayerConfig, managerInstancesRef, sequencer.pLockState, sequencer.animationDataRef, renderedCrossfaderValue]);
-
-  const handleTokenAssignmentChange = useCallback(async (token, layerId) => {
-    if (!isMountedRef.current) return;
-  
-    const idToSave = token.id;
-    const srcToLoad = token.metadata?.image;
-    if (!idToSave || !srcToLoad) return;
-  
-    const assignmentObject = { id: idToSave, src: srcToLoad };
-    
-    const targetDeck = renderedCrossfaderValue < 0.5 ? 'A' : 'B';
-    const stateSetter = targetDeck === 'A' ? setSideA : setSideB;
-
-    stateSetter(prev => {
-      if (!prev.config) return prev;
-      const newConfig = JSON.parse(JSON.stringify(prev.config));
-      if (!newConfig.tokenAssignments) newConfig.tokenAssignments = {};
-      newConfig.tokenAssignments[String(layerId)] = assignmentObject;
-      return { ...prev, config: newConfig };
-    });
-
-    if (typeof setCanvasLayerImage === 'function') {
-      try {
-        await setCanvasLayerImage(String(layerId), srcToLoad);
-      } catch (e) {
-        console.error(`[MainView] Error setting canvas image for layer ${layerId}:`, e);
-      }
-    }
-
-    updateTokenAssignment(String(layerId), assignmentObject);
-  }, [isMountedRef, setCanvasLayerImage, updateTokenAssignment, renderedCrossfaderValue]);
-
 
   const appInteractions = useAppInteractions({
-    updateLayerConfig: handleUserLayerPropChange,
-    currentProfileAddress, savedReactions,
+    updateLayerConfig: updateLayerConfig,
+    currentProfileAddress,
     managerInstancesRef, setCanvasLayerImage, 
-    updateTokenAssignment: handleTokenAssignmentChange,
+    updateTokenAssignment: updateTokenAssignment,
     isMountedRef, onTogglePLock: handleTogglePLock,
   });
 
@@ -3785,31 +3493,12 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   
   const showFpsCounter = useMemo(() => renderState === 'rendered' && isContainerObservedVisible, [renderState, isContainerObservedVisible]);
 
-  const configDataForUIOverlay = useMemo(() => ({
-    layerConfigs: uiControlConfig?.layers, 
-    tokenAssignments: uiControlConfig?.tokenAssignments,
-    savedReactions, activeSceneName,
-    isConfigLoading, canSave, isPreviewMode, isParentAdmin, isProfileOwner, isVisitor, currentProfileAddress, blendModes,
-    notifications: appInteractions.notificationData.notifications, unreadCount: appInteractions.notificationData.unreadCount,
-    isTransitioning,
-    renderState, canInteract, isAutoFading,
-    crossfader: { value: renderedCrossfaderValue, sideA: sideA, sideB: sideB },
-    isParallaxEnabled: isParallaxEnabled,
-  }), [uiControlConfig, savedReactions, activeSceneName, isConfigLoading, canSave, isPreviewMode,
-    isParentAdmin, isProfileOwner, isVisitor, currentProfileAddress, blendModes, appInteractions.notificationData.notifications,
-    appInteractions.notificationData.unreadCount, isTransitioning, renderState, 
-    canInteract, isAutoFading, renderedCrossfaderValue, sideA, sideB, isParallaxEnabled]);
-  
   const actionsForUIOverlay = useMemo(() => ({
-    onLayerConfigChange: handleUserLayerPropChange, onSaveReaction: updateSavedReaction, onRemoveReaction: deleteSavedReaction,
-    onSceneSelect: handleSceneSelect, onEnhancedView: enterFullscreen, onMarkNotificationRead: appInteractions.notificationData.markAsRead,
-    onClearAllNotifications: appInteractions.notificationData.clearAll, onPreviewEffect: appInteractions.processEffect,
-    onTokenApplied: handleTokenAssignmentChange, 
-    onCrossfaderChange: handleCrossfaderChange,
+    onEnhancedView: enterFullscreen,
     onToggleParallax: toggleParallax,
-  }), [handleUserLayerPropChange, updateSavedReaction, deleteSavedReaction, handleSceneSelect, enterFullscreen,
-    appInteractions.notificationData.markAsRead, appInteractions.notificationData.clearAll, appInteractions.processEffect,
-    handleTokenAssignmentChange, handleCrossfaderChange, toggleParallax]);
+    onTokenApplied: updateTokenAssignment, 
+    onPreviewEffect: appInteractions.processEffect,
+  }), [enterFullscreen, toggleParallax, updateTokenAssignment, appInteractions.processEffect]);
 
   const pLockProps = useMemo(() => ({
     pLockState: sequencer.pLockState, loopProgress: sequencer.loopProgress, hasLockedParams: sequencer.hasLockedParams,
@@ -3858,11 +3547,21 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
         <UIOverlay
           uiState={uiStateHook}
           audioState={audioState}
-          configData={configDataForUIOverlay}
-          actions={actionsForUIOverlay}
           savedSceneList={savedSceneList}
           pLockProps={pLockProps}
           isReady={isUiReady}
+          actions={actionsForUIOverlay}
+          onLayerConfigChange={updateLayerConfig}
+          configData={{ 
+            isAutoFading, 
+            isTransitioning,
+            isConfigLoading,
+            isParallaxEnabled,
+            unreadCount: appInteractions.notificationData.unreadCount,
+            renderState,
+            crossfader: { value: renderedCrossfaderValue }, 
+            uiControlConfig,
+          }}
         />
         <StatusIndicator
             showStatusDisplay={showStatusDisplay}
@@ -3977,7 +3676,7 @@ export default MainView;
   /* Default state: hidden, ready for transition-in */
   opacity: 0;
   visibility: hidden;
-  /* The initial transform from the preset fade-in is now just scale */
+  /* The initial transform from the scene fade-in is now just scale */
   transform: scale(1.15); 
 }
 /* --- END: PARALLAX BORDER FIX --- */
@@ -3989,7 +3688,7 @@ export default MainView;
 
 /*
   Core transition applied when opacity or transform changes.
-  This is the master duration for preset fades.
+  This is the master duration for scene fades.
 */
 .canvas {
   transition-property: opacity, transform;
@@ -5604,10 +5303,10 @@ import PLockController from './PLockController';
 // Hook Imports
 import { useProfileSessionState } from "../../hooks/configSelectors";
 import { useMIDI } from "../../context/MIDIContext";
-import { useSetManagement } from "../../context/SetManagementContext";
-import { useVisualConfig } from "../../context/VisualConfigContext";
+import { useAppContext } from "../../context/AppContext";
 import { useToast } from "../../context/ToastContext";
 import { BLEND_MODES } from "../../config/global-config";
+import { sliderParams } from "../../config/sliderParams";
 
 // Asset Imports
 import {
@@ -5632,22 +5331,10 @@ const formatValue = (value, decimals = 1) => {
   return numValue.toFixed(decimals);
 };
 
-export const sliderParams = [
-  { prop: "speed", label: "SPEED", icon: "slidersIcon_placeholder", min: 0.001, max: 0.1, step: 0.001, formatDecimals: 3 },
-  { prop: "size", label: "SIZE", icon: "enlargeIcon_placeholder", min: 0.1, max: 8.0, step: 0.01, formatDecimals: 1 },
-  { prop: "opacity", label: "OPACITY", icon: "eyeIcon_placeholder", min: 0, max: 1, step: 0.001, formatDecimals: 2, defaultValue: 1 },
-  { prop: "drift", label: "DRIFT", icon: "wavesIcon_placeholder", min: 0, max: 100, step: 0.001, formatDecimals: 1 },
-  { prop: "driftSpeed", label: "DRIFT SPEED", icon: "wavezIcon_placeholder", min: 0, max: 1, step: 0.001, formatDecimals: 1 },
-  { prop: "xaxis", label: "X POS", icon: "horizontalviewIcon_placeholder", min: -10000, max: 10000, step: 0.001, formatDecimals: 0 },
-  { prop: "yaxis", label: "Y POS", icon: "verticalviewIcon_placeholder", min: -10000, max: 10000, step: 0.001, formatDecimals: 0 },
-  { prop: "angle", label: "ANGLE", icon: "rotateIcon_placeholder", min: -360, max: 360, step: 0.001, formatDecimals: 1 },
-];
-
 const tabToLayerIdMap = { tab1: 3, tab2: 2, tab3: 1 };
 
 const EnhancedControlPanel = ({
   onToggleMinimize,
-  onLayerConfigChange,
   activeTab = "tab1",
   onTabChange,
   pLockProps = {},
@@ -5657,15 +5344,21 @@ const EnhancedControlPanel = ({
   crossfadeDurationMs,
   onSetCrossfadeDuration,
   isAutoFading,
+  activeLayerConfigs,
+  onLayerConfigChange,
 }) => {
   const { isProfileOwner } = useProfileSessionState();
   const { addToast } = useToast();
-  const { layerConfigs, tokenAssignments } = useVisualConfig();
   const {
-    stagedActiveWorkspace, savedSceneList, activeSceneName,
-    addNewSceneToStagedWorkspace, deleteSceneFromStagedWorkspace, setDefaultSceneInStagedWorkspace,
-    isSaving
-  } = useSetManagement();
+    tokenAssignments,
+    stagedActiveWorkspace,
+    savedSceneList,
+    activeSceneName,
+    addNewSceneToStagedWorkspace,
+    deleteSceneFromStagedWorkspace,
+    setDefaultSceneInStagedWorkspace,
+    isSaving,
+  } = useAppContext();
 
   const {
     isConnected: midiConnected, midiLearning, learningLayer,
@@ -5709,7 +5402,7 @@ const EnhancedControlPanel = ({
   };
 
   const activeLayer = useMemo(() => String(tabToLayerIdMap[activeTab] || 3), [activeTab]);
-  const config = useMemo(() => layerConfigs?.[activeLayer] || getDefaultLayerConfigTemplate(), [layerConfigs, activeLayer]);
+  const config = useMemo(() => activeLayerConfigs?.[activeLayer] || getDefaultLayerConfigTemplate(), [activeLayerConfigs, activeLayer]);
   
   const handleSliderChange = useCallback((e) => {
     const { name, value } = e.target;
@@ -5731,7 +5424,7 @@ const EnhancedControlPanel = ({
     const newSceneData = {
       name,
       ts: Date.now(),
-      layers: JSON.parse(JSON.stringify(layerConfigs)),
+      layers: JSON.parse(JSON.stringify(activeLayerConfigs)),
       tokenAssignments: JSON.parse(JSON.stringify(tokenAssignments)),
     };
 
@@ -5739,7 +5432,7 @@ const EnhancedControlPanel = ({
     addToast(`Scene "${name}" created and staged.`, "success");
     setNewSceneName("");
     
-  }, [newSceneName, savedSceneList, layerConfigs, tokenAssignments, addNewSceneToStagedWorkspace, addToast]);
+  }, [newSceneName, savedSceneList, activeLayerConfigs, tokenAssignments, addNewSceneToStagedWorkspace, addToast]);
 
   const handleDeleteScene = useCallback((nameToDelete) => {
     if (window.confirm(`Are you sure you want to delete the scene "${nameToDelete}"? This will be staged for the next save.`)) {
@@ -5785,9 +5478,7 @@ const EnhancedControlPanel = ({
   const handleDirectionToggle = useCallback(() => onLayerConfigChange(activeLayer, "direction", - (config.direction || 1), false), [onLayerConfigChange, activeLayer, config.direction]);
   const handleEnabledToggle = useCallback((e) => onLayerConfigChange(activeLayer, "enabled", e.target.checked, false), [onLayerConfigChange, activeLayer]);
   
-  // --- ADDED: Helper booleans for learning state ---
   const isLearning = (type, control) => midiLearning?.type === type && midiLearning?.control === control;
-  // ------------------------------------------------
 
   return (
     <Panel title={`Layer ${activeLayer} Controls`} onClose={onToggleMinimize} className="panel-from-toolbar enhanced-control-panel">
@@ -5857,7 +5548,14 @@ const EnhancedControlPanel = ({
                 {isProfileOwner && (
                   <div className="scene-actions">
                     <button className="btn-icon" onClick={() => setDefaultSceneInStagedWorkspace(scene.name)} disabled={isSaving || stagedActiveWorkspace?.defaultPresetName === scene.name} title="Set as Default">★</button>
-                    <button className="btn-icon delete-scene" onClick={() => handleDeleteScene(scene.name)} disabled={isSaving} title={`Delete "${scene.name}"`}>×</button>
+                    {/* --- THIS IS THE GUARDRAIL FIX --- */}
+                    <button 
+                      className="btn-icon delete-scene" 
+                      onClick={() => handleDeleteScene(scene.name)} 
+                      disabled={isSaving || savedSceneList.length <= 1} 
+                      title={savedSceneList.length <= 1 ? "Cannot delete the last scene" : `Delete "${scene.name}"`}
+                    >×</button>
+                    {/* --- END FIX --- */}
                   </div>
                 )}
               </li>
@@ -5902,12 +5600,10 @@ const EnhancedControlPanel = ({
         </div>
       </div>
 
-      {/* --- START: MODIFIED MIDI MAPPING SECTION --- */}
       {midiConnected && (
         <div className="midi-mappings-section">
           <h4 className="midi-section-title">Global & Layer MIDI Mappings</h4>
           <div className="global-mapping-grid">
-            {/* Row 1 */}
             <div className="global-mapping-item">
               <div className="global-mapping-label">Crossfader</div>
               <div className="global-mapping-controls">
@@ -5922,7 +5618,6 @@ const EnhancedControlPanel = ({
                 <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'pLockToggle') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('pLockToggle')} disabled={!midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to P-Lock Toggle">{isLearning('global', 'pLockToggle') ? "..." : "Map"}</button>
               </div>
             </div>
-            {/* Row 2 */}
             <div className="global-mapping-item">
               <div className="global-mapping-label">Previous Scene</div>
               <div className="global-mapping-controls">
@@ -5937,7 +5632,6 @@ const EnhancedControlPanel = ({
                 <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'nextScene') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('nextScene')} disabled={!midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Next Scene">{isLearning('global', 'nextScene') ? "..." : "Map"}</button>
               </div>
             </div>
-            {/* Row 3 */}
             <div className="global-mapping-item">
               <div className="global-mapping-label">Previous Workspace</div>
               <div className="global-mapping-controls">
@@ -5966,15 +5660,12 @@ const EnhancedControlPanel = ({
           </div>
         </div>
       )}
-      {/* --- END: MODIFIED MIDI MAPPING SECTION --- */}
     </Panel>
   );
 };
 
 EnhancedControlPanel.propTypes = {
   onToggleMinimize: PropTypes.func.isRequired,
-  onLayerConfigChange: PropTypes.func.isRequired,
-  layerConfigs: PropTypes.object,
   activeTab: PropTypes.string,
   onTabChange: PropTypes.func,
   pLockProps: PropTypes.object,
@@ -5984,6 +5675,8 @@ EnhancedControlPanel.propTypes = {
   crossfadeDurationMs: PropTypes.number,
   onSetCrossfadeDuration: PropTypes.func,
   isAutoFading: PropTypes.bool,
+  activeLayerConfigs: PropTypes.object,
+  onLayerConfigChange: PropTypes.func,
 };
 
 export default React.memo(EnhancedControlPanel);
@@ -5997,7 +5690,7 @@ import React, { useCallback } from "react";
 import PropTypes from "prop-types";
 
 import Panel from "./Panel";
-import { useSetManagement } from "../../context/SetManagementContext";
+import { useAppContext } from "../../context/AppContext";
 import { useUserSession } from "../../context/UserSessionContext";
 
 import "./PanelStyles/EnhancedSavePanel.css";
@@ -6017,7 +5710,7 @@ const EnhancedSavePanel = ({ onClose }) => {
     isLoading: isWorkspaceLoading,
     isSaving,
     hasPendingChanges,
-  } = useSetManagement();
+  } = useAppContext();
   
   const canSave = canSaveToHostProfile;
   const isFirstSave = !activeWorkspaceName;
@@ -6128,7 +5821,8 @@ import PropTypes from "prop-types";
 import Panel from "./Panel";
 import { EVENT_TYPE_MAP } from "../../config/global-config";
 import { useToast } from "../../context/ToastContext";
-import { useSetManagement } from "../../context/SetManagementContext";
+import { useAppContext } from "../../context/AppContext";
+import { useUserSession } from "../../context/UserSessionContext";
 
 import "./PanelStyles/Eventspanel.css";
 
@@ -6149,16 +5843,17 @@ const generateEventOptions = () => {
 
 const EventsPanel = ({
   onClose,
-  readOnly = false,
   onPreviewEffect,
 }) => {
   const { addToast } = useToast();
+  const { canSaveToHostProfile } = useUserSession();
   const {
     stagedActiveWorkspace,
     updateGlobalEventReactions,
     deleteGlobalEventReaction,
-  } = useSetManagement();
+  } = useAppContext();
 
+  const readOnly = !canSaveToHostProfile;
   const reactions = useMemo(() => stagedActiveWorkspace?.globalEventReactions || {}, [stagedActiveWorkspace]);
   const onSaveReaction = updateGlobalEventReactions;
   const onRemoveReaction = deleteGlobalEventReaction;
@@ -6399,7 +6094,6 @@ const EventsPanel = ({
 
 EventsPanel.propTypes = {
   onClose: PropTypes.func.isRequired,
-  readOnly: PropTypes.bool,
   onPreviewEffect: PropTypes.func,
 };
 
@@ -6590,15 +6284,15 @@ const InfoOverlay = ({ isOpen, onClose }) => {
           <div className="tab-pane">
             <h3>Saving Your Workspace</h3>
             <div className="info-card">
-              <h4>Staging Presets</h4>
+              <h4>Staging Scenes</h4>
               <p>
-                The Save Panel is your studio's control room. When you find a visual configuration you like, you can create a "Preset" by giving it a name. This doesn't save it on-chain immediately; instead, it's "staged." You can create, update, and delete multiple presets in this staging area. Your list of staged presets will appear in the Preset Selector Bar at the bottom of the screen for quick access.
+                The Save Panel is your studio's control room. When you find a visual configuration you like, you can create a "Scene" by giving it a name. This doesn't save it on-chain immediately; instead, it's "staged." You can create, update, and delete multiple scenes in this staging area. Your list of staged scenes will appear in the Scene Selector Bar at the bottom of the screen for quick access.
               </p>
             </div>
             <div className="info-card">
               <h4>The Workspace: Your Public Gallery</h4>
               <p>
-                RADAR treats your entire setup as a single "Workspace." This isn't just your presets; it includes your personal library of collections, your global MIDI mappings, and your custom event reactions. When you're ready, you hit "Save Workspace." This single action bundles everything into one file, uploads it to a decentralized network (IPFS), and updates a single pointer on your Universal Profile. Your profile doesn't get cluttered with data; it just holds the key to your entire creative studio, making it efficient, portable, and truly yours.
+                RADAR treats your entire setup as a single "Workspace." This isn't just your scenes; it includes your personal library of collections, your global MIDI mappings, and your custom event reactions. When you're ready, you hit "Save Workspace." This single action bundles everything into one file, uploads it to a decentralized network (IPFS), and updates a single pointer on your Universal Profile. Your profile doesn't get cluttered with data; it just holds the key to your entire creative studio, making it efficient, portable, and truly yours.
               </p>
             </div>
           </div>
@@ -6616,7 +6310,7 @@ const InfoOverlay = ({ isOpen, onClose }) => {
             <div className="info-card">
               <h4>Cross-Profile Performance</h4>
               <p>
-                Because your library is public, anyone who visits your Universal Profile in RADAR can see and use the assets from your curated collections. They can load your presets and "perform" with your setup using their own audio or MIDI controllers. This turns every profile into a potential gallery and a stage for collaborative, cross-profile visual experiences.
+                Because your library is public, anyone who visits your Universal Profile in RADAR can see and use the assets from your curated collections. They can load your scenes and "perform" with your setup using their own audio or MIDI controllers. This turns every profile into a potential gallery and a stage for collaborative, cross-profile visual experiences.
               </p>
             </div>
           </div>
@@ -6705,9 +6399,9 @@ const InfoOverlay = ({ isOpen, onClose }) => {
               As an artist and performer who uses RADAR for live VJing, I will be constantly tweaking and improving it based on real-world use. This is a living project.
             </p>
             <div className="info-card">
-              <h4>The Next Level: Minting Presets</h4>
+              <h4>The Next Level: Minting Scenes</h4>
               <p>
-                The most exciting step on the horizon is the ability to mint your creations. A "Preset" is essentially a layered recipe of assets and their parameters. We are eagerly awaiting the evolution of tools on LUKSO, like an official token generator, to explore how we can wire this up internally.
+                The most exciting step on the horizon is the ability to mint your creations. A "Scene" is essentially a layered recipe of assets and their parameters. We are eagerly awaiting the evolution of tools on LUKSO, like an official token generator, to explore how we can wire this up internally.
               </p>
               <p>
                 Imagine being able to take a visual setup you've perfected and minting it as its own unique, standalone, programmable asset. This is the feature that will truly propel RADAR to the next level, turning collectors into creators and fostering a collaborative movement of sharing, remixing, and collecting these new forms of generative art.
@@ -6885,7 +6579,7 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import PropTypes from "prop-types";
 import Panel from "./Panel";
 import { useUserSession } from "../../context/UserSessionContext";
-import { usePresetManagement } from "../../context/PresetManagementContext";
+import { useAppContext } from "../../context/AppContext";
 import { useToast } from "../../context/ToastContext";
 import { isAddress, stringToHex } from "viem";
 import { uploadJsonToPinata } from "../../services/PinataService";
@@ -6904,7 +6598,7 @@ const formatAddress = (address, length = 4) => {
 
 const LibraryPanel = ({ onClose }) => {
   const { isRadarProjectAdmin } = useUserSession();
-  const { officialWhitelist, configServiceRef, refreshOfficialWhitelist } = usePresetManagement();
+  const { officialWhitelist, configServiceRef, refreshOfficialWhitelist } = useAppContext();
   const { addToast } = useToast();
 
   const [stagedWhitelist, setStagedWhitelist] = useState([]);
@@ -7101,6 +6795,7 @@ import PropTypes from "prop-types";
 
 import Panel from "./Panel"; // Local component
 import { useProfileCache } from "../../hooks/useProfileCache"; // Local hook
+import { useAppContext } from "../../context/AppContext"; // Local context
 
 import { isAddress } from "viem"; // Third-party utility
 
@@ -7333,10 +7028,7 @@ const MemoizedNotificationItem = React.memo(NotificationItem);
 
 /**
  * @typedef {object} NotificationPanelProps
- * @property {Array<Notification>} [notifications=[]] - Array of notification objects to display.
  * @property {() => void} onClose - Callback function to close the panel.
- * @property {(id: string|number) => void} [onMarkAsRead] - Callback to mark a notification as read.
- * @property {() => void} [onClearAll] - Callback to clear all notifications.
  */
 
 /**
@@ -7344,12 +7036,9 @@ const MemoizedNotificationItem = React.memo(NotificationItem);
  * @param {NotificationPanelProps} props - The component's props.
  * @returns {JSX.Element} The rendered NotificationPanel component.
  */
-const NotificationPanel = ({
-  notifications = [],
-  onClose,
-  onMarkAsRead,
-  onClearAll,
-}) => {
+const NotificationPanel = ({ onClose }) => {
+  const { notifications, onMarkNotificationRead: onMarkAsRead, onClearAllNotifications: onClearAll } = useAppContext();
+
   return (
     <Panel
       title="NOTIFICATIONS"
@@ -7385,10 +7074,7 @@ const NotificationPanel = ({
 };
 
 NotificationPanel.propTypes = {
-  notifications: PropTypes.arrayOf(PropTypes.object),
   onClose: PropTypes.func.isRequired,
-  onMarkAsRead: PropTypes.func,
-  onClearAll: PropTypes.func,
 };
 
 export default React.memo(NotificationPanel);
@@ -8241,7 +7927,7 @@ export default Panel;
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0; }
 
 /* --- NEW STYLES ADDED FOR REFACTORED SAVE PANEL --- */
-.preset-main-content {
+.scene-main-content {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
@@ -8249,7 +7935,7 @@ export default Panel;
   overflow: hidden;
 }
 
-.default-preset-tag {
+.default-scene-tag {
   font-size: var(--font-size-xs);
   color: var(--color-primary);
   font-weight: bold;
@@ -8259,25 +7945,25 @@ export default Panel;
   flex-shrink: 0;
 }
 
-.preset-actions {
+.scene-actions {
   display: flex;
   align-items: center;
   gap: var(--space-xs);
   flex-shrink: 0;
 }
 
-.preset-actions .btn-icon {
+.scene-actions .btn-icon {
   font-size: 1.2em;
   color: var(--color-text-muted);
   transition: color 0.2s ease, transform 0.2s ease;
 }
 
-.preset-actions .btn-icon:hover:not(:disabled) {
+.scene-actions .btn-icon:hover:not(:disabled) {
   color: var(--color-primary);
   transform: scale(1.1);
 }
 
-.preset-actions .btn-icon[title*="Default"]:hover:not(:disabled) {
+.scene-actions .btn-icon[title*="Default"]:hover:not(:disabled) {
   color: var(--color-warning);
 }
 /* --- END NEW STYLES --- */
@@ -10160,11 +9846,11 @@ export default React.memo(PLockController);
 ### `src\components\Panels\SetsPanel.jsx`
 ```jsx
 // src/components/Panels/SetsPanel.jsx
-import React, { useState, useCallback } from "react";
+import React, { useState } from "react";
 import PropTypes from "prop-types";
 
 import Panel from "./Panel";
-import { useSetManagement } from "../../context/SetManagementContext";
+import { useAppContext } from "../../context/AppContext";
 import { useUserSession } from "../../context/UserSessionContext";
 
 import "./PanelStyles/SetsPanel.css";
@@ -10182,7 +9868,7 @@ const SetsPanel = ({ onClose }) => {
     isLoading,
     isSaving,
     preloadWorkspace, 
-  } = useSetManagement();
+  } = useAppContext();
 
   const [editingName, setEditingName] = useState(null);
   const [newName, setNewName] = useState("");
@@ -10393,7 +10079,7 @@ import { toplayerIcon, middlelayerIcon, bottomlayerIcon } from "../../assets";
 import { demoAssetMap } from "../../assets/DemoLayers/initLayers";
 import { manageOverlayDimmingEffect } from "../../utils/performanceHelpers";
 import { globalAnimationFlags } from "../../utils/globalAnimationFlags";
-import { useSetManagement } from "../../context/SetManagementContext";
+import { useAppContext } from "../../context/AppContext";
 import { useUserSession } from "../../context/UserSessionContext";
 import TokenGrid from "./TokenGrid";
 import LazyLoadImage from "./LazyLoadImage";
@@ -10426,7 +10112,7 @@ const TokenSelectorOverlay = ({ isOpen, onClose, onTokenApplied, readOnly = fals
     addPalette, removePalette, addTokenToPalette, removeTokenFromPalette,
     configServiceRef,
     refreshOwnedTokens, 
-  } = useSetManagement();
+  } = useAppContext();
 
   const { visitorProfileAddress } = useUserSession();
 
@@ -11389,23 +11075,23 @@ export default LoadingOverlay;
 @import "../../styles/variables.css";
 
 :root {
-  --color-preset-active-bg: rgba(255, 193, 7, 0.85);
-  --color-preset-active-border: rgba(255, 193, 7, 1.0);
-  --color-preset-active-text: #1a1a2e;
+  --color-scene-active-bg: rgba(255, 193, 7, 0.85);
+  --color-scene-active-border: rgba(255, 193, 7, 1.0);
+  --color-scene-active-text: #1a1a2e;
 
-  --color-preset-hover-bg: rgba(255, 204, 51, 0.8);
-  --color-preset-hover-border: rgba(255, 214, 82, 1.0);
-  --color-preset-hover-text: #1a1a2e;
+  --color-scene-hover-bg: rgba(255, 204, 51, 0.8);
+  --color-scene-hover-border: rgba(255, 214, 82, 1.0);
+  --color-scene-hover-text: #1a1a2e;
 
   --ping-duration: 1.5s;
   --ping-color: rgba(255, 193, 7, 0.7);
   --ping-spread: 5px;
 
-  --color-preset-default-border: var(--color-border);
+  --color-scene-default-border: var(--color-border);
   --slide-duration: 300ms;
 }
 
-.preset-selector-bar {
+.scene-selector-bar {
   display: flex;
   align-items: center;
   gap: var(--space-xs);
@@ -11418,7 +11104,7 @@ export default LoadingOverlay;
   background: transparent;
 }
 
-.preset-buttons-container {
+.scene-buttons-container {
   display: flex;
   gap: var(--space-sm);
   transition: transform var(--slide-duration) ease-in-out;
@@ -11434,19 +11120,19 @@ export default LoadingOverlay;
   to { transform: translateX(0); opacity: 1; }
 }
 
-.preset-buttons-container.slide-in-left {
+.scene-buttons-container.slide-in-left {
   animation: slideInFromLeft var(--slide-duration) ease-in-out forwards;
 }
-.preset-buttons-container.slide-in-right {
+.scene-buttons-container.slide-in-right {
   animation: slideInFromRight var(--slide-duration) ease-in-out forwards;
 }
 
-.preset-selector-button,
+.scene-selector-button,
 .pagination-button {
   font-family: var(--font-family);
   font-weight: 600;
   color: var(--color-text);
-  border: 1px solid var(--color-preset-default-border);
+  border: 1px solid var(--color-scene-default-border);
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
@@ -11463,7 +11149,7 @@ export default LoadingOverlay;
   position: relative;
 }
 
-.preset-selector-button {
+.scene-selector-button {
   font-size: var(--font-size-xs);
   width: 28px;
   height: 28px;
@@ -11475,25 +11161,25 @@ export default LoadingOverlay;
   height: 24px;
 }
 
-.preset-selector-button:hover:not(:disabled):not(.active),
+.scene-selector-button:hover:not(:disabled):not(.active),
 .pagination-button:hover:not(:disabled) {
-  background: var(--color-preset-hover-bg);
-  border-color: var(--color-preset-hover-border);
-  color: var(--color-preset-hover-text);
+  background: var(--color-scene-hover-bg);
+  border-color: var(--color-scene-hover-border);
+  color: var(--color-scene-hover-text);
   transform: translateY(-1px);
 }
 
-.preset-selector-button:active:not(:disabled):not(.active),
+.scene-selector-button:active:not(:disabled):not(.active),
 .pagination-button:active:not(:disabled) {
   background: rgba(255, 180, 0, 0.9);
   transform: translateY(0px);
   box-shadow: none;
 }
 
-.preset-selector-button:disabled,
+.scene-selector-button:disabled,
 .pagination-button:disabled {
   color: var(--color-text);
-  border-color: var(--color-preset-default-border);
+  border-color: var(--color-scene-default-border);
   background: var(--color-button-secondary-a80);
   backdrop-filter: blur(var(--blur-amount));
   -webkit-backdrop-filter: blur(var(--blur-amount));
@@ -11514,19 +11200,19 @@ export default LoadingOverlay;
   }
 }
 
-.preset-selector-button.active {
-  background: var(--color-preset-active-bg);
-  border-color: var(--color-preset-active-border);
-  color: var(--color-preset-active-text);
+.scene-selector-button.active {
+  background: var(--color-scene-active-bg);
+  border-color: var(--color-scene-active-border);
+  color: var(--color-scene-active-text);
   cursor: default;
   transform: translateY(0px);
   animation: continuous-ping-animation var(--ping-duration) infinite ease-out;
 }
 
-.preset-selector-button.active:disabled {
-  background: var(--color-preset-active-bg);
-  border-color: var(--color-preset-active-border);
-  color: var(--color-preset-active-text);
+.scene-selector-button.active:disabled {
+  background: var(--color-scene-active-bg);
+  border-color: var(--color-scene-active-border);
+  color: var(--color-scene-active-text);
   opacity: 0.7;
   animation: none;
   box-shadow: none;
@@ -11634,7 +11320,9 @@ const SceneSelectorBar = ({
   const handleNext = () => {
     if (currentPage < totalPages - 1) {
       setPaginationDirection('next');
+      // --- THIS IS THE FIX ---
       setCurrentPage((prev) => prev + 1);
+      // --- END FIX ---
     }
   };
 
@@ -11648,7 +11336,7 @@ const SceneSelectorBar = ({
                          paginationDirection === 'prev' ? 'slide-in-right' : '';
 
   return (
-    <div className="preset-selector-bar">
+    <div className="scene-selector-bar">
       <button
         type="button"
         className="pagination-button"
@@ -11659,7 +11347,7 @@ const SceneSelectorBar = ({
       >
         {'<'}
       </button>
-      <div className={`preset-buttons-container ${animationClass}`}>
+      <div className={`scene-buttons-container ${animationClass}`}>
         {visibleScenes.map((scene) => {
           const isActive = scene.name === currentSceneName;
           const displayLabel = getSceneDisplayLabel(scene.name);
@@ -11667,7 +11355,7 @@ const SceneSelectorBar = ({
             <button
               type="button"
               key={scene.name}
-              className={`preset-selector-button ${isActive ? 'active' : ''}`}
+              className={`scene-selector-button ${isActive ? 'active' : ''}`}
               onClick={() => onSceneSelect(scene.name)}
               disabled={isLoading}
               title={`Load: ${scene.name}`}
@@ -11978,7 +11666,7 @@ import LibraryPanel from '../Panels/LibraryPanel';
 import Crossfader from './Crossfader';
 import WorkspaceSelectorDots from './WorkspaceSelectorDots';
 import { useMIDI } from '../../context/MIDIContext';
-import { useSetManagement } from '../../context/SetManagementContext';
+import { useAppContext } from '../../context/AppContext';
 import { useUserSession } from '../../context/UserSessionContext';
 
 import { useToast } from '../../context/ToastContext';
@@ -11991,8 +11679,8 @@ const MemoizedGlobalMIDIStatus = React.memo(GlobalMIDIStatus);
 const MemoizedAudioStatusIcon = React.memo(AudioStatusIcon);
 const MemoizedSceneSelectorBar = React.memo(SceneSelectorBar);
 
-const DEFAULT_SEQUENCER_INTERVAL = 0; // Default pause between fades
-const DEFAULT_CROSSFADE_DURATION = 1000; // Default fade time is 1 seconds
+const DEFAULT_SEQUENCER_INTERVAL = 0;
+const DEFAULT_CROSSFADE_DURATION = 1000;
 
 const GeneralConnectPill = () => {
     return (
@@ -12002,12 +11690,16 @@ const GeneralConnectPill = () => {
     );
 };
 
-const ActivePanelRenderer = ({ uiState, audioState, configData, actions, pLockProps, onSceneSelect, sequencerIntervalMs, onSetSequencerInterval, crossfadeDurationMs, onSetCrossfadeDuration }) => {
+const ActivePanelRenderer = (props) => {
+    const { uiState, audioState, pLockProps, onPreviewEffect, configData, onLayerConfigChange } = props;
     const { activePanel, animatingPanel, activeLayerTab, closePanel, setActiveLayerTab } = uiState;
     const { isAudioActive, audioSettings, analyzerData, setIsAudioActive, setAudioSettings } = audioState;
-    const { notifications, savedReactions, canSave, isPreviewMode, canInteract, currentProfileAddress, layerConfigs, tokenAssignments, isAutoFading } = configData;
-    const { onLayerConfigChange, onMarkNotificationRead, onClearAllNotifications, onSaveReaction, onRemoveReaction, onPreviewEffect, onTokenApplied } = actions;
+    
+    const { handleSceneSelect, updateTokenAssignment, isAutoFading } = useAppContext();
 
+    const [sequencerIntervalMs, setSequencerIntervalMs] = useState(DEFAULT_SEQUENCER_INTERVAL);
+    const [crossfadeDurationMs, setCrossfadeDurationMs] = useState(DEFAULT_CROSSFADE_DURATION);
+    
     const handleTokenSelectorClose = useCallback(() => closePanel(), [closePanel]);
     const panelWrapperClassName = useMemo(() => animatingPanel === "closing" ? "animating closing" : animatingPanel ? "animating" : "", [animatingPanel]);
 
@@ -12020,31 +11712,31 @@ const ActivePanelRenderer = ({ uiState, audioState, configData, actions, pLockPr
                         activeTab={activeLayerTab}
                         onTabChange={setActiveLayerTab}
                         pLockProps={pLockProps}
-                        onLayerConfigChange={onLayerConfigChange}
-                        layerConfigs={layerConfigs}
-                        onSceneSelect={onSceneSelect}
+                        onSceneSelect={handleSceneSelect}
                         sequencerIntervalMs={sequencerIntervalMs}
-                        onSetSequencerInterval={onSetSequencerInterval}
+                        onSetSequencerInterval={setSequencerIntervalMs}
                         crossfadeDurationMs={crossfadeDurationMs}
-                        onSetCrossfadeDuration={onSetCrossfadeDuration}
+                        onSetCrossfadeDuration={setCrossfadeDurationMs}
                         isAutoFading={isAutoFading}
+                        activeLayerConfigs={configData.uiControlConfig?.layers}
+                        onLayerConfigChange={onLayerConfigChange}
                     />
                 </PanelWrapper>
             );
         case "notifications":
-            return ( <PanelWrapper key="notifications-panel" className={panelWrapperClassName}><NotificationPanel notifications={notifications} onClose={closePanel} onMarkAsRead={onMarkNotificationRead} onClearAll={onClearAllNotifications} /></PanelWrapper> );
+            return ( <PanelWrapper key="notifications-panel" className={panelWrapperClassName}><NotificationPanel onClose={closePanel} /></PanelWrapper> );
         case "events":
-            return canInteract ? ( <PanelWrapper key="events-panel" className={panelWrapperClassName}><EventsPanel onSaveReaction={onSaveReaction} onRemoveReaction={onRemoveReaction} reactions={savedReactions} onClose={closePanel} readOnly={!canSave} onPreviewEffect={onPreviewEffect} /></PanelWrapper> ) : null;
+            return ( <PanelWrapper key="events-panel" className={panelWrapperClassName}><EventsPanel onClose={closePanel} onPreviewEffect={onPreviewEffect} /></PanelWrapper> );
         case "sets":
-            return currentProfileAddress && !isPreviewMode ? ( <PanelWrapper key="sets-panel" className={panelWrapperClassName}><SetsPanel onClose={closePanel} /></PanelWrapper> ) : null;
+            return ( <PanelWrapper key="sets-panel" className={panelWrapperClassName}><SetsPanel onClose={closePanel} /></PanelWrapper> );
         case "save":
-            return currentProfileAddress && !isPreviewMode ? ( <PanelWrapper key="save-panel" className={panelWrapperClassName}><EnhancedSavePanel onClose={closePanel} /></PanelWrapper> ) : null;
+            return ( <PanelWrapper key="save-panel" className={panelWrapperClassName}><EnhancedSavePanel onClose={closePanel} /></PanelWrapper> );
         case "audio":
             return ( <PanelWrapper key="audio-panel" className={panelWrapperClassName}><AudioControlPanel onClose={closePanel} isAudioActive={isAudioActive} setIsAudioActive={setIsAudioActive} audioSettings={audioSettings} setAudioSettings={setAudioSettings} analyzerData={analyzerData} /></PanelWrapper> );
         case "whitelist":
             return ( <PanelWrapper key="whitelist-panel" className={panelWrapperClassName}><LibraryPanel onClose={closePanel} /></PanelWrapper> );
         case "tokens":
-            return canInteract ? ( <TokenSelectorOverlay key="token-selector-overlay" isOpen={activePanel === "tokens"} onClose={handleTokenSelectorClose} onTokenApplied={onTokenApplied} readOnly={!canInteract} /> ) : null;
+            return ( <TokenSelectorOverlay key="token-selector-overlay" isOpen={activePanel === "tokens"} onClose={handleTokenSelectorClose} onTokenApplied={updateTokenAssignment} /> );
         default:
             return null;
     }
@@ -12052,14 +11744,10 @@ const ActivePanelRenderer = ({ uiState, audioState, configData, actions, pLockPr
 ActivePanelRenderer.propTypes = {
     uiState: PropTypes.object.isRequired,
     audioState: PropTypes.object.isRequired,
-    configData: PropTypes.object.isRequired,
-    actions: PropTypes.object.isRequired,
     pLockProps: PropTypes.object.isRequired,
-    onSceneSelect: PropTypes.func.isRequired,
-    sequencerIntervalMs: PropTypes.number,
-    onSetSequencerInterval: PropTypes.func,
-    crossfadeDurationMs: PropTypes.number,
-    onSetCrossfadeDuration: PropTypes.func,
+    onPreviewEffect: PropTypes.func.isRequired,
+    configData: PropTypes.object.isRequired,
+    onLayerConfigChange: PropTypes.func.isRequired,
 };
 const MemoizedActivePanelRenderer = React.memo(ActivePanelRenderer);
 
@@ -12074,18 +11762,20 @@ const MemoizedOverlayRenderer = React.memo(OverlayRenderer);
 
 function UIOverlay(props) {
   const { 
-    uiState, audioState, configData, actions, savedSceneList,
-    pLockProps, isReady = false
+    uiState, audioState, savedSceneList,
+    pLockProps, isReady = false,
+    actions,
+    configData,
+    onLayerConfigChange,
   } = props;
   
   const { addToast } = useToast();
-  const { stagedSetlist, loadWorkspace, activeWorkspaceName: currentWorkspaceName } = useSetManagement();
+  const { stagedSetlist, loadWorkspace, activeWorkspaceName: currentWorkspaceName, isConfigLoading, activeSceneName, handleSceneSelect, handleCrossfaderChange, unreadCount, isFullyLoaded } = useAppContext(); // <<< GET unreadCount
+  const { isRadarProjectAdmin: isParentAdmin, isPreviewMode, hostProfileAddress: currentProfileAddress } = useUserSession(); // <<< FIX IS HERE
   const { isUiVisible, activePanel, toggleSidePanel, toggleInfoOverlay, toggleUiVisibility } = uiState;
   const { isAudioActive } = audioState;
   
-  const { isParentAdmin, isPreviewMode, unreadCount, isTransitioning, currentProfileAddress, crossfader, activeSceneName, isAutoFading, renderState, tokenAssignments, isParallaxEnabled } = configData;
-
-  const { onEnhancedView, onSceneSelect, onCrossfaderChange, onToggleParallax } = actions;
+  const { onEnhancedView, onToggleParallax, onPreviewEffect } = actions;
   const [isSequencerActive, setIsSequencerActive] = useState(false);
   const sequencerTimeoutRef = useRef(null);
   const nextSceneIndexRef = useRef(0);
@@ -12112,14 +11802,14 @@ function UIOverlay(props) {
       if (savedSceneList.length > 1) {
         const currentIndex = savedSceneList.findIndex(s => s.name === activeSceneName);
         const nextIndex = (currentIndex + 1) % savedSceneList.length;
-        onSceneSelect(savedSceneList[nextIndex].name, crossfadeDurationMs);
+        handleSceneSelect(savedSceneList[nextIndex].name, crossfadeDurationMs);
       }
       actionTaken = true;
     } else if (pendingPrevScene) {
       if (savedSceneList.length > 1) {
         const currentIndex = savedSceneList.findIndex(s => s.name === activeSceneName);
         const prevIndex = (currentIndex - 1 + savedSceneList.length) % savedSceneList.length;
-        onSceneSelect(savedSceneList[prevIndex].name, crossfadeDurationMs);
+        handleSceneSelect(savedSceneList[prevIndex].name, crossfadeDurationMs);
       }
       actionTaken = true;
     } else if (pendingNextWorkspace) {
@@ -12143,19 +11833,19 @@ function UIOverlay(props) {
     }
   }, [
     pendingNextScene, pendingPrevScene, pendingNextWorkspace, pendingPrevWorkspace,
-    activeSceneName, savedSceneList, onSceneSelect, crossfadeDurationMs,
+    activeSceneName, savedSceneList, handleSceneSelect, crossfadeDurationMs,
     currentWorkspaceName, workspaceList, loadWorkspace,
     clearPendingActions
   ]);
 
   useEffect(() => { isMountedRef.current = true; return () => { isMountedRef.current = false; } }, []);
   
-  const onSceneSelectRef = useRef(onSceneSelect);
+  const handleSceneSelectRef = useRef(handleSceneSelect);
   const savedSceneListRef = useRef(savedSceneList);
   useEffect(() => {
-    onSceneSelectRef.current = onSceneSelect;
+    handleSceneSelectRef.current = handleSceneSelect;
     savedSceneListRef.current = savedSceneList;
-  }, [onSceneSelect, savedSceneList]);
+  }, [handleSceneSelect, savedSceneList]);
 
   const runNextSequenceStep = useCallback(() => {
     const currentList = savedSceneListRef.current;
@@ -12165,22 +11855,22 @@ function UIOverlay(props) {
     }
     const nextIndex = nextSceneIndexRef.current % currentList.length;
     const nextScene = currentList[nextIndex];
-    if (nextScene?.name && onSceneSelectRef.current) {
-        onSceneSelectRef.current(nextScene.name, crossfadeDurationMs);
+    if (nextScene?.name && handleSceneSelectRef.current) {
+        handleSceneSelectRef.current(nextScene.name, crossfadeDurationMs);
     }
     nextSceneIndexRef.current = nextIndex + 1;
   }, [crossfadeDurationMs]);
 
   useEffect(() => {
     if (sequencerTimeoutRef.current) clearTimeout(sequencerTimeoutRef.current);
-    if (isSequencerActive && !isAutoFading) {
+    if (isSequencerActive && !props.configData.isAutoFading) {
         sequencerTimeoutRef.current = setTimeout(runNextSequenceStep, sequencerIntervalMs);
     }
     return () => { if (sequencerTimeoutRef.current) clearTimeout(sequencerTimeoutRef.current); };
-  }, [isSequencerActive, isAutoFading, sequencerIntervalMs, runNextSequenceStep]);
+  }, [isSequencerActive, props.configData.isAutoFading, sequencerIntervalMs, runNextSequenceStep]);
 
   const handleToggleSequencer = () => {
-    if (configData.isConfigLoading || !configData.currentProfileAddress) return;
+    if (isConfigLoading || !currentProfileAddress) return;
     setIsSequencerActive(prev => {
       const isActivating = !prev;
       if (isActivating) {
@@ -12201,7 +11891,7 @@ function UIOverlay(props) {
     });
   };
 
-  const shouldShowUI = useMemo(() => isReady && renderState === 'rendered', [isReady, renderState]);
+  const shouldShowUI = useMemo(() => isReady && props.configData.renderState === 'rendered', [isReady, props.configData.renderState]);
   const showSceneBar = useMemo(() => shouldShowUI && isUiVisible && !activePanel && !!currentProfileAddress, [shouldShowUI, isUiVisible, activePanel, currentProfileAddress]);
   const mainUiContainerClass = `ui-elements-container ${shouldShowUI && isUiVisible ? "visible" : "hidden-by-opacity"}`;
 
@@ -12211,7 +11901,7 @@ function UIOverlay(props) {
   
   return (
     <>
-      <MemoizedTopRightControls
+      {isFullyLoaded && <MemoizedTopRightControls
         isRadarProjectAdmin={isParentAdmin} 
         showInfo={true} 
         showToggleUI={true} 
@@ -12221,9 +11911,9 @@ function UIOverlay(props) {
         onToggleUI={toggleUiVisibility} 
         onEnhancedView={onEnhancedView} 
         isUiVisible={isUiVisible}
-        isParallaxEnabled={isParallaxEnabled}
+        isParallaxEnabled={props.configData.isParallaxEnabled}
         onToggleParallax={onToggleParallax}
-      />
+      />}
       <div className={mainUiContainerClass}>
         {isUiVisible && (
           <>
@@ -12232,27 +11922,24 @@ function UIOverlay(props) {
               <button
                 className={`toolbar-icon sequencer-toggle-button ${isSequencerActive ? "active" : ""}`}
                 onClick={handleToggleSequencer} title={isSequencerActive ? `Stop Scene Sequencer` : `Start Scene Sequencer`}
-                aria-label={isSequencerActive ? "Stop Scene Sequencer" : "Start Scene Sequencer"} disabled={configData.isConfigLoading || !configData.currentProfileAddress}
+                aria-label={isSequencerActive ? "Stop Scene Sequencer" : "Start Scene Sequencer"} disabled={isConfigLoading || !currentProfileAddress}
               >
                 <SequencerIcon className="icon-image" />
               </button>
               <MemoizedAudioStatusIcon isActive={isAudioActive} onClick={() => uiState.openPanel('audio')} />
             </div>
             {isPreviewMode && (<div className="preview-mode-indicator"><span>👁️</span> Preview Mode</div>)}
-            <div className="vertical-toolbar-container">
+            {isFullyLoaded && <div className="vertical-toolbar-container">
+              {/* <<< PASS unreadCount FROM CONTEXT */}
               <MemoizedVerticalToolbar activePanel={activePanel} setActivePanel={toggleSidePanel} notificationCount={unreadCount} />
-            </div>
+            </div>}
             <MemoizedActivePanelRenderer
                 uiState={uiState}
                 audioState={audioState}
-                configData={{ ...configData, tokenAssignments }}
-                actions={actions}
                 pLockProps={pLockProps}
-                onSceneSelect={onSceneSelect}
-                sequencerIntervalMs={sequencerIntervalMs}
-                onSetSequencerInterval={setSequencerIntervalMs}
-                crossfadeDurationMs={crossfadeDurationMs}
-                onSetCrossfadeDuration={setCrossfadeDurationMs}
+                onPreviewEffect={onPreviewEffect}
+                configData={configData}
+                onLayerConfigChange={onLayerConfigChange}
             />
             {showSceneBar && (
               <div className="bottom-center-controls">
@@ -12260,17 +11947,17 @@ function UIOverlay(props) {
                   workspaces={workspaceList}
                   activeWorkspaceName={currentWorkspaceName}
                   onSelectWorkspace={loadWorkspace}
-                  isLoading={isTransitioning || configData.isConfigLoading || isAutoFading}
+                  isLoading={props.configData.isTransitioning || isConfigLoading || props.configData.isAutoFading}
                 />
                 <Crossfader
-                  value={crossfader.value}
-                  onInput={onCrossfaderChange}
-                  onChange={onCrossfaderChange}
-                  disabled={isAutoFading}
+                  value={props.configData.crossfader.value}
+                  onInput={handleCrossfaderChange}
+                  onChange={handleCrossfaderChange}
+                  disabled={props.configData.isAutoFading}
                 />
                 <MemoizedSceneSelectorBar
                   savedSceneList={savedSceneList} currentSceneName={activeSceneName}
-                  onSceneSelect={(sceneName) => onSceneSelect(sceneName, crossfadeDurationMs)} isLoading={isTransitioning || configData.isConfigLoading || isAutoFading}
+                  onSceneSelect={(sceneName) => handleSceneSelect(sceneName, crossfadeDurationMs)} isLoading={props.configData.isTransitioning || isConfigLoading || props.configData.isAutoFading}
                 />
               </div>
             )}
@@ -12291,6 +11978,7 @@ UIOverlay.propTypes = {
   actions: PropTypes.object.isRequired,
   savedSceneList: PropTypes.array,
   isReady: PropTypes.bool,
+  onLayerConfigChange: PropTypes.func.isRequired,
 };
 
 UIOverlay.defaultProps = {
@@ -12359,7 +12047,7 @@ export default React.memo(UIOverlay);
 import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import './WorkspaceSelectorDots.css';
-import { useSetManagement } from '../../context/SetManagementContext';
+import { useAppContext } from '../../context/AppContext';
 
 const WorkspaceSelectorDots = ({
   workspaces = [],
@@ -12367,15 +12055,13 @@ const WorkspaceSelectorDots = ({
   onSelectWorkspace,
   isLoading,
 }) => {
-  const { preloadWorkspace } = useSetManagement();
+  const { preloadWorkspace } = useAppContext();
 
   if (workspaces.length <= 1) {
     return null;
   }
 
-  // --- START MODIFICATION: Remove redundant sorting ---
   const sortedWorkspaces = useMemo(() => workspaces, [workspaces]);
-  // --- END MODIFICATION ---
 
   return (
     <div className="workspace-dots-container">
@@ -12417,7 +12103,7 @@ export default WorkspaceSelectorDots;
 
 /**
  * Default configuration object used when no specific profile configuration
- * (named preset or default pointer) is loaded.
+ * (named scene or default pointer) is loaded.
  * Defines initial layer parameters and assigns default demo tokens.
  */
 export default {
@@ -12619,6 +12305,36 @@ export const INTERPOLATED_MIDI_PARAMS = [
 ```
 
 ---
+### `src\config\sliderParams.js`
+```js
+// src/config/sliderParams.js
+
+/**
+ * Shared configuration for visual layer control sliders.
+ * This is used across various components and contexts to ensure consistency.
+ *
+ * @property {string} prop - The key in the layer configuration object.
+ * @property {string} label - The display label for the UI.
+ * @property {string} icon - Placeholder for a potential future icon identifier.
+ * @property {number} min - The minimum value for the slider.
+ * @property {number} max - The maximum value for the slider.
+ * @property {number} step - The step increment for the slider.
+ * @property {number} formatDecimals - The number of decimal places for display formatting.
+ * @property {number} [defaultValue=0] - The default value if one is not provided in the configuration.
+ */
+export const sliderParams = [
+  { prop: "speed", label: "SPEED", icon: "slidersIcon_placeholder", min: 0.001, max: 0.1, step: 0.001, formatDecimals: 3 },
+  { prop: "size", label: "SIZE", icon: "enlargeIcon_placeholder", min: 0.1, max: 8.0, step: 0.01, formatDecimals: 1 },
+  { prop: "opacity", label: "OPACITY", icon: "eyeIcon_placeholder", min: 0, max: 1, step: 0.001, formatDecimals: 2, defaultValue: 1 },
+  { prop: "drift", label: "DRIFT", icon: "wavesIcon_placeholder", min: 0, max: 100, step: 0.001, formatDecimals: 1 },
+  { prop: "driftSpeed", label: "DRIFT SPEED", icon: "wavezIcon_placeholder", min: 0, max: 1, step: 0.001, formatDecimals: 1 },
+  { prop: "xaxis", label: "X POS", icon: "horizontalviewIcon_placeholder", min: -10000, max: 10000, step: 0.001, formatDecimals: 0 },
+  { prop: "yaxis", label: "Y POS", icon: "verticalviewIcon_placeholder", min: -10000, max: 10000, step: 0.001, formatDecimals: 0 },
+  { prop: "angle", label: "ANGLE", icon: "rotateIcon_placeholder", min: -360, max: 360, step: 0.001, formatDecimals: 1 },
+];
+```
+
+---
 ### `src\config\uiConstants.js`
 ```js
 /** Color for the canvas click ping effect. */
@@ -12632,561 +12348,9 @@ export const NO_PING_SELECTORS = ['.ui-container', '.status-display', '.fps-coun
 ```
 
 ---
-### `src\context\MIDIContext.jsx`
+### `src\context\AppContext.jsx`
 ```jsx
-// src/context/MIDIContext.jsx
-import React, {
-  createContext, useContext, useState, useEffect, useCallback, useRef, useMemo
-} from 'react';
-import PropTypes from 'prop-types';
-
-import { useSetManagement } from './SetManagementContext';
-import { sliderParams } from '../components/Panels/EnhancedControlPanel';
-
-const MAX_MONITOR_ENTRIES = 100;
-const PENDING_ACTION_EXPIRY_MS = 1000;
-const MIDI_CONNECT_TIMEOUT_MS = 10000;
-
-const defaultContextValue = {
-  midiAccess: null, isConnected: false, isConnecting: false, error: null, midiInputs: [],
-  midiMap: {}, layerMappings: { "1": {}, "2": {}, "3": {} },
-  midiLearning: null, learningLayer: null, selectedChannel: 0, midiMonitorData: [],
-  showMidiMonitor: false, pendingLayerSelect: null, pendingParamUpdate: null,
-  pendingGlobalAction: null,
-  pendingCrossfaderUpdate: null,
-  liveCrossfaderValue: null,
-  // --- ADD NEW DEFAULTS ---
-  pendingNextScene: null,
-  pendingPrevScene: null,
-  pendingNextWorkspace: null,
-  pendingPrevWorkspace: null,
-  // -------------------------
-  connectMIDI: async () => { if (import.meta.env.DEV) console.warn("connectMIDI called on default MIDIContext"); return null; },
-  disconnectMIDI: () => { if (import.meta.env.DEV) console.warn("disconnectMIDI called on default MIDIContext"); },
-  startMIDILearn: () => { if (import.meta.env.DEV) console.warn("startMIDILearn called on default MIDIContext"); },
-  stopMIDILearn: () => { if (import.meta.env.DEV) console.warn("stopMIDILearn called on default MIDIContext"); },
-  startLayerMIDILearn: () => { if (import.meta.env.DEV) console.warn("startLayerMIDILearn called on default MIDIContext"); },
-  stopLayerMIDILearn: () => { if (import.meta.env.DEV) console.warn("stopLayerMIDILearn called on default MIDIContext"); },
-  startGlobalMIDILearn: () => { if (import.meta.env.DEV) console.warn("startGlobalMIDILearn called on default MIDIContext"); },
-  clearAllMappings: () => { if (import.meta.env.DEV) console.warn("clearAllMappings called on default MIDIContext"); },
-  setChannelFilter: () => { if (import.meta.env.DEV) console.warn("setChannelFilter called on default MIDIContext"); },
-  clearMIDIMonitor: () => { if (import.meta.env.DEV) console.warn("clearMIDIMonitor called on default MIDIContext"); },
-  setShowMidiMonitor: () => { if (import.meta.env.DEV) console.warn("setShowMidiMonitor called on default MIDIContext"); },
-  clearPendingActions: () => { if (import.meta.env.DEV) console.warn("clearPendingActions called on default MIDIContext"); },
-  mapParameterToMIDI: () => { if (import.meta.env.DEV) console.warn("mapParameterToMIDI called on default MIDIContext"); },
-};
-
-const MIDIContext = createContext(defaultContextValue);
-
-const normalizeMIDIValue = (value, type = 'cc') => {
-  if (type === 'pitchbend') return Math.max(0, Math.min(1, value / 16383));
-  return Math.max(0, Math.min(1, value / 127));
-};
-
-const getMidiMessageType = (status) => {
-  const type = status & 0xF0;
-  switch (type) {
-    case 0x80: return 'Note Off'; case 0x90: return 'Note On'; case 0xA0: return 'Poly Aftertouch';
-    case 0xB0: return 'Control Change'; case 0xC0: return 'Program Change'; case 0xD0: return 'Channel Aftertouch';
-    case 0xE0: return 'Pitch Bend';
-    case 0xF0:
-      switch (status) {
-        case 0xF0: return 'SysEx Start'; case 0xF1: return 'MIDI Time Code Qtr Frame'; case 0xF2: return 'Song Position Pointer';
-        case 0xF3: return 'Song Select'; case 0xF6: return 'Tune Request'; case 0xF7: return 'SysEx End';
-        case 0xF8: return 'Timing Clock'; case 0xFA: return 'Start'; case 0xFB: return 'Continue';
-        case 0xFC: return 'Stop'; case 0xFE: return 'Active Sensing'; case 0xFF: return 'System Reset';
-        default: return 'System Common';
-      }
-    default: return `Unknown (${type.toString(16)})`;
-  }
-};
-
-export function MIDIProvider({ children }) {
-  const { 
-    activeMidiMap, 
-    updateGlobalMidiMap,
-    updateLayerMidiMappings,
-    isInitiallyResolved
-  } = useSetManagement();
-  
-  const [midiAccess, setMidiAccess] = useState(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [error, setError] = useState(null);
-  const [midiInputs, setMidiInputs] = useState([]);
-  const [midiLearning, setMidiLearning] = useState(null);
-  const [learningLayer, setLearningLayer] = useState(null);
-  const [selectedChannel, setSelectedChannel] = useState(0);
-  const [midiMonitorData, setMidiMonitorData] = useState([]);
-  const [showMidiMonitor, setShowMidiMonitor] = useState(false);
-  const [pendingLayerSelect, setPendingLayerSelect] = useState(null);
-  const [pendingParamUpdate, setPendingParamUpdate] = useState(null);
-  const [pendingGlobalAction, setPendingGlobalAction] = useState(null);
-  const [pendingCrossfaderUpdate, setPendingCrossfaderUpdate] = useState(null);
-  const [liveCrossfaderValue, setLiveCrossfaderValue] = useState(null);
-  // --- ADD NEW STATES ---
-  const [pendingNextScene, setPendingNextScene] = useState(null);
-  const [pendingPrevScene, setPendingPrevScene] = useState(null);
-  const [pendingNextWorkspace, setPendingNextWorkspace] = useState(null);
-  const [pendingPrevWorkspace, setPendingPrevWorkspace] = useState(null);
-  // ---------------------
-
-  const activeControllerMidiMapRef = useRef(activeMidiMap);
-  const midiLearningRef = useRef(midiLearning);
-  const learningLayerRef = useRef(learningLayer);
-  const selectedChannelRef = useRef(selectedChannel);
-  const connectionInProgressRef = useRef(false);
-  const pendingTimeoutRef = useRef(null);
-  const connectTimeoutRef = useRef(null);
-  const isUnmountingRef = useRef(false);
-  const midiAccessRefForCallbacks = useRef(midiAccess);
-  const handleMIDIMessageRef = useRef(null);
-  const isConnectedRef = useRef(isConnected);
-
-  const layerMappings = useMemo(() => activeMidiMap?.layerSelects || {}, [activeMidiMap]);
-  const layerMappingsRef = useRef(layerMappings);
-
-  useEffect(() => { isConnectedRef.current = isConnected; }, [isConnected]);
-  useEffect(() => { activeControllerMidiMapRef.current = activeMidiMap; }, [activeMidiMap]);
-  useEffect(() => { midiAccessRefForCallbacks.current = midiAccess; }, [midiAccess]);
-  useEffect(() => { layerMappingsRef.current = layerMappings; }, [layerMappings]);
-  useEffect(() => { midiLearningRef.current = midiLearning; }, [midiLearning]);
-  useEffect(() => { learningLayerRef.current = learningLayer; }, [learningLayer]);
-  useEffect(() => { selectedChannelRef.current = selectedChannel; }, [selectedChannel]);
-
-  useEffect(() => {
-    const handleForceEndLoading = () => {
-      if (connectionInProgressRef.current) {
-        if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
-        setIsConnecting(false);
-        connectionInProgressRef.current = false;
-        setError("Connection attempt force-ended.");
-      }
-    };
-    document.addEventListener('force-end-loading', handleForceEndLoading);
-    return () => document.removeEventListener('force-end-loading', handleForceEndLoading);
-  }, []);
-
-  useEffect(() => {
-    // --- ADD NEW STATES TO DEPENDENCY ARRAY ---
-    if (pendingLayerSelect || pendingParamUpdate || pendingGlobalAction || pendingCrossfaderUpdate || pendingNextScene || pendingPrevScene || pendingNextWorkspace || pendingPrevWorkspace) {
-    // ------------------------------------------
-      if (pendingTimeoutRef.current) clearTimeout(pendingTimeoutRef.current);
-      pendingTimeoutRef.current = setTimeout(() => {
-        setPendingLayerSelect(null);
-        setPendingParamUpdate(null);
-        setPendingGlobalAction(null);
-        setPendingCrossfaderUpdate(null);
-        setLiveCrossfaderValue(null);
-        // --- ADD NEW STATES TO TIMEOUT CLEAR ---
-        setPendingNextScene(null);
-        setPendingPrevScene(null);
-        setPendingNextWorkspace(null);
-        setPendingPrevWorkspace(null);
-        // ------------------------------------
-        pendingTimeoutRef.current = null;
-      }, PENDING_ACTION_EXPIRY_MS);
-    }
-    return () => { if (pendingTimeoutRef.current) clearTimeout(pendingTimeoutRef.current); };
-    // --- ADD NEW STATES TO DEPENDENCY ARRAY ---
-  }, [pendingLayerSelect, pendingParamUpdate, pendingGlobalAction, pendingCrossfaderUpdate, pendingNextScene, pendingPrevScene, pendingNextWorkspace, pendingPrevWorkspace]);
-
-  const mapParameterToMIDI = useCallback((param, layer, mappingData) => {
-    const currentMap = activeMidiMap || {};
-    const updatedActiveMap = {
-      ...currentMap,
-      [String(layer)]: {
-        ...(currentMap[String(layer)] || {}),
-        [param]: mappingData
-      }
-    };
-    updateGlobalMidiMap(updatedActiveMap);
-  }, [activeMidiMap, updateGlobalMidiMap]);
-
-  const clearAllMappings = useCallback(() => {
-    if (window.confirm("Are you sure you want to reset ALL persistent MIDI parameter mappings? This will be staged until you save.")) {
-      updateGlobalMidiMap({});
-    }
-  }, [updateGlobalMidiMap]);
-
-  const startMIDILearn = useCallback((param, layer) => {
-    setMidiLearning({ type: 'param', param, layer });
-    setLearningLayer(null);
-  }, []);
-  const startGlobalMIDILearn = useCallback((controlName) => {
-    setMidiLearning({ type: 'global', control: controlName });
-    setLearningLayer(null);
-  }, []);
-  const stopMIDILearn = useCallback(() => { if (midiLearningRef.current) setMidiLearning(null); }, []);
-  const startLayerMIDILearn = useCallback((layer) => { setLearningLayer(layer); setMidiLearning(null); }, []);
-  const stopLayerMIDILearn = useCallback(() => { if (learningLayerRef.current !== null) setLearningLayer(null); }, []);
-
-  const handleMIDIMessage = useCallback((message) => {
-    if (!message || !message.data || message.data.length === 0) return;
-    const [status, data1, data2] = message.data;
-    const msgChan = status & 0x0F;
-    const msgType = getMidiMessageType(status);
-    const timestamp = Date.now();
-
-    setMidiMonitorData(prev => {
-      const newEntry = { timestamp: new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit', second:'2-digit', fractionalSecondDigits: 3 }), status, data1, data2, channel: msgChan + 1, type: msgType };
-      const updated = [...prev, newEntry];
-      return updated.length > MAX_MONITOR_ENTRIES ? updated.slice(-MAX_MONITOR_ENTRIES) : updated;
-    });
-    
-    if (selectedChannelRef.current > 0 && (msgChan + 1) !== selectedChannelRef.current) return;
-
-    const isCC = msgType === 'Control Change';
-    const isNoteOn = msgType === 'Note On' && data2 > 0;
-    const isPitch = msgType === 'Pitch Bend';
-
-    if (midiLearningRef.current) {
-      if (isCC || isNoteOn || isPitch) {
-        const mappingData = { type: isCC ? 'cc' : (isNoteOn ? 'note' : 'pitchbend'), number: data1, channel: msgChan };
-        const currentLearningState = midiLearningRef.current;
-
-        if (currentLearningState.type === 'param' && currentLearningState.param && currentLearningState.layer) {
-          mapParameterToMIDI(currentLearningState.param, currentLearningState.layer, mappingData);
-        } else if (currentLearningState.type === 'global' && currentLearningState.control) {
-          const currentMap = activeControllerMidiMapRef.current || {};
-          const updatedActiveMap = {
-            ...currentMap,
-            global: {
-              ...(currentMap.global || {}),
-              [currentLearningState.control]: mappingData
-            }
-          };
-          updateGlobalMidiMap(updatedActiveMap);
-        }
-        
-        stopMIDILearn();
-      }
-      return;
-    }
-
-    if (learningLayerRef.current !== null) {
-      if (isNoteOn) {
-        const mappingData = { type: 'note', number: data1, channel: msgChan };
-        updateLayerMidiMappings(learningLayerRef.current, mappingData);
-        stopLayerMIDILearn();
-      }
-      return;
-    }
-
-    if (!isCC && !isNoteOn && !isPitch) return;
-
-    const currentControllerMap = activeControllerMidiMapRef.current || {};
-    
-    // --- START: ADDED LOGIC FOR NEW GLOBAL ACTIONS ---
-    if (currentControllerMap.global && isNoteOn) { // Assume pads send Note On
-        const globalMappings = currentControllerMap.global;
-        const actions = {
-            'nextScene': setPendingNextScene,
-            'prevScene': setPendingPrevScene,
-            'nextWorkspace': setPendingNextWorkspace,
-            'prevWorkspace': setPendingPrevWorkspace,
-            'pLockToggle': (ts) => setPendingGlobalAction({ action: 'pLockToggle', timestamp: ts })
-        };
-
-        for (const actionName in actions) {
-            const mapping = globalMappings[actionName];
-            if (mapping && mapping.type === 'note' && mapping.number === data1 && (mapping.channel === undefined || mapping.channel === msgChan)) {
-                actions[actionName]({ timestamp });
-                return; // Action handled, exit
-            }
-        }
-    }
-    // --- END: ADDED LOGIC ---
-
-    const globalControls = currentControllerMap.global;
-    if (globalControls) {
-        const pLockMapping = globalControls['pLockToggle'];
-        if (pLockMapping) {
-          let isMatch = (pLockMapping.type === 'note' && isNoteOn && pLockMapping.number === data1 && (pLockMapping.channel === undefined || pLockMapping.channel === msgChan)) ||
-                        (pLockMapping.type === 'cc' && isCC && pLockMapping.number === data1 && (pLockMapping.channel === undefined || pLockMapping.channel === msgChan));
-          if (isMatch) {
-            setPendingGlobalAction({ action: 'pLockToggle', timestamp });
-            return;
-          }
-        }
-
-        const crossfaderMapping = globalControls['crossfader'];
-        if (crossfaderMapping) {
-            let isMatch = false;
-            let rawValue = data2;
-            let midiMsgType = 'cc';
-
-            if (crossfaderMapping.type === 'cc' && isCC && Number(crossfaderMapping.number) === Number(data1) && (crossfaderMapping.channel === undefined || Number(crossfaderMapping.channel) === Number(msgChan))) {
-                isMatch = true;
-            } else if (crossfaderMapping.type === 'pitchbend' && isPitch && (crossfaderMapping.channel === undefined || Number(crossfaderMapping.channel) === Number(msgChan))) {
-                isMatch = true;
-                rawValue = (data2 << 7) | data1;
-                midiMsgType = 'pitchbend';
-            }
-
-            if(isMatch) {
-                const normalizedValue = normalizeMIDIValue(rawValue, midiMsgType);
-                setLiveCrossfaderValue(normalizedValue);
-                setPendingCrossfaderUpdate({ value: normalizedValue, timestamp });
-                return;
-            }
-        }
-    }
-
-    if (isNoteOn) {
-        for (const layerId in layerMappingsRef.current) {
-            const lsm = layerMappingsRef.current[layerId];
-            if (lsm?.type === 'note' && lsm.number === data1 && (lsm.channel === undefined || lsm.channel === msgChan)) {
-                setPendingLayerSelect({ layer: parseInt(layerId, 10), timestamp });
-                return;
-            }
-        }
-    }
-    
-    for (const layerIdStr in currentControllerMap) {
-        if (layerIdStr === 'global' || layerIdStr === 'layerSelects') continue;
-
-        const layerParams = currentControllerMap[layerIdStr];
-        if (typeof layerParams !== 'object' || layerParams === null) continue;
-
-        for (const paramName in layerParams) {
-            const mappingData = layerParams[paramName];
-            if (!mappingData) continue;
-
-            let isMatch = false;
-            let rawValue = data2;
-            let midiMsgTypeForNormalization = 'cc';
-
-            if (mappingData.type === 'cc' && isCC && Number(mappingData.number) === Number(data1) && (mappingData.channel === undefined || Number(mappingData.channel) === Number(msgChan))) {
-                isMatch = true; rawValue = data2;
-            } else if (mappingData.type === 'note' && isNoteOn && Number(mappingData.number) === Number(data1) && (mappingData.channel === undefined || Number(mappingData.channel) === Number(msgChan))) {
-                isMatch = true; rawValue = data2;
-            } else if (mappingData.type === 'pitchbend' && isPitch && (mappingData.channel === undefined || Number(mappingData.channel) === Number(msgChan))) {
-                isMatch = true; rawValue = (data2 << 7) | data1; midiMsgTypeForNormalization = 'pitchbend';
-            }
-
-            if (isMatch) {
-                const currentNormalizedMidiVal = normalizeMIDIValue(rawValue, midiMsgTypeForNormalization);
-                setPendingParamUpdate({ layer: parseInt(layerIdStr, 10), param: paramName, value: currentNormalizedMidiVal, timestamp });
-                return;
-            }
-        }
-    }
-  }, [mapParameterToMIDI, stopMIDILearn, updateGlobalMidiMap, stopLayerMIDILearn, updateLayerMidiMappings]);
-
-  useEffect(() => { handleMIDIMessageRef.current = handleMIDIMessage; }, [handleMIDIMessage]);
-  
-  const processMidiInputs = useCallback((midiAccessObject) => {
-    if (!midiAccessObject) return;
-    const currentInputs = [];
-    let anyDevicePhysicallyConnected = false;
-    
-    const messageHandlerWrapper = (message) => { 
-      if (handleMIDIMessageRef.current) handleMIDIMessageRef.current(message); 
-    };
-
-    midiAccessObject.inputs.forEach(input => {
-      currentInputs.push({ id: input.id, name: input.name || `Input ${input.id}`, manufacturer: input.manufacturer || 'Unknown', state: input.state });
-      
-      if (input.state === 'connected') {
-        anyDevicePhysicallyConnected = true;
-        if (isInitiallyResolved) {
-            try {
-                if (input.onmidimessage !== messageHandlerWrapper) {
-                    input.onmidimessage = messageHandlerWrapper;
-                }
-            } catch (e) {
-                if (import.meta.env.DEV) console.error(`[MIDI] FAILED to attach listener for device: ${input.name}. Error:`, e);
-            }
-        } else {
-            if (input.onmidimessage) {
-                input.onmidimessage = null;
-            }
-        }
-      } else {
-        if (input.onmidimessage) {
-          input.onmidimessage = null;
-        }
-      }
-    });
-
-    setMidiInputs(currentInputs);
-    
-    if (!anyDevicePhysicallyConnected) {
-      setError("No MIDI devices found or connected.");
-      setIsConnected(false);
-    } else {
-      setError(null);
-      setIsConnected(true);
-    }
-  }, [isInitiallyResolved]);
-
-  useEffect(() => {
-    if (isInitiallyResolved && midiAccess) {
-      processMidiInputs(midiAccess);
-    }
-  }, [isInitiallyResolved, midiAccess, processMidiInputs]);
-
-  const handleStateChange = useCallback((event) => {
-    const currentMidiAccess = midiAccessRefForCallbacks.current;
-    if (!currentMidiAccess) return;
-    processMidiInputs(currentMidiAccess);
-  }, [processMidiInputs]);
-
-  const connectMIDI = useCallback(async () => {
-    if (connectionInProgressRef.current || isConnectedRef.current) return midiAccessRefForCallbacks.current;
-    if (typeof navigator === 'undefined' || !navigator.requestMIDIAccess) {
-      setError("Web MIDI API not supported");
-      return null;
-    }
-    connectionInProgressRef.current = true;
-    setIsConnecting(true);
-    setError(null);
-    if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
-    connectTimeoutRef.current = setTimeout(() => {
-      if (connectionInProgressRef.current) {
-        setError("MIDI connection timed out.");
-        setIsConnecting(false);
-        connectionInProgressRef.current = false;
-      }
-    }, MIDI_CONNECT_TIMEOUT_MS);
-
-    try {
-      const access = await navigator.requestMIDIAccess({ sysex: false });
-      if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
-      if (isUnmountingRef.current) return null;
-
-      setMidiAccess(access);
-      access.onstatechange = handleStateChange;
-      
-      processMidiInputs(access);
-      
-      return access;
-    } catch (err) {
-      if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
-      const errorMessage = err.message || err.name || 'Unknown MIDI access error';
-      setError(`MIDI access failed: ${errorMessage}`);
-      setMidiAccess(null);
-      setIsConnected(false);
-      return null;
-    } finally {
-      if (connectionInProgressRef.current) {
-        setIsConnecting(false);
-        connectionInProgressRef.current = false;
-      }
-    }
-  }, [handleStateChange, processMidiInputs]);
-  
-  const disconnectMIDI = useCallback((forceFullDisconnect = false) => {
-    const isDevelopment = import.meta.env.DEV;
-    const isFinalUnmount = isUnmountingRef.current && forceFullDisconnect;
-    const currentMidiAccess = midiAccessRefForCallbacks.current;
-    if (currentMidiAccess) {
-      if (currentMidiAccess.onstatechange) currentMidiAccess.onstatechange = null;
-      currentMidiAccess.inputs.forEach(input => {
-        if (input.onmidimessage) input.onmidimessage = null;
-      });
-    }
-    if (connectTimeoutRef.current) { clearTimeout(connectTimeoutRef.current); connectTimeoutRef.current = null; }
-    if (pendingTimeoutRef.current) { clearTimeout(pendingTimeoutRef.current); pendingTimeoutRef.current = null; }
-    connectionInProgressRef.current = false;
-    if (forceFullDisconnect || isFinalUnmount || !isDevelopment) {
-      setMidiAccess(null);
-      setIsConnected(false);
-      setIsConnecting(false);
-      setMidiInputs([]);
-      setError(null);
-    } else {
-      setIsConnecting(false);
-    }
-  }, []);
-
-  const setChannelFilter = useCallback((channel) => {
-    const ch = parseInt(String(channel), 10);
-    if (!isNaN(ch) && ch >= 0 && ch <= 16) {
-      setSelectedChannel(ch);
-    }
-  }, []);
-  const clearMIDIMonitor = useCallback(() => { setMidiMonitorData([]); }, []);
-  const clearPendingActions = useCallback(() => {
-    setPendingLayerSelect(null);
-    setPendingParamUpdate(null);
-    setPendingGlobalAction(null);
-    setPendingCrossfaderUpdate(null);
-    setLiveCrossfaderValue(null);
-    // --- ADD NEW STATES TO CLEAR ---
-    setPendingNextScene(null);
-    setPendingPrevScene(null);
-    setPendingNextWorkspace(null);
-    setPendingPrevWorkspace(null);
-    // -----------------------------
-    if (pendingTimeoutRef.current) {
-      clearTimeout(pendingTimeoutRef.current);
-      pendingTimeoutRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => {
-    isUnmountingRef.current = false;
-    return () => {
-      isUnmountingRef.current = true;
-      disconnectMIDI(true);
-    };
-  }, [disconnectMIDI]);
-
-  const contextValue = useMemo(() => ({
-    midiAccess, isConnected, isConnecting, error, midiInputs,
-    midiMap: activeMidiMap,
-    layerMappings, midiLearning, learningLayer, selectedChannel,
-    midiMonitorData, showMidiMonitor, pendingLayerSelect, pendingParamUpdate,
-    pendingGlobalAction, pendingCrossfaderUpdate, liveCrossfaderValue,
-    // --- EXPORT NEW STATES ---
-    pendingNextScene, pendingPrevScene, pendingNextWorkspace, pendingPrevWorkspace,
-    // -----------------------
-    setShowMidiMonitor,
-    connectMIDI, disconnectMIDI, startMIDILearn, stopMIDILearn,
-    startLayerMIDILearn, stopLayerMIDILearn, clearAllMappings, setChannelFilter,
-    clearMIDIMonitor, mapParameterToMIDI, clearPendingActions,
-    startGlobalMIDILearn,
-  }), [
-    midiAccess, isConnected, isConnecting, error, midiInputs, 
-    activeMidiMap,
-    layerMappings, midiLearning, learningLayer, selectedChannel,
-    midiMonitorData, showMidiMonitor, pendingLayerSelect, pendingParamUpdate,
-    pendingGlobalAction, pendingCrossfaderUpdate, liveCrossfaderValue,
-    // --- ADD NEW STATES TO DEPENDENCY ARRAY ---
-    pendingNextScene, pendingPrevScene, pendingNextWorkspace, pendingPrevWorkspace,
-    // ------------------------------------------
-    connectMIDI, disconnectMIDI, clearAllMappings, mapParameterToMIDI,
-    setChannelFilter, clearMIDIMonitor, setShowMidiMonitor, clearPendingActions, stopMIDILearn,
-    startMIDILearn, startLayerMIDILearn, stopLayerMIDILearn,
-    startGlobalMIDILearn,
-  ]);
-
-  return (
-    <MIDIContext.Provider value={contextValue}>
-      {children}
-    </MIDIContext.Provider>
-  );
-}
-
-MIDIProvider.propTypes = {
-  children: PropTypes.node.isRequired,
-};
-
-export function useMIDI() {
-  const context = useContext(MIDIContext);
-  if (context === undefined) {
-    throw new Error('useMIDI must be used within a MIDIProvider component.');
-  }
-  return context;
-}
-```
-
----
-### `src\context\PresetManagementContext.jsx`
-```jsx
-// src/context/PresetManagementContext.jsx
+// src/context/AppContext.jsx
 import React, {
   createContext,
   useContext,
@@ -13197,22 +12361,56 @@ import React, {
   useMemo,
 } from "react";
 import PropTypes from "prop-types";
+import { keccak256, stringToBytes } from "viem";
 
 import { useUserSession } from "./UserSessionContext";
 import { useToast } from "./ToastContext";
-import { useVisualConfig } from "./VisualConfigContext";
+// --- FIX: REMOVED a circular dependency ---
+// import { useMIDI } from "./MIDIContext.jsx"; 
+import { useNotifications } from "../hooks/useNotifications";
 import fallbackConfig from "../config/fallback-config.js";
 import ConfigurationService, { hexToUtf8Safe } from "../services/ConfigurationService";
 import { useUpProvider } from "./UpProvider";
 import { RADAR_OFFICIAL_ADMIN_ADDRESS, IPFS_GATEWAY } from "../config/global-config";
-import { keccak256, stringToBytes } from "viem";
+import { uploadJsonToPinata } from '../services/PinataService.js';
+import { preloadImages, resolveImageUrl } from '../utils/imageDecoder.js';
+import { lerp } from '../utils/helpers.js';
+import { INTERPOLATED_MIDI_PARAMS } from '../config/midiConstants.js';
 
 const OFFICIAL_WHITELIST_KEY = keccak256(stringToBytes("RADAR.OfficialWhitelist"));
+const AUTO_FADE_DURATION_MS = 1000;
+const CROSSFADER_LERP_FACTOR = 0.2;
 
-export const defaultWorkspaceManagementContextValue = {
-  workspace: null, stagedWorkspace: null, currentConfigName: null, savedConfigList: [],
-  isLoading: true, loadError: null, isSaving: false, saveError: null, saveSuccess: false, isInitiallyResolved: false,
-  configLoadNonce: 0, loadedLayerConfigsFromPreset: null, loadedTokenAssignmentsFromPreset: null,
+const usePrevious = (value) => {
+  const ref = useRef();
+  useEffect(() => {
+    ref.current = value;
+  });
+  return ref.current;
+};
+
+export const defaultAppContextValue = {
+  // Visual Config Defaults
+  layerConfigs: fallbackConfig.layers,
+  tokenAssignments: fallbackConfig.tokenAssignments,
+  updateLayerConfig: () => {},
+  updateTokenAssignment: () => {},
+  setLiveConfig: () => {},
+
+  // Notification Defaults
+  notifications: [],
+  addNotification: () => {},
+  onMarkNotificationRead: () => {},
+  onClearAllNotifications: () => {},
+  unreadCount: 0,
+
+  // Set Management Defaults
+  isLoading: true,
+  isFullyLoaded: false,
+  startLoadingProcess: () => {},
+  setlist: null, stagedSetlist: null, activeWorkspace: null, stagedActiveWorkspace: null, activeWorkspaceName: null, activeSceneName: null,
+  savedSceneList: [], loadError: null, isSaving: false, saveError: null, saveSuccess: false, isInitiallyResolved: false,
+  sceneLoadNonce: 0, loadedLayerConfigsFromScene: null, loadedTokenAssignmentsFromScene: null,
   officialWhitelist: [],
   refreshOfficialWhitelist: async () => {},
   hasPendingChanges: false,
@@ -13223,11 +12421,17 @@ export const defaultWorkspaceManagementContextValue = {
   isFetchingTokens: false,
   tokenFetchProgress: { loaded: 0, total: 0, loading: false },
   refreshOwnedTokens: async () => {},
-  loadNamedConfig: async () => ({ success: false, error: "Provider not initialized" }),
-  setActivePresetSilently: () => {},
-  saveWorkspace: async () => ({ success: false, error: "Provider not initialized" }),
-  addNewPresetToStagedWorkspace: () => {}, deletePresetFromStagedWorkspace: () => {},
-  setDefaultPresetInStagedWorkspace: () => {}, discardStagedChanges: () => {},
+  loadWorkspace: async () => ({ success: false, error: "Provider not initialized" }),
+  loadScene: async () => ({ success: false, error: "Provider not initialized" }),
+  setActiveSceneSilently: () => {},
+  saveChanges: async () => ({ success: false, error: "Provider not initialized" }),
+  duplicateActiveWorkspace: async () => ({ success: false, error: "Provider not initialized" }),
+  createNewWorkspace: () => {},
+  deleteWorkspaceFromSet: () => {},
+  renameWorkspaceInSet: () => {},
+  setDefaultWorkspaceInSet: () => {},
+  addNewSceneToStagedWorkspace: () => {}, deleteSceneFromStagedWorkspace: () => {},
+  setDefaultSceneInStagedWorkspace: () => {}, discardStagedChanges: () => {},
   updateGlobalMidiMap: () => {},
   updateLayerMidiMappings: () => {}, 
   updateGlobalEventReactions: () => {}, deleteGlobalEventReaction: () => {},
@@ -13236,591 +12440,60 @@ export const defaultWorkspaceManagementContextValue = {
   removePalette: () => {},
   addTokenToPalette: () => {},
   removeTokenFromPalette: () => {},
+  preloadWorkspace: () => {},
+  isWorkspaceTransitioning: false,
+  _executeLoadAfterFade: () => {},
+  
+  // Crossfader and Deck Defaults
+  sideA: { config: null },
+  sideB: { config: null },
+  uiControlConfig: null,
+  renderedCrossfaderValue: 0.0,
+  isAutoFading: false,
+  handleSceneSelect: () => {},
+  handleCrossfaderChange: () => {},
+  registerManagerInstancesRef: () => {},
+  registerCanvasUpdateFns: () => {},
+  // --- FIX: Add the shared ref to the default context value ---
+  midiStateRef: { current: null },
 };
 
-const WorkspaceManagementContext = createContext(defaultWorkspaceManagementContextValue);
+const AppContext = createContext(defaultAppContextValue);
 
-export const PresetManagementProvider = ({ children }) => {
+export const AppProvider = ({ children }) => {
   const { hostProfileAddress, visitorProfileAddress, isHostProfileOwner } = useUserSession();
   const { provider, walletClient, publicClient } = useUpProvider();
-  const { setLiveConfig } = useVisualConfig();
   const { addToast } = useToast();
-
-  const configServiceRef = useRef(null);
-  const [configServiceInstanceReady, setConfigServiceInstanceReady] = useState(false);
-  
-  const [officialWhitelist, setOfficialWhitelist] = useState([]);
-
-  const [workspace, setWorkspace] = useState(null);
-  const [stagedWorkspace, setStagedWorkspace] = useState(null);
-  const [visitorMidiMap, setVisitorMidiMap] = useState({});
-  const [visitorEventReactions, setVisitorEventReactions] = useState({});
-  const [currentConfigName, setCurrentConfigName] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isInitiallyResolved, setIsInitiallyResolved] = useState(false);
-  const [configLoadNonce, setConfigLoadNonce] = useState(0);
-  const [loadError, setLoadError] = useState(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState(null);
-  const [saveSuccess, setSaveSuccess] = useState(false);
-  const [hasPendingChanges, setHasPendingChanges] = useState(false);
-  const prevProfileAddressRef = useRef(null);
-  
-  const [ownedTokenIdentifiers, setOwnedTokenIdentifiers] = useState({});
-  const [isFetchingTokens, setIsFetchingTokens] = useState(false);
-  const [tokenFetchProgress, setTokenFetchProgress] = useState({ loaded: 0, total: 0, loading: false });
-
-  useEffect(() => {
-    if (provider && !configServiceRef.current) {
-        configServiceRef.current = new ConfigurationService(provider, walletClient, publicClient);
-    }
-    if (configServiceRef.current) {
-        if (configServiceRef.current.publicClient !== publicClient) {
-            configServiceRef.current.publicClient = publicClient;
-        }
-        if (configServiceRef.current.walletClient !== walletClient) {
-            configServiceRef.current.walletClient = walletClient;
-        }
-        const isReady = configServiceRef.current.checkReadyForRead();
-        setConfigServiceInstanceReady(isReady);
-    }
-  }, [provider, publicClient, walletClient]);
-
-  const fetchOfficialWhitelist = useCallback(async () => {
-    const service = configServiceRef.current;
-    if (!service || !service.checkReadyForRead()) return;
-
-    try {
-        const pointerHex = await service.loadDataFromKey(RADAR_OFFICIAL_ADMIN_ADDRESS, OFFICIAL_WHITELIST_KEY);
-        if (!pointerHex || pointerHex === '0x') {
-            setOfficialWhitelist([]);
-            return;
-        }
-        const ipfsUri = hexToUtf8Safe(pointerHex);
-        if (!ipfsUri || !ipfsUri.startsWith('ipfs://')) {
-            setOfficialWhitelist([]);
-            return;
-        }
-        const cid = ipfsUri.substring(7);
-        const response = await fetch(`${IPFS_GATEWAY}${cid}`);
-        if (!response.ok) throw new Error(`Failed to fetch whitelist from IPFS: ${response.statusText}`);
-        const list = await response.json();
-        setOfficialWhitelist(Array.isArray(list) ? list : []);
-    } catch (error) {
-        console.error("Error fetching official collection whitelist:", error);
-        setOfficialWhitelist([]);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (configServiceInstanceReady) {
-      fetchOfficialWhitelist();
-    }
-  }, [configServiceInstanceReady, fetchOfficialWhitelist]);
-
-  const savedConfigList = useMemo(() => {
-    if (!stagedWorkspace || !stagedWorkspace.presets) return [];
-  
-    // Get full preset objects and filter out any invalid ones
-    const validPresets = Object.values(stagedWorkspace.presets).filter(
-      (item) => item && typeof item.name === 'string'
-    );
-  
-    // Sort presets based on name, with special handling for numeric suffixes
-    const sortedPresets = [...validPresets].sort((a, b) => {
-      // Attempt to parse a number from the name after a '.'
-      const numA = parseInt(a.name.split('.')[1] || 'NaN', 10);
-      const numB = parseInt(b.name.split('.')[1] || 'NaN', 10);
-  
-      const valA = isNaN(numA) ? Infinity : numA;
-      const valB = isNaN(numB) ? Infinity : numB;
-  
-      // If both names parse to numbers, sort them numerically
-      if (valA !== Infinity && valB !== Infinity) {
-        return valA - valB;
-      }
-      // If only one parses to a number, it comes first
-      if (valA !== Infinity) return -1;
-      if (valB !== Infinity) return 1;
-  
-      // Otherwise, fall back to a standard alphabetical sort on the full name
-      return a.name.localeCompare(b.name);
-    });
-  
-    // Map to the final structure { name: string }
-    return sortedPresets.map(preset => ({ name: preset.name }));
-  }, [stagedWorkspace]);
-  
-  const { loadedLayerConfigsFromPreset, loadedTokenAssignmentsFromPreset } = useMemo(() => {
-    if (!stagedWorkspace || !currentConfigName || !stagedWorkspace.presets[currentConfigName]) {
-      return { loadedLayerConfigsFromPreset: fallbackConfig.layers, loadedTokenAssignmentsFromPreset: fallbackConfig.tokenAssignments };
-    }
-    const preset = stagedWorkspace.presets[currentConfigName];
-    return {
-      loadedLayerConfigsFromPreset: preset.layers,
-      loadedTokenAssignmentsFromPreset: preset.tokenAssignments,
-    };
-  }, [stagedWorkspace, currentConfigName]);
-
-  const refreshOwnedTokens = useCallback(async (isSilent = false) => {
-    const service = configServiceRef.current;
-    const effectiveAddress = hostProfileAddress || visitorProfileAddress;
-
-    if (!effectiveAddress || officialWhitelist.length === 0 || !service) {
-      setOwnedTokenIdentifiers({});
-      setTokenFetchProgress({ loaded: 0, total: 0, loading: false });
-      return;
-    }
-
-    setIsFetchingTokens(true);
-    setTokenFetchProgress({ loaded: 0, total: officialWhitelist.length, loading: true });
-    if (!isSilent) addToast("Fetching token libraries...", "info", 2000);
-
-    try {
-      const isAdminShowcase = effectiveAddress.toLowerCase() === RADAR_OFFICIAL_ADMIN_ADDRESS.toLowerCase();
-      
-      const identifierPromises = officialWhitelist.map(async (collection) => {
-        const standard = await service.detectCollectionStandard(collection.address);
-        let identifiers = [];
-        if (standard === 'LSP8') {
-          if (isAdminShowcase) {
-            identifiers = await service.getAllLSP8TokenIdsForCollection(collection.address);
-          } else {
-            identifiers = await service.getOwnedLSP8TokenIdsForCollection(effectiveAddress, collection.address);
-          }
-        }
-        setTokenFetchProgress(prev => ({ ...prev, loaded: prev.loaded + 1 }));
-        return { address: collection.address, identifiers };
-      });
-
-      const results = await Promise.all(identifierPromises);
-      
-      const newIdentifierMap = results.reduce((acc, result) => {
-        if (result.identifiers.length > 0) {
-          acc[result.address] = result.identifiers;
-        }
-        return acc;
-      }, {});
-
-      setOwnedTokenIdentifiers(newIdentifierMap);
-
-      if (!isSilent) {
-        const totalIds = Object.values(newIdentifierMap).reduce((sum, ids) => sum + ids.length, 0);
-        addToast(`Token libraries loaded: ${totalIds} assets available.`, "success", 3000);
-      }
-    } catch (error) {
-      console.error("Failed to refresh owned token identifiers:", error);
-      if (!isSilent) addToast("Could not load token libraries.", "error");
-    } finally {
-      setIsFetchingTokens(false);
-      setTokenFetchProgress(prev => ({ ...prev, loading: false }));
-    }
-  }, [hostProfileAddress, visitorProfileAddress, officialWhitelist, addToast]);
-
-  useEffect(() => {
-    const currentAddress = hostProfileAddress;
-    const service = configServiceRef.current;
-    const profileChanged = currentAddress !== prevProfileAddressRef.current;
-    
-    const emptyWorkspace = { 
-        presets: {}, 
-        defaultPresetName: null, 
-        globalMidiMap: {}, 
-        globalEventReactions: {}, 
-        personalCollectionLibrary: [],
-        userPalettes: {} 
-    };
-
-    if (profileChanged) {
-      prevProfileAddressRef.current = currentAddress;
-      setIsLoading(true); setIsInitiallyResolved(false); setWorkspace(null); setStagedWorkspace(null);
-      setCurrentConfigName(null); setLoadError(null); setHasPendingChanges(false);
-      setVisitorMidiMap({});
-      setVisitorEventReactions({});
-      setOwnedTokenIdentifiers({});
-    }
-
-    const loadInitialData = async (address) => {
-      setIsLoading(true);
-      try {
-        const loadedWorkspace = await service.loadWorkspace(address);
-        if (prevProfileAddressRef.current === address) {
-          if (!loadedWorkspace.personalCollectionLibrary) {
-              loadedWorkspace.personalCollectionLibrary = [];
-          }
-          setWorkspace(loadedWorkspace);
-          setStagedWorkspace(loadedWorkspace);
-          const initialPresetName = loadedWorkspace.defaultPresetName || null;
-          setCurrentConfigName(initialPresetName);
-          setLoadError(null);
-          setHasPendingChanges(false);
-          const initialPreset = initialPresetName ? loadedWorkspace.presets[initialPresetName] : null;
-          setLiveConfig(initialPreset?.layers || fallbackConfig.layers, initialPreset?.tokenAssignments || fallbackConfig.tokenAssignments);
-
-          if (!isHostProfileOwner && visitorProfileAddress) {
-            const visitorWorkspace = await service.loadWorkspace(visitorProfileAddress);
-            setVisitorMidiMap(visitorWorkspace?.globalMidiMap || {});
-            setVisitorEventReactions(visitorWorkspace?.globalEventReactions || {});
-          } else {
-            setVisitorMidiMap({});
-            setVisitorEventReactions({});
-          }
-        }
-      } catch (error) {
-        if (prevProfileAddressRef.current === address) {
-          setLoadError(error.message || "Failed to load workspace.");
-          addToast("Could not load your workspace.", "error");
-          setWorkspace(emptyWorkspace);
-          setStagedWorkspace(emptyWorkspace);
-          setVisitorMidiMap({});
-          setVisitorEventReactions({});
-          setLiveConfig(fallbackConfig.layers, fallbackConfig.tokenAssignments);
-        }
-      } finally {
-        if (prevProfileAddressRef.current === address) {
-          setIsLoading(false);
-          setIsInitiallyResolved(true);
-          setConfigLoadNonce(prev => prev + 1);
-        }
-      }
-    };
-    
-    if (currentAddress && configServiceInstanceReady && !isInitiallyResolved) {
-      loadInitialData(currentAddress);
-    } else if (!currentAddress && !isInitiallyResolved) {
-      setWorkspace(emptyWorkspace);
-      setStagedWorkspace(emptyWorkspace);
-      setVisitorMidiMap({});
-      setVisitorEventReactions({});
-      setLiveConfig(fallbackConfig.layers, fallbackConfig.tokenAssignments);
-      setIsLoading(false);
-      setIsInitiallyResolved(true);
-      setConfigLoadNonce(prev => prev + 1);
-    }
-  }, [hostProfileAddress, visitorProfileAddress, configServiceInstanceReady, isInitiallyResolved, isHostProfileOwner, addToast, setLiveConfig]);
-  
-  const activeMidiMap = useMemo(() => {
-    if (!isHostProfileOwner && visitorProfileAddress) {
-      return visitorMidiMap;
-    }
-    const baseMap = stagedWorkspace?.globalMidiMap || {};
-    return baseMap;
-  }, [isHostProfileOwner, visitorProfileAddress, visitorMidiMap, stagedWorkspace]);
-
-  const activeEventReactions = useMemo(() => {
-    if (!isHostProfileOwner && visitorProfileAddress) {
-      return visitorEventReactions;
-    }
-    return stagedWorkspace?.globalEventReactions || {};
-  }, [isHostProfileOwner, visitorProfileAddress, visitorEventReactions, stagedWorkspace]);
-
-  const addNewPresetToStagedWorkspace = useCallback((newPresetName, newPresetData) => {
-    setStagedWorkspace(prev => {
-      const newWorkspace = prev ? JSON.parse(JSON.stringify(prev)) : { presets: {}, defaultPresetName: null, globalMidiMap: {}, globalEventReactions: {}, personalCollectionLibrary: [], userPalettes: {} };
-      newWorkspace.presets[newPresetName] = newPresetData;
-      return newWorkspace;
-    });
-    setLiveConfig(newPresetData.layers, newPresetData.tokenAssignments);
-    setCurrentConfigName(newPresetName);
-    setHasPendingChanges(true);
-  }, [setLiveConfig]);
-
-  const deletePresetFromStagedWorkspace = useCallback((nameToDelete) => {
-    setStagedWorkspace(prev => {
-      if (!prev || !prev.presets || !prev.presets[nameToDelete]) return prev;
-      const newWorkspace = JSON.parse(JSON.stringify(prev));
-      delete newWorkspace.presets[nameToDelete];
-      if (newWorkspace.defaultPresetName === nameToDelete) newWorkspace.defaultPresetName = null;
-      return newWorkspace;
-    });
-    setHasPendingChanges(true);
-  }, []);
-
-  const setDefaultPresetInStagedWorkspace = useCallback((nameToSet) => {
-    setStagedWorkspace(prev => {
-      if (!prev || !prev.presets || !prev.presets[nameToSet]) return prev;
-      return { ...prev, defaultPresetName: nameToSet };
-    });
-    setHasPendingChanges(true);
-  }, []);
-
-  const discardStagedChanges = useCallback(() => {
-    setStagedWorkspace(workspace);
-    const presetNameToReload = currentConfigName || workspace?.defaultPresetName || null;
-    const preset = presetNameToReload ? workspace.presets[presetNameToReload] : null;
-    setLiveConfig(preset?.layers || fallbackConfig.layers, preset?.tokenAssignments || fallbackConfig.tokenAssignments);
-    setHasPendingChanges(false);
-    addToast("Changes discarded.", "info");
-  }, [workspace, currentConfigName, addToast, setLiveConfig]);
-
-  const loadNamedConfig = useCallback(async (name) => {
-    if (!stagedWorkspace || !stagedWorkspace.presets[name]) {
-      const errorMsg = `Preset '${name}' not found.`;
-      addToast(errorMsg, 'warning');
-      return { success: false, error: errorMsg };
-    }
-    if (currentConfigName !== name) {
-      const preset = stagedWorkspace.presets[name];
-      setLiveConfig(preset.layers, preset.tokenAssignments);
-      setCurrentConfigName(name);
-      setConfigLoadNonce(prev => prev + 1);
-    }
-    return { success: true };
-  }, [stagedWorkspace, currentConfigName, addToast, setLiveConfig]);
-
-  const setActivePresetSilently = useCallback((name) => {
-    if (!stagedWorkspace || !stagedWorkspace.presets[name]) {
-      if (import.meta.env.DEV) {
-        console.warn(`[PresetManagement] setActivePresetSilently called with non-existent preset: ${name}`);
-      }
-      return;
-    }
-    if (currentConfigName !== name) {
-      const preset = stagedWorkspace.presets[name];
-      setLiveConfig(preset.layers, preset.tokenAssignments);
-      setCurrentConfigName(name);
-    }
-  }, [stagedWorkspace, currentConfigName, setLiveConfig]);
-
-  const updateGlobalMidiMap = useCallback((newMap) => {
-    if (isHostProfileOwner) {
-        setStagedWorkspace(prev => ({ ...prev, globalMidiMap: newMap || {} }));
-        setHasPendingChanges(true);
-    } else if (import.meta.env.DEV) {
-        console.warn("Attempted to update host MIDI map as a visitor. Action blocked.");
-    }
-  }, [isHostProfileOwner]);
-
-  const updateLayerMidiMappings = useCallback((layerId, mappingData) => {
-    if (isHostProfileOwner) {
-      setStagedWorkspace(prev => {
-        const newGlobalMidiMap = { ...(prev?.globalMidiMap || {}) };
-        const layerSelects = { ...(newGlobalMidiMap.layerSelects || {}) };
-        layerSelects[layerId] = mappingData;
-        newGlobalMidiMap.layerSelects = layerSelects;
-        return { ...prev, globalMidiMap: newGlobalMidiMap };
-      });
-      setHasPendingChanges(true);
-    }
-  }, [isHostProfileOwner]);
-
-  const updateGlobalEventReactions = useCallback((eventType, reactionData) => {
-    if (!eventType || !reactionData) return;
-    setStagedWorkspace(prev => ({
-      ...prev,
-      globalEventReactions: {
-        ...(prev?.globalEventReactions || {}),
-        [eventType]: reactionData
-      }
-    }));
-    setHasPendingChanges(true);
-  }, []);
-
-  const deleteGlobalEventReaction = useCallback((eventType) => {
-    if (!eventType) return;
-    setStagedWorkspace(prev => {
-      const newReactions = { ...(prev?.globalEventReactions || {}) };
-      if (Object.prototype.hasOwnProperty.call(newReactions, eventType)) {
-        delete newReactions[eventType];
-        setHasPendingChanges(true);
-        return { ...prev, globalEventReactions: newReactions };
-      }
-      return prev;
-    });
-  }, []);
-
-  const addPalette = useCallback((paletteName) => {
-    setStagedWorkspace(prev => {
-      const newWorkspace = { ...prev, userPalettes: { ...(prev?.userPalettes || {}) } };
-      if (newWorkspace.userPalettes[paletteName]) {
-        addToast(`Palette "${paletteName}" already exists.`, "warning");
-        return prev;
-      }
-      newWorkspace.userPalettes[paletteName] = [];
-      addToast(`Palette "${paletteName}" created.`, "success");
-      setHasPendingChanges(true);
-      return newWorkspace;
-    });
-  }, [addToast]);
-
-  const removePalette = useCallback((paletteName) => {
-    setStagedWorkspace(prev => {
-      const newWorkspace = { ...prev, userPalettes: { ...(prev?.userPalettes || {}) } };
-      if (!newWorkspace.userPalettes[paletteName]) return prev;
-      delete newWorkspace.userPalettes[paletteName];
-      addToast(`Palette "${paletteName}" removed.`, "info");
-      setHasPendingChanges(true);
-      return newWorkspace;
-    });
-  }, [addToast]);
-
-  const addTokenToPalette = useCallback((paletteName, tokenId) => {
-    setStagedWorkspace(prev => {
-      const newWorkspace = { ...prev, userPalettes: { ...(prev?.userPalettes || {}) } };
-      const palette = newWorkspace.userPalettes[paletteName];
-      if (!palette) {
-        addToast(`Palette "${paletteName}" not found.`, "error");
-        return prev;
-      }
-      if (palette.includes(tokenId)) {
-        addToast("Token is already in this palette.", "info");
-        return prev;
-      }
-      newWorkspace.userPalettes[paletteName] = [...palette, tokenId];
-      addToast(`Token added to "${paletteName}".`, "success");
-      setHasPendingChanges(true);
-      return newWorkspace;
-    });
-  }, [addToast]);
-
-  const removeTokenFromPalette = useCallback((paletteName, tokenId) => {
-    setStagedWorkspace(prev => {
-      const newWorkspace = { ...prev, userPalettes: { ...(prev?.userPalettes || {}) } };
-      const palette = newWorkspace.userPalettes[paletteName];
-      if (!palette) return prev;
-      newWorkspace.userPalettes[paletteName] = palette.filter(id => id !== tokenId);
-      setHasPendingChanges(true);
-      return newWorkspace;
-    });
-  }, []);
-
-  const saveWorkspace = useCallback(async () => {
-    const service = configServiceRef.current;
-    const addressToSave = hostProfileAddress;
-    if (!service || !addressToSave || !service.checkReadyForWrite()) {
-      const errorMsg = "Save service not ready or no profile connected.";
-      addToast(errorMsg, "error");
-      return { success: false, error: errorMsg };
-    }
-    if (!stagedWorkspace) {
-      addToast("Workspace not loaded, cannot save.", "error");
-      return { success: false, error: "Workspace not loaded" };
-    }
-    setIsSaving(true); setSaveError(null); setSaveSuccess(false);
-    try {
-      const workspaceToSave = JSON.parse(JSON.stringify(stagedWorkspace));
-      await service.saveWorkspace(addressToSave, workspaceToSave);
-      setWorkspace(workspaceToSave);
-      setStagedWorkspace(workspaceToSave);
-      setHasPendingChanges(false);
-      setSaveSuccess(true);
-      addToast("Workspace saved successfully!", "success");
-      return { success: true };
-    } catch (error) {
-      const errorMsg = error.message || "Unknown save error.";
-      addToast(`Error saving workspace: ${errorMsg}`, 'error');
-      setSaveError(errorMsg);
-      setSaveSuccess(false);
-      return { success: false, error: errorMsg };
-    } finally {
-      setIsSaving(false);
-    }
-  }, [stagedWorkspace, hostProfileAddress, addToast]);
-  
-  const contextValue = useMemo(() => ({
-    workspace, stagedWorkspace, currentConfigName, savedConfigList, isLoading, loadError, isSaving, saveError, saveSuccess,
-    isInitiallyResolved, configLoadNonce, loadedLayerConfigsFromPreset, loadedTokenAssignmentsFromPreset,
-    officialWhitelist,
-    refreshOfficialWhitelist: fetchOfficialWhitelist,
-    hasPendingChanges, setHasPendingChanges,
-    configServiceRef, configServiceInstanceReady,
-    activeMidiMap,
-    activeEventReactions,
-    ownedTokenIdentifiers,
-    isFetchingTokens,
-    tokenFetchProgress,
-    refreshOwnedTokens,
-    loadNamedConfig,
-    setActivePresetSilently,
-    saveWorkspace, addNewPresetToStagedWorkspace, deletePresetFromStagedWorkspace,
-    setDefaultPresetInStagedWorkspace, discardStagedChanges,
-    updateGlobalMidiMap,
-    updateLayerMidiMappings,
-    updateGlobalEventReactions, deleteGlobalEventReaction,
-    addPalette, removePalette, addTokenToPalette, removeTokenFromPalette,
-  }), [
-    workspace, stagedWorkspace, currentConfigName, savedConfigList, isLoading, loadError, isSaving, saveError, saveSuccess,
-    isInitiallyResolved, configLoadNonce, loadedLayerConfigsFromPreset, loadedTokenAssignmentsFromPreset,
-    officialWhitelist, fetchOfficialWhitelist,
-    hasPendingChanges,
-    configServiceRef, configServiceInstanceReady,
-    activeMidiMap,
-    activeEventReactions,
-    ownedTokenIdentifiers, isFetchingTokens, tokenFetchProgress, refreshOwnedTokens,
-    loadNamedConfig,
-    setActivePresetSilently,
-    saveWorkspace, addNewPresetToStagedWorkspace, deletePresetFromStagedWorkspace,
-    setDefaultPresetInStagedWorkspace, discardStagedChanges,
-    updateGlobalMidiMap,
-    updateLayerMidiMappings,
-    updateGlobalEventReactions, deleteGlobalEventReaction,
-    addPalette, removePalette, addTokenToPalette, removeTokenFromPalette,
-  ]);
-  
-  return (
-    <WorkspaceManagementContext.Provider value={contextValue}>
-      {children}
-    </WorkspaceManagementContext.Provider>
-  );
-};
-
-PresetManagementProvider.propTypes = {
-  children: PropTypes.node.isRequired,
-};
-
-export const usePresetManagement = () => {
-  const context = useContext(WorkspaceManagementContext);
-  if (context === undefined) {
-    throw new Error("usePresetManagement must be used within a PresetManagementProvider");
-  }
-  return context;
-};
-```
-
----
-### `src\context\SetManagementContext.jsx`
-```jsx
-// src/context/SetManagementContext.jsx
-import React, {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  useCallback,
-  useRef,
-  useMemo,
-} from "react";
-import PropTypes from "prop-types";
-import { keccak256, stringToBytes } from "viem";
-
-import { useUserSession } from "./UserSessionContext";
-import { useToast } from "./ToastContext";
-import { useVisualConfig } from "./VisualConfigContext";
-import fallbackConfig from "../config/fallback-config.js";
-import ConfigurationService, { hexToUtf8Safe } from "../services/ConfigurationService";
-import { useUpProvider } from "./UpProvider";
-import { RADAR_OFFICIAL_ADMIN_ADDRESS, IPFS_GATEWAY } from "../config/global-config";
-import { uploadJsonToPinata } from '../services/PinataService.js';
-import { preloadImages, resolveImageUrl } from '../utils/imageDecoder.js';
-
-const OFFICIAL_WHITELIST_KEY = keccak256(stringToBytes("RADAR.OfficialWhitelist"));
-
-export const defaultSetManagementContextValue = {
-  isLoading: true,
-  isFullyLoaded: false,
-  startLoadingProcess: () => {},
-  // Add other defaults as needed for better IntelliSense
-};
-
-const SetManagementContext = createContext(defaultSetManagementContextValue);
-
-export const SetManagementProvider = ({ children }) => {
-  const { hostProfileAddress, visitorProfileAddress, isHostProfileOwner } = useUserSession();
-  const { provider, walletClient, publicClient } = useUpProvider();
-  const { setLiveConfig } = useVisualConfig();
-  const { addToast } = useToast();
+  // --- FIX: REMOVED useMIDI() call ---
+  const notificationData = useNotifications();
 
   const [shouldStartLoading, setShouldStartLoading] = useState(false);
+  
+  const [sideA, setSideA] = useState({ config: null });
+  const [sideB, setSideB] = useState({ config: null });
+  const [uiControlConfig, setUiControlConfig] = useState(null);
+  const [targetCrossfaderValue, setTargetCrossfaderValue] = useState(0.0);
+  const [renderedCrossfaderValue, setRenderedCrossfaderValue] = useState(0.0);
+  const renderedValueRef = useRef(0.0);
+  const [isAutoFading, setIsAutoFading] = useState(false);
+  
+  const faderAnimationRef = useRef();
+  const autoFadeRef = useRef(null);
+  const prevFaderValueRef = useRef(0.0);
+
+  const managerInstancesRef = useRef(null);
+  const canvasUpdateFnsRef = useRef({});
+
+  // --- FIX: This ref will be shared with MIDIContext ---
+  const midiStateRef = useRef({ liveCrossfaderValue: null });
+
+  const registerManagerInstancesRef = useCallback((ref) => {
+    managerInstancesRef.current = ref;
+  }, []);
+
+  const registerCanvasUpdateFns = useCallback((fns) => {
+    canvasUpdateFnsRef.current = fns;
+  }, []);
 
   const preloadedWorkspacesRef = useRef(new Map());
   const preloadingInProgressRef = useRef(new Set());
@@ -13865,6 +12538,312 @@ export const SetManagementProvider = ({ children }) => {
     setShouldStartLoading(true);
   }, []);
 
+  const fullSceneList = useMemo(() => {
+    if (!stagedActiveWorkspace?.presets) return [];
+    const validScenes = Object.values(stagedActiveWorkspace.presets).filter(
+        (item) => item && typeof item.name === 'string'
+    );
+    return [...validScenes].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  }, [stagedActiveWorkspace]);
+  
+  useEffect(() => {
+    const animateFader = () => {
+      const current = renderedValueRef.current;
+      const target = targetCrossfaderValue;
+      if (Math.abs(target - current) > 0.0001) {
+        const newRendered = lerp(current, target, CROSSFADER_LERP_FACTOR);
+        renderedValueRef.current = newRendered;
+        setRenderedCrossfaderValue(newRendered);
+      } else if (current !== target) {
+        renderedValueRef.current = target;
+        setRenderedCrossfaderValue(target);
+      }
+      faderAnimationRef.current = requestAnimationFrame(animateFader);
+    };
+    faderAnimationRef.current = requestAnimationFrame(animateFader);
+    return () => { if (faderAnimationRef.current) cancelAnimationFrame(faderAnimationRef.current); };
+  }, [targetCrossfaderValue]);
+
+  useEffect(() => {
+    const activeConfig = renderedValueRef.current < 0.5 ? sideA.config : sideB.config;
+    setUiControlConfig(activeConfig);
+  }, [renderedCrossfaderValue, sideA, sideB]);
+
+  const animateCrossfade = useCallback((startTime, startValue, endValue, duration) => {
+    const now = performance.now();
+    const elapsed = now - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const newCrossfaderValue = startValue + (endValue - startValue) * progress;
+    setTargetCrossfaderValue(newCrossfaderValue);
+    if (progress < 1) autoFadeRef.current = requestAnimationFrame(() => animateCrossfade(startTime, startValue, endValue, duration));
+    else { setIsAutoFading(false); autoFadeRef.current = null; }
+  }, [setIsAutoFading, setTargetCrossfaderValue]);
+
+  const prevIsWorkspaceTransitioning = usePrevious(isWorkspaceTransitioning);
+  const prevIsFullyLoaded = usePrevious(isFullyLoaded);
+
+  useEffect(() => {
+    const initialLoadJustFinished = !prevIsFullyLoaded && isFullyLoaded;
+    const transitionJustFinished = prevIsWorkspaceTransitioning && !isWorkspaceTransitioning;
+
+    if (initialLoadJustFinished || transitionJustFinished) {
+      // --- THIS IS THE FIX ---
+      // Read the initial fader value from the shared ref.
+      const initialFaderValue = midiStateRef.current.liveCrossfaderValue !== null ? midiStateRef.current.liveCrossfaderValue : 0.0;
+      // --- END FIX ---
+      
+      if (!fullSceneList || fullSceneList.length === 0) {
+        const baseScene = {
+          name: "Fallback",
+          ts: Date.now(),
+          layers: JSON.parse(JSON.stringify(fallbackConfig.layers)),
+          tokenAssignments: JSON.parse(JSON.stringify(fallbackConfig.tokenAssignments)),
+        };
+        setSideA({ config: baseScene });
+        setSideB({ config: baseScene });
+        setActiveSceneName(null);
+        // --- THIS IS THE FIX ---
+        setTargetCrossfaderValue(initialFaderValue);
+        setRenderedCrossfaderValue(initialFaderValue); // Snap rendered value immediately
+        renderedValueRef.current = initialFaderValue;
+        // --- END FIX ---
+        return;
+      }
+      
+      const initialSceneName = stagedActiveWorkspace.defaultSceneName || fullSceneList[0]?.name;
+      let startIndex = fullSceneList.findIndex(p => p.name === initialSceneName);
+      if (startIndex === -1) startIndex = 0;
+      
+      const nextIndex = fullSceneList.length > 1 ? (startIndex + 1) % fullSceneList.length : startIndex;
+  
+      const startSceneConfig = JSON.parse(JSON.stringify(fullSceneList[startIndex]));
+      const nextSceneConfig = JSON.parse(JSON.stringify(fullSceneList[nextIndex]));
+      
+      // --- THIS IS THE FIX ---
+      // Logic to decide which scene goes on which deck based on the fader's position
+      const activeSideIsA = initialFaderValue < 0.5;
+
+      if (activeSideIsA) {
+        setSideA({ config: startSceneConfig });
+        setSideB({ config: nextSceneConfig });
+        setActiveSceneName(startSceneConfig.name);
+      } else {
+        setSideB({ config: startSceneConfig });
+        setSideA({ config: nextSceneConfig });
+        setActiveSceneName(startSceneConfig.name);
+      }
+      
+      setTargetCrossfaderValue(initialFaderValue);
+      setRenderedCrossfaderValue(initialFaderValue); // Snap rendered value
+      renderedValueRef.current = initialFaderValue;
+      // --- END FIX ---
+    }
+  }, [isWorkspaceTransitioning, isFullyLoaded, stagedActiveWorkspace, activeWorkspaceName, fullSceneList, prevIsFullyLoaded, prevIsWorkspaceTransitioning]);
+
+  useEffect(() => {
+    if (!fullSceneList || fullSceneList.length < 2) return;
+
+    const prevValue = prevFaderValueRef.current;
+    const newValue = renderedCrossfaderValue;
+    
+    if (prevValue < 1.0 && newValue >= 0.999) {
+      const currentBIndex = fullSceneList.findIndex(p => p.ts === sideB.config?.ts);
+      if (currentBIndex !== -1) {
+        const nextAIndex = (currentBIndex + 1) % fullSceneList.length;
+        if (fullSceneList[nextAIndex]?.ts !== sideA.config?.ts) {
+          setSideA({ config: JSON.parse(JSON.stringify(fullSceneList[nextAIndex])) });
+        }
+      }
+    } 
+    else if (prevValue > 0.0 && newValue <= 0.001) {
+      const currentAIndex = fullSceneList.findIndex(p => p.ts === sideA.config?.ts);
+      if (currentAIndex !== -1) {
+        const nextBIndex = (currentAIndex + 1) % fullSceneList.length;
+        if (fullSceneList[nextBIndex]?.ts !== sideB.config?.ts) {
+          setSideB({ config: JSON.parse(JSON.stringify(fullSceneList[nextBIndex])) });
+        }
+      }
+    }
+    
+    prevFaderValueRef.current = newValue;
+  }, [renderedCrossfaderValue, fullSceneList, sideA, sideB]);
+
+  useEffect(() => {
+      if (!isFullyLoaded) return; 
+      
+      if (!fullSceneList || fullSceneList.length === 0) {
+          const baseScene = {
+            name: "Fallback",
+            ts: Date.now(),
+            layers: JSON.parse(JSON.stringify(fallbackConfig.layers)),
+            tokenAssignments: JSON.parse(JSON.stringify(fallbackConfig.tokenAssignments)),
+          };
+          setSideA({ config: baseScene });
+          setSideB({ config: baseScene });
+          setActiveSceneName(null);
+          setTargetCrossfaderValue(0.0);
+          return;
+      }
+  
+      const activeSideIsA = renderedValueRef.current < 0.5;
+      const activeDeckScene = activeSideIsA ? sideA.config : sideB.config;
+  
+      let currentIndex = fullSceneList.findIndex(p => p.ts === activeDeckScene?.ts);
+      if (currentIndex === -1) {
+          currentIndex = 0;
+      }
+      
+      const nextIndex = fullSceneList.length > 1 ? (currentIndex + 1) % fullSceneList.length : currentIndex;
+  
+      const currentSceneData = JSON.parse(JSON.stringify(fullSceneList[currentIndex]));
+      const nextSceneData = JSON.parse(JSON.stringify(fullSceneList[nextIndex]));
+
+      if (activeSideIsA) {
+          if (sideA.config?.ts !== currentSceneData.ts) setSideA({ config: currentSceneData });
+          if (sideB.config?.ts !== nextSceneData.ts) setSideB({ config: nextSceneData });
+      } else {
+          if (sideB.config?.ts !== currentSceneData.ts) setSideB({ config: currentSceneData });
+          if (sideA.config?.ts !== nextSceneData.ts) setSideA({ config: nextSceneData });
+      }
+  }, [fullSceneList, isFullyLoaded]);
+  
+  const setActiveSceneSilently = useCallback((name) => {
+    if (!stagedActiveWorkspace || !stagedActiveWorkspace.presets[name]) {
+      if (import.meta.env.DEV) console.warn(`[AppContext] setActiveSceneSilently called with non-existent scene: ${name}`);
+      return;
+    }
+    if (activeSceneName !== name) {
+      setActiveSceneName(name);
+    }
+  }, [stagedActiveWorkspace, activeSceneName]);
+
+  useEffect(() => {
+    if (!fullSceneList || fullSceneList.length === 0) return;
+    const target = targetCrossfaderValue;
+  
+    if (target >= 0.999) {
+      const sceneNameB = sideB.config?.name;
+      if (sceneNameB && fullSceneList.some(s => s.name === sceneNameB)) {
+        setActiveSceneSilently(sceneNameB);
+      }
+    } else if (target <= 0.001) {
+      const sceneNameA = sideA.config?.name;
+      if (sceneNameA && fullSceneList.some(s => s.name === sceneNameA)) {
+        setActiveSceneSilently(sceneNameA);
+      }
+    }
+  }, [targetCrossfaderValue, sideA.config, sideB.config, fullSceneList, setActiveSceneSilently]);
+
+  const handleSceneSelect = useCallback((sceneName, duration = AUTO_FADE_DURATION_MS) => {
+    if (isAutoFading || !fullSceneList || fullSceneList.length === 0) return;
+    
+    const targetScene = fullSceneList.find(s => s.name === sceneName);
+    if (!targetScene) return;
+
+    if (sideA.config?.name === sceneName || sideB.config?.name === sceneName) {
+        const targetValue = sideA.config?.name === sceneName ? 0.0 : 1.0;
+        if (Math.abs(targetCrossfaderValue - targetValue) < 0.001) return;
+        setIsAutoFading(true);
+        if (autoFadeRef.current) cancelAnimationFrame(autoFadeRef.current);
+        animateCrossfade(performance.now(), targetCrossfaderValue, targetValue, duration);
+        return;
+    }
+
+    const currentActiveSide = renderedCrossfaderValue < 0.5 ? 'A' : 'B';
+
+    if (currentActiveSide === 'A') {
+      setSideB({ config: JSON.parse(JSON.stringify(targetScene)) });
+      setIsAutoFading(true);
+      if (autoFadeRef.current) cancelAnimationFrame(autoFadeRef.current);
+      animateCrossfade(performance.now(), targetCrossfaderValue, 1.0, duration);
+    } else {
+      setSideA({ config: JSON.parse(JSON.stringify(targetScene)) });
+      setIsAutoFading(true);
+      if (autoFadeRef.current) cancelAnimationFrame(autoFadeRef.current);
+      animateCrossfade(performance.now(), targetCrossfaderValue, 0.0, duration);
+    }
+  }, [isAutoFading, fullSceneList, sideA.config, sideB.config, targetCrossfaderValue, renderedCrossfaderValue, animateCrossfade]);
+
+  const handleCrossfaderChange = useCallback((newValue) => {
+    setTargetCrossfaderValue(newValue);
+  }, []);
+
+  const updateLayerConfig = useCallback((layerId, key, value, isMidiUpdate = false) => {
+    const managers = managerInstancesRef.current?.current;
+    if (!managers) return;
+    const manager = managers[String(layerId)];
+    if (!manager) return;
+    
+    const activeDeck = renderedValueRef.current < 0.5 ? 'A' : 'B';
+
+    if (isMidiUpdate && INTERPOLATED_MIDI_PARAMS.includes(key)) {
+      if (activeDeck === 'A') manager.setTargetValue(key, value);
+      else manager.setTargetValueB(key, value);
+    } else {
+      if (activeDeck === 'A') manager.updateConfigProperty(key, value);
+      else manager.updateConfigBProperty(key, value);
+    }
+    
+    const stateSetter = activeDeck === 'A' ? setSideA : setSideB;
+    stateSetter(prev => {
+      if (!prev.config) return prev;
+      const newConfig = JSON.parse(JSON.stringify(prev.config));
+      if (!newConfig.layers[layerId]) newConfig.layers[layerId] = {};
+      newConfig.layers[layerId][key] = value;
+      return { ...prev, config: newConfig };
+    });
+    
+    setHasPendingChanges(true);
+  }, []);
+
+  const updateTokenAssignment = useCallback(async (token, layerId) => {
+    const managers = managerInstancesRef.current?.current;
+    const { setCanvasLayerImage } = canvasUpdateFnsRef.current;
+    if (!managers || !setCanvasLayerImage) return;
+
+    const idToSave = token.id;
+    const srcToLoad = token.metadata?.image;
+    if (!idToSave || !srcToLoad) return;
+  
+    const assignmentObject = { id: idToSave, src: srcToLoad };
+    
+    const targetDeck = renderedValueRef.current < 0.5 ? 'A' : 'B';
+    const stateSetter = targetDeck === 'A' ? setSideA : setSideB;
+
+    stateSetter(prev => {
+      if (!prev.config) return prev;
+      const newConfig = JSON.parse(JSON.stringify(prev.config));
+      if (!newConfig.tokenAssignments) newConfig.tokenAssignments = {};
+      newConfig.tokenAssignments[String(layerId)] = assignmentObject;
+      return { ...prev, config: newConfig };
+    });
+
+    try {
+      await setCanvasLayerImage(String(layerId), srcToLoad);
+    } catch (e) {
+      console.error(`[AppContext] Error setting canvas image for layer ${layerId}:`, e);
+    }
+
+    setHasPendingChanges(true);
+  }, []);
+
+  const setLiveConfig = useCallback(
+    (newLayerConfigs, newTokenAssignments) => {
+      const activeDeck = renderedValueRef.current < 0.5 ? 'A' : 'B';
+      const stateSetter = activeDeck === 'A' ? setSideA : setSideB;
+
+      stateSetter(prev => {
+        if (!prev.config) return prev;
+        const newConfig = JSON.parse(JSON.stringify(prev.config));
+        newConfig.layers = newLayerConfigs || fallbackConfig.layers;
+        newConfig.tokenAssignments = newTokenAssignments || fallbackConfig.tokenAssignments;
+        return { ...prev, config: newConfig };
+      });
+      setHasPendingChanges(false);
+    },
+    []
+  );
+
   useEffect(() => {
     if (provider) {
         configServiceRef.current = new ConfigurationService(provider, walletClient, publicClient);
@@ -13907,7 +12886,7 @@ export const SetManagementProvider = ({ children }) => {
         const workspaceData = await service._loadWorkspaceFromCID(cid);
         return workspaceData;
     } catch (error) {
-        console.error(`[SetManagementContext] Failed to load workspace from CID ${cid}:`, error);
+        console.error(`[AppContext] Failed to load workspace from CID ${cid}:`, error);
         addToast(`Could not load workspace data.`, "error");
         return null;
     }
@@ -13915,7 +12894,7 @@ export const SetManagementProvider = ({ children }) => {
 
   useEffect(() => {
     if (!shouldStartLoading) {
-      if(import.meta.env.DEV) console.log('%c[SetMgmt] Waiting for user interaction to start loading.', 'color: #e67e22;');
+      if(import.meta.env.DEV) console.log('%c[AppContext] Waiting for user interaction to start loading.', 'color: #e67e22;');
       return;
     }
 
@@ -13927,7 +12906,7 @@ export const SetManagementProvider = ({ children }) => {
     const emptyWorkspace = { presets: {}, defaultPresetName: null, globalEventReactions: {}, personalCollectionLibrary: [], userPalettes: {} };
 
     if (profileChanged) {
-      if (import.meta.env.DEV) console.log(`%c[SetMgmt] Profile changed from ${prevProfileAddressRef.current?.slice(0,6)} to ${currentAddress?.slice(0,6)}. Resetting state.`, 'color: #f39c12;');
+      if (import.meta.env.DEV) console.log(`%c[AppContext] Profile changed from ${prevProfileAddressRef.current?.slice(0,6)} to ${currentAddress?.slice(0,6)}. Resetting state.`, 'color: #f39c12;');
       prevProfileAddressRef.current = currentAddress;
       setIsLoading(true);
       setLoadingMessage("Initializing...");
@@ -13983,14 +12962,10 @@ export const SetManagementProvider = ({ children }) => {
         setActiveWorkspace(loadedWorkspace);
         setStagedActiveWorkspace(loadedWorkspace);
         setActiveWorkspaceName(defaultWorkspaceName);
-
+        
         const initialSceneName = loadedWorkspace.defaultPresetName || Object.keys(loadedWorkspace.presets || {})[0] || null;
         setActiveSceneName(initialSceneName);
         
-        const initialScene = initialSceneName ? loadedWorkspace.presets[initialSceneName] : null;
-        
-        setLiveConfig(initialScene?.layers || null, initialScene?.tokenAssignments || null);
-
         setLoadError(null);
         setHasPendingChanges(false);
 
@@ -14015,13 +12990,12 @@ export const SetManagementProvider = ({ children }) => {
           addToast("Could not load your setlist.", "error");
           setSetlist(emptySetlist); setStagedSetlist(emptySetlist);
           setActiveWorkspace(emptyWorkspace); setStagedActiveWorkspace(emptyWorkspace);
-          setLiveConfig(null, null);
         }
       } finally {
         if (prevProfileAddressRef.current === address) {
           setIsLoading(false);
           setLoadingMessage("");
-          if(import.meta.env.DEV) console.log(`%c[SetMgmt] Load sequence finished for ${address?.slice(0,6)}. Setting isFullyLoaded = true.`, 'color: #2ecc71; font-weight: bold;');
+          if(import.meta.env.DEV) console.log(`%c[AppContext] Load sequence finished for ${address?.slice(0,6)}. Setting isFullyLoaded = true.`, 'color: #2ecc71; font-weight: bold;');
           setIsFullyLoaded(true);
         }
       }
@@ -14029,22 +13003,21 @@ export const SetManagementProvider = ({ children }) => {
     
     if (configServiceInstanceReady && !isInitiallyResolved) {
       if (currentAddress) {
-        if (import.meta.env.DEV) console.log(`%c[SetMgmt] Initializing for connected profile: ${currentAddress.slice(0,6)}...`, 'color: #f39c12;');
+        if (import.meta.env.DEV) console.log(`%c[AppContext] Initializing for connected profile: ${currentAddress.slice(0,6)}...`, 'color: #f39c12;');
         loadInitialData(currentAddress);
       } else {
-        if (import.meta.env.DEV) console.log(`%c[SetMgmt] Initializing for DISCONNECTED state.`, 'color: #f39c12;');
+        if (import.meta.env.DEV) console.log(`%c[AppContext] Initializing for DISCONNECTED state.`, 'color: #f39c12;');
         setSetlist(emptySetlist); setStagedSetlist(emptySetlist);
         setActiveWorkspace(emptyWorkspace); setStagedActiveWorkspace(emptyWorkspace);
-        setLiveConfig(null, null);
         setIsLoading(false);
         setIsInitiallyResolved(true);
       }
     }
-  }, [shouldStartLoading, hostProfileAddress, visitorProfileAddress, configServiceInstanceReady, isInitiallyResolved, isHostProfileOwner, addToast, setLiveConfig, _loadWorkspaceFromCid]);
+  }, [shouldStartLoading, hostProfileAddress, visitorProfileAddress, configServiceInstanceReady, isInitiallyResolved, isHostProfileOwner, addToast, _loadWorkspaceFromCid]);
 
   useEffect(() => {
     if (isInitiallyResolved && !hostProfileAddress && !isFullyLoaded) {
-      if (import.meta.env.DEV) console.log(`%c[SetMgmt] Resolved as DISCONNECTED. Setting isFullyLoaded = true.`, 'color: #2ecc71; font-weight: bold;');
+      if (import.meta.env.DEV) console.log(`%c[AppContext] Resolved as DISCONNECTED. Setting isFullyLoaded = true.`, 'color: #2ecc71; font-weight: bold;');
       setIsFullyLoaded(true);
     }
   }, [isInitiallyResolved, hostProfileAddress, isFullyLoaded]);
@@ -14052,7 +13025,7 @@ export const SetManagementProvider = ({ children }) => {
   const savedSceneList = useMemo(() => {
     if (!stagedActiveWorkspace || !stagedActiveWorkspace.presets) return [];
     const validScenes = Object.values(stagedActiveWorkspace.presets).filter(p => p && typeof p.name === 'string');
-    return validScenes.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })).map(scene => ({ name: scene.name }));
+    return validScenes.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })).map(scene => ({ name: scene.name, ts: scene.ts }));
   }, [stagedActiveWorkspace]);
   
   const { loadedLayerConfigsFromScene, loadedTokenAssignmentsFromScene } = useMemo(() => {
@@ -14170,7 +13143,7 @@ export const SetManagementProvider = ({ children }) => {
       addToast(errorMsg, 'error');
       setIsLoading(false);
       setLoadingMessage("");
-      setIsWorkspaceTransitioning(false); // Reset transition state on error
+      setIsWorkspaceTransitioning(false);
       return;
     }
 
@@ -14212,9 +13185,7 @@ export const SetManagementProvider = ({ children }) => {
   }, [stagedSetlist, addToast, _loadWorkspaceFromCid]);
 
   const loadWorkspace = useCallback(async (workspaceName) => {
-    // --- START MODIFICATION: Remove isLoading guard ---
     if (isWorkspaceTransitioning) return;
-    // --- END MODIFICATION ---
 
     if (!stagedSetlist || !stagedSetlist.workspaces[workspaceName]) {
         const errorMsg = `Workspace '${workspaceName}' not found.`;
@@ -14244,25 +13215,11 @@ export const SetManagementProvider = ({ children }) => {
       return { success: false, error: errorMsg };
     }
     if (activeSceneName !== name) {
-      const scene = stagedActiveWorkspace.presets[name];
-      setLiveConfig(scene.layers, scene.tokenAssignments);
-      setActiveSceneName(name);
+      handleSceneSelect(name);
       setSceneLoadNonce(prev => prev + 1);
     }
     return { success: true };
-  }, [stagedActiveWorkspace, activeSceneName, addToast, setLiveConfig]);
-
-  const setActiveSceneSilently = useCallback((name) => {
-    if (!stagedActiveWorkspace || !stagedActiveWorkspace.presets[name]) {
-      if (import.meta.env.DEV) console.warn(`[SetManagement] setActiveSceneSilently called with non-existent scene: ${name}`);
-      return;
-    }
-    if (activeSceneName !== name) {
-      const scene = stagedActiveWorkspace.presets[name];
-      setLiveConfig(scene.layers, scene.tokenAssignments);
-      setActiveSceneName(name);
-    }
-  }, [stagedActiveWorkspace, activeSceneName, setLiveConfig]);
+  }, [stagedActiveWorkspace, activeSceneName, addToast, handleSceneSelect]);
   
   const discardStagedChanges = useCallback(() => {
     setStagedSetlist(setlist);
@@ -14280,10 +13237,9 @@ export const SetManagementProvider = ({ children }) => {
       newWorkspace.presets[newSceneName] = newSceneData;
       return newWorkspace;
     });
-    setLiveConfig(newSceneData.layers, newSceneData.tokenAssignments);
     setActiveSceneName(newSceneName);
     setHasPendingChanges(true);
-  }, [setLiveConfig]);
+  }, []);
 
   const deleteSceneFromStagedWorkspace = useCallback((nameToDelete) => {
     setStagedActiveWorkspace(prev => {
@@ -14580,6 +13536,18 @@ export const SetManagementProvider = ({ children }) => {
   }, [addToast]);
   
   const contextValue = useMemo(() => ({
+    layerConfigs: uiControlConfig?.layers || fallbackConfig.layers,
+    tokenAssignments: uiControlConfig?.tokenAssignments || fallbackConfig.tokenAssignments,
+    updateLayerConfig,
+    updateTokenAssignment,
+    setLiveConfig,
+
+    notifications: notificationData.notifications,
+    addNotification: notificationData.addNotification,
+    onMarkNotificationRead: notificationData.markAsRead,
+    onClearAllNotifications: notificationData.clearAll,
+    unreadCount: notificationData.unreadCount,
+    
     isLoading,
     loadingMessage,
     isFullyLoaded,
@@ -14602,7 +13570,24 @@ export const SetManagementProvider = ({ children }) => {
     startLoadingProcess,
     isWorkspaceTransitioning,
     _executeLoadAfterFade,
+
+    sideA,
+    sideB,
+    uiControlConfig,
+    renderedCrossfaderValue,
+    isAutoFading,
+    handleSceneSelect,
+    handleCrossfaderChange,
+    registerManagerInstancesRef,
+    registerCanvasUpdateFns,
+    // --- FIX: Pass the ref down in the context value ---
+    midiStateRef,
   }), [
+    uiControlConfig,
+    updateLayerConfig,
+    updateTokenAssignment,
+    setLiveConfig,
+    notificationData,
     isLoading, loadingMessage, isFullyLoaded,
     setlist, stagedSetlist, activeWorkspace, stagedActiveWorkspace, activeWorkspaceName, activeSceneName,
     savedSceneList, loadError, isSaving, saveError, saveSuccess, isInitiallyResolved,
@@ -14623,23 +13608,573 @@ export const SetManagementProvider = ({ children }) => {
     startLoadingProcess,
     isWorkspaceTransitioning,
     _executeLoadAfterFade,
+    sideA, sideB, renderedCrossfaderValue, isAutoFading,
+    handleSceneSelect, handleCrossfaderChange,
+    registerManagerInstancesRef, registerCanvasUpdateFns,
+    // --- FIX: Add ref to dependency array ---
+    midiStateRef,
   ]);
   
   return (
-    <SetManagementContext.Provider value={contextValue}>
+    <AppContext.Provider value={contextValue}>
       {children}
-    </SetManagementContext.Provider>
+    </AppContext.Provider>
   );
 };
 
-SetManagementProvider.propTypes = {
+AppProvider.propTypes = {
   children: PropTypes.node.isRequired,
 };
 
-export const useSetManagement = () => {
-  const context = useContext(SetManagementContext);
+export const useAppContext = () => {
+  const context = useContext(AppContext);
   if (context === undefined) {
-    throw new Error("useSetManagement must be used within a SetManagementProvider");
+    throw new Error("useAppContext must be used within a AppProvider");
+  }
+  return context;
+};
+```
+
+---
+### `src\context\MIDIContext.jsx`
+```jsx
+// src/context/MIDIContext.jsx
+import React, {
+  createContext, useContext, useState, useEffect, useCallback, useRef, useMemo
+} from 'react';
+import PropTypes from 'prop-types';
+
+import { useAppContext } from './AppContext';
+import { sliderParams } from '../config/sliderParams';
+
+const MAX_MONITOR_ENTRIES = 100;
+const PENDING_ACTION_EXPIRY_MS = 1000;
+const MIDI_CONNECT_TIMEOUT_MS = 10000;
+
+const defaultContextValue = {
+  midiAccess: null, isConnected: false, isConnecting: false, error: null, midiInputs: [],
+  midiMap: {}, layerMappings: { "1": {}, "2": {}, "3": {} },
+  midiLearning: null, learningLayer: null, selectedChannel: 0, midiMonitorData: [],
+  showMidiMonitor: false, pendingLayerSelect: null, pendingParamUpdate: null,
+  pendingGlobalAction: null,
+  pendingCrossfaderUpdate: null,
+  // --- FIX: REMOVED from default value ---
+  pendingNextScene: null,
+  pendingPrevScene: null,
+  pendingNextWorkspace: null,
+  pendingPrevWorkspace: null,
+  connectMIDI: async () => { if (import.meta.env.DEV) console.warn("connectMIDI called on default MIDIContext"); return null; },
+  disconnectMIDI: () => { if (import.meta.env.DEV) console.warn("disconnectMIDI called on default MIDIContext"); },
+  startMIDILearn: () => { if (import.meta.env.DEV) console.warn("startMIDILearn called on default MIDIContext"); },
+  stopMIDILearn: () => { if (import.meta.env.DEV) console.warn("stopMIDILearn called on default MIDIContext"); },
+  startLayerMIDILearn: () => { if (import.meta.env.DEV) console.warn("startLayerMIDILearn called on default MIDIContext"); },
+  stopLayerMIDILearn: () => { if (import.meta.env.DEV) console.warn("stopLayerMIDILearn called on default MIDIContext"); },
+  startGlobalMIDILearn: () => { if (import.meta.env.DEV) console.warn("startGlobalMIDILearn called on default MIDIContext"); },
+  clearAllMappings: () => { if (import.meta.env.DEV) console.warn("clearAllMappings called on default MIDIContext"); },
+  setChannelFilter: () => { if (import.meta.env.DEV) console.warn("setChannelFilter called on default MIDIContext"); },
+  clearMIDIMonitor: () => { if (import.meta.env.DEV) console.warn("clearMIDIMonitor called on default MIDIContext"); },
+  setShowMidiMonitor: () => { if (import.meta.env.DEV) console.warn("setShowMidiMonitor called on default MIDIContext"); },
+  clearPendingActions: () => { if (import.meta.env.DEV) console.warn("clearPendingActions called on default MIDIContext"); },
+  mapParameterToMIDI: () => { if (import.meta.env.DEV) console.warn("mapParameterToMIDI called on default MIDIContext"); },
+};
+
+const MIDIContext = createContext(defaultContextValue);
+
+const normalizeMIDIValue = (value, type = 'cc') => {
+  if (type === 'pitchbend') return Math.max(0, Math.min(1, value / 16383));
+  return Math.max(0, Math.min(1, value / 127));
+};
+
+const getMidiMessageType = (status) => {
+  const type = status & 0xF0;
+  switch (type) {
+    case 0x80: return 'Note Off'; case 0x90: return 'Note On'; case 0xA0: return 'Poly Aftertouch';
+    case 0xB0: return 'Control Change'; case 0xC0: return 'Program Change'; case 0xD0: return 'Channel Aftertouch';
+    case 0xE0: return 'Pitch Bend';
+    case 0xF0:
+      switch (status) {
+        case 0xF0: return 'SysEx Start'; case 0xF1: return 'MIDI Time Code Qtr Frame'; case 0xF2: return 'Song Position Pointer';
+        case 0xF3: return 'Song Select'; case 0xF6: return 'Tune Request'; case 0xF7: return 'SysEx End';
+        case 0xF8: return 'Timing Clock'; case 0xFA: return 'Start'; case 0xFB: return 'Continue';
+        case 0xFC: return 'Stop'; case 0xFE: return 'Active Sensing'; case 0xFF: return 'System Reset';
+        default: return 'System Common';
+      }
+    default: return `Unknown (${type.toString(16)})`;
+  }
+};
+
+export function MIDIProvider({ children }) {
+  const { 
+    activeMidiMap, 
+    updateGlobalMidiMap,
+    updateLayerMidiMappings,
+    isInitiallyResolved,
+    // --- FIX: Get the shared ref from AppContext ---
+    midiStateRef,
+  } = useAppContext();
+  
+  const [midiAccess, setMidiAccess] = useState(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [error, setError] = useState(null);
+  const [midiInputs, setMidiInputs] = useState([]);
+  const [midiLearning, setMidiLearning] = useState(null);
+  const [learningLayer, setLearningLayer] = useState(null);
+  const [selectedChannel, setSelectedChannel] = useState(0);
+  const [midiMonitorData, setMidiMonitorData] = useState([]);
+  const [showMidiMonitor, setShowMidiMonitor] = useState(false);
+  const [pendingLayerSelect, setPendingLayerSelect] = useState(null);
+  const [pendingParamUpdate, setPendingParamUpdate] = useState(null);
+  const [pendingGlobalAction, setPendingGlobalAction] = useState(null);
+  const [pendingCrossfaderUpdate, setPendingCrossfaderUpdate] = useState(null);
+  // --- FIX: REMOVED this local state ---
+  // const [liveCrossfaderValue, setLiveCrossfaderValue] = useState(null);
+  const [pendingNextScene, setPendingNextScene] = useState(null);
+  const [pendingPrevScene, setPendingPrevScene] = useState(null);
+  const [pendingNextWorkspace, setPendingNextWorkspace] = useState(null);
+  const [pendingPrevWorkspace, setPendingPrevWorkspace] = useState(null);
+
+  const activeControllerMidiMapRef = useRef(activeMidiMap);
+  const midiLearningRef = useRef(midiLearning);
+  const learningLayerRef = useRef(learningLayer);
+  const selectedChannelRef = useRef(selectedChannel);
+  const connectionInProgressRef = useRef(false);
+  const pendingTimeoutRef = useRef(null);
+  const connectTimeoutRef = useRef(null);
+  const isUnmountingRef = useRef(false);
+  const midiAccessRefForCallbacks = useRef(midiAccess);
+  const handleMIDIMessageRef = useRef(null);
+  const isConnectedRef = useRef(isConnected);
+
+  const layerMappings = useMemo(() => activeMidiMap?.layerSelects || {}, [activeMidiMap]);
+  const layerMappingsRef = useRef(layerMappings);
+
+  useEffect(() => { isConnectedRef.current = isConnected; }, [isConnected]);
+  useEffect(() => { activeControllerMidiMapRef.current = activeMidiMap; }, [activeMidiMap]);
+  useEffect(() => { midiAccessRefForCallbacks.current = midiAccess; }, [midiAccess]);
+  useEffect(() => { layerMappingsRef.current = layerMappings; }, [layerMappings]);
+  useEffect(() => { midiLearningRef.current = midiLearning; }, [midiLearning]);
+  useEffect(() => { learningLayerRef.current = learningLayer; }, [learningLayer]);
+  useEffect(() => { selectedChannelRef.current = selectedChannel; }, [selectedChannel]);
+
+  useEffect(() => {
+    const handleForceEndLoading = () => {
+      if (connectionInProgressRef.current) {
+        if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
+        setIsConnecting(false);
+        connectionInProgressRef.current = false;
+        setError("Connection attempt force-ended.");
+      }
+    };
+    document.addEventListener('force-end-loading', handleForceEndLoading);
+    return () => document.removeEventListener('force-end-loading', handleForceEndLoading);
+  }, []);
+
+  useEffect(() => {
+    if (pendingLayerSelect || pendingParamUpdate || pendingGlobalAction || pendingCrossfaderUpdate || pendingNextScene || pendingPrevScene || pendingNextWorkspace || pendingPrevWorkspace) {
+      if (pendingTimeoutRef.current) clearTimeout(pendingTimeoutRef.current);
+      pendingTimeoutRef.current = setTimeout(() => {
+        setPendingLayerSelect(null);
+        setPendingParamUpdate(null);
+        setPendingGlobalAction(null);
+        setPendingCrossfaderUpdate(null);
+        setPendingNextScene(null);
+        setPendingPrevScene(null);
+        setPendingNextWorkspace(null);
+        setPendingPrevWorkspace(null);
+        pendingTimeoutRef.current = null;
+      }, PENDING_ACTION_EXPIRY_MS);
+    }
+    return () => { if (pendingTimeoutRef.current) clearTimeout(pendingTimeoutRef.current); };
+  }, [pendingLayerSelect, pendingParamUpdate, pendingGlobalAction, pendingCrossfaderUpdate, pendingNextScene, pendingPrevScene, pendingNextWorkspace, pendingPrevWorkspace]);
+
+  const mapParameterToMIDI = useCallback((param, layer, mappingData) => {
+    const currentMap = activeMidiMap || {};
+    const updatedActiveMap = {
+      ...currentMap,
+      [String(layer)]: {
+        ...(currentMap[String(layer)] || {}),
+        [param]: mappingData
+      }
+    };
+    updateGlobalMidiMap(updatedActiveMap);
+  }, [activeMidiMap, updateGlobalMidiMap]);
+
+  const clearAllMappings = useCallback(() => {
+    if (window.confirm("Are you sure you want to reset ALL persistent MIDI parameter mappings? This will be staged until you save.")) {
+      updateGlobalMidiMap({});
+    }
+  }, [updateGlobalMidiMap]);
+
+  const startMIDILearn = useCallback((param, layer) => {
+    setMidiLearning({ type: 'param', param, layer });
+    setLearningLayer(null);
+  }, []);
+  const startGlobalMIDILearn = useCallback((controlName) => {
+    setMidiLearning({ type: 'global', control: controlName });
+    setLearningLayer(null);
+  }, []);
+  const stopMIDILearn = useCallback(() => { if (midiLearningRef.current) setMidiLearning(null); }, []);
+  const startLayerMIDILearn = useCallback((layer) => { setLearningLayer(layer); setMidiLearning(null); }, []);
+  const stopLayerMIDILearn = useCallback(() => { if (learningLayerRef.current !== null) setLearningLayer(null); }, []);
+
+  const handleMIDIMessage = useCallback((message) => {
+    if (!message || !message.data || message.data.length === 0) return;
+    const [status, data1, data2] = message.data;
+    const msgChan = status & 0x0F;
+    const msgType = getMidiMessageType(status);
+    const timestamp = Date.now();
+
+    setMidiMonitorData(prev => {
+      const newEntry = { timestamp: new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit', second:'2-digit', fractionalSecondDigits: 3 }), status, data1, data2, channel: msgChan + 1, type: msgType };
+      const updated = [...prev, newEntry];
+      return updated.length > MAX_MONITOR_ENTRIES ? updated.slice(-MAX_MONITOR_ENTRIES) : updated;
+    });
+    
+    if (selectedChannelRef.current > 0 && (msgChan + 1) !== selectedChannelRef.current) return;
+
+    const isCC = msgType === 'Control Change';
+    const isNoteOn = msgType === 'Note On' && data2 > 0;
+    const isPitch = msgType === 'Pitch Bend';
+
+    if (midiLearningRef.current) {
+      if (isCC || isNoteOn || isPitch) {
+        const mappingData = { type: isCC ? 'cc' : (isNoteOn ? 'note' : 'pitchbend'), number: data1, channel: msgChan };
+        const currentLearningState = midiLearningRef.current;
+
+        if (currentLearningState.type === 'param' && currentLearningState.param && currentLearningState.layer) {
+          mapParameterToMIDI(currentLearningState.param, currentLearningState.layer, mappingData);
+        } else if (currentLearningState.type === 'global' && currentLearningState.control) {
+          const currentMap = activeControllerMidiMapRef.current || {};
+          const updatedActiveMap = {
+            ...currentMap,
+            global: {
+              ...(currentMap.global || {}),
+              [currentLearningState.control]: mappingData
+            }
+          };
+          updateGlobalMidiMap(updatedActiveMap);
+        }
+        
+        stopMIDILearn();
+      }
+      return;
+    }
+
+    if (learningLayerRef.current !== null) {
+      if (isNoteOn) {
+        const mappingData = { type: 'note', number: data1, channel: msgChan };
+        updateLayerMidiMappings(learningLayerRef.current, mappingData);
+        stopLayerMIDILearn();
+      }
+      return;
+    }
+
+    if (!isCC && !isNoteOn && !isPitch) return;
+
+    const currentControllerMap = activeControllerMidiMapRef.current || {};
+    
+    if (currentControllerMap.global && isNoteOn) {
+        const globalMappings = currentControllerMap.global;
+        const actions = {
+            'nextScene': setPendingNextScene,
+            'prevScene': setPendingPrevScene,
+            'nextWorkspace': setPendingNextWorkspace,
+            'prevWorkspace': setPendingPrevWorkspace,
+            'pLockToggle': (ts) => setPendingGlobalAction({ action: 'pLockToggle', timestamp: ts })
+        };
+
+        for (const actionName in actions) {
+            const mapping = globalMappings[actionName];
+            if (mapping && mapping.type === 'note' && mapping.number === data1 && (mapping.channel === undefined || mapping.channel === msgChan)) {
+                actions[actionName]({ timestamp });
+                return;
+            }
+        }
+    }
+
+    const globalControls = currentControllerMap.global;
+    if (globalControls) {
+        const pLockMapping = globalControls['pLockToggle'];
+        if (pLockMapping) {
+          let isMatch = (pLockMapping.type === 'note' && isNoteOn && pLockMapping.number === data1 && (pLockMapping.channel === undefined || pLockMapping.channel === msgChan)) ||
+                        (pLockMapping.type === 'cc' && isCC && pLockMapping.number === data1 && (pLockMapping.channel === undefined || pLockMapping.channel === msgChan));
+          if (isMatch) {
+            setPendingGlobalAction({ action: 'pLockToggle', timestamp });
+            return;
+          }
+        }
+
+        const crossfaderMapping = globalControls['crossfader'];
+        if (crossfaderMapping) {
+            let isMatch = false;
+            let rawValue = data2;
+            let midiMsgType = 'cc';
+
+            if (crossfaderMapping.type === 'cc' && isCC && Number(crossfaderMapping.number) === Number(data1) && (crossfaderMapping.channel === undefined || Number(crossfaderMapping.channel) === Number(msgChan))) {
+                isMatch = true;
+            } else if (crossfaderMapping.type === 'pitchbend' && isPitch && (crossfaderMapping.channel === undefined || Number(crossfaderMapping.channel) === Number(msgChan))) {
+                isMatch = true;
+                rawValue = (data2 << 7) | data1;
+                midiMsgType = 'pitchbend';
+            }
+
+            if(isMatch) {
+                const normalizedValue = normalizeMIDIValue(rawValue, midiMsgType);
+                // --- THIS IS THE FIX: Update the shared ref instead of local state ---
+                if (midiStateRef) {
+                  midiStateRef.current.liveCrossfaderValue = normalizedValue;
+                }
+                setPendingCrossfaderUpdate({ value: normalizedValue, timestamp });
+                return;
+            }
+        }
+    }
+
+    if (isNoteOn) {
+        for (const layerId in layerMappingsRef.current) {
+            const lsm = layerMappingsRef.current[layerId];
+            if (lsm?.type === 'note' && lsm.number === data1 && (lsm.channel === undefined || lsm.channel === msgChan)) {
+                setPendingLayerSelect({ layer: parseInt(layerId, 10), timestamp });
+                return;
+            }
+        }
+    }
+    
+    for (const layerIdStr in currentControllerMap) {
+        if (layerIdStr === 'global' || layerIdStr === 'layerSelects') continue;
+
+        const layerParams = currentControllerMap[layerIdStr];
+        if (typeof layerParams !== 'object' || layerParams === null) continue;
+
+        for (const paramName in layerParams) {
+            const mappingData = layerParams[paramName];
+            if (!mappingData) continue;
+
+            let isMatch = false;
+            let rawValue = data2;
+            let midiMsgTypeForNormalization = 'cc';
+
+            if (mappingData.type === 'cc' && isCC && Number(mappingData.number) === Number(data1) && (mappingData.channel === undefined || Number(mappingData.channel) === Number(msgChan))) {
+                isMatch = true; rawValue = data2;
+            } else if (mappingData.type === 'note' && isNoteOn && Number(mappingData.number) === Number(data1) && (mappingData.channel === undefined || Number(mappingData.channel) === Number(msgChan))) {
+                isMatch = true; rawValue = data2;
+            } else if (mappingData.type === 'pitchbend' && isPitch && (mappingData.channel === undefined || Number(mappingData.channel) === Number(msgChan))) {
+                isMatch = true; rawValue = (data2 << 7) | data1; midiMsgTypeForNormalization = 'pitchbend';
+            }
+
+            if (isMatch) {
+                const currentNormalizedMidiVal = normalizeMIDIValue(rawValue, midiMsgTypeForNormalization);
+                setPendingParamUpdate({ layer: parseInt(layerIdStr, 10), param: paramName, value: currentNormalizedMidiVal, timestamp });
+                return;
+            }
+        }
+    }
+  }, [mapParameterToMIDI, stopMIDILearn, updateGlobalMidiMap, stopLayerMIDILearn, updateLayerMidiMappings, midiStateRef]);
+
+  useEffect(() => { handleMIDIMessageRef.current = handleMIDIMessage; }, [handleMIDIMessage]);
+  
+  const processMidiInputs = useCallback((midiAccessObject) => {
+    if (!midiAccessObject) return;
+    const currentInputs = [];
+    let anyDevicePhysicallyConnected = false;
+    
+    const messageHandlerWrapper = (message) => { 
+      if (handleMIDIMessageRef.current) handleMIDIMessageRef.current(message); 
+    };
+
+    midiAccessObject.inputs.forEach(input => {
+      currentInputs.push({ id: input.id, name: input.name || `Input ${input.id}`, manufacturer: input.manufacturer || 'Unknown', state: input.state });
+      
+      if (input.state === 'connected') {
+        anyDevicePhysicallyConnected = true;
+        if (isInitiallyResolved) {
+            try {
+                if (input.onmidimessage !== messageHandlerWrapper) {
+                    input.onmidimessage = messageHandlerWrapper;
+                }
+            } catch (e) {
+                if (import.meta.env.DEV) console.error(`[MIDI] FAILED to attach listener for device: ${input.name}. Error:`, e);
+            }
+        } else {
+            if (input.onmidimessage) {
+                input.onmidimessage = null;
+            }
+        }
+      } else {
+        if (input.onmidimessage) {
+          input.onmidimessage = null;
+        }
+      }
+    });
+
+    setMidiInputs(currentInputs);
+    
+    if (!anyDevicePhysicallyConnected) {
+      setError("No MIDI devices found or connected.");
+      setIsConnected(false);
+    } else {
+      setError(null);
+      setIsConnected(true);
+    }
+  }, [isInitiallyResolved]);
+
+  useEffect(() => {
+    if (isInitiallyResolved && midiAccess) {
+      processMidiInputs(midiAccess);
+    }
+  }, [isInitiallyResolved, midiAccess, processMidiInputs]);
+
+  const handleStateChange = useCallback((event) => {
+    const currentMidiAccess = midiAccessRefForCallbacks.current;
+    if (!currentMidiAccess) return;
+    processMidiInputs(currentMidiAccess);
+  }, [processMidiInputs]);
+
+  const connectMIDI = useCallback(async () => {
+    if (connectionInProgressRef.current || isConnectedRef.current) return midiAccessRefForCallbacks.current;
+    if (typeof navigator === 'undefined' || !navigator.requestMIDIAccess) {
+      setError("Web MIDI API not supported");
+      return null;
+    }
+    connectionInProgressRef.current = true;
+    setIsConnecting(true);
+    setError(null);
+    if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
+    connectTimeoutRef.current = setTimeout(() => {
+      if (connectionInProgressRef.current) {
+        setError("MIDI connection timed out.");
+        setIsConnecting(false);
+        connectionInProgressRef.current = false;
+      }
+    }, MIDI_CONNECT_TIMEOUT_MS);
+
+    try {
+      const access = await navigator.requestMIDIAccess({ sysex: false });
+      if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
+      if (isUnmountingRef.current) return null;
+
+      setMidiAccess(access);
+      access.onstatechange = handleStateChange;
+      
+      processMidiInputs(access);
+      
+      return access;
+    } catch (err) {
+      if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
+      const errorMessage = err.message || err.name || 'Unknown MIDI access error';
+      setError(`MIDI access failed: ${errorMessage}`);
+      setMidiAccess(null);
+      setIsConnected(false);
+      return null;
+    } finally {
+      if (connectionInProgressRef.current) {
+        setIsConnecting(false);
+        connectionInProgressRef.current = false;
+      }
+    }
+  }, [handleStateChange, processMidiInputs]);
+  
+  const disconnectMIDI = useCallback((forceFullDisconnect = false) => {
+    const isDevelopment = import.meta.env.DEV;
+    const isFinalUnmount = isUnmountingRef.current && forceFullDisconnect;
+    const currentMidiAccess = midiAccessRefForCallbacks.current;
+    if (currentMidiAccess) {
+      if (currentMidiAccess.onstatechange) currentMidiAccess.onstatechange = null;
+      currentMidiAccess.inputs.forEach(input => {
+        if (input.onmidimessage) input.onmidimessage = null;
+      });
+    }
+    if (connectTimeoutRef.current) { clearTimeout(connectTimeoutRef.current); connectTimeoutRef.current = null; }
+    if (pendingTimeoutRef.current) { clearTimeout(pendingTimeoutRef.current); pendingTimeoutRef.current = null; }
+    connectionInProgressRef.current = false;
+    if (forceFullDisconnect || isFinalUnmount || !isDevelopment) {
+      setMidiAccess(null);
+      setIsConnected(false);
+      setIsConnecting(false);
+      setMidiInputs([]);
+      setError(null);
+    } else {
+      setIsConnecting(false);
+    }
+  }, []);
+
+  const setChannelFilter = useCallback((channel) => {
+    const ch = parseInt(String(channel), 10);
+    if (!isNaN(ch) && ch >= 0 && ch <= 16) {
+      setSelectedChannel(ch);
+    }
+  }, []);
+  const clearMIDIMonitor = useCallback(() => { setMidiMonitorData([]); }, []);
+  
+  const clearPendingActions = useCallback(() => {
+    setPendingLayerSelect(null);
+    setPendingParamUpdate(null);
+    setPendingGlobalAction(null);
+    setPendingCrossfaderUpdate(null);
+    setPendingNextScene(null);
+    setPendingPrevScene(null);
+    setPendingNextWorkspace(null);
+    setPendingPrevWorkspace(null);
+    if (pendingTimeoutRef.current) {
+      clearTimeout(pendingTimeoutRef.current);
+      pendingTimeoutRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    isUnmountingRef.current = false;
+    return () => {
+      isUnmountingRef.current = true;
+      disconnectMIDI(true);
+    };
+  }, [disconnectMIDI]);
+
+  const contextValue = useMemo(() => ({
+    midiAccess, isConnected, isConnecting, error, midiInputs,
+    midiMap: activeMidiMap,
+    layerMappings, midiLearning, learningLayer, selectedChannel,
+    midiMonitorData, showMidiMonitor, pendingLayerSelect, pendingParamUpdate,
+    pendingGlobalAction, pendingCrossfaderUpdate, 
+    // --- FIX: REMOVED from context value ---
+    pendingNextScene, pendingPrevScene, pendingNextWorkspace, pendingPrevWorkspace,
+    setShowMidiMonitor,
+    connectMIDI, disconnectMIDI, startMIDILearn, stopMIDILearn,
+    startLayerMIDILearn, stopLayerMIDILearn, clearAllMappings, setChannelFilter,
+    clearMIDIMonitor, mapParameterToMIDI, clearPendingActions,
+    startGlobalMIDILearn,
+  }), [
+    midiAccess, isConnected, isConnecting, error, midiInputs, 
+    activeMidiMap,
+    layerMappings, midiLearning, learningLayer, selectedChannel,
+    midiMonitorData, showMidiMonitor, pendingLayerSelect, pendingParamUpdate,
+    pendingGlobalAction, pendingCrossfaderUpdate, 
+    pendingNextScene, pendingPrevScene, pendingNextWorkspace, pendingPrevWorkspace,
+    connectMIDI, disconnectMIDI, clearAllMappings, mapParameterToMIDI,
+    setChannelFilter, clearMIDIMonitor, setShowMidiMonitor, clearPendingActions, stopMIDILearn,
+    startMIDILearn, startLayerMIDILearn, stopLayerMIDILearn,
+    startGlobalMIDILearn,
+  ]);
+
+  return (
+    <MIDIContext.Provider value={contextValue}>
+      {children}
+    </MIDIContext.Provider>
+  );
+}
+
+MIDIProvider.propTypes = {
+  children: PropTypes.node.isRequired,
+};
+
+/**
+ * Custom hook to consume the MIDIContext.
+ * @returns {object} The current value of the MIDIContext.
+ */
+export const useMIDI = () => {
+  const context = useContext(MIDIContext);
+  if (context === undefined) {
+    throw new Error("useMIDI must be used within a MIDIProvider");
   }
   return context;
 };
@@ -15304,134 +14839,6 @@ export const useUserSession = () => {
 ```
 
 ---
-### `src\context\VisualConfigContext.jsx`
-```jsx
-// src/context/VisualConfigContext.jsx
-import React, {
-  createContext,
-  useContext,
-  useState,
-  useCallback,
-  useMemo,
-} from "react";
-import PropTypes from "prop-types";
-import { useSetManagement } from "./SetManagementContext";
-// --- FIX START: Import fallback config for initial state ---
-import fallbackConfig from "../config/fallback-config.js";
-
-// This function now only provides a template for NEW layers, not for initial state.
-const getDefaultLayerConfigTemplate = () => ({
-  enabled: true, blendMode: "normal", opacity: 1.0, size: 1.0, speed: 0.01, drift: 0,
-  driftSpeed: 0.1, angle: 0, xaxis: 0, yaxis: 0, direction: 1,
-  driftState: { x: 0, y: 0, phase: Math.random() * Math.PI * 2, enabled: false },
-});
-
-export const defaultVisualConfigContextValue = {
-  layerConfigs: fallbackConfig.layers, // Use fallback for default
-  tokenAssignments: fallbackConfig.tokenAssignments, // Use fallback for default
-  updateLayerConfig: () => {},
-  updateTokenAssignment: () => {},
-  setLiveConfig: () => {},
-};
-
-const VisualConfigContext = createContext(defaultVisualConfigContextValue);
-
-export const VisualConfigProvider = ({ children }) => {
-  const { setHasPendingChanges } = useSetManagement();
-
-  // --- FIX: Initialize state with fallbackConfig instead of null ---
-  const [layerConfigs, setLayerConfigsInternal] = useState(fallbackConfig.layers);
-  const [tokenAssignments, setTokenAssignmentsInternal] = useState(fallbackConfig.tokenAssignments);
-
-  const updateLayerConfig = useCallback(
-    (layerId, key, value) => {
-      setLayerConfigsInternal(prevConfigs => {
-        const newConfigs = prevConfigs ? JSON.parse(JSON.stringify(prevConfigs)) : {};
-        if (!newConfigs[String(layerId)]) {
-          newConfigs[String(layerId)] = getDefaultLayerConfigTemplate();
-        }
-        newConfigs[String(layerId)][key] = value;
-        return newConfigs;
-      });
-      
-      if (setHasPendingChanges) {
-        setHasPendingChanges(true);
-      }
-    },
-    [setHasPendingChanges]
-  );
-
-  const updateTokenAssignment = useCallback(
-    (layerId, tokenId) => {
-      setTokenAssignmentsInternal(prevAssignments => ({
-        ...(prevAssignments || {}),
-        [String(layerId)]: tokenId,
-      }));
-
-      if (setHasPendingChanges) {
-        setHasPendingChanges(true);
-      }
-    },
-    [setHasPendingChanges]
-  );
-
-  const setLiveConfig = useCallback(
-    (newLayerConfigs, newTokenAssignments) => {
-      // If null is passed (e.g., on disconnect), revert to fallback.
-      const safeLayerConfigs = newLayerConfigs ? JSON.parse(JSON.stringify(newLayerConfigs)) : fallbackConfig.layers;
-      const safeTokenAssignments = newTokenAssignments ? JSON.parse(JSON.stringify(newTokenAssignments)) : fallbackConfig.tokenAssignments;
-
-      setLayerConfigsInternal(safeLayerConfigs);
-      setTokenAssignmentsInternal(safeTokenAssignments);
-      
-      if (setHasPendingChanges) {
-        setHasPendingChanges(false);
-      }
-    },
-    [setHasPendingChanges]
-  );
-  // --- FIX END ---
-
-  const contextValue = useMemo(
-    () => ({
-      layerConfigs,
-      tokenAssignments,
-      updateLayerConfig,
-      updateTokenAssignment,
-      setLiveConfig,
-    }),
-    [
-      layerConfigs,
-      tokenAssignments,
-      updateLayerConfig,
-      updateTokenAssignment,
-      setLiveConfig,
-    ]
-  );
-
-  return (
-    <VisualConfigContext.Provider value={contextValue}>
-      {children}
-    </VisualConfigContext.Provider>
-  );
-};
-
-VisualConfigProvider.propTypes = {
-  children: PropTypes.node.isRequired,
-};
-
-export const useVisualConfig = () => {
-  const context = useContext(VisualConfigContext);
-  if (context === undefined) {
-    throw new Error(
-      "useVisualConfig must be used within a VisualConfigProvider"
-    );
-  }
-  return context;
-};
-```
-
----
 ### `src\dump_to_md.py`
 ```py
 import os
@@ -15896,34 +15303,33 @@ export default VisualEffect;
 import { useMemo } from 'react';
 
 import { useUserSession } from '../context/UserSessionContext.jsx';
-import { useVisualConfig } from '../context/VisualConfigContext.jsx';
-import { useSetManagement } from '../context/SetManagementContext.jsx';
+import { useAppContext } from '../context/AppContext.jsx';
 import { useUpProvider } from '../context/UpProvider.jsx';
 
 /**
  * @typedef {object} VisualLayerState
- * @property {object} layerConfigs - Configuration for visual layers of the host profile. Sourced from `VisualConfigContext`.
- * @property {object} tokenAssignments - Mapping of layer IDs to token identifiers or image URLs for the host profile. Sourced from `VisualConfigContext`.
- * @property {(layerId: string | number, key: string, value: any) => void} updateLayerConfig - Updates a specific property of a layer's configuration for the host profile. From `VisualConfigContext`.
- * @property {(layerId: string | number, tokenId: string | object | null) => void} updateTokenAssignment - Updates the token assigned to a layer for the host profile. From `VisualConfigContext`.
+ * @property {object} layerConfigs - Configuration for visual layers of the host profile. Sourced from `AppContext`.
+ * @property {object} tokenAssignments - Mapping of layer IDs to token identifiers or image URLs for the host profile. Sourced from `AppContext`.
+ * @property {(layerId: string | number, key: string, value: any) => void} updateLayerConfig - Updates a specific property of a layer's configuration for the host profile. From `AppContext`.
+ * @property {(layerId: string | number, tokenId: string | object | null) => void} updateTokenAssignment - Updates the token assigned to a layer for the host profile. From `AppContext`.
  */
 export const useVisualLayerState = () => {
-  const visualCtx = useVisualConfig();
+  const appCtx = useAppContext();
   return useMemo(() => ({
-    layerConfigs: visualCtx.layerConfigs,
-    tokenAssignments: visualCtx.tokenAssignments,
-    updateLayerConfig: visualCtx.updateLayerConfig,
-    updateTokenAssignment: visualCtx.updateTokenAssignment,
-  }), [visualCtx.layerConfigs, visualCtx.tokenAssignments, visualCtx.updateLayerConfig, visualCtx.updateTokenAssignment]);
+    layerConfigs: appCtx.layerConfigs,
+    tokenAssignments: appCtx.tokenAssignments,
+    updateLayerConfig: appCtx.updateLayerConfig,
+    updateTokenAssignment: appCtx.updateTokenAssignment,
+  }), [appCtx.layerConfigs, appCtx.tokenAssignments, appCtx.updateLayerConfig, appCtx.updateTokenAssignment]);
 };
 
 /**
  * @typedef {object} SetManagementState
- * This typedef mirrors useSetManagement for documentation consistency.
+ * This typedef mirrors useAppContext for documentation consistency.
  */
 export const useSetManagementState = () => {
-  // This hook now directly passes through useSetManagement.
-  return useSetManagement();
+  // This hook now directly passes through useAppContext.
+  return useAppContext();
 };
 
 /**
@@ -15935,19 +15341,19 @@ export const useSetManagementState = () => {
  * @property {(newMap: object) => void} updateMidiMap - Replaces the entire MIDI map configuration.
  */
 export const useInteractionSettingsState = () => {
-  const setCtx = useSetManagement();
+  const appCtx = useAppContext();
   return useMemo(() => ({
-    savedReactions: setCtx.activeEventReactions || {},
-    midiMap: setCtx.activeMidiMap || {},
-    updateSavedReaction: setCtx.updateGlobalEventReactions,
-    deleteSavedReaction: setCtx.deleteGlobalEventReaction,
-    updateMidiMap: setCtx.updateGlobalMidiMap,
+    savedReactions: appCtx.activeEventReactions || {},
+    midiMap: appCtx.activeMidiMap || {},
+    updateSavedReaction: appCtx.updateGlobalEventReactions,
+    deleteSavedReaction: appCtx.deleteGlobalEventReaction,
+    updateMidiMap: appCtx.updateGlobalMidiMap,
   }), [
-    setCtx.activeEventReactions,
-    setCtx.activeMidiMap,
-    setCtx.updateGlobalEventReactions,
-    setCtx.deleteGlobalEventReaction,
-    setCtx.updateGlobalMidiMap,
+    appCtx.activeEventReactions,
+    appCtx.activeMidiMap,
+    appCtx.updateGlobalEventReactions,
+    appCtx.deleteGlobalEventReaction,
+    appCtx.updateGlobalMidiMap,
   ]);
 };
 
@@ -15999,11 +15405,11 @@ export const useProfileSessionState = () => {
  * @property {React.Dispatch<React.SetStateAction<boolean>>} setHasPendingChanges - Manually sets the pending changes flag.
  */
 export const usePendingChangesState = () => {
-  const setCtx = useSetManagement();
+  const appCtx = useAppContext();
   return useMemo(() => ({
-    hasPendingChanges: setCtx.hasPendingChanges,
-    setHasPendingChanges: setCtx.setHasPendingChanges,
-  }), [setCtx.hasPendingChanges, setCtx.setHasPendingChanges]);
+    hasPendingChanges: appCtx.hasPendingChanges,
+    setHasPendingChanges: appCtx.setHasPendingChanges,
+  }), [appCtx.hasPendingChanges, appCtx.setHasPendingChanges]);
 };
 
 /**
@@ -16018,21 +15424,21 @@ export const usePendingChangesState = () => {
  * @property {Error | null} upFetchStateError - Error from UpProvider client fetching.
  */
 export const useConfigStatusState = () => {
-  const setCtx = useSetManagement();
+  const appCtx = useAppContext();
   const upCtx = useUpProvider(); 
 
   return useMemo(() => ({
-    isLoading: setCtx.isLoading,
-    isInitiallyResolved: setCtx.isInitiallyResolved,
-    configServiceInstanceReady: setCtx.configServiceInstanceReady,
-    sceneLoadNonce: setCtx.sceneLoadNonce,
-    configServiceRef: setCtx.configServiceRef,
-    loadError: setCtx.loadError,
+    isLoading: appCtx.isLoading,
+    isInitiallyResolved: appCtx.isInitiallyResolved,
+    configServiceInstanceReady: appCtx.configServiceInstanceReady,
+    sceneLoadNonce: appCtx.sceneLoadNonce,
+    configServiceRef: appCtx.configServiceRef,
+    loadError: appCtx.loadError,
     upInitializationError: upCtx.initializationError, 
     upFetchStateError: upCtx.fetchStateError,       
   }), [
-    setCtx.isLoading, setCtx.isInitiallyResolved, setCtx.sceneLoadNonce, setCtx.loadError,
-    setCtx.configServiceInstanceReady, setCtx.configServiceRef,
+    appCtx.isLoading, appCtx.isInitiallyResolved, appCtx.sceneLoadNonce, appCtx.loadError,
+    appCtx.configServiceInstanceReady, appCtx.configServiceRef,
     upCtx.initializationError, upCtx.fetchStateError, 
   ]);
 };
@@ -16205,19 +15611,18 @@ export function useAnimationLifecycleManager({
 // src/hooks/useAppInteractions.js
 import { useCallback, useEffect, useMemo } from 'react';
 import { useUIState } from './useUIState';
-import { useNotifications } from './useNotifications';
 import { useVisualEffects } from './useVisualEffects';
 import { useLsp1Events } from './useLsp1Events';
 import { useMIDI } from '../context/MIDIContext';
 import { useUserSession } from '../context/UserSessionContext';
-import { sliderParams } from '../components/Panels/EnhancedControlPanel';
+import { useAppContext } from '../context/AppContext';
+import { sliderParams } from '../config/sliderParams';
 import { scaleNormalizedValue } from "../utils/helpers";
 
 export const useAppInteractions = (props) => {
   const {
     updateLayerConfig,
     currentProfileAddress,
-    savedReactions,
     managerInstancesRef,
     setCanvasLayerImage,
     updateTokenAssignment,
@@ -16227,16 +15632,18 @@ export const useAppInteractions = (props) => {
 
   const { visitorProfileAddress } = useUserSession();
   const uiStateHook = useUIState('tab1');
-  const notificationData = useNotifications();
-  const { addNotification } = notificationData;
+  const { addNotification, unreadCount, activeEventReactions: savedReactions } = useAppContext();
   const { processEffect, createDefaultEffect } = useVisualEffects(updateLayerConfig);
   
   const { 
     pendingParamUpdate, 
     pendingLayerSelect, 
     pendingGlobalAction,
+    pendingCrossfaderUpdate, // Get the pending crossfader update state
     clearPendingActions 
   } = useMIDI();
+  
+  const { handleCrossfaderChange } = useAppContext(); // Get the crossfader handler
 
   const applyPlaybackValueToManager = useCallback((layerId, key, value) => {
     const manager = managerInstancesRef.current?.[String(layerId)];
@@ -16273,14 +15680,7 @@ export const useAppInteractions = (props) => {
       
       if (sliderConfig && manager) {
         const scaledValue = scaleNormalizedValue(normalizedMidiValue, sliderConfig.min, sliderConfig.max);
-        
-        // --- THIS IS THE FIX ---
-        // We now call the main update handler with a flag indicating this is a MIDI update.
-        // This allows the handler in MainView.jsx to choose the correct interpolation method
-        // for either Deck A or Deck B based on the crossfader position.
-        updateLayerConfig(String(layer), param, scaledValue, true); // The 'true' is for 'isMidiUpdate'
-        // --- END FIX ---
-
+        updateLayerConfig(String(layer), param, scaledValue, true);
         processed = true;
       }
     }
@@ -16301,10 +15701,22 @@ export const useAppInteractions = (props) => {
       }
     }
 
+    if (pendingCrossfaderUpdate) {
+      const { value } = pendingCrossfaderUpdate;
+      if (handleCrossfaderChange) {
+        handleCrossfaderChange(value);
+        processed = true;
+      }
+    }
+
     if (processed && clearPendingActions) {
       clearPendingActions();
     }
-  }, [pendingParamUpdate, pendingLayerSelect, pendingGlobalAction, onTogglePLock, updateLayerConfig, uiStateHook, clearPendingActions, managerInstancesRef]);
+  }, [
+      pendingParamUpdate, pendingLayerSelect, pendingGlobalAction, pendingCrossfaderUpdate,
+      onTogglePLock, updateLayerConfig, uiStateHook, clearPendingActions, 
+      managerInstancesRef, handleCrossfaderChange
+  ]);
 
   const handleTokenApplied = useCallback(async (token, layerId) => {
     if (!isMountedRef.current) return;
@@ -16320,13 +15732,13 @@ export const useAppInteractions = (props) => {
 
   return useMemo(() => ({
     uiStateHook,
-    notificationData,
+    notificationData: { unreadCount },
     handleTokenApplied,
     processEffect,
     createDefaultEffect,
     applyPlaybackValueToManager,
   }), [
-    uiStateHook, notificationData, handleTokenApplied,
+    uiStateHook, unreadCount, handleTokenApplied,
     processEffect, createDefaultEffect,
     applyPlaybackValueToManager
   ]);
@@ -17176,7 +16588,7 @@ import { useCanvasContainer } from './useCanvasContainer';
 import { useAudioVisualizer } from './useAudioVisualizer';
 import { useAnimationLifecycleManager } from './useAnimationLifecycleManager';
 import { usePLockSequencer } from './usePLockSequencer';
-import { useVisualConfig } from '../context/VisualConfigContext';
+import { useAppContext } from '../context/AppContext';
 
 export const useCoreApplicationStateAndLifecycle = (props) => {
   const {
@@ -17201,7 +16613,7 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     activeWorkspaceName, // <-- ADD THIS LINE
   } = props;
 
-  const { updateLayerConfig, setLiveConfig } = useVisualConfig();
+  const { updateLayerConfig, setLiveConfig } = useAppContext();
   const isMountedRef = useRef(false);
   const internalResetLifecycleRef = useRef(null);
   const lastProcessedNonceRef = useRef(0);
@@ -17660,106 +17072,18 @@ export function useNotifications(initialNotifications = []) {
 ```
 
 ---
-### `src\hooks\usePanelManager.js`
-```js
-// src/hooks/usePanelManager.js
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-
-const OPEN_ANIMATION_DURATION = 500; 
-const CLOSE_ANIMATION_DELAY = 500;
-
-export function usePanelManager(initialPanel = null) {
-  const [activePanel, setActivePanelInternal] = useState(initialPanel);
-  const [animatingPanel, setAnimatingPanel] = useState(null);
-
-  const openTimeoutRef = useRef(null);
-  const closeTimeoutRef = useRef(null);
-
-  // --- START: MODIFIED LOGIC ---
-  // CORRECTED: The state setter from `useState` is stable. We wrap it in `useCallback`
-  // with an empty dependency array to create a single, stable function for the lifetime
-  // of the component. This prevents stale closures in dependent functions.
-  const setActivePanel = useCallback((newPanelValue) => {
-      setActivePanelInternal(newPanelValue);
-  }, []); // Empty dependency array is correct here.
-  // --- END: MODIFIED LOGIC ---
-
-  useEffect(() => {
-    return () => {
-      if (openTimeoutRef.current) {
-        clearTimeout(openTimeoutRef.current);
-      }
-      if (closeTimeoutRef.current) {
-        clearTimeout(closeTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  const openPanel = useCallback((panelName) => {
-    if (closeTimeoutRef.current) {
-      clearTimeout(closeTimeoutRef.current);
-      closeTimeoutRef.current = null;
-    }
-    if (openTimeoutRef.current) {
-        clearTimeout(openTimeoutRef.current);
-        openTimeoutRef.current = null;
-    }
-
-    setAnimatingPanel(panelName); 
-    setActivePanel(panelName); 
-
-    openTimeoutRef.current = setTimeout(() => {
-      setAnimatingPanel(null); 
-      openTimeoutRef.current = null;
-    }, OPEN_ANIMATION_DURATION);
-  }, [setActivePanel]); // This now depends on the stable setActivePanel function.
-
-  const closePanel = useCallback(() => {
-    if (openTimeoutRef.current) {
-      clearTimeout(openTimeoutRef.current);
-      openTimeoutRef.current = null;
-    }
-    if (closeTimeoutRef.current) {
-        clearTimeout(closeTimeoutRef.current); 
-        closeTimeoutRef.current = null;
-    }
-
-    setAnimatingPanel("closing"); 
-
-    closeTimeoutRef.current = setTimeout(() => {
-      setActivePanel(null); 
-      setAnimatingPanel(null); 
-      closeTimeoutRef.current = null;
-    }, CLOSE_ANIMATION_DELAY);
-  }, [setActivePanel]); // This now depends on the stable setActivePanel function.
-
-  const togglePanel = useCallback((panelName) => {
-    if (activePanel === panelName) {
-      closePanel();
-    } else {
-      openPanel(panelName);
-    }
-  }, [activePanel, openPanel, closePanel]);
-
-  return useMemo(() => ({
-    activePanel,
-    animatingPanel,
-    openPanel,
-    closePanel,
-    togglePanel,
-  }), [activePanel, animatingPanel, openPanel, closePanel, togglePanel]);
-}
-```
-
----
 ### `src\hooks\usePanelState.js`
 ```js
 // src/hooks/usePanelState.js
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+
+const OPEN_ANIMATION_DURATION = 500;
+const CLOSE_ANIMATION_DELAY = 500;
 
 /**
  * @typedef {object} PanelState
  * @property {string | null} activePanel - The identifier of the currently active panel (e.g., 'controls', 'notifications', 'tokens'), or null if no panel is active.
+ * @property {string | null} animatingPanel - The identifier of the panel currently undergoing an open/close animation (e.g., 'controls', 'closing'), or null.
  * @property {boolean} tokenSelectorOpen - True if the token selector overlay should be open. This is typically true when `activePanel` is 'tokens'.
  * @property {string} activeLayerTab - The identifier of the currently active layer tab (e.g., 'tab1', 'tab2', 'tab3').
  * @property {React.Dispatch<React.SetStateAction<string>>} setActiveLayerTab - Function to set the active layer tab.
@@ -17772,11 +17096,8 @@ import { useState, useCallback, useEffect, useMemo } from "react";
  */
 
 /**
- * Manages the state related to UI panels and layer tabs. It tracks which
- * panel (if any) is currently active, whether the dedicated token selector
- * overlay should be open (specifically when the 'tokens' panel is active),
- * and which layer tab (e.g., for layer controls) is currently selected.
- * Provides functions to toggle/open/close panels and check panel status.
+ * Manages all state related to UI panels, layer tabs, and panel animations.
+ * This hook is a consolidation of the previous `usePanelManager` and `usePanelState` hooks.
  *
  * @param {string|null} [initialPanel=null] - The identifier of the panel to be initially active.
  * @param {string} [initialLayerTab='tab1'] - The identifier of the initially active layer tab.
@@ -17784,76 +17105,78 @@ import { useState, useCallback, useEffect, useMemo } from "react";
  */
 export function usePanelState(initialPanel = null, initialLayerTab = 'tab1') {
   const [activePanel, setActivePanel] = useState(initialPanel);
+  const [animatingPanel, setAnimatingPanel] = useState(null);
   const [tokenSelectorOpen, setTokenSelectorOpen] = useState(initialPanel === "tokens");
   const [activeLayerTab, setActiveLayerTab] = useState(initialLayerTab);
 
-  // Effect to automatically manage the tokenSelectorOpen state based on activePanel
+  const openTimeoutRef = useRef(null);
+  const closeTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (openTimeoutRef.current) clearTimeout(openTimeoutRef.current);
+      if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    };
+  }, []);
+
   useEffect(() => {
     setTokenSelectorOpen(activePanel === "tokens");
   }, [activePanel]);
 
-  /**
-   * Toggles a panel's visibility: opens if closed, closes if open.
-   * @param {string | null} panelName - The name of the panel to toggle, or `null` to close the current panel.
-   */
-  const togglePanel = useCallback(
-    (panelName) => {
-      // Ensure 'null' string is treated as actual null for closing
-      const cleanPanelName = panelName === "null" ? null : panelName;
-      setActivePanel((current) => (current === cleanPanelName ? null : cleanPanelName));
-    },
-    [], // setActivePanel is stable
-  );
-
-  /**
-   * Opens a specific panel by its identifier.
-   * @param {string} panelName - The name of the panel to open.
-   */
   const openPanel = useCallback((panelName) => {
+    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    if (openTimeoutRef.current) clearTimeout(openTimeoutRef.current);
+
+    setAnimatingPanel(panelName);
     setActivePanel(panelName);
-  }, []); // setActivePanel is stable
 
-  /** Closes any currently active panel. */
+    openTimeoutRef.current = setTimeout(() => {
+      setAnimatingPanel(null);
+    }, OPEN_ANIMATION_DURATION);
+  }, []);
+
   const closePanel = useCallback(() => {
-    setActivePanel(null);
-  }, []); // setActivePanel is stable
+    if (openTimeoutRef.current) clearTimeout(openTimeoutRef.current);
+    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
 
-  /**
-   * Checks if a specific panel is currently the active one.
-   * @param {string} panelName - The name of the panel to check.
-   * @returns {boolean} True if the panel is active, false otherwise.
-   */
-  const isPanelActive = useCallback(
-    (panelName) => {
-      return activePanel === panelName;
-    },
-    [activePanel],
-  );
+    setAnimatingPanel("closing");
 
-  /**
-   * Memoized mapping from tab identifiers to layer IDs.
-   * This ensures the object reference is stable across renders.
-   * @type {Object.<string, number>}
-   */
+    closeTimeoutRef.current = setTimeout(() => {
+      setActivePanel(null);
+      setAnimatingPanel(null);
+    }, CLOSE_ANIMATION_DELAY);
+  }, []);
+
+  const togglePanel = useCallback((panelName) => {
+      const cleanPanelName = panelName === "null" ? null : panelName;
+      // Directly check the current state, don't use a state updater function here.
+      if (activePanel === cleanPanelName) {
+        closePanel();
+      } else {
+        openPanel(cleanPanelName);
+      }
+    }, [activePanel, openPanel, closePanel]);
+
+  const isPanelActive = useCallback((panelName) => {
+    return activePanel === panelName;
+  }, [activePanel]);
+
   const tabToLayer = useMemo(() => ({
-    tab1: 1,
-    tab2: 2,
-    tab3: 3,
-  }), []); // Empty dependency array means it's created once and memoized
+    tab1: 3, // Top
+    tab2: 2, // Middle
+    tab3: 1, // Bottom
+  }), []);
 
-  /**
-   * Gets the numerical layer ID corresponding to the currently active tab.
-   * @returns {number} The layer ID (e.g., 1, 2, or 3). Defaults to 1 if the tab is not found.
-   */
   const getActiveLayerId = useCallback(() => {
-    return tabToLayer[activeLayerTab] || 1; // Default to layer 1 if tab mapping is missing
+    return tabToLayer[activeLayerTab] || 3;
   }, [activeLayerTab, tabToLayer]);
 
   return useMemo(() => ({
     activePanel,
+    animatingPanel,
     tokenSelectorOpen,
     activeLayerTab,
-    setActiveLayerTab, // Direct state setter
+    setActiveLayerTab,
     togglePanel,
     openPanel,
     closePanel,
@@ -17862,9 +17185,9 @@ export function usePanelState(initialPanel = null, initialLayerTab = 'tab1') {
     tabToLayer,
   }), [
     activePanel,
+    animatingPanel,
     tokenSelectorOpen,
     activeLayerTab,
-    setActiveLayerTab,
     togglePanel,
     openPanel,
     closePanel,
@@ -18513,24 +17836,24 @@ export function useRenderLifecycle(options) {
 ### `src\hooks\useUIState.js`
 ```js
 // src/hooks/useUIState.js
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 
-import { usePanelManager } from './usePanelManager'; // Local hook
+import { usePanelState } from './usePanelState'; // Local hook
 
 /**
  * @typedef {object} UIState
  * @property {boolean} isUiVisible - Whether the main UI elements (toolbars, panels) are visible.
  * @property {boolean} infoOverlayOpen - Whether the informational overlay is currently open.
  * @property {boolean} whitelistPanelOpen - Whether the whitelist management panel is currently open.
- * @property {string|null} activePanel - The identifier of the currently open side panel (e.g., 'controls', 'notifications'), or null if none are open. Managed by the integrated `usePanelManager`.
- * @property {string|null} animatingPanel - The identifier of the panel currently undergoing an open/close animation (e.g., 'controls', 'closing'), or null. Managed by the integrated `usePanelManager`.
+ * @property {string|null} activePanel - The identifier of the currently open side panel (e.g., 'controls', 'notifications'), or null if none are open. Managed by the integrated `usePanelState`.
+ * @property {string|null} animatingPanel - The identifier of the panel currently undergoing an open/close animation (e.g., 'controls', 'closing'), or null. Managed by the integrated `usePanelState`.
  * @property {string} activeLayerTab - The identifier of the active layer control tab (e.g., 'tab1').
  * @property {() => void} toggleUiVisibility - Function to toggle the visibility of the main UI elements.
  * @property {() => void} toggleInfoOverlay - Function to toggle the visibility of the informational overlay.
  * @property {() => void} toggleWhitelistPanel - Function to toggle the visibility of the whitelist panel.
- * @property {(panelName: string) => void} openPanel - Function to open a specific side panel by its identifier. This is sourced from `usePanelManager`.
- * @property {() => void} closePanel - Function to close the currently active side panel. This is sourced from `usePanelManager`.
- * @property {(panelName: string) => void} toggleSidePanel - Function to toggle a specific side panel's visibility. This is sourced from `usePanelManager`.
+ * @property {(panelName: string) => void} openPanel - Function to open a specific side panel by its identifier. This is sourced from `usePanelState`.
+ * @property {() => void} closePanel - Function to close the currently active side panel. This is sourced from `usePanelState`.
+ * @property {(panelName: string) => void} toggleSidePanel - Function to toggle a specific side panel's visibility. This is sourced from `usePanelState`.
  * @property {React.Dispatch<React.SetStateAction<string>>} setActiveLayerTab - Function to directly set the active layer control tab identifier.
  * @property {() => number} getActiveLayerId - Function to get the numerical layer ID corresponding to the `activeLayerTab`.
  */
@@ -18539,15 +17862,17 @@ export function useUIState(initialLayerTab = 'tab1') {
   const [isUiVisible, setIsUiVisible] = useState(true);
   const [infoOverlayOpen, setInfoOverlayOpen] = useState(false);
   const [whitelistPanelOpen, setWhitelistPanelOpen] = useState(false);
-  const [activeLayerTab, setActiveLayerTab] = useState(initialLayerTab);
-
+  
   const {
     activePanel,
     animatingPanel,
     openPanel,
     closePanel,
-    togglePanel: toggleSidePanel
-  } = usePanelManager(null);
+    togglePanel: toggleSidePanel,
+    activeLayerTab,
+    setActiveLayerTab,
+    getActiveLayerId
+  } = usePanelState(null, initialLayerTab);
 
   const toggleUiVisibility = useCallback(() => {
     setIsUiVisible((prev) => !prev);
@@ -18560,19 +17885,6 @@ export function useUIState(initialLayerTab = 'tab1') {
   const toggleWhitelistPanel = useCallback(() => {
     toggleSidePanel('whitelist');
   }, [toggleSidePanel]);
-
-  // --- THIS IS THE FIX: ADDING THE MISSING FUNCTION AND ITS DEPENDENCY ---
-  const tabToLayerIdMap = useMemo(() => ({
-    'tab1': 3, // Top Layer
-    'tab2': 2, // Middle Layer
-    'tab3': 1  // Bottom Layer
-  }), []);
-
-  const getActiveLayerId = useCallback(() => {
-    return tabToLayerIdMap[activeLayerTab] || 3; // Default to top layer if something is wrong
-  }, [activeLayerTab, tabToLayerIdMap]);
-  // --- END FIX ---
-
 
   return useMemo(() => ({
     isUiVisible,
@@ -18588,14 +17900,12 @@ export function useUIState(initialLayerTab = 'tab1') {
     closePanel,
     toggleSidePanel,
     setActiveLayerTab,
-    // --- AND EXPORTING IT ---
     getActiveLayerId,
   }), [
     isUiVisible, infoOverlayOpen, whitelistPanelOpen,
     activePanel, animatingPanel, activeLayerTab,
     toggleUiVisibility, toggleInfoOverlay, toggleWhitelistPanel,
     openPanel, closePanel, toggleSidePanel, setActiveLayerTab,
-    // --- ADDING IT TO THE DEPENDENCY ARRAY ---
     getActiveLayerId,
   ]);
 }
@@ -18862,8 +18172,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import { UpProvider } from "./context/UpProvider.jsx";
 import { UserSessionProvider } from "./context/UserSessionContext.jsx";
-import { SetManagementProvider } from "./context/SetManagementContext.jsx";
-import { VisualConfigProvider } from "./context/VisualConfigContext.jsx";
+import { AppProvider } from "./context/AppContext.jsx";
 import { MIDIProvider } from "./context/MIDIContext.jsx";
 import { ToastProvider } from "./context/ToastContext.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
@@ -18893,16 +18202,14 @@ const AppTree = (
   <ErrorBoundary>
     <UpProvider>
       <UserSessionProvider>
-        <VisualConfigProvider>
-          {/* Note: hasUserInitiated is now handled inside App/SetManagementProvider */}
-          <SetManagementProvider>
-            <MIDIProvider>
-              <ToastProvider>
-                <App />
-              </ToastProvider>
-            </MIDIProvider>
-          </SetManagementProvider>
-        </VisualConfigProvider>
+        {/* Note: hasUserInitiated is now handled inside App/AppProvider */}
+        <AppProvider>
+          <MIDIProvider>
+            <ToastProvider>
+              <App />
+            </ToastProvider>
+          </MIDIProvider>
+        </AppProvider>
       </UserSessionProvider>
     </UpProvider>
   </ErrorBoundary>
@@ -21676,7 +20983,7 @@ input[type="range"]:hover {
 // src/utils/CanvasManager.js
 import { BLEND_MODES } from '../config/global-config';
 import ValueInterpolator from './ValueInterpolator';
-import { sliderParams } from '../components/Panels/EnhancedControlPanel';
+import { sliderParams } from '../config/sliderParams';
 import { getDecodedImage } from './imageDecoder';
 
 const SETUP_CANVAS_POLL_INTERVAL = 100;
@@ -21728,6 +21035,7 @@ class CanvasManager {
     transitionDuration = 500;
     outgoingImage = null;
     outgoingConfig = null;
+    outgoingImageSrc = null; 
     outgoingContinuousRotationAngle = 0;
     outgoingDriftState = null;
 
@@ -21790,6 +21098,7 @@ class CanvasManager {
 
         this.outgoingImage = this.imageA;
         this.outgoingConfig = this.getConfigData();
+        this.outgoingImageSrc = this.lastImageSrc; 
         this.outgoingContinuousRotationAngle = this.continuousRotationAngleA;
         this.outgoingDriftState = { ...this.driftStateA };
 
@@ -21802,6 +21111,7 @@ class CanvasManager {
             this.applyFullConfig(this.outgoingConfig);
             this.outgoingImage = null;
             this.outgoingConfig = null;
+            this.outgoingImageSrc = null; 
             this.outgoingContinuousRotationAngle = 0;
             this.outgoingDriftState = null;
             return;
@@ -21815,6 +21125,7 @@ class CanvasManager {
                 this.isTransitioning = false;
                 this.outgoingImage = null;
                 this.outgoingConfig = null;
+                this.outgoingImageSrc = null; 
                 this.outgoingContinuousRotationAngle = 0;
                 this.outgoingDriftState = null;
                 resolve();
@@ -21839,6 +21150,12 @@ class CanvasManager {
             }
             this.imageB = decodedBitmap;
             this.configB = config;
+
+            // --- FIX: Reset continuous rotation and drift for the new scene on Deck B ---
+            this.continuousRotationAngleB = 0;
+            this.driftStateB = { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
+            // --- END FIX ---
+            
             Object.keys(this.interpolatorsB).forEach(key => {
                 const interpolator = this.interpolatorsB[key];
                 const value = this.configB?.[key];
@@ -21983,8 +21300,10 @@ class CanvasManager {
 
         this.configA = mergedConfig;
         
-        this.continuousRotationAngleA = this.continuousRotationAngleB;
-        this.driftStateA = { ...this.driftStateB };
+        // --- FIX: Reset continuous rotation and drift for the new scene on Deck A ---
+        this.continuousRotationAngleA = 0;
+        this.driftStateA = { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
+        // --- END FIX ---
 
         Object.keys(this.interpolators).forEach(key => {
             this.interpolators[key]?.snap(this.configA[key]);
@@ -22030,9 +21349,6 @@ class CanvasManager {
     }
 
     snapVisualProperty(key, value) {
-        // **FIX:** Add a guard clause. If the interpolator for this property
-        // is already running (because a MIDI event just started it),
-        // ignore this snap command from the UI re-render.
         if (this.interpolators[key]?.isCurrentlyInterpolating()) {
             return;
         }
@@ -22057,10 +21373,6 @@ class CanvasManager {
     }
 
     updateConfigBProperty(key, value) {
-        if (this.interpolatorsB[key]?.isCurrentlyInterpolating()) {
-            return;
-        }
-        
         if (this.isDestroyed || !this.configB) return;
         const defaultConfig = this.getDefaultConfig();
         if (!Object.prototype.hasOwnProperty.call(defaultConfig, key)) return;
@@ -22068,7 +21380,9 @@ class CanvasManager {
         const validatedValue = this.validateValue(key, value, defaultConfig[key]);
         this.configB[key] = validatedValue;
         
-        this.interpolatorsB[key]?.snap(validatedValue);
+        if (this.interpolatorsB[key]) {
+            this.interpolatorsB[key].snap(validatedValue);
+        }
     }
     
     setTargetValue(param, targetValue) {
@@ -22172,7 +21486,6 @@ class CanvasManager {
     _drawFrame(image, frameConfig, continuousRotationAngle, driftState) {
         if (!image || !frameConfig) return;
     
-        // --- START: NEW FX LOGIC ---
         const fxConfig = frameConfig.fx;
         const activeFilterId = fxConfig?.activeFilter;
     
@@ -22194,7 +21507,6 @@ class CanvasManager {
         } else {
             this.ctx.filter = 'none';
         }
-        // --- END: NEW FX LOGIC ---
 
         const width = this.lastValidWidth; const height = this.lastValidHeight;
         const halfWidth = Math.floor(width / 2); const halfHeight = Math.floor(height / 2);
@@ -22209,7 +21521,7 @@ class CanvasManager {
         const imgAspectRatio = (imgNaturalWidth > 0 && imgNaturalHeight > 0) ? imgNaturalWidth / imgNaturalHeight : 1;
     
         let finalDrawSize = currentSize * this.audioFrequencyFactor;
-        const timestamp = performance.now(); // Get current time for beat pulse check
+        const timestamp = performance.now();
         if (this.beatPulseEndTime && timestamp < this.beatPulseEndTime) {
             finalDrawSize *= this.beatPulseFactor;
         } else if (this.beatPulseEndTime && timestamp >= this.beatPulseEndTime) {
@@ -22237,7 +21549,7 @@ class CanvasManager {
         const offsetY = currentY / 10;
         
         const finalCenterX_TL = Math.max(-MAX_TOTAL_OFFSET, Math.min(MAX_TOTAL_OFFSET, halfWidth / 2 + offsetX + driftX + internalParallaxX));
-        const finalCenterY_TL = Math.max(-MAX_TOTAL_OFFSET, Math.min(MAX_TOTAL_OFFSET, halfHeight / 2 + offsetY + driftY + internalParallaxY));
+        const finalCenterY_TL = Math.max(-MAX_TOTAL_OFFSET, Math.min(MAX_TOTAL_OFFSET, halfHeight / 2 + offsetY + internalParallaxY));
 
         const finalAngle = baseAngle + continuousRotationAngle;
         const angleRad = (finalAngle % 360) * Math.PI / 180;
@@ -22284,19 +21596,63 @@ class CanvasManager {
                 const progress = Math.min(1.0, elapsed / this.transitionDuration);
                 const easedProgress = 0.5 - 0.5 * Math.cos(progress * Math.PI);
     
-                if (this.outgoingConfig.enabled) {
-                    this.canvas.style.mixBlendMode = this.outgoingConfig.blendMode || "normal";
-                    this.ctx.globalAlpha = (this.outgoingConfig.opacity || 1) * (1 - easedProgress);
-                    if (this.ctx.globalAlpha > 0.001) {
-                        this._drawFrame(this.outgoingImage, this.outgoingConfig, this.outgoingContinuousRotationAngle, this.outgoingDriftState);
-                    }
-                }
+                const imagesAreTheSame = this.outgoingImageSrc === this.lastImageSrc;
+                const blendModesAreEqual = this.outgoingConfig.blendMode === this.configA.blendMode;
     
-                if (this.configA.enabled && this.imageA) {
+                if (imagesAreTheSame && blendModesAreEqual) {
                     this.canvas.style.mixBlendMode = this.configA.blendMode || "normal";
-                    this.ctx.globalAlpha = (this.configA.opacity || 1) * easedProgress;
-                    if (this.ctx.globalAlpha > 0.001) {
-                        this._drawFrame(this.imageA, this.configA, this.continuousRotationAngleA, this.driftStateA);
+                    this.ctx.globalAlpha = 1.0;
+                    
+                    const morphedConfig = {};
+                    for (const key in this.configA) {
+                        const startVal = this.outgoingConfig[key];
+                        const endVal = this.configA[key];
+                        if (typeof startVal === 'number' && typeof endVal === 'number') {
+                            morphedConfig[key] = lerp(startVal, endVal, easedProgress);
+                        } else {
+                            morphedConfig[key] = easedProgress < 0.5 ? startVal : endVal;
+                        }
+                    }
+                    morphedConfig.fx = easedProgress < 0.5 ? this.outgoingConfig.fx : this.configA.fx;
+                    
+                    const morphedAngle = lerp(this.outgoingContinuousRotationAngle, this.continuousRotationAngleA, easedProgress);
+                    const morphedDrift = {
+                        x: lerp(this.outgoingDriftState.x, this.driftStateA.x, easedProgress),
+                        y: lerp(this.outgoingDriftState.y, this.driftStateA.y, easedProgress),
+                    };
+
+                    if (this.configA.enabled && this.imageA) {
+                         this._drawFrame(this.imageA, morphedConfig, morphedAngle, morphedDrift);
+                    }
+                } else if (blendModesAreEqual) {
+                    this.canvas.style.mixBlendMode = this.configA.blendMode || "normal";
+                    if (this.outgoingConfig.enabled) {
+                        this.ctx.globalAlpha = (this.outgoingConfig.opacity || 1) * (1 - easedProgress);
+                        if (this.ctx.globalAlpha > 0.001) {
+                            this._drawFrame(this.outgoingImage, this.outgoingConfig, this.outgoingContinuousRotationAngle, this.outgoingDriftState);
+                        }
+                    }
+                    if (this.configA.enabled && this.imageA) {
+                        this.ctx.globalAlpha = (this.configA.opacity || 1) * easedProgress;
+                        if (this.ctx.globalAlpha > 0.001) {
+                            this._drawFrame(this.imageA, this.configA, this.continuousRotationAngleA, this.driftStateA);
+                        }
+                    }
+                } else {
+                    if (easedProgress < 0.5) {
+                        const fadeOutProgress = easedProgress * 2;
+                        this.canvas.style.mixBlendMode = this.outgoingConfig.blendMode || "normal";
+                        this.ctx.globalAlpha = (this.outgoingConfig.opacity || 1) * (1 - fadeOutProgress);
+                         if (this.outgoingConfig.enabled && this.outgoingImage && this.ctx.globalAlpha > 0.001) {
+                            this._drawFrame(this.outgoingImage, this.outgoingConfig, this.outgoingContinuousRotationAngle, this.outgoingDriftState);
+                        }
+                    } else {
+                        const fadeInProgress = (easedProgress - 0.5) * 2;
+                        this.canvas.style.mixBlendMode = this.configA.blendMode || "normal";
+                        this.ctx.globalAlpha = (this.configA.opacity || 1) * fadeInProgress;
+                         if (this.configA.enabled && this.imageA && this.ctx.globalAlpha > 0.001) {
+                            this._drawFrame(this.imageA, this.configA, this.continuousRotationAngleA, this.driftStateA);
+                        }
                     }
                 }
             } else if (this.crossfadeValue > 0.001 && this.imageB && this.configB) {
@@ -22313,7 +21669,6 @@ class CanvasManager {
                     if (typeof valA === 'number' && typeof valB === 'number') morphedConfig[param.prop] = lerp(valA, valB, t);
                     else morphedConfig[param.prop] = t < 0.5 ? valA : valB;
                 });
-                // Also morph the FX config
                 morphedConfig.fx = {
                     activeFilter: t < 0.5 ? liveConfigA.fx?.activeFilter : liveConfigB.fx?.activeFilter,
                     intensity: lerp(liveConfigA.fx?.intensity || 0, liveConfigB.fx?.intensity || 0, t)
@@ -22352,7 +21707,7 @@ class CanvasManager {
                     if (this.ctx.globalAlpha > 0.001) this._drawFrame(this.imageA, liveConfigA, this.continuousRotationAngleA, this.driftStateA);
                 }
             }
-    
+
             this.ctx.globalAlpha = 1.0;
             this.isDrawing = false;
             return true;
@@ -22361,14 +21716,13 @@ class CanvasManager {
             this.isDrawing = false;
             return false;
         } finally {
-            // --- ADDED: Ensure filter is always reset ---
             if (this.ctx) this.ctx.filter = 'none';
         }
     }
     
     _updateInternalDrift(config, driftState, deltaTime) {
         if (!config || !driftState) return;
-        const driftAmount = config.drift; 
+        const driftAmount = config.drift;
         const driftSpeed = config.driftSpeed;
 
         if(driftAmount > 0){
@@ -22379,7 +21733,7 @@ class CanvasManager {
             driftState.x = Math.max(-MAX_TOTAL_OFFSET / 2, Math.min(MAX_TOTAL_OFFSET / 2, calculatedX));
             driftState.y = Math.max(-MAX_TOTAL_OFFSET / 2, Math.min(MAX_TOTAL_OFFSET / 2, calculatedY));
         } else {
-            const LERP_FACTOR = 0.05; 
+            const LERP_FACTOR = 0.05;
             driftState.x = lerp(driftState.x, 0, LERP_FACTOR);
             driftState.y = lerp(driftState.y, 0, LERP_FACTOR);
             if (Math.abs(driftState.x) < 0.01) driftState.x = 0;
@@ -22390,7 +21744,7 @@ class CanvasManager {
     animationLoop(timestamp) {
         if (this.isDestroyed || this.animationFrameId === null) return;
         this.animationFrameId = requestAnimationFrame(this.animationLoop);
-        
+
         const isAnySideEnabled = this.configA?.enabled || (this.configB?.enabled && this.crossfadeValue > 0);
         if (!isAnySideEnabled && !this.isTransitioning) {
             if (this.ctx && this.canvas) {
@@ -22402,18 +21756,18 @@ class CanvasManager {
         if (!this.lastTimestamp) this.lastTimestamp = timestamp;
         const elapsed = timestamp - this.lastTimestamp;
         this.lastTimestamp = timestamp;
-        
+
         const rawDeltaTime = Math.min(elapsed / 1000.0, MAX_DELTA_TIME);
 
         this.deltaTimeBuffer.push(rawDeltaTime);
         if (this.deltaTimeBuffer.length > DELTA_TIME_BUFFER_SIZE) this.deltaTimeBuffer.shift();
         this.smoothedDeltaTime = this.deltaTimeBuffer.reduce((a,b) => a+b,0) / this.deltaTimeBuffer.length;
-        
+
         if (this.lastValidWidth <= 0 || this.lastValidHeight <= 0 || !this.canvas || !this.ctx) {
             this.setupCanvas().then(setupOk => { if (setupOk) this.draw(timestamp); });
             return;
         }
-        
+
         const now = performance.now();
         for (const key in this.interpolators) {
             this.interpolators[key].update(now);
@@ -22422,16 +21776,16 @@ class CanvasManager {
             this.interpolatorsB[key].update(now);
         }
 
-        const parallaxLerpFactor = 0.05; 
+        const parallaxLerpFactor = 0.05;
         this.renderedParallaxOffset.x = lerp(this.renderedParallaxOffset.x, this.parallaxOffset.x, parallaxLerpFactor);
         this.renderedParallaxOffset.y = lerp(this.renderedParallaxOffset.y, this.parallaxOffset.y, parallaxLerpFactor);
-        
+
         if (this.canvas) {
             const parallaxX = this.renderedParallaxOffset.x * this.parallaxFactor;
             const parallaxY = this.renderedParallaxOffset.y * this.parallaxFactor;
             this.canvas.style.transform = `translate(${parallaxX}px, ${parallaxY}px) scale(1)`;
         }
-        
+
         if (this.configA) {
             const speedA = this.playbackValues.speed ?? this.interpolators.speed.getCurrentValue();
             const directionA = this.configA.direction ?? 1;
@@ -22450,7 +21804,7 @@ class CanvasManager {
 
         this.draw(timestamp);
     }
-    
+
     async forceRedraw(configToUse = null) {
         if (this.isDestroyed || this.isDrawing) return false;
         return this.drawStaticFrame(configToUse || this.configA);

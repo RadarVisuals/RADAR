@@ -1,4 +1,4 @@
-// src/context/SetManagementContext.jsx
+// src/context/AppContext.jsx
 import React, {
   createContext,
   useContext,
@@ -13,32 +13,135 @@ import { keccak256, stringToBytes } from "viem";
 
 import { useUserSession } from "./UserSessionContext";
 import { useToast } from "./ToastContext";
-import { useVisualConfig } from "./VisualConfigContext";
+// --- FIX: REMOVED a circular dependency ---
+// import { useMIDI } from "./MIDIContext.jsx"; 
+import { useNotifications } from "../hooks/useNotifications";
 import fallbackConfig from "../config/fallback-config.js";
 import ConfigurationService, { hexToUtf8Safe } from "../services/ConfigurationService";
 import { useUpProvider } from "./UpProvider";
 import { RADAR_OFFICIAL_ADMIN_ADDRESS, IPFS_GATEWAY } from "../config/global-config";
 import { uploadJsonToPinata } from '../services/PinataService.js';
 import { preloadImages, resolveImageUrl } from '../utils/imageDecoder.js';
+import { lerp } from '../utils/helpers.js';
+import { INTERPOLATED_MIDI_PARAMS } from '../config/midiConstants.js';
 
 const OFFICIAL_WHITELIST_KEY = keccak256(stringToBytes("RADAR.OfficialWhitelist"));
+const AUTO_FADE_DURATION_MS = 1000;
+const CROSSFADER_LERP_FACTOR = 0.2;
 
-export const defaultSetManagementContextValue = {
+const usePrevious = (value) => {
+  const ref = useRef();
+  useEffect(() => {
+    ref.current = value;
+  });
+  return ref.current;
+};
+
+export const defaultAppContextValue = {
+  // Visual Config Defaults
+  layerConfigs: fallbackConfig.layers,
+  tokenAssignments: fallbackConfig.tokenAssignments,
+  updateLayerConfig: () => {},
+  updateTokenAssignment: () => {},
+  setLiveConfig: () => {},
+
+  // Notification Defaults
+  notifications: [],
+  addNotification: () => {},
+  onMarkNotificationRead: () => {},
+  onClearAllNotifications: () => {},
+  unreadCount: 0,
+
+  // Set Management Defaults
   isLoading: true,
   isFullyLoaded: false,
   startLoadingProcess: () => {},
-  // Add other defaults as needed for better IntelliSense
+  setlist: null, stagedSetlist: null, activeWorkspace: null, stagedActiveWorkspace: null, activeWorkspaceName: null, activeSceneName: null,
+  savedSceneList: [], loadError: null, isSaving: false, saveError: null, saveSuccess: false, isInitiallyResolved: false,
+  sceneLoadNonce: 0, loadedLayerConfigsFromScene: null, loadedTokenAssignmentsFromScene: null,
+  officialWhitelist: [],
+  refreshOfficialWhitelist: async () => {},
+  hasPendingChanges: false,
+  configServiceRef: { current: null }, configServiceInstanceReady: false,
+  activeMidiMap: {},
+  activeEventReactions: {},
+  ownedTokenIdentifiers: {},
+  isFetchingTokens: false,
+  tokenFetchProgress: { loaded: 0, total: 0, loading: false },
+  refreshOwnedTokens: async () => {},
+  loadWorkspace: async () => ({ success: false, error: "Provider not initialized" }),
+  loadScene: async () => ({ success: false, error: "Provider not initialized" }),
+  setActiveSceneSilently: () => {},
+  saveChanges: async () => ({ success: false, error: "Provider not initialized" }),
+  duplicateActiveWorkspace: async () => ({ success: false, error: "Provider not initialized" }),
+  createNewWorkspace: () => {},
+  deleteWorkspaceFromSet: () => {},
+  renameWorkspaceInSet: () => {},
+  setDefaultWorkspaceInSet: () => {},
+  addNewSceneToStagedWorkspace: () => {}, deleteSceneFromStagedWorkspace: () => {},
+  setDefaultSceneInStagedWorkspace: () => {}, discardStagedChanges: () => {},
+  updateGlobalMidiMap: () => {},
+  updateLayerMidiMappings: () => {}, 
+  updateGlobalEventReactions: () => {}, deleteGlobalEventReaction: () => {},
+  setHasPendingChanges: () => {},
+  addPalette: () => {},
+  removePalette: () => {},
+  addTokenToPalette: () => {},
+  removeTokenFromPalette: () => {},
+  preloadWorkspace: () => {},
+  isWorkspaceTransitioning: false,
+  _executeLoadAfterFade: () => {},
+  
+  // Crossfader and Deck Defaults
+  sideA: { config: null },
+  sideB: { config: null },
+  uiControlConfig: null,
+  renderedCrossfaderValue: 0.0,
+  isAutoFading: false,
+  handleSceneSelect: () => {},
+  handleCrossfaderChange: () => {},
+  registerManagerInstancesRef: () => {},
+  registerCanvasUpdateFns: () => {},
+  // --- FIX: Add the shared ref to the default context value ---
+  midiStateRef: { current: null },
 };
 
-const SetManagementContext = createContext(defaultSetManagementContextValue);
+const AppContext = createContext(defaultAppContextValue);
 
-export const SetManagementProvider = ({ children }) => {
+export const AppProvider = ({ children }) => {
   const { hostProfileAddress, visitorProfileAddress, isHostProfileOwner } = useUserSession();
   const { provider, walletClient, publicClient } = useUpProvider();
-  const { setLiveConfig } = useVisualConfig();
   const { addToast } = useToast();
+  // --- FIX: REMOVED useMIDI() call ---
+  const notificationData = useNotifications();
 
   const [shouldStartLoading, setShouldStartLoading] = useState(false);
+  
+  const [sideA, setSideA] = useState({ config: null });
+  const [sideB, setSideB] = useState({ config: null });
+  const [uiControlConfig, setUiControlConfig] = useState(null);
+  const [targetCrossfaderValue, setTargetCrossfaderValue] = useState(0.0);
+  const [renderedCrossfaderValue, setRenderedCrossfaderValue] = useState(0.0);
+  const renderedValueRef = useRef(0.0);
+  const [isAutoFading, setIsAutoFading] = useState(false);
+  
+  const faderAnimationRef = useRef();
+  const autoFadeRef = useRef(null);
+  const prevFaderValueRef = useRef(0.0);
+
+  const managerInstancesRef = useRef(null);
+  const canvasUpdateFnsRef = useRef({});
+
+  // --- FIX: This ref will be shared with MIDIContext ---
+  const midiStateRef = useRef({ liveCrossfaderValue: null });
+
+  const registerManagerInstancesRef = useCallback((ref) => {
+    managerInstancesRef.current = ref;
+  }, []);
+
+  const registerCanvasUpdateFns = useCallback((fns) => {
+    canvasUpdateFnsRef.current = fns;
+  }, []);
 
   const preloadedWorkspacesRef = useRef(new Map());
   const preloadingInProgressRef = useRef(new Set());
@@ -83,6 +186,312 @@ export const SetManagementProvider = ({ children }) => {
     setShouldStartLoading(true);
   }, []);
 
+  const fullSceneList = useMemo(() => {
+    if (!stagedActiveWorkspace?.presets) return [];
+    const validScenes = Object.values(stagedActiveWorkspace.presets).filter(
+        (item) => item && typeof item.name === 'string'
+    );
+    return [...validScenes].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  }, [stagedActiveWorkspace]);
+  
+  useEffect(() => {
+    const animateFader = () => {
+      const current = renderedValueRef.current;
+      const target = targetCrossfaderValue;
+      if (Math.abs(target - current) > 0.0001) {
+        const newRendered = lerp(current, target, CROSSFADER_LERP_FACTOR);
+        renderedValueRef.current = newRendered;
+        setRenderedCrossfaderValue(newRendered);
+      } else if (current !== target) {
+        renderedValueRef.current = target;
+        setRenderedCrossfaderValue(target);
+      }
+      faderAnimationRef.current = requestAnimationFrame(animateFader);
+    };
+    faderAnimationRef.current = requestAnimationFrame(animateFader);
+    return () => { if (faderAnimationRef.current) cancelAnimationFrame(faderAnimationRef.current); };
+  }, [targetCrossfaderValue]);
+
+  useEffect(() => {
+    const activeConfig = renderedValueRef.current < 0.5 ? sideA.config : sideB.config;
+    setUiControlConfig(activeConfig);
+  }, [renderedCrossfaderValue, sideA, sideB]);
+
+  const animateCrossfade = useCallback((startTime, startValue, endValue, duration) => {
+    const now = performance.now();
+    const elapsed = now - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const newCrossfaderValue = startValue + (endValue - startValue) * progress;
+    setTargetCrossfaderValue(newCrossfaderValue);
+    if (progress < 1) autoFadeRef.current = requestAnimationFrame(() => animateCrossfade(startTime, startValue, endValue, duration));
+    else { setIsAutoFading(false); autoFadeRef.current = null; }
+  }, [setIsAutoFading, setTargetCrossfaderValue]);
+
+  const prevIsWorkspaceTransitioning = usePrevious(isWorkspaceTransitioning);
+  const prevIsFullyLoaded = usePrevious(isFullyLoaded);
+
+  useEffect(() => {
+    const initialLoadJustFinished = !prevIsFullyLoaded && isFullyLoaded;
+    const transitionJustFinished = prevIsWorkspaceTransitioning && !isWorkspaceTransitioning;
+
+    if (initialLoadJustFinished || transitionJustFinished) {
+      // --- THIS IS THE FIX ---
+      // Read the initial fader value from the shared ref.
+      const initialFaderValue = midiStateRef.current.liveCrossfaderValue !== null ? midiStateRef.current.liveCrossfaderValue : 0.0;
+      // --- END FIX ---
+      
+      if (!fullSceneList || fullSceneList.length === 0) {
+        const baseScene = {
+          name: "Fallback",
+          ts: Date.now(),
+          layers: JSON.parse(JSON.stringify(fallbackConfig.layers)),
+          tokenAssignments: JSON.parse(JSON.stringify(fallbackConfig.tokenAssignments)),
+        };
+        setSideA({ config: baseScene });
+        setSideB({ config: baseScene });
+        setActiveSceneName(null);
+        // --- THIS IS THE FIX ---
+        setTargetCrossfaderValue(initialFaderValue);
+        setRenderedCrossfaderValue(initialFaderValue); // Snap rendered value immediately
+        renderedValueRef.current = initialFaderValue;
+        // --- END FIX ---
+        return;
+      }
+      
+      const initialSceneName = stagedActiveWorkspace.defaultSceneName || fullSceneList[0]?.name;
+      let startIndex = fullSceneList.findIndex(p => p.name === initialSceneName);
+      if (startIndex === -1) startIndex = 0;
+      
+      const nextIndex = fullSceneList.length > 1 ? (startIndex + 1) % fullSceneList.length : startIndex;
+  
+      const startSceneConfig = JSON.parse(JSON.stringify(fullSceneList[startIndex]));
+      const nextSceneConfig = JSON.parse(JSON.stringify(fullSceneList[nextIndex]));
+      
+      // --- THIS IS THE FIX ---
+      // Logic to decide which scene goes on which deck based on the fader's position
+      const activeSideIsA = initialFaderValue < 0.5;
+
+      if (activeSideIsA) {
+        setSideA({ config: startSceneConfig });
+        setSideB({ config: nextSceneConfig });
+        setActiveSceneName(startSceneConfig.name);
+      } else {
+        setSideB({ config: startSceneConfig });
+        setSideA({ config: nextSceneConfig });
+        setActiveSceneName(startSceneConfig.name);
+      }
+      
+      setTargetCrossfaderValue(initialFaderValue);
+      setRenderedCrossfaderValue(initialFaderValue); // Snap rendered value
+      renderedValueRef.current = initialFaderValue;
+      // --- END FIX ---
+    }
+  }, [isWorkspaceTransitioning, isFullyLoaded, stagedActiveWorkspace, activeWorkspaceName, fullSceneList, prevIsFullyLoaded, prevIsWorkspaceTransitioning]);
+
+  useEffect(() => {
+    if (!fullSceneList || fullSceneList.length < 2) return;
+
+    const prevValue = prevFaderValueRef.current;
+    const newValue = renderedCrossfaderValue;
+    
+    if (prevValue < 1.0 && newValue >= 0.999) {
+      const currentBIndex = fullSceneList.findIndex(p => p.ts === sideB.config?.ts);
+      if (currentBIndex !== -1) {
+        const nextAIndex = (currentBIndex + 1) % fullSceneList.length;
+        if (fullSceneList[nextAIndex]?.ts !== sideA.config?.ts) {
+          setSideA({ config: JSON.parse(JSON.stringify(fullSceneList[nextAIndex])) });
+        }
+      }
+    } 
+    else if (prevValue > 0.0 && newValue <= 0.001) {
+      const currentAIndex = fullSceneList.findIndex(p => p.ts === sideA.config?.ts);
+      if (currentAIndex !== -1) {
+        const nextBIndex = (currentAIndex + 1) % fullSceneList.length;
+        if (fullSceneList[nextBIndex]?.ts !== sideB.config?.ts) {
+          setSideB({ config: JSON.parse(JSON.stringify(fullSceneList[nextBIndex])) });
+        }
+      }
+    }
+    
+    prevFaderValueRef.current = newValue;
+  }, [renderedCrossfaderValue, fullSceneList, sideA, sideB]);
+
+  useEffect(() => {
+      if (!isFullyLoaded) return; 
+      
+      if (!fullSceneList || fullSceneList.length === 0) {
+          const baseScene = {
+            name: "Fallback",
+            ts: Date.now(),
+            layers: JSON.parse(JSON.stringify(fallbackConfig.layers)),
+            tokenAssignments: JSON.parse(JSON.stringify(fallbackConfig.tokenAssignments)),
+          };
+          setSideA({ config: baseScene });
+          setSideB({ config: baseScene });
+          setActiveSceneName(null);
+          setTargetCrossfaderValue(0.0);
+          return;
+      }
+  
+      const activeSideIsA = renderedValueRef.current < 0.5;
+      const activeDeckScene = activeSideIsA ? sideA.config : sideB.config;
+  
+      let currentIndex = fullSceneList.findIndex(p => p.ts === activeDeckScene?.ts);
+      if (currentIndex === -1) {
+          currentIndex = 0;
+      }
+      
+      const nextIndex = fullSceneList.length > 1 ? (currentIndex + 1) % fullSceneList.length : currentIndex;
+  
+      const currentSceneData = JSON.parse(JSON.stringify(fullSceneList[currentIndex]));
+      const nextSceneData = JSON.parse(JSON.stringify(fullSceneList[nextIndex]));
+
+      if (activeSideIsA) {
+          if (sideA.config?.ts !== currentSceneData.ts) setSideA({ config: currentSceneData });
+          if (sideB.config?.ts !== nextSceneData.ts) setSideB({ config: nextSceneData });
+      } else {
+          if (sideB.config?.ts !== currentSceneData.ts) setSideB({ config: currentSceneData });
+          if (sideA.config?.ts !== nextSceneData.ts) setSideA({ config: nextSceneData });
+      }
+  }, [fullSceneList, isFullyLoaded]);
+  
+  const setActiveSceneSilently = useCallback((name) => {
+    if (!stagedActiveWorkspace || !stagedActiveWorkspace.presets[name]) {
+      if (import.meta.env.DEV) console.warn(`[AppContext] setActiveSceneSilently called with non-existent scene: ${name}`);
+      return;
+    }
+    if (activeSceneName !== name) {
+      setActiveSceneName(name);
+    }
+  }, [stagedActiveWorkspace, activeSceneName]);
+
+  useEffect(() => {
+    if (!fullSceneList || fullSceneList.length === 0) return;
+    const target = targetCrossfaderValue;
+  
+    if (target >= 0.999) {
+      const sceneNameB = sideB.config?.name;
+      if (sceneNameB && fullSceneList.some(s => s.name === sceneNameB)) {
+        setActiveSceneSilently(sceneNameB);
+      }
+    } else if (target <= 0.001) {
+      const sceneNameA = sideA.config?.name;
+      if (sceneNameA && fullSceneList.some(s => s.name === sceneNameA)) {
+        setActiveSceneSilently(sceneNameA);
+      }
+    }
+  }, [targetCrossfaderValue, sideA.config, sideB.config, fullSceneList, setActiveSceneSilently]);
+
+  const handleSceneSelect = useCallback((sceneName, duration = AUTO_FADE_DURATION_MS) => {
+    if (isAutoFading || !fullSceneList || fullSceneList.length === 0) return;
+    
+    const targetScene = fullSceneList.find(s => s.name === sceneName);
+    if (!targetScene) return;
+
+    if (sideA.config?.name === sceneName || sideB.config?.name === sceneName) {
+        const targetValue = sideA.config?.name === sceneName ? 0.0 : 1.0;
+        if (Math.abs(targetCrossfaderValue - targetValue) < 0.001) return;
+        setIsAutoFading(true);
+        if (autoFadeRef.current) cancelAnimationFrame(autoFadeRef.current);
+        animateCrossfade(performance.now(), targetCrossfaderValue, targetValue, duration);
+        return;
+    }
+
+    const currentActiveSide = renderedCrossfaderValue < 0.5 ? 'A' : 'B';
+
+    if (currentActiveSide === 'A') {
+      setSideB({ config: JSON.parse(JSON.stringify(targetScene)) });
+      setIsAutoFading(true);
+      if (autoFadeRef.current) cancelAnimationFrame(autoFadeRef.current);
+      animateCrossfade(performance.now(), targetCrossfaderValue, 1.0, duration);
+    } else {
+      setSideA({ config: JSON.parse(JSON.stringify(targetScene)) });
+      setIsAutoFading(true);
+      if (autoFadeRef.current) cancelAnimationFrame(autoFadeRef.current);
+      animateCrossfade(performance.now(), targetCrossfaderValue, 0.0, duration);
+    }
+  }, [isAutoFading, fullSceneList, sideA.config, sideB.config, targetCrossfaderValue, renderedCrossfaderValue, animateCrossfade]);
+
+  const handleCrossfaderChange = useCallback((newValue) => {
+    setTargetCrossfaderValue(newValue);
+  }, []);
+
+  const updateLayerConfig = useCallback((layerId, key, value, isMidiUpdate = false) => {
+    const managers = managerInstancesRef.current?.current;
+    if (!managers) return;
+    const manager = managers[String(layerId)];
+    if (!manager) return;
+    
+    const activeDeck = renderedValueRef.current < 0.5 ? 'A' : 'B';
+
+    if (isMidiUpdate && INTERPOLATED_MIDI_PARAMS.includes(key)) {
+      if (activeDeck === 'A') manager.setTargetValue(key, value);
+      else manager.setTargetValueB(key, value);
+    } else {
+      if (activeDeck === 'A') manager.updateConfigProperty(key, value);
+      else manager.updateConfigBProperty(key, value);
+    }
+    
+    const stateSetter = activeDeck === 'A' ? setSideA : setSideB;
+    stateSetter(prev => {
+      if (!prev.config) return prev;
+      const newConfig = JSON.parse(JSON.stringify(prev.config));
+      if (!newConfig.layers[layerId]) newConfig.layers[layerId] = {};
+      newConfig.layers[layerId][key] = value;
+      return { ...prev, config: newConfig };
+    });
+    
+    setHasPendingChanges(true);
+  }, []);
+
+  const updateTokenAssignment = useCallback(async (token, layerId) => {
+    const managers = managerInstancesRef.current?.current;
+    const { setCanvasLayerImage } = canvasUpdateFnsRef.current;
+    if (!managers || !setCanvasLayerImage) return;
+
+    const idToSave = token.id;
+    const srcToLoad = token.metadata?.image;
+    if (!idToSave || !srcToLoad) return;
+  
+    const assignmentObject = { id: idToSave, src: srcToLoad };
+    
+    const targetDeck = renderedValueRef.current < 0.5 ? 'A' : 'B';
+    const stateSetter = targetDeck === 'A' ? setSideA : setSideB;
+
+    stateSetter(prev => {
+      if (!prev.config) return prev;
+      const newConfig = JSON.parse(JSON.stringify(prev.config));
+      if (!newConfig.tokenAssignments) newConfig.tokenAssignments = {};
+      newConfig.tokenAssignments[String(layerId)] = assignmentObject;
+      return { ...prev, config: newConfig };
+    });
+
+    try {
+      await setCanvasLayerImage(String(layerId), srcToLoad);
+    } catch (e) {
+      console.error(`[AppContext] Error setting canvas image for layer ${layerId}:`, e);
+    }
+
+    setHasPendingChanges(true);
+  }, []);
+
+  const setLiveConfig = useCallback(
+    (newLayerConfigs, newTokenAssignments) => {
+      const activeDeck = renderedValueRef.current < 0.5 ? 'A' : 'B';
+      const stateSetter = activeDeck === 'A' ? setSideA : setSideB;
+
+      stateSetter(prev => {
+        if (!prev.config) return prev;
+        const newConfig = JSON.parse(JSON.stringify(prev.config));
+        newConfig.layers = newLayerConfigs || fallbackConfig.layers;
+        newConfig.tokenAssignments = newTokenAssignments || fallbackConfig.tokenAssignments;
+        return { ...prev, config: newConfig };
+      });
+      setHasPendingChanges(false);
+    },
+    []
+  );
+
   useEffect(() => {
     if (provider) {
         configServiceRef.current = new ConfigurationService(provider, walletClient, publicClient);
@@ -125,7 +534,7 @@ export const SetManagementProvider = ({ children }) => {
         const workspaceData = await service._loadWorkspaceFromCID(cid);
         return workspaceData;
     } catch (error) {
-        console.error(`[SetManagementContext] Failed to load workspace from CID ${cid}:`, error);
+        console.error(`[AppContext] Failed to load workspace from CID ${cid}:`, error);
         addToast(`Could not load workspace data.`, "error");
         return null;
     }
@@ -133,7 +542,7 @@ export const SetManagementProvider = ({ children }) => {
 
   useEffect(() => {
     if (!shouldStartLoading) {
-      if(import.meta.env.DEV) console.log('%c[SetMgmt] Waiting for user interaction to start loading.', 'color: #e67e22;');
+      if(import.meta.env.DEV) console.log('%c[AppContext] Waiting for user interaction to start loading.', 'color: #e67e22;');
       return;
     }
 
@@ -145,7 +554,7 @@ export const SetManagementProvider = ({ children }) => {
     const emptyWorkspace = { presets: {}, defaultPresetName: null, globalEventReactions: {}, personalCollectionLibrary: [], userPalettes: {} };
 
     if (profileChanged) {
-      if (import.meta.env.DEV) console.log(`%c[SetMgmt] Profile changed from ${prevProfileAddressRef.current?.slice(0,6)} to ${currentAddress?.slice(0,6)}. Resetting state.`, 'color: #f39c12;');
+      if (import.meta.env.DEV) console.log(`%c[AppContext] Profile changed from ${prevProfileAddressRef.current?.slice(0,6)} to ${currentAddress?.slice(0,6)}. Resetting state.`, 'color: #f39c12;');
       prevProfileAddressRef.current = currentAddress;
       setIsLoading(true);
       setLoadingMessage("Initializing...");
@@ -201,14 +610,10 @@ export const SetManagementProvider = ({ children }) => {
         setActiveWorkspace(loadedWorkspace);
         setStagedActiveWorkspace(loadedWorkspace);
         setActiveWorkspaceName(defaultWorkspaceName);
-
+        
         const initialSceneName = loadedWorkspace.defaultPresetName || Object.keys(loadedWorkspace.presets || {})[0] || null;
         setActiveSceneName(initialSceneName);
         
-        const initialScene = initialSceneName ? loadedWorkspace.presets[initialSceneName] : null;
-        
-        setLiveConfig(initialScene?.layers || null, initialScene?.tokenAssignments || null);
-
         setLoadError(null);
         setHasPendingChanges(false);
 
@@ -233,13 +638,12 @@ export const SetManagementProvider = ({ children }) => {
           addToast("Could not load your setlist.", "error");
           setSetlist(emptySetlist); setStagedSetlist(emptySetlist);
           setActiveWorkspace(emptyWorkspace); setStagedActiveWorkspace(emptyWorkspace);
-          setLiveConfig(null, null);
         }
       } finally {
         if (prevProfileAddressRef.current === address) {
           setIsLoading(false);
           setLoadingMessage("");
-          if(import.meta.env.DEV) console.log(`%c[SetMgmt] Load sequence finished for ${address?.slice(0,6)}. Setting isFullyLoaded = true.`, 'color: #2ecc71; font-weight: bold;');
+          if(import.meta.env.DEV) console.log(`%c[AppContext] Load sequence finished for ${address?.slice(0,6)}. Setting isFullyLoaded = true.`, 'color: #2ecc71; font-weight: bold;');
           setIsFullyLoaded(true);
         }
       }
@@ -247,22 +651,21 @@ export const SetManagementProvider = ({ children }) => {
     
     if (configServiceInstanceReady && !isInitiallyResolved) {
       if (currentAddress) {
-        if (import.meta.env.DEV) console.log(`%c[SetMgmt] Initializing for connected profile: ${currentAddress.slice(0,6)}...`, 'color: #f39c12;');
+        if (import.meta.env.DEV) console.log(`%c[AppContext] Initializing for connected profile: ${currentAddress.slice(0,6)}...`, 'color: #f39c12;');
         loadInitialData(currentAddress);
       } else {
-        if (import.meta.env.DEV) console.log(`%c[SetMgmt] Initializing for DISCONNECTED state.`, 'color: #f39c12;');
+        if (import.meta.env.DEV) console.log(`%c[AppContext] Initializing for DISCONNECTED state.`, 'color: #f39c12;');
         setSetlist(emptySetlist); setStagedSetlist(emptySetlist);
         setActiveWorkspace(emptyWorkspace); setStagedActiveWorkspace(emptyWorkspace);
-        setLiveConfig(null, null);
         setIsLoading(false);
         setIsInitiallyResolved(true);
       }
     }
-  }, [shouldStartLoading, hostProfileAddress, visitorProfileAddress, configServiceInstanceReady, isInitiallyResolved, isHostProfileOwner, addToast, setLiveConfig, _loadWorkspaceFromCid]);
+  }, [shouldStartLoading, hostProfileAddress, visitorProfileAddress, configServiceInstanceReady, isInitiallyResolved, isHostProfileOwner, addToast, _loadWorkspaceFromCid]);
 
   useEffect(() => {
     if (isInitiallyResolved && !hostProfileAddress && !isFullyLoaded) {
-      if (import.meta.env.DEV) console.log(`%c[SetMgmt] Resolved as DISCONNECTED. Setting isFullyLoaded = true.`, 'color: #2ecc71; font-weight: bold;');
+      if (import.meta.env.DEV) console.log(`%c[AppContext] Resolved as DISCONNECTED. Setting isFullyLoaded = true.`, 'color: #2ecc71; font-weight: bold;');
       setIsFullyLoaded(true);
     }
   }, [isInitiallyResolved, hostProfileAddress, isFullyLoaded]);
@@ -270,7 +673,7 @@ export const SetManagementProvider = ({ children }) => {
   const savedSceneList = useMemo(() => {
     if (!stagedActiveWorkspace || !stagedActiveWorkspace.presets) return [];
     const validScenes = Object.values(stagedActiveWorkspace.presets).filter(p => p && typeof p.name === 'string');
-    return validScenes.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })).map(scene => ({ name: scene.name }));
+    return validScenes.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })).map(scene => ({ name: scene.name, ts: scene.ts }));
   }, [stagedActiveWorkspace]);
   
   const { loadedLayerConfigsFromScene, loadedTokenAssignmentsFromScene } = useMemo(() => {
@@ -388,7 +791,7 @@ export const SetManagementProvider = ({ children }) => {
       addToast(errorMsg, 'error');
       setIsLoading(false);
       setLoadingMessage("");
-      setIsWorkspaceTransitioning(false); // Reset transition state on error
+      setIsWorkspaceTransitioning(false);
       return;
     }
 
@@ -430,9 +833,7 @@ export const SetManagementProvider = ({ children }) => {
   }, [stagedSetlist, addToast, _loadWorkspaceFromCid]);
 
   const loadWorkspace = useCallback(async (workspaceName) => {
-    // --- START MODIFICATION: Remove isLoading guard ---
     if (isWorkspaceTransitioning) return;
-    // --- END MODIFICATION ---
 
     if (!stagedSetlist || !stagedSetlist.workspaces[workspaceName]) {
         const errorMsg = `Workspace '${workspaceName}' not found.`;
@@ -462,25 +863,11 @@ export const SetManagementProvider = ({ children }) => {
       return { success: false, error: errorMsg };
     }
     if (activeSceneName !== name) {
-      const scene = stagedActiveWorkspace.presets[name];
-      setLiveConfig(scene.layers, scene.tokenAssignments);
-      setActiveSceneName(name);
+      handleSceneSelect(name);
       setSceneLoadNonce(prev => prev + 1);
     }
     return { success: true };
-  }, [stagedActiveWorkspace, activeSceneName, addToast, setLiveConfig]);
-
-  const setActiveSceneSilently = useCallback((name) => {
-    if (!stagedActiveWorkspace || !stagedActiveWorkspace.presets[name]) {
-      if (import.meta.env.DEV) console.warn(`[SetManagement] setActiveSceneSilently called with non-existent scene: ${name}`);
-      return;
-    }
-    if (activeSceneName !== name) {
-      const scene = stagedActiveWorkspace.presets[name];
-      setLiveConfig(scene.layers, scene.tokenAssignments);
-      setActiveSceneName(name);
-    }
-  }, [stagedActiveWorkspace, activeSceneName, setLiveConfig]);
+  }, [stagedActiveWorkspace, activeSceneName, addToast, handleSceneSelect]);
   
   const discardStagedChanges = useCallback(() => {
     setStagedSetlist(setlist);
@@ -498,10 +885,9 @@ export const SetManagementProvider = ({ children }) => {
       newWorkspace.presets[newSceneName] = newSceneData;
       return newWorkspace;
     });
-    setLiveConfig(newSceneData.layers, newSceneData.tokenAssignments);
     setActiveSceneName(newSceneName);
     setHasPendingChanges(true);
-  }, [setLiveConfig]);
+  }, []);
 
   const deleteSceneFromStagedWorkspace = useCallback((nameToDelete) => {
     setStagedActiveWorkspace(prev => {
@@ -798,6 +1184,18 @@ export const SetManagementProvider = ({ children }) => {
   }, [addToast]);
   
   const contextValue = useMemo(() => ({
+    layerConfigs: uiControlConfig?.layers || fallbackConfig.layers,
+    tokenAssignments: uiControlConfig?.tokenAssignments || fallbackConfig.tokenAssignments,
+    updateLayerConfig,
+    updateTokenAssignment,
+    setLiveConfig,
+
+    notifications: notificationData.notifications,
+    addNotification: notificationData.addNotification,
+    onMarkNotificationRead: notificationData.markAsRead,
+    onClearAllNotifications: notificationData.clearAll,
+    unreadCount: notificationData.unreadCount,
+    
     isLoading,
     loadingMessage,
     isFullyLoaded,
@@ -820,7 +1218,24 @@ export const SetManagementProvider = ({ children }) => {
     startLoadingProcess,
     isWorkspaceTransitioning,
     _executeLoadAfterFade,
+
+    sideA,
+    sideB,
+    uiControlConfig,
+    renderedCrossfaderValue,
+    isAutoFading,
+    handleSceneSelect,
+    handleCrossfaderChange,
+    registerManagerInstancesRef,
+    registerCanvasUpdateFns,
+    // --- FIX: Pass the ref down in the context value ---
+    midiStateRef,
   }), [
+    uiControlConfig,
+    updateLayerConfig,
+    updateTokenAssignment,
+    setLiveConfig,
+    notificationData,
     isLoading, loadingMessage, isFullyLoaded,
     setlist, stagedSetlist, activeWorkspace, stagedActiveWorkspace, activeWorkspaceName, activeSceneName,
     savedSceneList, loadError, isSaving, saveError, saveSuccess, isInitiallyResolved,
@@ -841,23 +1256,28 @@ export const SetManagementProvider = ({ children }) => {
     startLoadingProcess,
     isWorkspaceTransitioning,
     _executeLoadAfterFade,
+    sideA, sideB, renderedCrossfaderValue, isAutoFading,
+    handleSceneSelect, handleCrossfaderChange,
+    registerManagerInstancesRef, registerCanvasUpdateFns,
+    // --- FIX: Add ref to dependency array ---
+    midiStateRef,
   ]);
   
   return (
-    <SetManagementContext.Provider value={contextValue}>
+    <AppContext.Provider value={contextValue}>
       {children}
-    </SetManagementContext.Provider>
+    </AppContext.Provider>
   );
 };
 
-SetManagementProvider.propTypes = {
+AppProvider.propTypes = {
   children: PropTypes.node.isRequired,
 };
 
-export const useSetManagement = () => {
-  const context = useContext(SetManagementContext);
+export const useAppContext = () => {
+  const context = useContext(AppContext);
   if (context === undefined) {
-    throw new Error("useSetManagement must be used within a SetManagementProvider");
+    throw new Error("useAppContext must be used within a AppProvider");
   }
   return context;
 };

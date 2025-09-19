@@ -2,13 +2,13 @@
 import React, { useEffect, useState, useCallback } from "react";
 import MainView from "./components/Main/Mainview";
 import StartVeil from "./components/UI/StartVeil";
-import { useSetManagement } from "./context/SetManagementContext"; // Import the hook
+import { useAppContext } from "./context/AppContext"; // Import the hook
 
 function App() {
   const [hasUserInitiated, setHasUserInitiated] = useState(false);
   
   // Get the context function to manually trigger the load
-  const { startLoadingProcess } = useSetManagement();
+  const { startLoadingProcess } = useAppContext();
 
   useEffect(() => {
     const staticLoader = document.querySelector('.static-loader');
@@ -19,7 +19,7 @@ function App() {
 
   const handleStart = useCallback(() => {
     setHasUserInitiated(true);
-    // When the user clicks "Enter", we explicitly tell the SetManagementProvider to begin loading.
+    // When the user clicks "Enter", we explicitly tell the AppProvider to begin loading.
     if (startLoadingProcess) {
       startLoadingProcess();
     }

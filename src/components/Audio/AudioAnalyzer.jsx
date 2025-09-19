@@ -15,7 +15,7 @@ const FFT_SIZE = 2048; // Standard FFT size for frequency analysis
  * @property {boolean} [isActive=false] - If true, the component attempts to access the microphone and start audio analysis.
  * @property {import('../../context/VisualConfigContext').AllLayerConfigs} [layerConfigs] - Current configurations for all visual layers. Used to get base values for audio-reactive parameters.
  * @property {import('../../hooks/useAudioVisualizer').AudioVisualizerSettings} [audioSettings] - Current settings for audio processing and analysis (e.g., intensity multipliers, smoothing factor).
- * @property {number} [configLoadNonce] - A nonce that changes when a new global configuration (preset) is loaded. Used to detect preset changes and potentially reset or adjust audio reactivity baselines.
+ * @property {number} [configLoadNonce] - A nonce that changes when a new global configuration (scene) is loaded. Used to detect scene changes and potentially reset or adjust audio reactivity baselines.
  * @property {React.RefObject<Object.<string, import('../../utils/CanvasManager').default>>} managerInstancesRef - Ref to the canvas manager instances, used to apply audio-driven visual modifications directly.
  */
 
@@ -77,7 +77,7 @@ const AudioAnalyzer = ({
     }
   }, [audioSettingsProp]);
 
-  // Update base layer values when a new preset is loaded
+  // Update base layer values when a new scene is loaded
   useEffect(() => {
     if (layerConfigsProp && configLoadNonce !== capturedNonceRef.current) {
         const newBaseValues = {};

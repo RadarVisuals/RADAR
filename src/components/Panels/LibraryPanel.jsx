@@ -3,7 +3,7 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import PropTypes from "prop-types";
 import Panel from "./Panel";
 import { useUserSession } from "../../context/UserSessionContext";
-import { usePresetManagement } from "../../context/PresetManagementContext";
+import { useAppContext } from "../../context/AppContext";
 import { useToast } from "../../context/ToastContext";
 import { isAddress, stringToHex } from "viem";
 import { uploadJsonToPinata } from "../../services/PinataService";
@@ -22,7 +22,7 @@ const formatAddress = (address, length = 4) => {
 
 const LibraryPanel = ({ onClose }) => {
   const { isRadarProjectAdmin } = useUserSession();
-  const { officialWhitelist, configServiceRef, refreshOfficialWhitelist } = usePresetManagement();
+  const { officialWhitelist, configServiceRef, refreshOfficialWhitelist } = useAppContext();
   const { addToast } = useToast();
 
   const [stagedWhitelist, setStagedWhitelist] = useState([]);

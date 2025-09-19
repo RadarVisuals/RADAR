@@ -6,7 +6,7 @@ import { useCanvasContainer } from './useCanvasContainer';
 import { useAudioVisualizer } from './useAudioVisualizer';
 import { useAnimationLifecycleManager } from './useAnimationLifecycleManager';
 import { usePLockSequencer } from './usePLockSequencer';
-import { useVisualConfig } from '../context/VisualConfigContext';
+import { useAppContext } from '../context/AppContext';
 
 export const useCoreApplicationStateAndLifecycle = (props) => {
   const {
@@ -31,7 +31,7 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     activeWorkspaceName, // <-- ADD THIS LINE
   } = props;
 
-  const { updateLayerConfig, setLiveConfig } = useVisualConfig();
+  const { updateLayerConfig, setLiveConfig } = useAppContext();
   const isMountedRef = useRef(false);
   const internalResetLifecycleRef = useRef(null);
   const lastProcessedNonceRef = useRef(0);

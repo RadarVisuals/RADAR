@@ -5,7 +5,8 @@ import PropTypes from "prop-types";
 import Panel from "./Panel";
 import { EVENT_TYPE_MAP } from "../../config/global-config";
 import { useToast } from "../../context/ToastContext";
-import { useSetManagement } from "../../context/SetManagementContext";
+import { useAppContext } from "../../context/AppContext";
+import { useUserSession } from "../../context/UserSessionContext";
 
 import "./PanelStyles/Eventspanel.css";
 
@@ -26,16 +27,17 @@ const generateEventOptions = () => {
 
 const EventsPanel = ({
   onClose,
-  readOnly = false,
   onPreviewEffect,
 }) => {
   const { addToast } = useToast();
+  const { canSaveToHostProfile } = useUserSession();
   const {
     stagedActiveWorkspace,
     updateGlobalEventReactions,
     deleteGlobalEventReaction,
-  } = useSetManagement();
+  } = useAppContext();
 
+  const readOnly = !canSaveToHostProfile;
   const reactions = useMemo(() => stagedActiveWorkspace?.globalEventReactions || {}, [stagedActiveWorkspace]);
   const onSaveReaction = updateGlobalEventReactions;
   const onRemoveReaction = deleteGlobalEventReaction;
@@ -276,7 +278,6 @@ const EventsPanel = ({
 
 EventsPanel.propTypes = {
   onClose: PropTypes.func.isRequired,
-  readOnly: PropTypes.bool,
   onPreviewEffect: PropTypes.func,
 };
 

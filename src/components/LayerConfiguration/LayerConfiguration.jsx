@@ -5,8 +5,8 @@ import PropTypes from "prop-types";
 import { useProfileSessionState } from "../../hooks/configSelectors"; // Local hook
 import { useMIDI } from "../../context/MIDIContext"; // Local context
 
-// Import sliderParams from EnhancedControlPanel or a shared constants file
-import { sliderParams } from "./EnhancedControlPanel"; // Assuming it's exported from here or a shared util
+// Import sliderParams from its direct source file
+import { sliderParams } from "../../config/sliderParams";
 
 import { midiIcon, rotateIcon } from "../../assets"; // Local assets
 

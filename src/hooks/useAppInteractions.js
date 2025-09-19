@@ -1,19 +1,18 @@
 // src/hooks/useAppInteractions.js
 import { useCallback, useEffect, useMemo } from 'react';
 import { useUIState } from './useUIState';
-import { useNotifications } from './useNotifications';
 import { useVisualEffects } from './useVisualEffects';
 import { useLsp1Events } from './useLsp1Events';
 import { useMIDI } from '../context/MIDIContext';
 import { useUserSession } from '../context/UserSessionContext';
-import { sliderParams } from '../components/Panels/EnhancedControlPanel';
+import { useAppContext } from '../context/AppContext';
+import { sliderParams } from '../config/sliderParams';
 import { scaleNormalizedValue } from "../utils/helpers";
 
 export const useAppInteractions = (props) => {
   const {
     updateLayerConfig,
     currentProfileAddress,
-    savedReactions,
     managerInstancesRef,
     setCanvasLayerImage,
     updateTokenAssignment,
@@ -23,16 +22,18 @@ export const useAppInteractions = (props) => {
 
   const { visitorProfileAddress } = useUserSession();
   const uiStateHook = useUIState('tab1');
-  const notificationData = useNotifications();
-  const { addNotification } = notificationData;
+  const { addNotification, unreadCount, activeEventReactions: savedReactions } = useAppContext();
   const { processEffect, createDefaultEffect } = useVisualEffects(updateLayerConfig);
   
   const { 
     pendingParamUpdate, 
     pendingLayerSelect, 
     pendingGlobalAction,
+    pendingCrossfaderUpdate, // Get the pending crossfader update state
     clearPendingActions 
   } = useMIDI();
+  
+  const { handleCrossfaderChange } = useAppContext(); // Get the crossfader handler
 
   const applyPlaybackValueToManager = useCallback((layerId, key, value) => {
     const manager = managerInstancesRef.current?.[String(layerId)];
@@ -69,14 +70,7 @@ export const useAppInteractions = (props) => {
       
       if (sliderConfig && manager) {
         const scaledValue = scaleNormalizedValue(normalizedMidiValue, sliderConfig.min, sliderConfig.max);
-        
-        // --- THIS IS THE FIX ---
-        // We now call the main update handler with a flag indicating this is a MIDI update.
-        // This allows the handler in MainView.jsx to choose the correct interpolation method
-        // for either Deck A or Deck B based on the crossfader position.
-        updateLayerConfig(String(layer), param, scaledValue, true); // The 'true' is for 'isMidiUpdate'
-        // --- END FIX ---
-
+        updateLayerConfig(String(layer), param, scaledValue, true);
         processed = true;
       }
     }
@@ -97,10 +91,22 @@ export const useAppInteractions = (props) => {
       }
     }
 
+    if (pendingCrossfaderUpdate) {
+      const { value } = pendingCrossfaderUpdate;
+      if (handleCrossfaderChange) {
+        handleCrossfaderChange(value);
+        processed = true;
+      }
+    }
+
     if (processed && clearPendingActions) {
       clearPendingActions();
     }
-  }, [pendingParamUpdate, pendingLayerSelect, pendingGlobalAction, onTogglePLock, updateLayerConfig, uiStateHook, clearPendingActions, managerInstancesRef]);
+  }, [
+      pendingParamUpdate, pendingLayerSelect, pendingGlobalAction, pendingCrossfaderUpdate,
+      onTogglePLock, updateLayerConfig, uiStateHook, clearPendingActions, 
+      managerInstancesRef, handleCrossfaderChange
+  ]);
 
   const handleTokenApplied = useCallback(async (token, layerId) => {
     if (!isMountedRef.current) return;
@@ -116,13 +122,13 @@ export const useAppInteractions = (props) => {
 
   return useMemo(() => ({
     uiStateHook,
-    notificationData,
+    notificationData: { unreadCount },
     handleTokenApplied,
     processEffect,
     createDefaultEffect,
     applyPlaybackValueToManager,
   }), [
-    uiStateHook, notificationData, handleTokenApplied,
+    uiStateHook, unreadCount, handleTokenApplied,
     processEffect, createDefaultEffect,
     applyPlaybackValueToManager
   ]);

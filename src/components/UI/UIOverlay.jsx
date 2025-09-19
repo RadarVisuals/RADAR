@@ -20,7 +20,7 @@ import LibraryPanel from '../Panels/LibraryPanel';
 import Crossfader from './Crossfader';
 import WorkspaceSelectorDots from './WorkspaceSelectorDots';
 import { useMIDI } from '../../context/MIDIContext';
-import { useSetManagement } from '../../context/SetManagementContext';
+import { useAppContext } from '../../context/AppContext';
 import { useUserSession } from '../../context/UserSessionContext';
 
 import { useToast } from '../../context/ToastContext';
@@ -33,8 +33,8 @@ const MemoizedGlobalMIDIStatus = React.memo(GlobalMIDIStatus);
 const MemoizedAudioStatusIcon = React.memo(AudioStatusIcon);
 const MemoizedSceneSelectorBar = React.memo(SceneSelectorBar);
 
-const DEFAULT_SEQUENCER_INTERVAL = 0; // Default pause between fades
-const DEFAULT_CROSSFADE_DURATION = 1000; // Default fade time is 1 seconds
+const DEFAULT_SEQUENCER_INTERVAL = 0;
+const DEFAULT_CROSSFADE_DURATION = 1000;
 
 const GeneralConnectPill = () => {
     return (
@@ -44,12 +44,16 @@ const GeneralConnectPill = () => {
     );
 };
 
-const ActivePanelRenderer = ({ uiState, audioState, configData, actions, pLockProps, onSceneSelect, sequencerIntervalMs, onSetSequencerInterval, crossfadeDurationMs, onSetCrossfadeDuration }) => {
+const ActivePanelRenderer = (props) => {
+    const { uiState, audioState, pLockProps, onPreviewEffect, configData, onLayerConfigChange } = props;
     const { activePanel, animatingPanel, activeLayerTab, closePanel, setActiveLayerTab } = uiState;
     const { isAudioActive, audioSettings, analyzerData, setIsAudioActive, setAudioSettings } = audioState;
-    const { notifications, savedReactions, canSave, isPreviewMode, canInteract, currentProfileAddress, layerConfigs, tokenAssignments, isAutoFading } = configData;
-    const { onLayerConfigChange, onMarkNotificationRead, onClearAllNotifications, onSaveReaction, onRemoveReaction, onPreviewEffect, onTokenApplied } = actions;
+    
+    const { handleSceneSelect, updateTokenAssignment, isAutoFading } = useAppContext();
 
+    const [sequencerIntervalMs, setSequencerIntervalMs] = useState(DEFAULT_SEQUENCER_INTERVAL);
+    const [crossfadeDurationMs, setCrossfadeDurationMs] = useState(DEFAULT_CROSSFADE_DURATION);
+    
     const handleTokenSelectorClose = useCallback(() => closePanel(), [closePanel]);
     const panelWrapperClassName = useMemo(() => animatingPanel === "closing" ? "animating closing" : animatingPanel ? "animating" : "", [animatingPanel]);
 
@@ -62,31 +66,31 @@ const ActivePanelRenderer = ({ uiState, audioState, configData, actions, pLockPr
                         activeTab={activeLayerTab}
                         onTabChange={setActiveLayerTab}
                         pLockProps={pLockProps}
-                        onLayerConfigChange={onLayerConfigChange}
-                        layerConfigs={layerConfigs}
-                        onSceneSelect={onSceneSelect}
+                        onSceneSelect={handleSceneSelect}
                         sequencerIntervalMs={sequencerIntervalMs}
-                        onSetSequencerInterval={onSetSequencerInterval}
+                        onSetSequencerInterval={setSequencerIntervalMs}
                         crossfadeDurationMs={crossfadeDurationMs}
-                        onSetCrossfadeDuration={onSetCrossfadeDuration}
+                        onSetCrossfadeDuration={setCrossfadeDurationMs}
                         isAutoFading={isAutoFading}
+                        activeLayerConfigs={configData.uiControlConfig?.layers}
+                        onLayerConfigChange={onLayerConfigChange}
                     />
                 </PanelWrapper>
             );
         case "notifications":
-            return ( <PanelWrapper key="notifications-panel" className={panelWrapperClassName}><NotificationPanel notifications={notifications} onClose={closePanel} onMarkAsRead={onMarkNotificationRead} onClearAll={onClearAllNotifications} /></PanelWrapper> );
+            return ( <PanelWrapper key="notifications-panel" className={panelWrapperClassName}><NotificationPanel onClose={closePanel} /></PanelWrapper> );
         case "events":
-            return canInteract ? ( <PanelWrapper key="events-panel" className={panelWrapperClassName}><EventsPanel onSaveReaction={onSaveReaction} onRemoveReaction={onRemoveReaction} reactions={savedReactions} onClose={closePanel} readOnly={!canSave} onPreviewEffect={onPreviewEffect} /></PanelWrapper> ) : null;
+            return ( <PanelWrapper key="events-panel" className={panelWrapperClassName}><EventsPanel onClose={closePanel} onPreviewEffect={onPreviewEffect} /></PanelWrapper> );
         case "sets":
-            return currentProfileAddress && !isPreviewMode ? ( <PanelWrapper key="sets-panel" className={panelWrapperClassName}><SetsPanel onClose={closePanel} /></PanelWrapper> ) : null;
+            return ( <PanelWrapper key="sets-panel" className={panelWrapperClassName}><SetsPanel onClose={closePanel} /></PanelWrapper> );
         case "save":
-            return currentProfileAddress && !isPreviewMode ? ( <PanelWrapper key="save-panel" className={panelWrapperClassName}><EnhancedSavePanel onClose={closePanel} /></PanelWrapper> ) : null;
+            return ( <PanelWrapper key="save-panel" className={panelWrapperClassName}><EnhancedSavePanel onClose={closePanel} /></PanelWrapper> );
         case "audio":
             return ( <PanelWrapper key="audio-panel" className={panelWrapperClassName}><AudioControlPanel onClose={closePanel} isAudioActive={isAudioActive} setIsAudioActive={setIsAudioActive} audioSettings={audioSettings} setAudioSettings={setAudioSettings} analyzerData={analyzerData} /></PanelWrapper> );
         case "whitelist":
             return ( <PanelWrapper key="whitelist-panel" className={panelWrapperClassName}><LibraryPanel onClose={closePanel} /></PanelWrapper> );
         case "tokens":
-            return canInteract ? ( <TokenSelectorOverlay key="token-selector-overlay" isOpen={activePanel === "tokens"} onClose={handleTokenSelectorClose} onTokenApplied={onTokenApplied} readOnly={!canInteract} /> ) : null;
+            return ( <TokenSelectorOverlay key="token-selector-overlay" isOpen={activePanel === "tokens"} onClose={handleTokenSelectorClose} onTokenApplied={updateTokenAssignment} /> );
         default:
             return null;
     }
@@ -94,14 +98,10 @@ const ActivePanelRenderer = ({ uiState, audioState, configData, actions, pLockPr
 ActivePanelRenderer.propTypes = {
     uiState: PropTypes.object.isRequired,
     audioState: PropTypes.object.isRequired,
-    configData: PropTypes.object.isRequired,
-    actions: PropTypes.object.isRequired,
     pLockProps: PropTypes.object.isRequired,
-    onSceneSelect: PropTypes.func.isRequired,
-    sequencerIntervalMs: PropTypes.number,
-    onSetSequencerInterval: PropTypes.func,
-    crossfadeDurationMs: PropTypes.number,
-    onSetCrossfadeDuration: PropTypes.func,
+    onPreviewEffect: PropTypes.func.isRequired,
+    configData: PropTypes.object.isRequired,
+    onLayerConfigChange: PropTypes.func.isRequired,
 };
 const MemoizedActivePanelRenderer = React.memo(ActivePanelRenderer);
 
@@ -116,18 +116,20 @@ const MemoizedOverlayRenderer = React.memo(OverlayRenderer);
 
 function UIOverlay(props) {
   const { 
-    uiState, audioState, configData, actions, savedSceneList,
-    pLockProps, isReady = false
+    uiState, audioState, savedSceneList,
+    pLockProps, isReady = false,
+    actions,
+    configData,
+    onLayerConfigChange,
   } = props;
   
   const { addToast } = useToast();
-  const { stagedSetlist, loadWorkspace, activeWorkspaceName: currentWorkspaceName } = useSetManagement();
+  const { stagedSetlist, loadWorkspace, activeWorkspaceName: currentWorkspaceName, isConfigLoading, activeSceneName, handleSceneSelect, handleCrossfaderChange, unreadCount, isFullyLoaded } = useAppContext(); // <<< GET unreadCount
+  const { isRadarProjectAdmin: isParentAdmin, isPreviewMode, hostProfileAddress: currentProfileAddress } = useUserSession(); // <<< FIX IS HERE
   const { isUiVisible, activePanel, toggleSidePanel, toggleInfoOverlay, toggleUiVisibility } = uiState;
   const { isAudioActive } = audioState;
   
-  const { isParentAdmin, isPreviewMode, unreadCount, isTransitioning, currentProfileAddress, crossfader, activeSceneName, isAutoFading, renderState, tokenAssignments, isParallaxEnabled } = configData;
-
-  const { onEnhancedView, onSceneSelect, onCrossfaderChange, onToggleParallax } = actions;
+  const { onEnhancedView, onToggleParallax, onPreviewEffect } = actions;
   const [isSequencerActive, setIsSequencerActive] = useState(false);
   const sequencerTimeoutRef = useRef(null);
   const nextSceneIndexRef = useRef(0);
@@ -154,14 +156,14 @@ function UIOverlay(props) {
       if (savedSceneList.length > 1) {
         const currentIndex = savedSceneList.findIndex(s => s.name === activeSceneName);
         const nextIndex = (currentIndex + 1) % savedSceneList.length;
-        onSceneSelect(savedSceneList[nextIndex].name, crossfadeDurationMs);
+        handleSceneSelect(savedSceneList[nextIndex].name, crossfadeDurationMs);
       }
       actionTaken = true;
     } else if (pendingPrevScene) {
       if (savedSceneList.length > 1) {
         const currentIndex = savedSceneList.findIndex(s => s.name === activeSceneName);
         const prevIndex = (currentIndex - 1 + savedSceneList.length) % savedSceneList.length;
-        onSceneSelect(savedSceneList[prevIndex].name, crossfadeDurationMs);
+        handleSceneSelect(savedSceneList[prevIndex].name, crossfadeDurationMs);
       }
       actionTaken = true;
     } else if (pendingNextWorkspace) {
@@ -185,19 +187,19 @@ function UIOverlay(props) {
     }
   }, [
     pendingNextScene, pendingPrevScene, pendingNextWorkspace, pendingPrevWorkspace,
-    activeSceneName, savedSceneList, onSceneSelect, crossfadeDurationMs,
+    activeSceneName, savedSceneList, handleSceneSelect, crossfadeDurationMs,
     currentWorkspaceName, workspaceList, loadWorkspace,
     clearPendingActions
   ]);
 
   useEffect(() => { isMountedRef.current = true; return () => { isMountedRef.current = false; } }, []);
   
-  const onSceneSelectRef = useRef(onSceneSelect);
+  const handleSceneSelectRef = useRef(handleSceneSelect);
   const savedSceneListRef = useRef(savedSceneList);
   useEffect(() => {
-    onSceneSelectRef.current = onSceneSelect;
+    handleSceneSelectRef.current = handleSceneSelect;
     savedSceneListRef.current = savedSceneList;
-  }, [onSceneSelect, savedSceneList]);
+  }, [handleSceneSelect, savedSceneList]);
 
   const runNextSequenceStep = useCallback(() => {
     const currentList = savedSceneListRef.current;
@@ -207,22 +209,22 @@ function UIOverlay(props) {
     }
     const nextIndex = nextSceneIndexRef.current % currentList.length;
     const nextScene = currentList[nextIndex];
-    if (nextScene?.name && onSceneSelectRef.current) {
-        onSceneSelectRef.current(nextScene.name, crossfadeDurationMs);
+    if (nextScene?.name && handleSceneSelectRef.current) {
+        handleSceneSelectRef.current(nextScene.name, crossfadeDurationMs);
     }
     nextSceneIndexRef.current = nextIndex + 1;
   }, [crossfadeDurationMs]);
 
   useEffect(() => {
     if (sequencerTimeoutRef.current) clearTimeout(sequencerTimeoutRef.current);
-    if (isSequencerActive && !isAutoFading) {
+    if (isSequencerActive && !props.configData.isAutoFading) {
         sequencerTimeoutRef.current = setTimeout(runNextSequenceStep, sequencerIntervalMs);
     }
     return () => { if (sequencerTimeoutRef.current) clearTimeout(sequencerTimeoutRef.current); };
-  }, [isSequencerActive, isAutoFading, sequencerIntervalMs, runNextSequenceStep]);
+  }, [isSequencerActive, props.configData.isAutoFading, sequencerIntervalMs, runNextSequenceStep]);
 
   const handleToggleSequencer = () => {
-    if (configData.isConfigLoading || !configData.currentProfileAddress) return;
+    if (isConfigLoading || !currentProfileAddress) return;
     setIsSequencerActive(prev => {
       const isActivating = !prev;
       if (isActivating) {
@@ -243,7 +245,7 @@ function UIOverlay(props) {
     });
   };
 
-  const shouldShowUI = useMemo(() => isReady && renderState === 'rendered', [isReady, renderState]);
+  const shouldShowUI = useMemo(() => isReady && props.configData.renderState === 'rendered', [isReady, props.configData.renderState]);
   const showSceneBar = useMemo(() => shouldShowUI && isUiVisible && !activePanel && !!currentProfileAddress, [shouldShowUI, isUiVisible, activePanel, currentProfileAddress]);
   const mainUiContainerClass = `ui-elements-container ${shouldShowUI && isUiVisible ? "visible" : "hidden-by-opacity"}`;
 
@@ -253,7 +255,7 @@ function UIOverlay(props) {
   
   return (
     <>
-      <MemoizedTopRightControls
+      {isFullyLoaded && <MemoizedTopRightControls
         isRadarProjectAdmin={isParentAdmin} 
         showInfo={true} 
         showToggleUI={true} 
@@ -263,9 +265,9 @@ function UIOverlay(props) {
         onToggleUI={toggleUiVisibility} 
         onEnhancedView={onEnhancedView} 
         isUiVisible={isUiVisible}
-        isParallaxEnabled={isParallaxEnabled}
+        isParallaxEnabled={props.configData.isParallaxEnabled}
         onToggleParallax={onToggleParallax}
-      />
+      />}
       <div className={mainUiContainerClass}>
         {isUiVisible && (
           <>
@@ -274,27 +276,24 @@ function UIOverlay(props) {
               <button
                 className={`toolbar-icon sequencer-toggle-button ${isSequencerActive ? "active" : ""}`}
                 onClick={handleToggleSequencer} title={isSequencerActive ? `Stop Scene Sequencer` : `Start Scene Sequencer`}
-                aria-label={isSequencerActive ? "Stop Scene Sequencer" : "Start Scene Sequencer"} disabled={configData.isConfigLoading || !configData.currentProfileAddress}
+                aria-label={isSequencerActive ? "Stop Scene Sequencer" : "Start Scene Sequencer"} disabled={isConfigLoading || !currentProfileAddress}
               >
                 <SequencerIcon className="icon-image" />
               </button>
               <MemoizedAudioStatusIcon isActive={isAudioActive} onClick={() => uiState.openPanel('audio')} />
             </div>
             {isPreviewMode && (<div className="preview-mode-indicator"><span>👁️</span> Preview Mode</div>)}
-            <div className="vertical-toolbar-container">
+            {isFullyLoaded && <div className="vertical-toolbar-container">
+              {/* <<< PASS unreadCount FROM CONTEXT */}
               <MemoizedVerticalToolbar activePanel={activePanel} setActivePanel={toggleSidePanel} notificationCount={unreadCount} />
-            </div>
+            </div>}
             <MemoizedActivePanelRenderer
                 uiState={uiState}
                 audioState={audioState}
-                configData={{ ...configData, tokenAssignments }}
-                actions={actions}
                 pLockProps={pLockProps}
-                onSceneSelect={onSceneSelect}
-                sequencerIntervalMs={sequencerIntervalMs}
-                onSetSequencerInterval={setSequencerIntervalMs}
-                crossfadeDurationMs={crossfadeDurationMs}
-                onSetCrossfadeDuration={setCrossfadeDurationMs}
+                onPreviewEffect={onPreviewEffect}
+                configData={configData}
+                onLayerConfigChange={onLayerConfigChange}
             />
             {showSceneBar && (
               <div className="bottom-center-controls">
@@ -302,17 +301,17 @@ function UIOverlay(props) {
                   workspaces={workspaceList}
                   activeWorkspaceName={currentWorkspaceName}
                   onSelectWorkspace={loadWorkspace}
-                  isLoading={isTransitioning || configData.isConfigLoading || isAutoFading}
+                  isLoading={props.configData.isTransitioning || isConfigLoading || props.configData.isAutoFading}
                 />
                 <Crossfader
-                  value={crossfader.value}
-                  onInput={onCrossfaderChange}
-                  onChange={onCrossfaderChange}
-                  disabled={isAutoFading}
+                  value={props.configData.crossfader.value}
+                  onInput={handleCrossfaderChange}
+                  onChange={handleCrossfaderChange}
+                  disabled={props.configData.isAutoFading}
                 />
                 <MemoizedSceneSelectorBar
                   savedSceneList={savedSceneList} currentSceneName={activeSceneName}
-                  onSceneSelect={(sceneName) => onSceneSelect(sceneName, crossfadeDurationMs)} isLoading={isTransitioning || configData.isConfigLoading || isAutoFading}
+                  onSceneSelect={(sceneName) => handleSceneSelect(sceneName, crossfadeDurationMs)} isLoading={props.configData.isTransitioning || isConfigLoading || props.configData.isAutoFading}
                 />
               </div>
             )}
@@ -333,6 +332,7 @@ UIOverlay.propTypes = {
   actions: PropTypes.object.isRequired,
   savedSceneList: PropTypes.array,
   isReady: PropTypes.bool,
+  onLayerConfigChange: PropTypes.func.isRequired,
 };
 
 UIOverlay.defaultProps = {

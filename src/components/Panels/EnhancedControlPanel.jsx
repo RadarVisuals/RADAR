@@ -9,10 +9,10 @@ import PLockController from './PLockController';
 // Hook Imports
 import { useProfileSessionState } from "../../hooks/configSelectors";
 import { useMIDI } from "../../context/MIDIContext";
-import { useSetManagement } from "../../context/SetManagementContext";
-import { useVisualConfig } from "../../context/VisualConfigContext";
+import { useAppContext } from "../../context/AppContext";
 import { useToast } from "../../context/ToastContext";
 import { BLEND_MODES } from "../../config/global-config";
+import { sliderParams } from "../../config/sliderParams";
 
 // Asset Imports
 import {
@@ -37,22 +37,10 @@ const formatValue = (value, decimals = 1) => {
   return numValue.toFixed(decimals);
 };
 
-export const sliderParams = [
-  { prop: "speed", label: "SPEED", icon: "slidersIcon_placeholder", min: 0.001, max: 0.1, step: 0.001, formatDecimals: 3 },
-  { prop: "size", label: "SIZE", icon: "enlargeIcon_placeholder", min: 0.1, max: 8.0, step: 0.01, formatDecimals: 1 },
-  { prop: "opacity", label: "OPACITY", icon: "eyeIcon_placeholder", min: 0, max: 1, step: 0.001, formatDecimals: 2, defaultValue: 1 },
-  { prop: "drift", label: "DRIFT", icon: "wavesIcon_placeholder", min: 0, max: 100, step: 0.001, formatDecimals: 1 },
-  { prop: "driftSpeed", label: "DRIFT SPEED", icon: "wavezIcon_placeholder", min: 0, max: 1, step: 0.001, formatDecimals: 1 },
-  { prop: "xaxis", label: "X POS", icon: "horizontalviewIcon_placeholder", min: -10000, max: 10000, step: 0.001, formatDecimals: 0 },
-  { prop: "yaxis", label: "Y POS", icon: "verticalviewIcon_placeholder", min: -10000, max: 10000, step: 0.001, formatDecimals: 0 },
-  { prop: "angle", label: "ANGLE", icon: "rotateIcon_placeholder", min: -360, max: 360, step: 0.001, formatDecimals: 1 },
-];
-
 const tabToLayerIdMap = { tab1: 3, tab2: 2, tab3: 1 };
 
 const EnhancedControlPanel = ({
   onToggleMinimize,
-  onLayerConfigChange,
   activeTab = "tab1",
   onTabChange,
   pLockProps = {},
@@ -62,15 +50,21 @@ const EnhancedControlPanel = ({
   crossfadeDurationMs,
   onSetCrossfadeDuration,
   isAutoFading,
+  activeLayerConfigs,
+  onLayerConfigChange,
 }) => {
   const { isProfileOwner } = useProfileSessionState();
   const { addToast } = useToast();
-  const { layerConfigs, tokenAssignments } = useVisualConfig();
   const {
-    stagedActiveWorkspace, savedSceneList, activeSceneName,
-    addNewSceneToStagedWorkspace, deleteSceneFromStagedWorkspace, setDefaultSceneInStagedWorkspace,
-    isSaving
-  } = useSetManagement();
+    tokenAssignments,
+    stagedActiveWorkspace,
+    savedSceneList,
+    activeSceneName,
+    addNewSceneToStagedWorkspace,
+    deleteSceneFromStagedWorkspace,
+    setDefaultSceneInStagedWorkspace,
+    isSaving,
+  } = useAppContext();
 
   const {
     isConnected: midiConnected, midiLearning, learningLayer,
@@ -114,7 +108,7 @@ const EnhancedControlPanel = ({
   };
 
   const activeLayer = useMemo(() => String(tabToLayerIdMap[activeTab] || 3), [activeTab]);
-  const config = useMemo(() => layerConfigs?.[activeLayer] || getDefaultLayerConfigTemplate(), [layerConfigs, activeLayer]);
+  const config = useMemo(() => activeLayerConfigs?.[activeLayer] || getDefaultLayerConfigTemplate(), [activeLayerConfigs, activeLayer]);
   
   const handleSliderChange = useCallback((e) => {
     const { name, value } = e.target;
@@ -136,7 +130,7 @@ const EnhancedControlPanel = ({
     const newSceneData = {
       name,
       ts: Date.now(),
-      layers: JSON.parse(JSON.stringify(layerConfigs)),
+      layers: JSON.parse(JSON.stringify(activeLayerConfigs)),
       tokenAssignments: JSON.parse(JSON.stringify(tokenAssignments)),
     };
 
@@ -144,7 +138,7 @@ const EnhancedControlPanel = ({
     addToast(`Scene "${name}" created and staged.`, "success");
     setNewSceneName("");
     
-  }, [newSceneName, savedSceneList, layerConfigs, tokenAssignments, addNewSceneToStagedWorkspace, addToast]);
+  }, [newSceneName, savedSceneList, activeLayerConfigs, tokenAssignments, addNewSceneToStagedWorkspace, addToast]);
 
   const handleDeleteScene = useCallback((nameToDelete) => {
     if (window.confirm(`Are you sure you want to delete the scene "${nameToDelete}"? This will be staged for the next save.`)) {
@@ -190,9 +184,7 @@ const EnhancedControlPanel = ({
   const handleDirectionToggle = useCallback(() => onLayerConfigChange(activeLayer, "direction", - (config.direction || 1), false), [onLayerConfigChange, activeLayer, config.direction]);
   const handleEnabledToggle = useCallback((e) => onLayerConfigChange(activeLayer, "enabled", e.target.checked, false), [onLayerConfigChange, activeLayer]);
   
-  // --- ADDED: Helper booleans for learning state ---
   const isLearning = (type, control) => midiLearning?.type === type && midiLearning?.control === control;
-  // ------------------------------------------------
 
   return (
     <Panel title={`Layer ${activeLayer} Controls`} onClose={onToggleMinimize} className="panel-from-toolbar enhanced-control-panel">
@@ -262,7 +254,14 @@ const EnhancedControlPanel = ({
                 {isProfileOwner && (
                   <div className="scene-actions">
                     <button className="btn-icon" onClick={() => setDefaultSceneInStagedWorkspace(scene.name)} disabled={isSaving || stagedActiveWorkspace?.defaultPresetName === scene.name} title="Set as Default">★</button>
-                    <button className="btn-icon delete-scene" onClick={() => handleDeleteScene(scene.name)} disabled={isSaving} title={`Delete "${scene.name}"`}>×</button>
+                    {/* --- THIS IS THE GUARDRAIL FIX --- */}
+                    <button 
+                      className="btn-icon delete-scene" 
+                      onClick={() => handleDeleteScene(scene.name)} 
+                      disabled={isSaving || savedSceneList.length <= 1} 
+                      title={savedSceneList.length <= 1 ? "Cannot delete the last scene" : `Delete "${scene.name}"`}
+                    >×</button>
+                    {/* --- END FIX --- */}
                   </div>
                 )}
               </li>
@@ -307,12 +306,10 @@ const EnhancedControlPanel = ({
         </div>
       </div>
 
-      {/* --- START: MODIFIED MIDI MAPPING SECTION --- */}
       {midiConnected && (
         <div className="midi-mappings-section">
           <h4 className="midi-section-title">Global & Layer MIDI Mappings</h4>
           <div className="global-mapping-grid">
-            {/* Row 1 */}
             <div className="global-mapping-item">
               <div className="global-mapping-label">Crossfader</div>
               <div className="global-mapping-controls">
@@ -327,7 +324,6 @@ const EnhancedControlPanel = ({
                 <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'pLockToggle') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('pLockToggle')} disabled={!midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to P-Lock Toggle">{isLearning('global', 'pLockToggle') ? "..." : "Map"}</button>
               </div>
             </div>
-            {/* Row 2 */}
             <div className="global-mapping-item">
               <div className="global-mapping-label">Previous Scene</div>
               <div className="global-mapping-controls">
@@ -342,7 +338,6 @@ const EnhancedControlPanel = ({
                 <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'nextScene') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('nextScene')} disabled={!midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Next Scene">{isLearning('global', 'nextScene') ? "..." : "Map"}</button>
               </div>
             </div>
-            {/* Row 3 */}
             <div className="global-mapping-item">
               <div className="global-mapping-label">Previous Workspace</div>
               <div className="global-mapping-controls">
@@ -371,15 +366,12 @@ const EnhancedControlPanel = ({
           </div>
         </div>
       )}
-      {/* --- END: MODIFIED MIDI MAPPING SECTION --- */}
     </Panel>
   );
 };
 
 EnhancedControlPanel.propTypes = {
   onToggleMinimize: PropTypes.func.isRequired,
-  onLayerConfigChange: PropTypes.func.isRequired,
-  layerConfigs: PropTypes.object,
   activeTab: PropTypes.string,
   onTabChange: PropTypes.func,
   pLockProps: PropTypes.object,
@@ -389,6 +381,8 @@ EnhancedControlPanel.propTypes = {
   crossfadeDurationMs: PropTypes.number,
   onSetCrossfadeDuration: PropTypes.func,
   isAutoFading: PropTypes.bool,
+  activeLayerConfigs: PropTypes.object,
+  onLayerConfigChange: PropTypes.func,
 };
 
 export default React.memo(EnhancedControlPanel);

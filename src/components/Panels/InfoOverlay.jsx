@@ -179,15 +179,15 @@ const InfoOverlay = ({ isOpen, onClose }) => {
           <div className="tab-pane">
             <h3>Saving Your Workspace</h3>
             <div className="info-card">
-              <h4>Staging Presets</h4>
+              <h4>Staging Scenes</h4>
               <p>
-                The Save Panel is your studio's control room. When you find a visual configuration you like, you can create a "Preset" by giving it a name. This doesn't save it on-chain immediately; instead, it's "staged." You can create, update, and delete multiple presets in this staging area. Your list of staged presets will appear in the Preset Selector Bar at the bottom of the screen for quick access.
+                The Save Panel is your studio's control room. When you find a visual configuration you like, you can create a "Scene" by giving it a name. This doesn't save it on-chain immediately; instead, it's "staged." You can create, update, and delete multiple scenes in this staging area. Your list of staged scenes will appear in the Scene Selector Bar at the bottom of the screen for quick access.
               </p>
             </div>
             <div className="info-card">
               <h4>The Workspace: Your Public Gallery</h4>
               <p>
-                RADAR treats your entire setup as a single "Workspace." This isn't just your presets; it includes your personal library of collections, your global MIDI mappings, and your custom event reactions. When you're ready, you hit "Save Workspace." This single action bundles everything into one file, uploads it to a decentralized network (IPFS), and updates a single pointer on your Universal Profile. Your profile doesn't get cluttered with data; it just holds the key to your entire creative studio, making it efficient, portable, and truly yours.
+                RADAR treats your entire setup as a single "Workspace." This isn't just your scenes; it includes your personal library of collections, your global MIDI mappings, and your custom event reactions. When you're ready, you hit "Save Workspace." This single action bundles everything into one file, uploads it to a decentralized network (IPFS), and updates a single pointer on your Universal Profile. Your profile doesn't get cluttered with data; it just holds the key to your entire creative studio, making it efficient, portable, and truly yours.
               </p>
             </div>
           </div>
@@ -205,7 +205,7 @@ const InfoOverlay = ({ isOpen, onClose }) => {
             <div className="info-card">
               <h4>Cross-Profile Performance</h4>
               <p>
-                Because your library is public, anyone who visits your Universal Profile in RADAR can see and use the assets from your curated collections. They can load your presets and "perform" with your setup using their own audio or MIDI controllers. This turns every profile into a potential gallery and a stage for collaborative, cross-profile visual experiences.
+                Because your library is public, anyone who visits your Universal Profile in RADAR can see and use the assets from your curated collections. They can load your scenes and "perform" with your setup using their own audio or MIDI controllers. This turns every profile into a potential gallery and a stage for collaborative, cross-profile visual experiences.
               </p>
             </div>
           </div>
@@ -294,9 +294,9 @@ const InfoOverlay = ({ isOpen, onClose }) => {
               As an artist and performer who uses RADAR for live VJing, I will be constantly tweaking and improving it based on real-world use. This is a living project.
             </p>
             <div className="info-card">
-              <h4>The Next Level: Minting Presets</h4>
+              <h4>The Next Level: Minting Scenes</h4>
               <p>
-                The most exciting step on the horizon is the ability to mint your creations. A "Preset" is essentially a layered recipe of assets and their parameters. We are eagerly awaiting the evolution of tools on LUKSO, like an official token generator, to explore how we can wire this up internally.
+                The most exciting step on the horizon is the ability to mint your creations. A "Scene" is essentially a layered recipe of assets and their parameters. We are eagerly awaiting the evolution of tools on LUKSO, like an official token generator, to explore how we can wire this up internally.
               </p>
               <p>
                 Imagine being able to take a visual setup you've perfected and minting it as its own unique, standalone, programmable asset. This is the feature that will truly propel RADAR to the next level, turning collectors into creators and fostering a collaborative movement of sharing, remixing, and collecting these new forms of generative art.

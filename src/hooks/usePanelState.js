@@ -1,9 +1,13 @@
 // src/hooks/usePanelState.js
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+
+const OPEN_ANIMATION_DURATION = 500;
+const CLOSE_ANIMATION_DELAY = 500;
 
 /**
  * @typedef {object} PanelState
  * @property {string | null} activePanel - The identifier of the currently active panel (e.g., 'controls', 'notifications', 'tokens'), or null if no panel is active.
+ * @property {string | null} animatingPanel - The identifier of the panel currently undergoing an open/close animation (e.g., 'controls', 'closing'), or null.
  * @property {boolean} tokenSelectorOpen - True if the token selector overlay should be open. This is typically true when `activePanel` is 'tokens'.
  * @property {string} activeLayerTab - The identifier of the currently active layer tab (e.g., 'tab1', 'tab2', 'tab3').
  * @property {React.Dispatch<React.SetStateAction<string>>} setActiveLayerTab - Function to set the active layer tab.
@@ -16,11 +20,8 @@ import { useState, useCallback, useEffect, useMemo } from "react";
  */
 
 /**
- * Manages the state related to UI panels and layer tabs. It tracks which
- * panel (if any) is currently active, whether the dedicated token selector
- * overlay should be open (specifically when the 'tokens' panel is active),
- * and which layer tab (e.g., for layer controls) is currently selected.
- * Provides functions to toggle/open/close panels and check panel status.
+ * Manages all state related to UI panels, layer tabs, and panel animations.
+ * This hook is a consolidation of the previous `usePanelManager` and `usePanelState` hooks.
  *
  * @param {string|null} [initialPanel=null] - The identifier of the panel to be initially active.
  * @param {string} [initialLayerTab='tab1'] - The identifier of the initially active layer tab.
@@ -28,76 +29,78 @@ import { useState, useCallback, useEffect, useMemo } from "react";
  */
 export function usePanelState(initialPanel = null, initialLayerTab = 'tab1') {
   const [activePanel, setActivePanel] = useState(initialPanel);
+  const [animatingPanel, setAnimatingPanel] = useState(null);
   const [tokenSelectorOpen, setTokenSelectorOpen] = useState(initialPanel === "tokens");
   const [activeLayerTab, setActiveLayerTab] = useState(initialLayerTab);
 
-  // Effect to automatically manage the tokenSelectorOpen state based on activePanel
+  const openTimeoutRef = useRef(null);
+  const closeTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (openTimeoutRef.current) clearTimeout(openTimeoutRef.current);
+      if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    };
+  }, []);
+
   useEffect(() => {
     setTokenSelectorOpen(activePanel === "tokens");
   }, [activePanel]);
 
-  /**
-   * Toggles a panel's visibility: opens if closed, closes if open.
-   * @param {string | null} panelName - The name of the panel to toggle, or `null` to close the current panel.
-   */
-  const togglePanel = useCallback(
-    (panelName) => {
-      // Ensure 'null' string is treated as actual null for closing
-      const cleanPanelName = panelName === "null" ? null : panelName;
-      setActivePanel((current) => (current === cleanPanelName ? null : cleanPanelName));
-    },
-    [], // setActivePanel is stable
-  );
-
-  /**
-   * Opens a specific panel by its identifier.
-   * @param {string} panelName - The name of the panel to open.
-   */
   const openPanel = useCallback((panelName) => {
+    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    if (openTimeoutRef.current) clearTimeout(openTimeoutRef.current);
+
+    setAnimatingPanel(panelName);
     setActivePanel(panelName);
-  }, []); // setActivePanel is stable
 
-  /** Closes any currently active panel. */
+    openTimeoutRef.current = setTimeout(() => {
+      setAnimatingPanel(null);
+    }, OPEN_ANIMATION_DURATION);
+  }, []);
+
   const closePanel = useCallback(() => {
-    setActivePanel(null);
-  }, []); // setActivePanel is stable
+    if (openTimeoutRef.current) clearTimeout(openTimeoutRef.current);
+    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
 
-  /**
-   * Checks if a specific panel is currently the active one.
-   * @param {string} panelName - The name of the panel to check.
-   * @returns {boolean} True if the panel is active, false otherwise.
-   */
-  const isPanelActive = useCallback(
-    (panelName) => {
-      return activePanel === panelName;
-    },
-    [activePanel],
-  );
+    setAnimatingPanel("closing");
 
-  /**
-   * Memoized mapping from tab identifiers to layer IDs.
-   * This ensures the object reference is stable across renders.
-   * @type {Object.<string, number>}
-   */
+    closeTimeoutRef.current = setTimeout(() => {
+      setActivePanel(null);
+      setAnimatingPanel(null);
+    }, CLOSE_ANIMATION_DELAY);
+  }, []);
+
+  const togglePanel = useCallback((panelName) => {
+      const cleanPanelName = panelName === "null" ? null : panelName;
+      // Directly check the current state, don't use a state updater function here.
+      if (activePanel === cleanPanelName) {
+        closePanel();
+      } else {
+        openPanel(cleanPanelName);
+      }
+    }, [activePanel, openPanel, closePanel]);
+
+  const isPanelActive = useCallback((panelName) => {
+    return activePanel === panelName;
+  }, [activePanel]);
+
   const tabToLayer = useMemo(() => ({
-    tab1: 1,
-    tab2: 2,
-    tab3: 3,
-  }), []); // Empty dependency array means it's created once and memoized
+    tab1: 3, // Top
+    tab2: 2, // Middle
+    tab3: 1, // Bottom
+  }), []);
 
-  /**
-   * Gets the numerical layer ID corresponding to the currently active tab.
-   * @returns {number} The layer ID (e.g., 1, 2, or 3). Defaults to 1 if the tab is not found.
-   */
   const getActiveLayerId = useCallback(() => {
-    return tabToLayer[activeLayerTab] || 1; // Default to layer 1 if tab mapping is missing
+    return tabToLayer[activeLayerTab] || 3;
   }, [activeLayerTab, tabToLayer]);
 
   return useMemo(() => ({
     activePanel,
+    animatingPanel,
     tokenSelectorOpen,
     activeLayerTab,
-    setActiveLayerTab, // Direct state setter
+    setActiveLayerTab,
     togglePanel,
     openPanel,
     closePanel,
@@ -106,9 +109,9 @@ export function usePanelState(initialPanel = null, initialLayerTab = 'tab1') {
     tabToLayer,
   }), [
     activePanel,
+    animatingPanel,
     tokenSelectorOpen,
     activeLayerTab,
-    setActiveLayerTab,
     togglePanel,
     openPanel,
     closePanel,

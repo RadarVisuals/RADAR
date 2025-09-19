@@ -1,7 +1,7 @@
 // src/utils/CanvasManager.js
 import { BLEND_MODES } from '../config/global-config';
 import ValueInterpolator from './ValueInterpolator';
-import { sliderParams } from '../components/Panels/EnhancedControlPanel';
+import { sliderParams } from '../config/sliderParams';
 import { getDecodedImage } from './imageDecoder';
 
 const SETUP_CANVAS_POLL_INTERVAL = 100;
@@ -168,6 +168,12 @@ class CanvasManager {
             }
             this.imageB = decodedBitmap;
             this.configB = config;
+
+            // --- FIX: Reset continuous rotation and drift for the new scene on Deck B ---
+            this.continuousRotationAngleB = 0;
+            this.driftStateB = { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
+            // --- END FIX ---
+            
             Object.keys(this.interpolatorsB).forEach(key => {
                 const interpolator = this.interpolatorsB[key];
                 const value = this.configB?.[key];
@@ -312,8 +318,10 @@ class CanvasManager {
 
         this.configA = mergedConfig;
         
-        this.continuousRotationAngleA = this.continuousRotationAngleB;
-        this.driftStateA = { ...this.driftStateB };
+        // --- FIX: Reset continuous rotation and drift for the new scene on Deck A ---
+        this.continuousRotationAngleA = 0;
+        this.driftStateA = { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
+        // --- END FIX ---
 
         Object.keys(this.interpolators).forEach(key => {
             this.interpolators[key]?.snap(this.configA[key]);
@@ -383,10 +391,6 @@ class CanvasManager {
     }
 
     updateConfigBProperty(key, value) {
-        if (this.interpolatorsB[key]?.isCurrentlyInterpolating()) {
-            return;
-        }
-        
         if (this.isDestroyed || !this.configB) return;
         const defaultConfig = this.getDefaultConfig();
         if (!Object.prototype.hasOwnProperty.call(defaultConfig, key)) return;
@@ -394,7 +398,9 @@ class CanvasManager {
         const validatedValue = this.validateValue(key, value, defaultConfig[key]);
         this.configB[key] = validatedValue;
         
-        this.interpolatorsB[key]?.snap(validatedValue);
+        if (this.interpolatorsB[key]) {
+            this.interpolatorsB[key].snap(validatedValue);
+        }
     }
     
     setTargetValue(param, targetValue) {
@@ -561,7 +567,7 @@ class CanvasManager {
         const offsetY = currentY / 10;
         
         const finalCenterX_TL = Math.max(-MAX_TOTAL_OFFSET, Math.min(MAX_TOTAL_OFFSET, halfWidth / 2 + offsetX + driftX + internalParallaxX));
-        const finalCenterY_TL = Math.max(-MAX_TOTAL_OFFSET, Math.min(MAX_TOTAL_OFFSET, halfHeight / 2 + offsetY + driftY + internalParallaxY));
+        const finalCenterY_TL = Math.max(-MAX_TOTAL_OFFSET, Math.min(MAX_TOTAL_OFFSET, halfHeight / 2 + offsetY + internalParallaxY));
 
         const finalAngle = baseAngle + continuousRotationAngle;
         const angleRad = (finalAngle % 360) * Math.PI / 180;

@@ -5,7 +5,7 @@ import { toplayerIcon, middlelayerIcon, bottomlayerIcon } from "../../assets";
 import { demoAssetMap } from "../../assets/DemoLayers/initLayers";
 import { manageOverlayDimmingEffect } from "../../utils/performanceHelpers";
 import { globalAnimationFlags } from "../../utils/globalAnimationFlags";
-import { useSetManagement } from "../../context/SetManagementContext";
+import { useAppContext } from "../../context/AppContext";
 import { useUserSession } from "../../context/UserSessionContext";
 import TokenGrid from "./TokenGrid";
 import LazyLoadImage from "./LazyLoadImage";
@@ -38,7 +38,7 @@ const TokenSelectorOverlay = ({ isOpen, onClose, onTokenApplied, readOnly = fals
     addPalette, removePalette, addTokenToPalette, removeTokenFromPalette,
     configServiceRef,
     refreshOwnedTokens, 
-  } = useSetManagement();
+  } = useAppContext();
 
   const { visitorProfileAddress } = useUserSession();
 

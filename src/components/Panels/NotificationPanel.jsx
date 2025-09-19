@@ -4,6 +4,7 @@ import PropTypes from "prop-types";
 
 import Panel from "./Panel"; // Local component
 import { useProfileCache } from "../../hooks/useProfileCache"; // Local hook
+import { useAppContext } from "../../context/AppContext"; // Local context
 
 import { isAddress } from "viem"; // Third-party utility
 
@@ -236,10 +237,7 @@ const MemoizedNotificationItem = React.memo(NotificationItem);
 
 /**
  * @typedef {object} NotificationPanelProps
- * @property {Array<Notification>} [notifications=[]] - Array of notification objects to display.
  * @property {() => void} onClose - Callback function to close the panel.
- * @property {(id: string|number) => void} [onMarkAsRead] - Callback to mark a notification as read.
- * @property {() => void} [onClearAll] - Callback to clear all notifications.
  */
 
 /**
@@ -247,12 +245,9 @@ const MemoizedNotificationItem = React.memo(NotificationItem);
  * @param {NotificationPanelProps} props - The component's props.
  * @returns {JSX.Element} The rendered NotificationPanel component.
  */
-const NotificationPanel = ({
-  notifications = [],
-  onClose,
-  onMarkAsRead,
-  onClearAll,
-}) => {
+const NotificationPanel = ({ onClose }) => {
+  const { notifications, onMarkNotificationRead: onMarkAsRead, onClearAllNotifications: onClearAll } = useAppContext();
+
   return (
     <Panel
       title="NOTIFICATIONS"
@@ -288,10 +283,7 @@ const NotificationPanel = ({
 };
 
 NotificationPanel.propTypes = {
-  notifications: PropTypes.arrayOf(PropTypes.object),
   onClose: PropTypes.func.isRequired,
-  onMarkAsRead: PropTypes.func,
-  onClearAll: PropTypes.func,
 };
 
 export default React.memo(NotificationPanel);

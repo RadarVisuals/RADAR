@@ -2,34 +2,33 @@
 import { useMemo } from 'react';
 
 import { useUserSession } from '../context/UserSessionContext.jsx';
-import { useVisualConfig } from '../context/VisualConfigContext.jsx';
-import { useSetManagement } from '../context/SetManagementContext.jsx';
+import { useAppContext } from '../context/AppContext.jsx';
 import { useUpProvider } from '../context/UpProvider.jsx';
 
 /**
  * @typedef {object} VisualLayerState
- * @property {object} layerConfigs - Configuration for visual layers of the host profile. Sourced from `VisualConfigContext`.
- * @property {object} tokenAssignments - Mapping of layer IDs to token identifiers or image URLs for the host profile. Sourced from `VisualConfigContext`.
- * @property {(layerId: string | number, key: string, value: any) => void} updateLayerConfig - Updates a specific property of a layer's configuration for the host profile. From `VisualConfigContext`.
- * @property {(layerId: string | number, tokenId: string | object | null) => void} updateTokenAssignment - Updates the token assigned to a layer for the host profile. From `VisualConfigContext`.
+ * @property {object} layerConfigs - Configuration for visual layers of the host profile. Sourced from `AppContext`.
+ * @property {object} tokenAssignments - Mapping of layer IDs to token identifiers or image URLs for the host profile. Sourced from `AppContext`.
+ * @property {(layerId: string | number, key: string, value: any) => void} updateLayerConfig - Updates a specific property of a layer's configuration for the host profile. From `AppContext`.
+ * @property {(layerId: string | number, tokenId: string | object | null) => void} updateTokenAssignment - Updates the token assigned to a layer for the host profile. From `AppContext`.
  */
 export const useVisualLayerState = () => {
-  const visualCtx = useVisualConfig();
+  const appCtx = useAppContext();
   return useMemo(() => ({
-    layerConfigs: visualCtx.layerConfigs,
-    tokenAssignments: visualCtx.tokenAssignments,
-    updateLayerConfig: visualCtx.updateLayerConfig,
-    updateTokenAssignment: visualCtx.updateTokenAssignment,
-  }), [visualCtx.layerConfigs, visualCtx.tokenAssignments, visualCtx.updateLayerConfig, visualCtx.updateTokenAssignment]);
+    layerConfigs: appCtx.layerConfigs,
+    tokenAssignments: appCtx.tokenAssignments,
+    updateLayerConfig: appCtx.updateLayerConfig,
+    updateTokenAssignment: appCtx.updateTokenAssignment,
+  }), [appCtx.layerConfigs, appCtx.tokenAssignments, appCtx.updateLayerConfig, appCtx.updateTokenAssignment]);
 };
 
 /**
  * @typedef {object} SetManagementState
- * This typedef mirrors useSetManagement for documentation consistency.
+ * This typedef mirrors useAppContext for documentation consistency.
  */
 export const useSetManagementState = () => {
-  // This hook now directly passes through useSetManagement.
-  return useSetManagement();
+  // This hook now directly passes through useAppContext.
+  return useAppContext();
 };
 
 /**
@@ -41,19 +40,19 @@ export const useSetManagementState = () => {
  * @property {(newMap: object) => void} updateMidiMap - Replaces the entire MIDI map configuration.
  */
 export const useInteractionSettingsState = () => {
-  const setCtx = useSetManagement();
+  const appCtx = useAppContext();
   return useMemo(() => ({
-    savedReactions: setCtx.activeEventReactions || {},
-    midiMap: setCtx.activeMidiMap || {},
-    updateSavedReaction: setCtx.updateGlobalEventReactions,
-    deleteSavedReaction: setCtx.deleteGlobalEventReaction,
-    updateMidiMap: setCtx.updateGlobalMidiMap,
+    savedReactions: appCtx.activeEventReactions || {},
+    midiMap: appCtx.activeMidiMap || {},
+    updateSavedReaction: appCtx.updateGlobalEventReactions,
+    deleteSavedReaction: appCtx.deleteGlobalEventReaction,
+    updateMidiMap: appCtx.updateGlobalMidiMap,
   }), [
-    setCtx.activeEventReactions,
-    setCtx.activeMidiMap,
-    setCtx.updateGlobalEventReactions,
-    setCtx.deleteGlobalEventReaction,
-    setCtx.updateGlobalMidiMap,
+    appCtx.activeEventReactions,
+    appCtx.activeMidiMap,
+    appCtx.updateGlobalEventReactions,
+    appCtx.deleteGlobalEventReaction,
+    appCtx.updateGlobalMidiMap,
   ]);
 };
 
@@ -105,11 +104,11 @@ export const useProfileSessionState = () => {
  * @property {React.Dispatch<React.SetStateAction<boolean>>} setHasPendingChanges - Manually sets the pending changes flag.
  */
 export const usePendingChangesState = () => {
-  const setCtx = useSetManagement();
+  const appCtx = useAppContext();
   return useMemo(() => ({
-    hasPendingChanges: setCtx.hasPendingChanges,
-    setHasPendingChanges: setCtx.setHasPendingChanges,
-  }), [setCtx.hasPendingChanges, setCtx.setHasPendingChanges]);
+    hasPendingChanges: appCtx.hasPendingChanges,
+    setHasPendingChanges: appCtx.setHasPendingChanges,
+  }), [appCtx.hasPendingChanges, appCtx.setHasPendingChanges]);
 };
 
 /**
@@ -124,21 +123,21 @@ export const usePendingChangesState = () => {
  * @property {Error | null} upFetchStateError - Error from UpProvider client fetching.
  */
 export const useConfigStatusState = () => {
-  const setCtx = useSetManagement();
+  const appCtx = useAppContext();
   const upCtx = useUpProvider(); 
 
   return useMemo(() => ({
-    isLoading: setCtx.isLoading,
-    isInitiallyResolved: setCtx.isInitiallyResolved,
-    configServiceInstanceReady: setCtx.configServiceInstanceReady,
-    sceneLoadNonce: setCtx.sceneLoadNonce,
-    configServiceRef: setCtx.configServiceRef,
-    loadError: setCtx.loadError,
+    isLoading: appCtx.isLoading,
+    isInitiallyResolved: appCtx.isInitiallyResolved,
+    configServiceInstanceReady: appCtx.configServiceInstanceReady,
+    sceneLoadNonce: appCtx.sceneLoadNonce,
+    configServiceRef: appCtx.configServiceRef,
+    loadError: appCtx.loadError,
     upInitializationError: upCtx.initializationError, 
     upFetchStateError: upCtx.fetchStateError,       
   }), [
-    setCtx.isLoading, setCtx.isInitiallyResolved, setCtx.sceneLoadNonce, setCtx.loadError,
-    setCtx.configServiceInstanceReady, setCtx.configServiceRef,
+    appCtx.isLoading, appCtx.isInitiallyResolved, appCtx.sceneLoadNonce, appCtx.loadError,
+    appCtx.configServiceInstanceReady, appCtx.configServiceRef,
     upCtx.initializationError, upCtx.fetchStateError, 
   ]);
 };

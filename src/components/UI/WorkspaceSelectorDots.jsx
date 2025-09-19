@@ -2,7 +2,7 @@
 import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import './WorkspaceSelectorDots.css';
-import { useSetManagement } from '../../context/SetManagementContext';
+import { useAppContext } from '../../context/AppContext';
 
 const WorkspaceSelectorDots = ({
   workspaces = [],
@@ -10,15 +10,13 @@ const WorkspaceSelectorDots = ({
   onSelectWorkspace,
   isLoading,
 }) => {
-  const { preloadWorkspace } = useSetManagement();
+  const { preloadWorkspace } = useAppContext();
 
   if (workspaces.length <= 1) {
     return null;
   }
 
-  // --- START MODIFICATION: Remove redundant sorting ---
   const sortedWorkspaces = useMemo(() => workspaces, [workspaces]);
-  // --- END MODIFICATION ---
 
   return (
     <div className="workspace-dots-container">

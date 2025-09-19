@@ -4,7 +4,7 @@
 
 /**
  * Default configuration object used when no specific profile configuration
- * (named preset or default pointer) is loaded.
+ * (named scene or default pointer) is loaded.
  * Defines initial layer parameters and assigns default demo tokens.
  */
 export default {

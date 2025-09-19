@@ -4,8 +4,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import { UpProvider } from "./context/UpProvider.jsx";
 import { UserSessionProvider } from "./context/UserSessionContext.jsx";
-import { SetManagementProvider } from "./context/SetManagementContext.jsx";
-import { VisualConfigProvider } from "./context/VisualConfigContext.jsx";
+import { AppProvider } from "./context/AppContext.jsx";
 import { MIDIProvider } from "./context/MIDIContext.jsx";
 import { ToastProvider } from "./context/ToastContext.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
@@ -35,16 +34,14 @@ const AppTree = (
   <ErrorBoundary>
     <UpProvider>
       <UserSessionProvider>
-        <VisualConfigProvider>
-          {/* Note: hasUserInitiated is now handled inside App/SetManagementProvider */}
-          <SetManagementProvider>
-            <MIDIProvider>
-              <ToastProvider>
-                <App />
-              </ToastProvider>
-            </MIDIProvider>
-          </SetManagementProvider>
-        </VisualConfigProvider>
+        {/* Note: hasUserInitiated is now handled inside App/AppProvider */}
+        <AppProvider>
+          <MIDIProvider>
+            <ToastProvider>
+              <App />
+            </ToastProvider>
+          </MIDIProvider>
+        </AppProvider>
       </UserSessionProvider>
     </UpProvider>
   </ErrorBoundary>
