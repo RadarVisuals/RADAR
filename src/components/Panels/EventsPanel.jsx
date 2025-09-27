@@ -5,7 +5,7 @@ import PropTypes from "prop-types";
 import Panel from "./Panel";
 import { EVENT_TYPE_MAP } from "../../config/global-config";
 import { useToast } from "../../context/ToastContext";
-import { useAppContext } from "../../context/AppContext";
+import { useWorkspaceContext } from "../../context/WorkspaceContext";
 import { useUserSession } from "../../context/UserSessionContext";
 
 import "./PanelStyles/Eventspanel.css";
@@ -35,7 +35,7 @@ const EventsPanel = ({
     stagedActiveWorkspace,
     updateGlobalEventReactions,
     deleteGlobalEventReaction,
-  } = useAppContext();
+  } = useWorkspaceContext();
 
   const readOnly = !canSaveToHostProfile;
   const reactions = useMemo(() => stagedActiveWorkspace?.globalEventReactions || {}, [stagedActiveWorkspace]);

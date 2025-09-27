@@ -4,7 +4,7 @@ import PropTypes from "prop-types";
 
 import Panel from "./Panel"; // Local component
 import { useProfileCache } from "../../hooks/useProfileCache"; // Local hook
-import { useAppContext } from "../../context/AppContext"; // Local context
+import { useNotificationContext } from "../../context/NotificationContext"; // Local context
 
 import { isAddress } from "viem"; // Third-party utility
 
@@ -246,7 +246,7 @@ const MemoizedNotificationItem = React.memo(NotificationItem);
  * @returns {JSX.Element} The rendered NotificationPanel component.
  */
 const NotificationPanel = ({ onClose }) => {
-  const { notifications, onMarkNotificationRead: onMarkAsRead, onClearAllNotifications: onClearAll } = useAppContext();
+  const { notifications, onMarkNotificationRead: onMarkAsRead, onClearAllNotifications: onClearAll } = useNotificationContext();
 
   return (
     <Panel

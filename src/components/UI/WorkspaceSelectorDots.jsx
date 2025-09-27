@@ -2,7 +2,7 @@
 import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import './WorkspaceSelectorDots.css';
-import { useAppContext } from '../../context/AppContext';
+import { useWorkspaceContext } from '../../context/WorkspaceContext';
 
 const WorkspaceSelectorDots = ({
   workspaces = [],
@@ -10,13 +10,14 @@ const WorkspaceSelectorDots = ({
   onSelectWorkspace,
   isLoading,
 }) => {
-  const { preloadWorkspace } = useAppContext();
+  const { preloadWorkspace } = useWorkspaceContext();
+
+  // --- FIX: Call all hooks unconditionally at the top level ---
+  const sortedWorkspaces = useMemo(() => workspaces, [workspaces]);
 
   if (workspaces.length <= 1) {
     return null;
   }
-
-  const sortedWorkspaces = useMemo(() => workspaces, [workspaces]);
 
   return (
     <div className="workspace-dots-container">

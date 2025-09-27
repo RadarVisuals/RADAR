@@ -3,7 +3,7 @@ import React, { useState } from "react";
 import PropTypes from "prop-types";
 
 import Panel from "./Panel";
-import { useAppContext } from "../../context/AppContext";
+import { useWorkspaceContext } from "../../context/WorkspaceContext";
 import { useUserSession } from "../../context/UserSessionContext";
 
 import "./PanelStyles/SetsPanel.css";
@@ -21,7 +21,7 @@ const SetsPanel = ({ onClose }) => {
     isLoading,
     isSaving,
     preloadWorkspace, 
-  } = useAppContext();
+  } = useWorkspaceContext();
 
   const [editingName, setEditingName] = useState(null);
   const [newName, setNewName] = useState("");

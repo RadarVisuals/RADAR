@@ -3,11 +3,11 @@ import React, { useRef, useEffect, useMemo, useState, useCallback } from "react"
 import PropTypes from "prop-types";
 
 // Custom Hooks
-import { useUpProvider } from "../../context/UpProvider";
+import { useUpProvider } from "../../context/UpProvider.jsx";
 import { useCoreApplicationStateAndLifecycle } from '../../hooks/useCoreApplicationStateAndLifecycle';
 import { useAppInteractions } from '../../hooks/useAppInteractions';
-import { useProfileSessionState } from "../../hooks/configSelectors";
-import { useAppContext } from "../../context/AppContext";
+import { useWorkspaceContext } from "../../context/WorkspaceContext";
+import { useVisualEngineContext } from "../../context/VisualEngineContext";
 
 // UI Components
 import ToastContainer from "../Notifications/ToastContainer";
@@ -25,6 +25,8 @@ import { PING_COLOR, PING_STROKE_WIDTH, NO_PING_SELECTORS } from "../../config/u
 // Styles
 import "./MainviewStyles/Mainview.css";
 
+const DEFAULT_CROSSFADE_DURATION = 1000;
+
 const LoadingIndicatorPill = ({ message, isVisible }) => {
   return (
     <div className={`loading-indicator-pill ${isVisible ? 'visible' : ''}`}>
@@ -39,67 +41,56 @@ LoadingIndicatorPill.propTypes = {
 };
 
 const portalContainerNode = typeof document !== 'undefined' ? document.getElementById('portal-container') : null;
-const TOKEN_OVERLAY_ANIMATION_LOCK_DURATION = 500;
 
 const MainView = ({ blendModes = BLEND_MODES }) => {
-  const { publicClient, walletClient } = useUpProvider();
+  const { publicClient, walletClient, upInitializationError, upFetchStateError } = useUpProvider();
 
   const {
-    currentProfileAddress,
-    isInitiallyResolved,
-    sceneLoadNonce,
-    loadError,
-    upInitializationError,
-    upFetchStateError,
-    configServiceRef,
-    isLoading: isConfigLoading,
-    activeSceneName,
-    activeWorkspaceName,
-    stagedActiveWorkspace,
-    savedSceneList,
-    loadedLayerConfigsFromScene,
-    loadedTokenAssignmentsFromScene,
-    isFullyLoaded,
-    loadingMessage,
     isWorkspaceTransitioning,
-    _executeLoadAfterFade, // <<< GET THE FUNCTION FROM CONTEXT
-    sideA,
-    sideB,
-    renderedCrossfaderValue,
-    uiControlConfig,
-    isAutoFading,
+    _executeLoadAfterFade,
+    loadingMessage,
+    stagedSetlist,
+    loadWorkspace,
+    activeWorkspaceName,
+    fullSceneList, 
+    activeSceneName, 
+  } = useWorkspaceContext();
+
+  const {
     registerManagerInstancesRef,
     registerCanvasUpdateFns,
-    updateLayerConfig, 
-    updateTokenAssignment, 
-  } = useAppContext();
+    uiControlConfig,
+    handleSceneSelect, 
+  } = useVisualEngineContext();
   
-  const { canInteract } = useProfileSessionState();
-
   const rootRef = useRef(null);
-  const canvasRef1 = useRef(null);
-  const canvasRef2 = useRef(null);
-  const canvasRef3 = useRef(null);
-  const canvasRefs = useMemo(() => ({ "1": canvasRef1, "2": canvasRef2, "3": canvasRef3 }), []);
+  
+  const canvasRef1A = useRef(null);
+  const canvasRef1B = useRef(null);
+  const canvasRef2A = useRef(null);
+  const canvasRef2B = useRef(null);
+  const canvasRef3A = useRef(null);
+  const canvasRef3B = useRef(null);
+  const canvasRefs = useMemo(() => ({
+    "1": { A: canvasRef1A, B: canvasRef1B },
+    "2": { A: canvasRef2A, B: canvasRef2B },
+    "3": { A: canvasRef3A, B: canvasRef3B },
+  }), []);
 
   const [isParallaxEnabled, setIsParallaxEnabled] = useState(false);
   const toggleParallax = useCallback(() => setIsParallaxEnabled(prev => !prev), []);
+  const [crossfadeDurationMs, setCrossfadeDurationMs] = useState(DEFAULT_CROSSFADE_DURATION);
 
   const [localAnimatingPanel, setLocalAnimatingPanel] = useState(null);
   const [localIsBenignOverlayActive, setLocalIsBenignOverlayActive] = useState(false);
-  const [animationLockForTokenOverlay, setAnimationLockForTokenOverlay] = useState(false);
-  const animationLockTimerRef = useRef(null);
   
   const mousePositionRef = useRef({ x: 0, y: 0 });
   const parallaxRafIdRef = useRef(null);
 
-  // --- THIS IS THE FIX ---
   useEffect(() => {
     let fadeOutTimer = null;
     if (isWorkspaceTransitioning) {
-      // This timeout should match your CSS fade-out duration for the canvas container
       fadeOutTimer = setTimeout(() => {
-        // After the visual transition, call the function to actually load the data
         if (_executeLoadAfterFade) {
           _executeLoadAfterFade();
         }
@@ -111,21 +102,11 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
       }
     };
   }, [isWorkspaceTransitioning, _executeLoadAfterFade]);
-  // --- END FIX ---
 
   const coreApp = useCoreApplicationStateAndLifecycle({
-    canvasRefs, configServiceRef, sceneLoadNonce, 
-    currentActiveLayerConfigs: uiControlConfig?.layers,
-    currentActiveTokenAssignments: uiControlConfig?.tokenAssignments,
-    loadedLayerConfigsFromScene,
-    loadedTokenAssignmentsFromScene,
-    loadError, upInitializationError, upFetchStateError, isConfigLoading,
-    isInitiallyResolved, activeSceneName, currentProfileAddress,
-    animatingPanel: localAnimatingPanel, isBenignOverlayActive: localIsBenignOverlayActive,
-    animationLockForTokenOverlay,
-    sideA, sideB, crossfaderValue: renderedCrossfaderValue, stagedActiveWorkspace,
-    isFullyLoaded,
-    activeWorkspaceName,
+    canvasRefs,
+    animatingPanel: localAnimatingPanel, 
+    isBenignOverlayActive: localIsBenignOverlayActive,
   });
 
   const {
@@ -136,7 +117,7 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     handleManualRetry,
     managersReady,
     setCanvasLayerImage,
-    hasValidDimensions, isContainerObservedVisible, isFullscreenActive, enterFullscreen,
+    isContainerObservedVisible, isFullscreenActive, enterFullscreen,
     isMountedRef,
     sequencer, 
   } = coreApp;
@@ -184,12 +165,60 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
 
   const handleTogglePLock = useCallback(() => { sequencer.toggle(uiControlConfig?.layers); }, [sequencer, uiControlConfig]);
 
+  const workspaceList = useMemo(() => {
+    if (!stagedSetlist?.workspaces) return [];
+    return Object.keys(stagedSetlist.workspaces)
+      .map(name => ({ name }));
+  }, [stagedSetlist]);
+
+  const handleNextScene = useCallback(() => {
+    if (!fullSceneList || fullSceneList.length < 2) return;
+    const currentIndex = fullSceneList.findIndex(p => p.name === activeSceneName);
+    const nextIndex = (currentIndex + 1) % fullSceneList.length;
+    const nextScene = fullSceneList[nextIndex];
+    if (nextScene?.name) {
+      handleSceneSelect(nextScene.name, crossfadeDurationMs);
+    }
+  }, [fullSceneList, activeSceneName, handleSceneSelect, crossfadeDurationMs]);
+
+  const handlePrevScene = useCallback(() => {
+    if (!fullSceneList || fullSceneList.length < 2) return;
+    const currentIndex = fullSceneList.findIndex(p => p.name === activeSceneName);
+    const prevIndex = (currentIndex - 1 + fullSceneList.length) % fullSceneList.length;
+    const prevScene = fullSceneList[prevIndex];
+    if (prevScene?.name) {
+      handleSceneSelect(prevScene.name, crossfadeDurationMs);
+    }
+  }, [fullSceneList, activeSceneName, handleSceneSelect, crossfadeDurationMs]);
+
+  const handleNextWorkspace = useCallback(() => {
+    if (!workspaceList || workspaceList.length < 2) return;
+    const currentIndex = workspaceList.findIndex(w => w.name === activeWorkspaceName);
+    const nextIndex = (currentIndex + 1) % workspaceList.length;
+    const nextWorkspace = workspaceList[nextIndex];
+    if (nextWorkspace?.name) {
+        loadWorkspace(nextWorkspace.name);
+    }
+  }, [workspaceList, activeWorkspaceName, loadWorkspace]);
+
+  const handlePrevWorkspace = useCallback(() => {
+      if (!workspaceList || workspaceList.length < 2) return;
+      const currentIndex = workspaceList.findIndex(w => w.name === activeWorkspaceName);
+      const prevIndex = (currentIndex - 1 + workspaceList.length) % workspaceList.length;
+      const prevWorkspace = workspaceList[prevIndex];
+      if (prevWorkspace?.name) {
+          loadWorkspace(prevWorkspace.name);
+      }
+  }, [workspaceList, activeWorkspaceName, loadWorkspace]);
+
   const appInteractions = useAppInteractions({
-    updateLayerConfig: updateLayerConfig,
-    currentProfileAddress,
-    managerInstancesRef, setCanvasLayerImage, 
-    updateTokenAssignment: updateTokenAssignment,
-    isMountedRef, onTogglePLock: handleTogglePLock,
+    managerInstancesRef, 
+    isMountedRef, 
+    onTogglePLock: handleTogglePLock,
+    onNextScene: handleNextScene,
+    onPrevScene: handlePrevScene,
+    onNextWorkspace: handleNextWorkspace,
+    onPrevWorkspace: handlePrevWorkspace,
   });
 
   const { uiStateHook } = appInteractions;
@@ -199,21 +228,6 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     const newIsBenign = uiStateHook.animatingPanel === 'tokens' || uiStateHook.activePanel === 'tokens' || uiStateHook.infoOverlayOpen;
     setLocalIsBenignOverlayActive(newIsBenign);
   }, [ uiStateHook.animatingPanel, uiStateHook.activePanel, uiStateHook.infoOverlayOpen ]);
-
-  useEffect(() => {
-    if (localAnimatingPanel === 'tokens') {
-      setAnimationLockForTokenOverlay(true);
-      if (animationLockTimerRef.current) clearTimeout(animationLockTimerRef.current);
-      animationLockTimerRef.current = setTimeout(() => {
-        if (isMountedRef.current) setAnimationLockForTokenOverlay(false);
-        animationLockTimerRef.current = null;
-      }, TOKEN_OVERLAY_ANIMATION_LOCK_DURATION);
-    } else if (animationLockForTokenOverlay && localAnimatingPanel !== 'tokens') {
-      setAnimationLockForTokenOverlay(false);
-      if (animationLockTimerRef.current) { clearTimeout(animationLockTimerRef.current); animationLockTimerRef.current = null; }
-    }
-    return () => { if (animationLockTimerRef.current) clearTimeout(animationLockTimerRef.current); };
-  }, [localAnimatingPanel, animationLockForTokenOverlay, isMountedRef]);
 
   const criticalErrorContent = (
     <CriticalErrorDisplay initializationError={upInitializationError} fetchStateError={upFetchStateError} publicClient={publicClient} walletClient={walletClient} />
@@ -227,9 +241,8 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   const actionsForUIOverlay = useMemo(() => ({
     onEnhancedView: enterFullscreen,
     onToggleParallax: toggleParallax,
-    onTokenApplied: updateTokenAssignment, 
     onPreviewEffect: appInteractions.processEffect,
-  }), [enterFullscreen, toggleParallax, updateTokenAssignment, appInteractions.processEffect]);
+  }), [enterFullscreen, toggleParallax, appInteractions.processEffect]);
 
   const pLockProps = useMemo(() => ({
     pLockState: sequencer.pLockState, loopProgress: sequencer.loopProgress, hasLockedParams: sequencer.hasLockedParams,
@@ -240,77 +253,76 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   const getCanvasClasses = useCallback((layerIdStr) => {
     let classes = `canvas layer-${layerIdStr}`;
     const isOutgoing = isTransitioning && outgoingLayerIdsOnTransitionStart?.has(layerIdStr);
-    const isStableAndVisible = !isTransitioning && renderState === 'rendered' && uiControlConfig?.layers?.[layerIdStr]?.enabled;
-    const isIncomingAndReadyToFadeIn = isTransitioning && makeIncomingCanvasVisible && loadedLayerConfigsFromScene?.[layerIdStr]?.enabled;
+    const isStableAndVisible = !isTransitioning && renderState === 'rendered';
+    const isIncomingAndReadyToFadeIn = isTransitioning && makeIncomingCanvasVisible;
     if (isOutgoing) classes += ' visible is-fading-out';
     else if (isStableAndVisible) classes += ' visible';
     else if (isIncomingAndReadyToFadeIn) classes += ' visible is-fading-in';
     return classes;
-  }, [isTransitioning, outgoingLayerIdsOnTransitionStart, renderState, uiControlConfig, loadedLayerConfigsFromScene, makeIncomingCanvasVisible]);
+  }, [isTransitioning, outgoingLayerIdsOnTransitionStart, renderState, makeIncomingCanvasVisible]);
 
-  const canvas1Class = getCanvasClasses('1');
-  const canvas2Class = getCanvasClasses('2');
-  const canvas3Class = getCanvasClasses('3');
   const containerClass = `canvas-container ${isTransitioning ? 'transitioning-active' : ''} ${isWorkspaceTransitioning ? 'workspace-fading-out' : ''}`;
   
-  const isUiReady = isFullyLoaded && renderState === 'rendered';
-  const showLoadingIndicator = !isFullyLoaded || !!loadingMessage;
+  const isReadyToRender = renderState === 'rendered';
+  
+  const showLoadingIndicator = !!loadingMessage;
 
   return (
     <>
       <div id="fullscreen-root" ref={rootRef} className="main-view radar-cursor">
+        
+        <LoadingIndicatorPill message={loadingMessage} isVisible={showLoadingIndicator} />
+
         <CanvasContainerWrapper
           containerRef={containerRef}
-          canvasRef1={canvasRef1} canvasRef2={canvasRef2} canvasRef3={canvasRef3}
+          canvasRefs={{
+            '1A': canvasRef1A, '1B': canvasRef1B,
+            '2A': canvasRef2A, '2B': canvasRef2B,
+            '3A': canvasRef3A, '3B': canvasRef3B,
+          }}
           containerClass={containerClass}
-          canvas1Class={canvas1Class}
-          canvas2Class={canvas2Class}
-          canvas3Class={canvas3Class}
+          baseCanvasClass={getCanvasClasses}
           pingColor={PING_COLOR}
           pingStrokeWidth={PING_STROKE_WIDTH}
           noPingSelectors={NO_PING_SELECTORS}
         />
-        
-        <LoadingIndicatorPill message={loadingMessage} isVisible={showLoadingIndicator} />
 
-        <FpsDisplay showFpsCounter={showFpsCounter} isFullscreenActive={isFullscreenActive} portalContainer={portalContainerNode} />
-        <ToastContainer />
-        <UIOverlay
-          uiState={uiStateHook}
-          audioState={audioState}
-          savedSceneList={savedSceneList}
-          pLockProps={pLockProps}
-          isReady={isUiReady}
-          actions={actionsForUIOverlay}
-          onLayerConfigChange={updateLayerConfig}
-          configData={{ 
-            isAutoFading, 
-            isTransitioning,
-            isConfigLoading,
-            isParallaxEnabled,
-            unreadCount: appInteractions.notificationData.unreadCount,
-            renderState,
-            crossfader: { value: renderedCrossfaderValue }, 
-            uiControlConfig,
-          }}
-        />
-        <StatusIndicator
-            showStatusDisplay={showStatusDisplay}
-            isStatusFadingOut={isStatusFadingOut}
-            renderState={renderState}
-            loadingStatusMessage={renderLifecycleMessage}
-            showRetryButton={showRetryButton}
-            onManualRetry={handleManualRetry}
-        />
-        <AudioAnalyzerWrapper
-          isAudioActive={audioState.isAudioActive}
-          managersReady={managersReady}
-          handleAudioDataUpdate={audioState.handleAudioDataUpdate}
-          layerConfigs={uiControlConfig?.layers} 
-          audioSettings={audioState.audioSettings}
-          configLoadNonce={sceneLoadNonce}
-          managerInstancesRef={managerInstancesRef}
-        />
+        {isReadyToRender && (
+          <>
+            <FpsDisplay showFpsCounter={showFpsCounter} isFullscreenActive={isFullscreenActive} portalContainer={portalContainerNode} />
+            <ToastContainer />
+            <UIOverlay
+              uiState={uiStateHook}
+              audioState={audioState}
+              pLockProps={pLockProps}
+              isReady={isReadyToRender}
+              actions={actionsForUIOverlay}
+              configData={{ 
+                isParallaxEnabled,
+                renderState,
+              }}
+              crossfadeDurationMs={crossfadeDurationMs}
+              onSetCrossfadeDuration={setCrossfadeDurationMs}
+            />
+            <StatusIndicator
+                showStatusDisplay={showStatusDisplay}
+                isStatusFadingOut={isStatusFadingOut}
+                renderState={renderState}
+                loadingStatusMessage={renderLifecycleMessage}
+                showRetryButton={showRetryButton}
+                onManualRetry={handleManualRetry}
+            />
+            <AudioAnalyzerWrapper
+              isAudioActive={audioState.isAudioActive}
+              managersReady={managersReady}
+              handleAudioDataUpdate={audioState.handleAudioDataUpdate}
+              layerConfigs={uiControlConfig?.layers} 
+              audioSettings={audioState.audioSettings}
+              configLoadNonce={0}
+              managerInstancesRef={managerInstancesRef}
+            />
+          </>
+        )}
       </div>
     </>
   );

@@ -21,5 +21,5 @@ export const sliderParams = [
   { prop: "driftSpeed", label: "DRIFT SPEED", icon: "wavezIcon_placeholder", min: 0, max: 1, step: 0.001, formatDecimals: 1 },
   { prop: "xaxis", label: "X POS", icon: "horizontalviewIcon_placeholder", min: -10000, max: 10000, step: 0.001, formatDecimals: 0 },
   { prop: "yaxis", label: "Y POS", icon: "verticalviewIcon_placeholder", min: -10000, max: 10000, step: 0.001, formatDecimals: 0 },
-  { prop: "angle", label: "ANGLE", icon: "rotateIcon_placeholder", min: -360, max: 360, step: 0.001, formatDecimals: 1 },
+  { prop: "angle", label: "ANGLE", icon: "rotateIcon_placeholder", min: -90, max: 90, step: 0.001, formatDecimals: 1 },
 ];

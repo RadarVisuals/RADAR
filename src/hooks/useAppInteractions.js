@@ -5,36 +5,36 @@ import { useVisualEffects } from './useVisualEffects';
 import { useLsp1Events } from './useLsp1Events';
 import { useMIDI } from '../context/MIDIContext';
 import { useUserSession } from '../context/UserSessionContext';
-import { useAppContext } from '../context/AppContext';
+import { useVisualEngineContext } from '../context/VisualEngineContext';
+import { useNotificationContext } from '../context/NotificationContext';
+import { useWorkspaceContext } from '../context/WorkspaceContext';
 import { sliderParams } from '../config/sliderParams';
 import { scaleNormalizedValue } from "../utils/helpers";
 
 export const useAppInteractions = (props) => {
   const {
-    updateLayerConfig,
-    currentProfileAddress,
     managerInstancesRef,
-    setCanvasLayerImage,
-    updateTokenAssignment,
     isMountedRef,
     onTogglePLock,
+    onNextScene,
+    onPrevScene,
+    onNextWorkspace,
+    onPrevWorkspace,
   } = props;
 
   const { visitorProfileAddress } = useUserSession();
   const uiStateHook = useUIState('tab1');
-  const { addNotification, unreadCount, activeEventReactions: savedReactions } = useAppContext();
+  const { addNotification, unreadCount } = useNotificationContext();
+  const { stagedActiveWorkspace } = useWorkspaceContext();
+  const savedReactions = stagedActiveWorkspace?.globalEventReactions || {};
+  const { updateLayerConfig, updateTokenAssignment, handleCrossfaderChange } = useVisualEngineContext();
   const { processEffect, createDefaultEffect } = useVisualEffects(updateLayerConfig);
   
   const { 
-    pendingParamUpdate, 
-    pendingLayerSelect, 
-    pendingGlobalAction,
-    pendingCrossfaderUpdate, // Get the pending crossfader update state
+    pendingActions,
     clearPendingActions 
   } = useMIDI();
   
-  const { handleCrossfaderChange } = useAppContext(); // Get the crossfader handler
-
   const applyPlaybackValueToManager = useCallback((layerId, key, value) => {
     const manager = managerInstancesRef.current?.[String(layerId)];
     if (manager?.snapVisualProperty) {
@@ -62,63 +62,81 @@ export const useAppInteractions = (props) => {
   useLsp1Events(visitorProfileAddress, handleEventReceived);
 
   useEffect(() => {
-    let processed = false;
-    if (pendingParamUpdate && managerInstancesRef.current) {
-      const { layer, param, value: normalizedMidiValue } = pendingParamUpdate;
-      const sliderConfig = sliderParams.find(p => p.prop === param);
-      const manager = managerInstancesRef.current?.[String(layer)];
-      
-      if (sliderConfig && manager) {
-        const scaledValue = scaleNormalizedValue(normalizedMidiValue, sliderConfig.min, sliderConfig.max);
-        updateLayerConfig(String(layer), param, scaledValue, true);
-        processed = true;
-      }
-    }
-    if (pendingLayerSelect) {
-      const { layer } = pendingLayerSelect;
-      const layerToTabMap = { 1: 'tab3', 2: 'tab2', 3: 'tab1' };
-      const targetTab = layerToTabMap[layer];
-      if (targetTab && uiStateHook.setActiveLayerTab) {
-        uiStateHook.setActiveLayerTab(targetTab);
-        processed = true;
-      }
-    }
-    if (pendingGlobalAction) {
-      const actionName = pendingGlobalAction.action;
-      if (actionName === 'pLockToggle' && onTogglePLock) {
-        onTogglePLock();
-        processed = true;
-      }
-    }
-
-    if (pendingCrossfaderUpdate) {
-      const { value } = pendingCrossfaderUpdate;
-      if (handleCrossfaderChange) {
-        handleCrossfaderChange(value);
-        processed = true;
-      }
-    }
-
-    if (processed && clearPendingActions) {
+    if (pendingActions && pendingActions.length > 0) {
+      pendingActions.forEach(action => {
+        switch (action.type) {
+          case 'paramUpdate': {
+            const { layer, param, value: normalizedMidiValue } = action;
+            const sliderConfig = sliderParams.find(p => p.prop === param);
+            const manager = managerInstancesRef.current?.[String(layer)];
+            if (sliderConfig && manager) {
+              const scaledValue = scaleNormalizedValue(normalizedMidiValue, sliderConfig.min, sliderConfig.max);
+              updateLayerConfig(String(layer), param, scaledValue, true);
+            }
+            break;
+          }
+          case 'layerSelect': {
+            const { layer } = action;
+            const layerToTabMap = { 1: 'tab3', 2: 'tab2', 3: 'tab1' };
+            const targetTab = layerToTabMap[layer];
+            if (targetTab && uiStateHook.setActiveLayerTab) {
+              uiStateHook.setActiveLayerTab(targetTab);
+            }
+            break;
+          }
+          case 'globalAction': {
+            const actionName = action.action;
+            if (actionName === 'pLockToggle' && onTogglePLock) {
+              onTogglePLock();
+            }
+            break;
+          }
+          case 'crossfaderUpdate': {
+            const { value } = action;
+            if (handleCrossfaderChange) {
+              handleCrossfaderChange(value);
+            }
+            break;
+          }
+          case 'nextScene':
+            if (onNextScene) onNextScene();
+            break;
+          case 'prevScene':
+            if (onPrevScene) onPrevScene();
+            break;
+          case 'nextWorkspace':
+            if (onNextWorkspace) onNextWorkspace();
+            break;
+          case 'prevWorkspace':
+            if (onPrevWorkspace) onPrevWorkspace();
+            break;
+          default:
+            break;
+        }
+      });
       clearPendingActions();
     }
   }, [
-      pendingParamUpdate, pendingLayerSelect, pendingGlobalAction, pendingCrossfaderUpdate,
-      onTogglePLock, updateLayerConfig, uiStateHook, clearPendingActions, 
-      managerInstancesRef, handleCrossfaderChange
+    pendingActions,
+    clearPendingActions,
+    managerInstancesRef,
+    updateLayerConfig,
+    uiStateHook,
+    onTogglePLock,
+    handleCrossfaderChange,
+    onNextScene,
+    onPrevScene,
+    onNextWorkspace,
+    onPrevWorkspace,
   ]);
+
 
   const handleTokenApplied = useCallback(async (token, layerId) => {
     if (!isMountedRef.current) return;
-    const idToSave = token.id;
-    const srcToLoad = token.metadata?.image;
-    if (!idToSave || !srcToLoad) return;
-    const assignmentObject = { id: idToSave, src: srcToLoad };
-    if (updateTokenAssignment) updateTokenAssignment(String(layerId), assignmentObject);
-    if (setCanvasLayerImage) {
-      try { await setCanvasLayerImage(String(layerId), srcToLoad); } catch (e) { /* empty */ }
+    if (updateTokenAssignment) {
+      updateTokenAssignment(token, layerId);
     }
-  }, [isMountedRef, setCanvasLayerImage, updateTokenAssignment]);
+  }, [isMountedRef, updateTokenAssignment]);
 
   return useMemo(() => ({
     uiStateHook,

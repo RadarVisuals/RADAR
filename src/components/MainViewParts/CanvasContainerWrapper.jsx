@@ -9,13 +9,9 @@ import PropTypes from 'prop-types';
 /**
  * @typedef {object} CanvasContainerWrapperProps
  * @property {React.RefObject<HTMLDivElement>} containerRef - Ref for the main container div that holds the canvases and grid overlay.
- * @property {React.RefObject<HTMLCanvasElement>} canvasRef1 - Ref for the first canvas element (bottom layer).
- * @property {React.RefObject<HTMLCanvasElement>} canvasRef2 - Ref for the second canvas element (middle layer).
- * @property {React.RefObject<HTMLCanvasElement>} canvasRef3 - Ref for the third canvas element (top layer).
+ * @property {Object.<string, React.RefObject<HTMLCanvasElement>>} canvasRefs - An object containing refs for all canvas elements, keyed by an identifier (e.g., '1A', '1B').
  * @property {string} containerClass - CSS class name(s) for the main container div.
- * @property {string} canvas1Class - CSS class name(s) for the first canvas element.
- * @property {string} canvas2Class - CSS class name(s) for the second canvas element.
- * @property {string} canvas3Class - CSS class name(s) for the third canvas element.
+ * @property {(layerId: string) => string} baseCanvasClass - A function that returns the base CSS class string for a given layer ID.
  * @property {string} pingColor - CSS color string for the click ping animation stroke.
  * @property {number} pingStrokeWidth - Stroke width for the click ping animation circle.
  * @property {string} noPingSelectors - A CSS selector string. Clicks on elements matching these selectors (or their children) within the container will not trigger the ping animation.
@@ -23,34 +19,25 @@ import PropTypes from 'prop-types';
 
 /**
  * CanvasContainerWrapper: A component that sets up the main visual area,
- * containing three canvas layers for visual rendering and a grid overlay.
- * It also implements a "click ping" animation effect that appears at the
- * mouse click location, unless the click target matches `noPingSelectors`.
+ * containing canvas layers for visual rendering and a grid overlay.
+ * It now renders a pair of canvases (A and B) for each visual layer to enable
+ * true cross-dissolving between scenes with different blend modes.
+ * It also implements a "click ping" animation effect.
  *
  * @param {CanvasContainerWrapperProps} props - The component's props.
  * @returns {JSX.Element} The rendered canvas container with its layers and click ping functionality.
  */
 const CanvasContainerWrapper = ({
   containerRef,
-  canvasRef1,
-  canvasRef2,
-  canvasRef3,
+  canvasRefs,
   containerClass,
-  canvas1Class,
-  canvas2Class,
-  canvas3Class,
+  baseCanvasClass,
   pingColor,
   pingStrokeWidth,
-  noPingSelectors, // e.g., ".toolbar-icon, .panel, button"
+  noPingSelectors,
 }) => {
 
-  /**
-   * Handles click events on the canvas container to create a "ping" animation
-   * at the click location, unless the click target is within an element matching
-   * `noPingSelectors`.
-   */
   const handleCanvasClick = useCallback((event) => {
-    // Prevent ping if the click target or its ancestor matches any of the noPingSelectors
     if (noPingSelectors && typeof noPingSelectors === 'string' && event.target.closest(noPingSelectors)) {
       return;
     }
@@ -63,106 +50,84 @@ const CanvasContainerWrapper = ({
       return;
     }
 
-    // Get click coordinates relative to the viewport
     const x = event.clientX;
     const y = event.clientY;
 
-    // Create the SVG container for the ping animation
     const pingContainer = document.createElement('div');
-    pingContainer.className = 'click-ping-svg-container'; // For CSS targeting and positioning
-    // Position the ping at the click coordinates
+    pingContainer.className = 'click-ping-svg-container';
     pingContainer.style.left = `${x}px`;
     pingContainer.style.top = `${y}px`;
 
     const svgNS = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(svgNS, "svg");
     svg.setAttribute("class", "click-ping-svg");
-    svg.setAttribute("viewBox", "0 0 20 20"); // ViewBox for a 20x20 coordinate system
-    svg.style.overflow = "visible"; // Ensure animation (expanding circle) is not clipped by SVG bounds
+    svg.setAttribute("viewBox", "0 0 20 20");
+    svg.style.overflow = "visible";
 
     const circle = document.createElementNS(svgNS, "circle");
-    circle.setAttribute("cx", "10"); // Center of the 20x20 viewBox
+    circle.setAttribute("cx", "10");
     circle.setAttribute("cy", "10");
-    circle.setAttribute("r", "5"); // Initial radius
+    circle.setAttribute("r", "5");
     circle.setAttribute("stroke", pingColor);
-    circle.setAttribute("stroke-width", String(pingStrokeWidth)); // Ensure it's a string
-    circle.setAttribute("fill", "none"); // No fill, just a stroke
+    circle.setAttribute("stroke-width", String(pingStrokeWidth));
+    circle.setAttribute("fill", "none");
 
     svg.appendChild(circle);
     pingContainer.appendChild(svg);
 
     try {
       containerElement.appendChild(pingContainer);
-      // Trigger CSS animation by adding a class.
-      // requestAnimationFrame ensures the element is in the DOM before class is added, allowing transition/animation to trigger.
       requestAnimationFrame(() => {
-        pingContainer.classList.add('ping-svg-animation'); // Assumes CSS defines this animation
+        pingContainer.classList.add('ping-svg-animation');
       });
 
-      // Clean up the ping element after its animation completes.
       pingContainer.addEventListener('animationend', () => {
-        if (pingContainer.parentElement) { // Check if still in DOM before removing
+        if (pingContainer.parentElement) {
             pingContainer.remove();
         }
-      }, { once: true }); // Listener automatically removed after first trigger
+      }, { once: true });
 
     } catch (e) {
       if (import.meta.env.DEV) {
         console.error("[CanvasContainerWrapper] Error creating or animating click ping:", e);
       }
-      // Ensure cleanup even if append fails or other error occurs before animationend
       if (pingContainer.parentElement) {
         pingContainer.remove();
       }
     }
-  }, [containerRef, noPingSelectors, pingColor, pingStrokeWidth]); // Dependencies for the click handler
+  }, [containerRef, noPingSelectors, pingColor, pingStrokeWidth]);
 
   return (
     <div ref={containerRef} className={containerClass} onClick={handleCanvasClick}>
-      <div className="grid-overlay"></div> {/* For visual grid, styled via CSS */}
-      <canvas ref={canvasRef1} className={canvas1Class} />
-      <canvas ref={canvasRef2} className={canvas2Class} />
-      <canvas ref={canvasRef3} className={canvas3Class} />
+      <div className="grid-overlay"></div>
+      {/* --- START: Render a pair of canvases for each layer --- */}
+      <canvas ref={canvasRefs['1A']} className={`${baseCanvasClass('1')} canvas-deck-a`} />
+      <canvas ref={canvasRefs['1B']} className={`${baseCanvasClass('1')} canvas-deck-b`} />
+      <canvas ref={canvasRefs['2A']} className={`${baseCanvasClass('2')} canvas-deck-a`} />
+      <canvas ref={canvasRefs['2B']} className={`${baseCanvasClass('2')} canvas-deck-b`} />
+      <canvas ref={canvasRefs['3A']} className={`${baseCanvasClass('3')} canvas-deck-a`} />
+      <canvas ref={canvasRefs['3B']} className={`${baseCanvasClass('3')} canvas-deck-b`} />
+      {/* --- END: Render a pair of canvases for each layer --- */}
     </div>
   );
 };
 
 CanvasContainerWrapper.propTypes = {
-  /** Ref for the main container div. */
   containerRef: PropTypes.oneOfType([
-    PropTypes.func, // For callback refs
-    PropTypes.shape({ current: PropTypes.instanceOf(Element) }) // For object refs
-  ]).isRequired,
-  /** Ref for the first canvas element (bottom layer). */
-  canvasRef1: PropTypes.oneOfType([
     PropTypes.func,
-    PropTypes.shape({ current: PropTypes.instanceOf(HTMLCanvasElement) })
+    PropTypes.shape({ current: PropTypes.instanceOf(Element) })
   ]).isRequired,
-  /** Ref for the second canvas element (middle layer). */
-  canvasRef2: PropTypes.oneOfType([
-    PropTypes.func,
-    PropTypes.shape({ current: PropTypes.instanceOf(HTMLCanvasElement) })
-  ]).isRequired,
-  /** Ref for the third canvas element (top layer). */
-  canvasRef3: PropTypes.oneOfType([
-    PropTypes.func,
-    PropTypes.shape({ current: PropTypes.instanceOf(HTMLCanvasElement) })
-  ]).isRequired,
-  /** CSS class name(s) for the main container div. */
+  canvasRefs: PropTypes.objectOf(
+    PropTypes.oneOfType([
+      PropTypes.func,
+      PropTypes.shape({ current: PropTypes.instanceOf(HTMLCanvasElement) })
+    ])
+  ).isRequired,
   containerClass: PropTypes.string.isRequired,
-  /** CSS class name(s) for the first canvas element. */
-  canvas1Class: PropTypes.string.isRequired,
-  /** CSS class name(s) for the second canvas element. */
-  canvas2Class: PropTypes.string.isRequired,
-  /** CSS class name(s) for the third canvas element. */
-  canvas3Class: PropTypes.string.isRequired,
-  /** CSS color string for the click ping animation stroke. */
+  baseCanvasClass: PropTypes.func.isRequired,
   pingColor: PropTypes.string.isRequired,
-  /** Stroke width for the click ping animation circle. */
   pingStrokeWidth: PropTypes.number.isRequired,
-  /** A CSS selector string to identify elements where clicks should NOT trigger the ping. */
   noPingSelectors: PropTypes.string.isRequired,
 };
 
-// Default export is standard for React components.
 export default CanvasContainerWrapper;

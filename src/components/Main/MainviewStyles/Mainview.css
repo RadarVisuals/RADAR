@@ -68,9 +68,14 @@
 }
 /* --- END: PARALLAX BORDER FIX --- */
 
-.canvas.layer-1 { z-index: 3; }
-.canvas.layer-2 { z-index: 4; }
-.canvas.layer-3 { z-index: 5; }
+/* --- START: Layering for A/B canvases --- */
+.canvas.layer-1.canvas-deck-a { z-index: 3; }
+.canvas.layer-1.canvas-deck-b { z-index: 4; }
+.canvas.layer-2.canvas-deck-a { z-index: 5; }
+.canvas.layer-2.canvas-deck-b { z-index: 6; }
+.canvas.layer-3.canvas-deck-a { z-index: 7; }
+.canvas.layer-3.canvas-deck-b { z-index: 8; }
+/* --- END: Layering for A/B canvases --- */
 
 
 /*

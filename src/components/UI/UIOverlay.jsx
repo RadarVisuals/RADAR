@@ -19,8 +19,9 @@ import SceneSelectorBar from './SceneSelectorBar';
 import LibraryPanel from '../Panels/LibraryPanel';
 import Crossfader from './Crossfader';
 import WorkspaceSelectorDots from './WorkspaceSelectorDots';
-import { useMIDI } from '../../context/MIDIContext';
-import { useAppContext } from '../../context/AppContext';
+import { useWorkspaceContext } from '../../context/WorkspaceContext';
+import { useVisualEngineContext } from '../../context/VisualEngineContext';
+import { useNotificationContext } from '../../context/NotificationContext';
 import { useUserSession } from '../../context/UserSessionContext';
 
 import { useToast } from '../../context/ToastContext';
@@ -34,7 +35,6 @@ const MemoizedAudioStatusIcon = React.memo(AudioStatusIcon);
 const MemoizedSceneSelectorBar = React.memo(SceneSelectorBar);
 
 const DEFAULT_SEQUENCER_INTERVAL = 0;
-const DEFAULT_CROSSFADE_DURATION = 1000;
 
 const GeneralConnectPill = () => {
     return (
@@ -45,14 +45,15 @@ const GeneralConnectPill = () => {
 };
 
 const ActivePanelRenderer = (props) => {
-    const { uiState, audioState, pLockProps, onPreviewEffect, configData, onLayerConfigChange } = props;
+    const { 
+      uiState, audioState, pLockProps, onPreviewEffect,
+      sequencerIntervalMs, onSetSequencerInterval, // <-- Receive from props
+      crossfadeDurationMs, onSetCrossfadeDuration, // <-- Receive from props
+    } = props;
     const { activePanel, animatingPanel, activeLayerTab, closePanel, setActiveLayerTab } = uiState;
     const { isAudioActive, audioSettings, analyzerData, setIsAudioActive, setAudioSettings } = audioState;
     
-    const { handleSceneSelect, updateTokenAssignment, isAutoFading } = useAppContext();
-
-    const [sequencerIntervalMs, setSequencerIntervalMs] = useState(DEFAULT_SEQUENCER_INTERVAL);
-    const [crossfadeDurationMs, setCrossfadeDurationMs] = useState(DEFAULT_CROSSFADE_DURATION);
+    const { handleSceneSelect, updateTokenAssignment, isAutoFading, uiControlConfig, updateLayerConfig } = useVisualEngineContext();
     
     const handleTokenSelectorClose = useCallback(() => closePanel(), [closePanel]);
     const panelWrapperClassName = useMemo(() => animatingPanel === "closing" ? "animating closing" : animatingPanel ? "animating" : "", [animatingPanel]);
@@ -66,14 +67,14 @@ const ActivePanelRenderer = (props) => {
                         activeTab={activeLayerTab}
                         onTabChange={setActiveLayerTab}
                         pLockProps={pLockProps}
-                        onSceneSelect={handleSceneSelect}
+                        onSceneSelect={(sceneName) => handleSceneSelect(sceneName, crossfadeDurationMs)}
                         sequencerIntervalMs={sequencerIntervalMs}
-                        onSetSequencerInterval={setSequencerIntervalMs}
+                        onSetSequencerInterval={onSetSequencerInterval}
                         crossfadeDurationMs={crossfadeDurationMs}
-                        onSetCrossfadeDuration={setCrossfadeDurationMs}
+                        onSetCrossfadeDuration={onSetCrossfadeDuration}
                         isAutoFading={isAutoFading}
-                        activeLayerConfigs={configData.uiControlConfig?.layers}
-                        onLayerConfigChange={onLayerConfigChange}
+                        activeLayerConfigs={uiControlConfig?.layers}
+                        onLayerConfigChange={updateLayerConfig}
                     />
                 </PanelWrapper>
             );
@@ -100,8 +101,10 @@ ActivePanelRenderer.propTypes = {
     audioState: PropTypes.object.isRequired,
     pLockProps: PropTypes.object.isRequired,
     onPreviewEffect: PropTypes.func.isRequired,
-    configData: PropTypes.object.isRequired,
-    onLayerConfigChange: PropTypes.func.isRequired,
+    sequencerIntervalMs: PropTypes.number.isRequired,
+    onSetSequencerInterval: PropTypes.func.isRequired,
+    crossfadeDurationMs: PropTypes.number.isRequired,
+    onSetCrossfadeDuration: PropTypes.func.isRequired,
 };
 const MemoizedActivePanelRenderer = React.memo(ActivePanelRenderer);
 
@@ -114,18 +117,21 @@ OverlayRenderer.propTypes = {
 };
 const MemoizedOverlayRenderer = React.memo(OverlayRenderer);
 
-function UIOverlay(props) {
-  const { 
-    uiState, audioState, savedSceneList,
-    pLockProps, isReady = false,
-    actions,
-    configData,
-    onLayerConfigChange,
-  } = props;
-  
+function UIOverlay({
+  uiState,
+  audioState,
+  pLockProps,
+  isReady = false, // Default value here replaces defaultProps
+  actions,
+  configData,
+  crossfadeDurationMs,
+  onSetCrossfadeDuration,
+}) {
   const { addToast } = useToast();
-  const { stagedSetlist, loadWorkspace, activeWorkspaceName: currentWorkspaceName, isConfigLoading, activeSceneName, handleSceneSelect, handleCrossfaderChange, unreadCount, isFullyLoaded } = useAppContext(); // <<< GET unreadCount
-  const { isRadarProjectAdmin: isParentAdmin, isPreviewMode, hostProfileAddress: currentProfileAddress } = useUserSession(); // <<< FIX IS HERE
+  const { stagedSetlist, loadWorkspace, activeWorkspaceName: currentWorkspaceName, isLoading: isConfigLoading, activeSceneName, fullSceneList: savedSceneList } = useWorkspaceContext();
+  const { renderedCrossfaderValue, isAutoFading, handleSceneSelect, handleCrossfaderChange } = useVisualEngineContext();
+  const { unreadCount } = useNotificationContext();
+  const { isRadarProjectAdmin, hostProfileAddress: currentProfileAddress } = useUserSession();
   const { isUiVisible, activePanel, toggleSidePanel, toggleInfoOverlay, toggleUiVisibility } = uiState;
   const { isAudioActive } = audioState;
   
@@ -133,64 +139,17 @@ function UIOverlay(props) {
   const [isSequencerActive, setIsSequencerActive] = useState(false);
   const sequencerTimeoutRef = useRef(null);
   const nextSceneIndexRef = useRef(0);
-  const [sequencerIntervalMs, setSequencerIntervalMs] = useState(DEFAULT_SEQUENCER_INTERVAL);
-  const [crossfadeDurationMs, setCrossfadeDurationMs] = useState(DEFAULT_CROSSFADE_DURATION);
   const isMountedRef = useRef(false);
-  
-  const {
-      pendingNextScene, pendingPrevScene,
-      pendingNextWorkspace, pendingPrevWorkspace,
-      clearPendingActions
-  } = useMIDI();
+
+  // --- THIS IS THE FIX: State is now held in the correct parent component ---
+  const [sequencerIntervalMs, setSequencerIntervalMs] = useState(DEFAULT_SEQUENCER_INTERVAL);
+  // --- END FIX ---
 
   const workspaceList = useMemo(() => {
     if (!stagedSetlist?.workspaces) return [];
     return Object.keys(stagedSetlist.workspaces)
       .map(name => ({ name }));
   }, [stagedSetlist]);
-
-  useEffect(() => {
-    let actionTaken = false;
-
-    if (pendingNextScene) {
-      if (savedSceneList.length > 1) {
-        const currentIndex = savedSceneList.findIndex(s => s.name === activeSceneName);
-        const nextIndex = (currentIndex + 1) % savedSceneList.length;
-        handleSceneSelect(savedSceneList[nextIndex].name, crossfadeDurationMs);
-      }
-      actionTaken = true;
-    } else if (pendingPrevScene) {
-      if (savedSceneList.length > 1) {
-        const currentIndex = savedSceneList.findIndex(s => s.name === activeSceneName);
-        const prevIndex = (currentIndex - 1 + savedSceneList.length) % savedSceneList.length;
-        handleSceneSelect(savedSceneList[prevIndex].name, crossfadeDurationMs);
-      }
-      actionTaken = true;
-    } else if (pendingNextWorkspace) {
-      if (workspaceList.length > 1) {
-        const currentIndex = workspaceList.findIndex(w => w.name === currentWorkspaceName);
-        const nextIndex = (currentIndex + 1) % workspaceList.length;
-        loadWorkspace(workspaceList[nextIndex].name);
-      }
-      actionTaken = true;
-    } else if (pendingPrevWorkspace) {
-      if (workspaceList.length > 1) {
-        const currentIndex = workspaceList.findIndex(w => w.name === currentWorkspaceName);
-        const prevIndex = (currentIndex - 1 + workspaceList.length) % workspaceList.length;
-        loadWorkspace(workspaceList[prevIndex].name);
-      }
-      actionTaken = true;
-    }
-
-    if (actionTaken) {
-      clearPendingActions();
-    }
-  }, [
-    pendingNextScene, pendingPrevScene, pendingNextWorkspace, pendingPrevWorkspace,
-    activeSceneName, savedSceneList, handleSceneSelect, crossfadeDurationMs,
-    currentWorkspaceName, workspaceList, loadWorkspace,
-    clearPendingActions
-  ]);
 
   useEffect(() => { isMountedRef.current = true; return () => { isMountedRef.current = false; } }, []);
   
@@ -217,11 +176,11 @@ function UIOverlay(props) {
 
   useEffect(() => {
     if (sequencerTimeoutRef.current) clearTimeout(sequencerTimeoutRef.current);
-    if (isSequencerActive && !props.configData.isAutoFading) {
+    if (isSequencerActive && !isAutoFading) {
         sequencerTimeoutRef.current = setTimeout(runNextSequenceStep, sequencerIntervalMs);
     }
     return () => { if (sequencerTimeoutRef.current) clearTimeout(sequencerTimeoutRef.current); };
-  }, [isSequencerActive, props.configData.isAutoFading, sequencerIntervalMs, runNextSequenceStep]);
+  }, [isSequencerActive, isAutoFading, sequencerIntervalMs, runNextSequenceStep]);
 
   const handleToggleSequencer = () => {
     if (isConfigLoading || !currentProfileAddress) return;
@@ -236,7 +195,9 @@ function UIOverlay(props) {
         } else {
           nextSceneIndexRef.current = 0;
         }
-        runNextSequenceStep();
+        // --- THIS IS THE FIX: Removed the immediate imperative call ---
+        // runNextSequenceStep(); // <--- REMOVED
+        // The useEffect hook will now handle the first step after the initial interval.
       } else {
         addToast('Sequencer stopped.', 'info', 2000);
         if (sequencerTimeoutRef.current) clearTimeout(sequencerTimeoutRef.current);
@@ -245,9 +206,11 @@ function UIOverlay(props) {
     });
   };
 
-  const shouldShowUI = useMemo(() => isReady && props.configData.renderState === 'rendered', [isReady, props.configData.renderState]);
+  // --- FIX: Logic simplified and corrected ---
+  const shouldShowUI = useMemo(() => isReady, [isReady]);
   const showSceneBar = useMemo(() => shouldShowUI && isUiVisible && !activePanel && !!currentProfileAddress, [shouldShowUI, isUiVisible, activePanel, currentProfileAddress]);
   const mainUiContainerClass = `ui-elements-container ${shouldShowUI && isUiVisible ? "visible" : "hidden-by-opacity"}`;
+  // --- END FIX ---
 
   if (!isReady) {
     return null;
@@ -255,8 +218,8 @@ function UIOverlay(props) {
   
   return (
     <>
-      {isFullyLoaded && <MemoizedTopRightControls
-        isRadarProjectAdmin={isParentAdmin} 
+      {isReady && <MemoizedTopRightControls
+        isRadarProjectAdmin={isRadarProjectAdmin} 
         showInfo={true} 
         showToggleUI={true} 
         showEnhancedView={true}
@@ -265,7 +228,7 @@ function UIOverlay(props) {
         onToggleUI={toggleUiVisibility} 
         onEnhancedView={onEnhancedView} 
         isUiVisible={isUiVisible}
-        isParallaxEnabled={props.configData.isParallaxEnabled}
+        isParallaxEnabled={configData.isParallaxEnabled}
         onToggleParallax={onToggleParallax}
       />}
       <div className={mainUiContainerClass}>
@@ -282,9 +245,7 @@ function UIOverlay(props) {
               </button>
               <MemoizedAudioStatusIcon isActive={isAudioActive} onClick={() => uiState.openPanel('audio')} />
             </div>
-            {isPreviewMode && (<div className="preview-mode-indicator"><span>👁️</span> Preview Mode</div>)}
-            {isFullyLoaded && <div className="vertical-toolbar-container">
-              {/* <<< PASS unreadCount FROM CONTEXT */}
+            {isReady && <div className="vertical-toolbar-container">
               <MemoizedVerticalToolbar activePanel={activePanel} setActivePanel={toggleSidePanel} notificationCount={unreadCount} />
             </div>}
             <MemoizedActivePanelRenderer
@@ -292,8 +253,10 @@ function UIOverlay(props) {
                 audioState={audioState}
                 pLockProps={pLockProps}
                 onPreviewEffect={onPreviewEffect}
-                configData={configData}
-                onLayerConfigChange={onLayerConfigChange}
+                sequencerIntervalMs={sequencerIntervalMs}
+                onSetSequencerInterval={setSequencerIntervalMs}
+                crossfadeDurationMs={crossfadeDurationMs}
+                onSetCrossfadeDuration={onSetCrossfadeDuration}
             />
             {showSceneBar && (
               <div className="bottom-center-controls">
@@ -301,17 +264,17 @@ function UIOverlay(props) {
                   workspaces={workspaceList}
                   activeWorkspaceName={currentWorkspaceName}
                   onSelectWorkspace={loadWorkspace}
-                  isLoading={props.configData.isTransitioning || isConfigLoading || props.configData.isAutoFading}
+                  isLoading={isAutoFading || isConfigLoading}
                 />
                 <Crossfader
-                  value={props.configData.crossfader.value}
+                  value={renderedCrossfaderValue}
                   onInput={handleCrossfaderChange}
                   onChange={handleCrossfaderChange}
-                  disabled={props.configData.isAutoFading}
+                  disabled={isAutoFading}
                 />
                 <MemoizedSceneSelectorBar
                   savedSceneList={savedSceneList} currentSceneName={activeSceneName}
-                  onSceneSelect={(sceneName) => handleSceneSelect(sceneName, crossfadeDurationMs)} isLoading={props.configData.isTransitioning || isConfigLoading || props.configData.isAutoFading}
+                  onSceneSelect={(sceneName) => handleSceneSelect(sceneName, crossfadeDurationMs)} isLoading={isAutoFading || isConfigLoading}
                 />
               </div>
             )}
@@ -330,14 +293,9 @@ UIOverlay.propTypes = {
   audioState: PropTypes.object.isRequired,
   configData: PropTypes.object.isRequired,
   actions: PropTypes.object.isRequired,
-  savedSceneList: PropTypes.array,
   isReady: PropTypes.bool,
-  onLayerConfigChange: PropTypes.func.isRequired,
-};
-
-UIOverlay.defaultProps = {
-  savedSceneList: [],
-  isReady: false,
+  crossfadeDurationMs: PropTypes.number.isRequired,
+  onSetCrossfadeDuration: PropTypes.func.isRequired,
 };
 
 export default React.memo(UIOverlay);

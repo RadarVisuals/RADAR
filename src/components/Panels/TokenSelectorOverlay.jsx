@@ -5,7 +5,9 @@ import { toplayerIcon, middlelayerIcon, bottomlayerIcon } from "../../assets";
 import { demoAssetMap } from "../../assets/DemoLayers/initLayers";
 import { manageOverlayDimmingEffect } from "../../utils/performanceHelpers";
 import { globalAnimationFlags } from "../../utils/globalAnimationFlags";
-import { useAppContext } from "../../context/AppContext";
+import { useWorkspaceContext } from "../../context/WorkspaceContext";
+import { useAssetContext } from "../../context/AssetContext";
+import { useVisualEngineContext } from "../../context/VisualEngineContext";
 import { useUserSession } from "../../context/UserSessionContext";
 import TokenGrid from "./TokenGrid";
 import LazyLoadImage from "./LazyLoadImage";
@@ -14,7 +16,7 @@ import "./PanelStyles/TokenSelectorOverlay.css";
 const OPEN_CLOSE_ANIMATION_DURATION = 300;
 const PAGE_SIZE = 40;
 
-const TokenSelectorOverlay = ({ isOpen, onClose, onTokenApplied, readOnly = false }) => {
+const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
   const [internalIsOpen, setInternalIsOpen] = useState(false);
   const [selectedLayer, setSelectedLayer] = useState(3);
   const [selectedTokens, setSelectedTokens] = useState({ 1: null, 2: null, 3: null });
@@ -31,14 +33,19 @@ const TokenSelectorOverlay = ({ isOpen, onClose, onTokenApplied, readOnly = fals
   const [hasMoreToLoad, setHasMoreToLoad] = useState({});
 
   const {
-    ownedTokenIdentifiers,
-    tokenFetchProgress,
     stagedActiveWorkspace,
-    officialWhitelist = [],
     addPalette, removePalette, addTokenToPalette, removeTokenFromPalette,
     configServiceRef,
+  } = useWorkspaceContext();
+
+  const {
+    ownedTokenIdentifiers,
+    tokenFetchProgress,
+    officialWhitelist = [],
     refreshOwnedTokens, 
-  } = useAppContext();
+  } = useAssetContext();
+
+  const { updateTokenAssignment } = useVisualEngineContext();
 
   const { visitorProfileAddress } = useUserSession();
 
@@ -182,11 +189,11 @@ const TokenSelectorOverlay = ({ isOpen, onClose, onTokenApplied, readOnly = fals
   const handleTokenMouseDown = useCallback((token, e) => {
     if (e.button !== 0) return;
     const tokenImage = token.metadata?.image;
-    if (!tokenImage || !onTokenApplied) return;
-    onTokenApplied(token, selectedLayer);
+    if (!tokenImage || !updateTokenAssignment) return;
+    updateTokenAssignment(token, selectedLayer);
     setSelectedTokens(prev => ({ ...prev, [selectedLayer]: tokenImage }));
     setIsPreviewMode(true);
-  }, [onTokenApplied, selectedLayer]);
+  }, [updateTokenAssignment, selectedLayer]);
 
   const handleMouseUp = useCallback(() => { setIsPreviewMode(false); }, []);
 
@@ -260,7 +267,6 @@ const TokenSelectorOverlay = ({ isOpen, onClose, onTokenApplied, readOnly = fals
 TokenSelectorOverlay.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
-  onTokenApplied: PropTypes.func.isRequired,
   readOnly: PropTypes.bool
 };
 

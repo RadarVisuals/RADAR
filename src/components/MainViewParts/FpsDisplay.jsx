@@ -12,16 +12,8 @@ import './FpsDisplay.css'; // Assuming specific styles for the FPS counter
  * @property {Element | null} [portalContainer] - Optional DOM element to which the FPS counter should be portalled when in fullscreen mode. If null or not provided, the counter renders inline.
  */
 
-/**
- * FpsDisplay: A component that calculates and displays the current frames per second (FPS)
- * of the application's rendering loop. It uses `requestAnimationFrame` for accurate FPS calculation.
- * When `isFullscreenActive` is true and a `portalContainer` is provided, it uses a React Portal
- * to render the FPS counter into the specified container, allowing it to overlay fullscreen content.
- *
- * @param {FpsDisplayProps} props - The component's props.
- * @returns {JSX.Element | null} The rendered FPS counter (either inline or portalled), or null if `showFpsCounter` is false.
- */
-const FpsDisplay = ({ showFpsCounter, isFullscreenActive, portalContainer }) => {
+// --- FIX: Added portalContainer = null to the function signature ---
+const FpsDisplay = ({ showFpsCounter, isFullscreenActive, portalContainer = null }) => {
   const [currentFps, setCurrentFps] = useState(0);
   /** @type {React.RefObject<number>} */
   const fpsFrameCountRef = useRef(0);
@@ -90,8 +82,6 @@ const FpsDisplay = ({ showFpsCounter, isFullscreenActive, portalContainer }) => 
   );
 
   // Use React Portal if a portalContainer is provided and fullscreen is active.
-  // This allows the FPS counter to be rendered outside its normal DOM hierarchy,
-  // useful for overlaying it on fullscreen content.
   if (portalContainer && isFullscreenActive && typeof ReactDOM.createPortal === 'function') {
     return ReactDOM.createPortal(fpsCounterElement, portalContainer);
   }
@@ -101,18 +91,11 @@ const FpsDisplay = ({ showFpsCounter, isFullscreenActive, portalContainer }) => 
 };
 
 FpsDisplay.propTypes = {
-  /** If true, the FPS counter is rendered and active. */
   showFpsCounter: PropTypes.bool.isRequired,
-  /** Indicates if the application is currently in fullscreen mode. */
   isFullscreenActive: PropTypes.bool.isRequired,
-  /** Optional DOM element to which the FPS counter should be portalled when in fullscreen mode. */
-  portalContainer: PropTypes.instanceOf(Element), // Element is the base type for DOM elements
+  portalContainer: PropTypes.instanceOf(Element),
 };
 
-FpsDisplay.defaultProps = {
-  // portalContainer defaults to null if not provided, which is fine.
-  // No explicit default needed here as the conditional logic handles null.
-};
+// --- FIX: Removed the deprecated FpsDisplay.defaultProps block ---
 
-// Default export is standard for React components.
 export default FpsDisplay;

@@ -93,9 +93,7 @@ const SceneSelectorBar = ({
   const handleNext = () => {
     if (currentPage < totalPages - 1) {
       setPaginationDirection('next');
-      // --- THIS IS THE FIX ---
       setCurrentPage((prev) => prev + 1);
-      // --- END FIX ---
     }
   };
 

@@ -9,7 +9,8 @@ import PLockController from './PLockController';
 // Hook Imports
 import { useProfileSessionState } from "../../hooks/configSelectors";
 import { useMIDI } from "../../context/MIDIContext";
-import { useAppContext } from "../../context/AppContext";
+import { useWorkspaceContext } from "../../context/WorkspaceContext";
+import { useVisualEngineContext } from "../../context/VisualEngineContext";
 import { useToast } from "../../context/ToastContext";
 import { BLEND_MODES } from "../../config/global-config";
 import { sliderParams } from "../../config/sliderParams";
@@ -44,27 +45,32 @@ const EnhancedControlPanel = ({
   activeTab = "tab1",
   onTabChange,
   pLockProps = {},
-  onSceneSelect,
   sequencerIntervalMs,
   onSetSequencerInterval,
   crossfadeDurationMs,
   onSetCrossfadeDuration,
-  isAutoFading,
-  activeLayerConfigs,
-  onLayerConfigChange,
 }) => {
   const { isProfileOwner } = useProfileSessionState();
   const { addToast } = useToast();
   const {
-    tokenAssignments,
     stagedActiveWorkspace,
-    savedSceneList,
+    fullSceneList: savedSceneList,
     activeSceneName,
     addNewSceneToStagedWorkspace,
     deleteSceneFromStagedWorkspace,
     setDefaultSceneInStagedWorkspace,
     isSaving,
-  } = useAppContext();
+  } = useWorkspaceContext();
+
+  const {
+    uiControlConfig,
+    isAutoFading,
+    handleSceneSelect: onSceneSelect,
+    updateLayerConfig: onLayerConfigChange,
+    managerInstancesRef,
+    renderedCrossfaderValue,
+    reloadSceneOntoInactiveDeck,
+  } = useVisualEngineContext();
 
   const {
     isConnected: midiConnected, midiLearning, learningLayer,
@@ -108,6 +114,7 @@ const EnhancedControlPanel = ({
   };
 
   const activeLayer = useMemo(() => String(tabToLayerIdMap[activeTab] || 3), [activeTab]);
+  const activeLayerConfigs = uiControlConfig?.layers;
   const config = useMemo(() => activeLayerConfigs?.[activeLayer] || getDefaultLayerConfigTemplate(), [activeLayerConfigs, activeLayer]);
   
   const handleSliderChange = useCallback((e) => {
@@ -116,6 +123,7 @@ const EnhancedControlPanel = ({
   }, [onLayerConfigChange, activeLayer]);
 
   const handleCreateScene = useCallback(() => {
+    const originalSceneName = activeSceneName;
     const name = newSceneName.trim();
     if (!name) {
       addToast("Scene name cannot be empty.", "warning");
@@ -127,18 +135,49 @@ const EnhancedControlPanel = ({
       }
     }
     
+    const managers = managerInstancesRef.current?.current;
+    let liveLayersConfig = {};
+    const activeDeckIsA = renderedCrossfaderValue < 0.5;
+
+    if (managers) {
+      for (const layerId in managers) {
+        const manager = managers[layerId];
+        const sourceConfig = activeDeckIsA ? manager.configA : manager.configB;
+        const sourceRotation = activeDeckIsA ? manager.continuousRotationAngleA : manager.continuousRotationAngleB;
+        const sourceDriftState = activeDeckIsA ? manager.driftStateA : manager.driftStateB;
+        if (!sourceConfig) {
+            console.warn(`[EnhancedControlPanel] Could not find source config for layer ${layerId} on the active deck. Skipping.`);
+            continue;
+        }
+        const liveConfig = JSON.parse(JSON.stringify(sourceConfig));
+        liveConfig.angle = (sourceConfig.angle + sourceRotation) % 360;
+        liveConfig.driftState = JSON.parse(JSON.stringify(sourceDriftState));
+        for (const key in manager.playbackValues) {
+          liveConfig[key] = manager.playbackValues[key];
+        }
+        liveLayersConfig[layerId] = liveConfig;
+      }
+    } else {
+      console.warn("[EnhancedControlPanel] CanvasManagers not found, creating scene from React state. This may not capture the exact live animation frame.");
+      liveLayersConfig = JSON.parse(JSON.stringify(uiControlConfig.layers));
+    }
+
     const newSceneData = {
       name,
       ts: Date.now(),
-      layers: JSON.parse(JSON.stringify(activeLayerConfigs)),
-      tokenAssignments: JSON.parse(JSON.stringify(tokenAssignments)),
+      layers: liveLayersConfig,
+      tokenAssignments: JSON.parse(JSON.stringify(uiControlConfig.tokenAssignments)),
     };
 
     addNewSceneToStagedWorkspace(name, newSceneData);
     addToast(`Scene "${name}" created and staged.`, "success");
     setNewSceneName("");
+
+    if (originalSceneName && originalSceneName !== name && reloadSceneOntoInactiveDeck) {
+        reloadSceneOntoInactiveDeck(originalSceneName);
+    }
     
-  }, [newSceneName, savedSceneList, activeLayerConfigs, tokenAssignments, addNewSceneToStagedWorkspace, addToast]);
+  }, [newSceneName, savedSceneList, uiControlConfig, addNewSceneToStagedWorkspace, addToast, managerInstancesRef, renderedCrossfaderValue, activeSceneName, reloadSceneOntoInactiveDeck]);
 
   const handleDeleteScene = useCallback((nameToDelete) => {
     if (window.confirm(`Are you sure you want to delete the scene "${nameToDelete}"? This will be staged for the next save.`)) {
@@ -246,7 +285,7 @@ const EnhancedControlPanel = ({
             {savedSceneList.map((scene) => (
               <li key={scene.name} className={scene.name === activeSceneName ? "active" : ""}>
                 <div className="scene-main-content">
-                  <button className="scene-name" onClick={() => onSceneSelect(scene.name)} disabled={isSaving} title={`Load "${scene.name}"`}>
+                  <button className="scene-name" onClick={() => onSceneSelect(scene.name, crossfadeDurationMs)} disabled={isSaving} title={`Load "${scene.name}"`}>
                     {scene.name}
                   </button>
                   {stagedActiveWorkspace?.defaultPresetName === scene.name && (<span className="default-scene-tag">(Default)</span>)}
@@ -254,14 +293,12 @@ const EnhancedControlPanel = ({
                 {isProfileOwner && (
                   <div className="scene-actions">
                     <button className="btn-icon" onClick={() => setDefaultSceneInStagedWorkspace(scene.name)} disabled={isSaving || stagedActiveWorkspace?.defaultPresetName === scene.name} title="Set as Default">★</button>
-                    {/* --- THIS IS THE GUARDRAIL FIX --- */}
                     <button 
                       className="btn-icon delete-scene" 
                       onClick={() => handleDeleteScene(scene.name)} 
                       disabled={isSaving || savedSceneList.length <= 1} 
                       title={savedSceneList.length <= 1 ? "Cannot delete the last scene" : `Delete "${scene.name}"`}
                     >×</button>
-                    {/* --- END FIX --- */}
                   </div>
                 )}
               </li>
@@ -375,14 +412,10 @@ EnhancedControlPanel.propTypes = {
   activeTab: PropTypes.string,
   onTabChange: PropTypes.func,
   pLockProps: PropTypes.object,
-  onSceneSelect: PropTypes.func,
   sequencerIntervalMs: PropTypes.number,
   onSetSequencerInterval: PropTypes.func,
   crossfadeDurationMs: PropTypes.number,
   onSetCrossfadeDuration: PropTypes.func,
-  isAutoFading: PropTypes.bool,
-  activeLayerConfigs: PropTypes.object,
-  onLayerConfigChange: PropTypes.func,
 };
 
 export default React.memo(EnhancedControlPanel);

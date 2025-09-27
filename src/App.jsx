@@ -2,13 +2,13 @@
 import React, { useEffect, useState, useCallback } from "react";
 import MainView from "./components/Main/Mainview";
 import StartVeil from "./components/UI/StartVeil";
-import { useAppContext } from "./context/AppContext"; // Import the hook
+import { useWorkspaceContext } from "./context/WorkspaceContext"; // Import the hook
 
 function App() {
   const [hasUserInitiated, setHasUserInitiated] = useState(false);
   
   // Get the context function to manually trigger the load
-  const { startLoadingProcess } = useAppContext();
+  const { startLoadingProcess } = useWorkspaceContext();
 
   useEffect(() => {
     const staticLoader = document.querySelector('.static-loader');

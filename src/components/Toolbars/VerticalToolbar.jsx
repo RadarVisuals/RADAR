@@ -12,12 +12,13 @@ import {
   wavezIcon,
   setsIcon,
 } from "../../assets";
+import { useNotificationContext } from "../../context/NotificationContext";
 
 const VerticalToolbar = ({
   activePanel,
   setActivePanel,
-  notificationCount = 0,
 }) => {
+  const { unreadCount: notificationCount } = useNotificationContext();
 
   const handleIconClick = (panelName) => {
     if (typeof setActivePanel === 'function') {
@@ -133,7 +134,6 @@ const VerticalToolbar = ({
 VerticalToolbar.propTypes = {
   activePanel: PropTypes.string,
   setActivePanel: PropTypes.func.isRequired,
-  notificationCount: PropTypes.number,
 };
 
 export default VerticalToolbar;

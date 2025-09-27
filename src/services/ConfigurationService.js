@@ -1,5 +1,4 @@
 // src/services/ConfigurationService.js
-
 import {
   hexToString, stringToHex,
   getAddress,
@@ -170,22 +169,17 @@ class ConfigurationService {
   async _loadWorkspaceFromCID(cid) {
     const logPrefix = `[CS _loadWorkspaceFromCID CID:${cid.slice(0, 10)}]`;
     if (!cid) return null;
-    try {
-        const gatewayUrl = `${IPFS_GATEWAY}${cid}`;
-        if (import.meta.env.DEV) console.log(`${logPrefix} Fetching workspace from ${gatewayUrl}`);
-        const response = await fetch(gatewayUrl);
-        if (!response.ok) {
-            throw new Error(`Failed to fetch from IPFS gateway: ${response.status} ${response.statusText}`);
-        }
-        const workspaceData = await response.json();
-        if (typeof workspaceData !== 'object' || workspaceData === null || !('presets' in workspaceData)) {
-            throw new Error('Fetched data is not a valid workspace object.');
-        }
-        return workspaceData;
-    } catch (error) {
-        if (import.meta.env.DEV) console.error(`${logPrefix} Failed to load workspace:`, error);
-        return null;
+    const gatewayUrl = `${IPFS_GATEWAY}${cid}`;
+    if (import.meta.env.DEV) console.log(`${logPrefix} Fetching workspace from ${gatewayUrl}`);
+    const response = await fetch(gatewayUrl);
+    if (!response.ok) {
+        throw new Error(`Failed to fetch from IPFS gateway: ${response.status} ${response.statusText}`);
     }
+    const workspaceData = await response.json();
+    if (typeof workspaceData !== 'object' || workspaceData === null || !('presets' in workspaceData)) {
+        throw new Error('Fetched data is not a valid workspace object.');
+    }
+    return workspaceData;
   }
 
   async loadWorkspace(profileAddress) {

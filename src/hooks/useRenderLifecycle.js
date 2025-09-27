@@ -44,23 +44,6 @@ export function useRenderLifecycle(options) {
     });
   }, []);
 
-  // --- ADDED: Enhanced Logging for Inputs ---
-  useEffect(() => {
-    if (import.meta.env.DEV) {
-      console.log('%c[RenderLifecycle] Inputs Changed:', 'color: #9b59b6;', {
-        renderState,
-        managersReady,
-        isInitiallyResolved,
-        hasValidDimensions,
-        isContainerObservedVisible,
-        isFullyLoaded,
-        loadError: !!loadError,
-        upError: !!(upInitializationError || upFetchStateError),
-      });
-    }
-  }, [renderState, managersReady, isInitiallyResolved, hasValidDimensions, isContainerObservedVisible, isFullyLoaded, loadError, upInitializationError, upFetchStateError]);
-  // --- END LOGGING ---
-
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
@@ -104,30 +87,45 @@ export function useRenderLifecycle(options) {
     }
     prevAddressRef.current = currentProfileAddress;
   }, [currentProfileAddress, resetLifecycle]);
-
+  
+  // --- THIS IS THE FIX ---
+  // This useEffect now correctly determines the current loading state without getting stuck.
   useEffect(() => {
     const currentState = renderState;
+
+    // Highest priority: check for critical errors.
     if (loadError || upInitializationError || upFetchStateError) {
       if (currentState !== 'error') logStateChange('error', 'Critical error detected');
       return;
     }
-    if (['rendered', 'error', 'fading_out'].includes(currentState)) {
+
+    // If we are already rendered or in a transition, don't revert to a loading state.
+    if (['rendered', 'fading_out'].includes(currentState)) {
       return;
     }
-    if (!hasValidDimensions) {
-      if (currentState !== 'waiting_layout') logStateChange('waiting_layout', 'Awaiting valid dimensions');
-      return;
+
+    // The key change is here: we now proceed to 'rendered' as soon as the data is loaded and the layout is valid.
+    // We no longer wait for `managersReady` in this specific check, as it can "flicker" during a re-render.
+    const allPrimaryPrerequisitesMet = isInitiallyResolved && hasValidDimensions && isFullyLoaded;
+
+    if (allPrimaryPrerequisitesMet) {
+      logStateChange('rendered', 'All primary prerequisites (data, layout) met');
+    } else {
+      // Set the loading message based on the first unmet condition.
+      if (!isInitiallyResolved || !isFullyLoaded) {
+        logStateChange('resolving_initial_config', 'Awaiting data resolution');
+      } else if (!managersReady) {
+        // This state is now okay, because the primary condition check above will eventually pass.
+        logStateChange('initializing_managers', 'Awaiting Managers');
+      } else if (!hasValidDimensions) {
+        logStateChange('waiting_layout', 'Awaiting valid dimensions');
+      }
     }
-    if (!managersReady) {
-      if (currentState !== 'initializing_managers') logStateChange('initializing_managers', 'Awaiting Managers');
-      return;
-    }
-    if (!isInitiallyResolved || !isFullyLoaded) {
-      if (currentState !== 'resolving_initial_config') logStateChange('resolving_initial_config', 'Awaiting data resolution');
-      return;
-    }
-    logStateChange('rendered', 'All prerequisites met');
-  }, [renderState, managersReady, isInitiallyResolved, hasValidDimensions, isFullyLoaded, loadError, upInitializationError, upFetchStateError, logStateChange]);
+  }, [
+    renderState, managersReady, isInitiallyResolved, hasValidDimensions, isFullyLoaded, 
+    loadError, upInitializationError, upFetchStateError, logStateChange
+  ]);
+  // --- END FIX ---
 
   useEffect(() => {
     if (isInitiallyResolved && configLoadNonce > lastAppliedNonceRef.current && renderState === 'rendered') {

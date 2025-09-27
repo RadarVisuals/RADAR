@@ -1,28 +1,19 @@
 // src/context/MIDIContext.jsx
 import React, {
-  createContext, useContext, useState, useEffect, useCallback, useRef, useMemo
+  createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, useReducer
 } from 'react';
 import PropTypes from 'prop-types';
 
-import { useAppContext } from './AppContext';
-import { sliderParams } from '../config/sliderParams';
+import { useWorkspaceContext } from './WorkspaceContext';
 
 const MAX_MONITOR_ENTRIES = 100;
-const PENDING_ACTION_EXPIRY_MS = 1000;
 const MIDI_CONNECT_TIMEOUT_MS = 10000;
 
 const defaultContextValue = {
   midiAccess: null, isConnected: false, isConnecting: false, error: null, midiInputs: [],
   midiMap: {}, layerMappings: { "1": {}, "2": {}, "3": {} },
   midiLearning: null, learningLayer: null, selectedChannel: 0, midiMonitorData: [],
-  showMidiMonitor: false, pendingLayerSelect: null, pendingParamUpdate: null,
-  pendingGlobalAction: null,
-  pendingCrossfaderUpdate: null,
-  // --- FIX: REMOVED from default value ---
-  pendingNextScene: null,
-  pendingPrevScene: null,
-  pendingNextWorkspace: null,
-  pendingPrevWorkspace: null,
+  showMidiMonitor: false, pendingActions: [],
   connectMIDI: async () => { if (import.meta.env.DEV) console.warn("connectMIDI called on default MIDIContext"); return null; },
   disconnectMIDI: () => { if (import.meta.env.DEV) console.warn("disconnectMIDI called on default MIDIContext"); },
   startMIDILearn: () => { if (import.meta.env.DEV) console.warn("startMIDILearn called on default MIDIContext"); },
@@ -36,9 +27,30 @@ const defaultContextValue = {
   setShowMidiMonitor: () => { if (import.meta.env.DEV) console.warn("setShowMidiMonitor called on default MIDIContext"); },
   clearPendingActions: () => { if (import.meta.env.DEV) console.warn("clearPendingActions called on default MIDIContext"); },
   mapParameterToMIDI: () => { if (import.meta.env.DEV) console.warn("mapParameterToMIDI called on default MIDIContext"); },
+  midiStateRef: { current: null }, // Added for default value consistency
 };
 
 const MIDIContext = createContext(defaultContextValue);
+
+const midiActionsReducer = (state, action) => {
+  switch (action.type) {
+    case 'QUEUE_ACTION':
+      return {
+        ...state,
+        pendingActions: [...state.pendingActions, action.payload],
+      };
+    case 'CLEAR_QUEUE':
+      return {
+        ...state,
+        pendingActions: [],
+      };
+    default:
+      return state;
+  }
+};
+
+const initialState = { pendingActions: [] };
+
 
 const normalizeMIDIValue = (value, type = 'cc') => {
   if (type === 'pitchbend') return Math.max(0, Math.min(1, value / 16383));
@@ -65,13 +77,13 @@ const getMidiMessageType = (status) => {
 
 export function MIDIProvider({ children }) {
   const { 
-    activeMidiMap, 
+    stagedSetlist,
     updateGlobalMidiMap,
     updateLayerMidiMappings,
     isInitiallyResolved,
-    // --- FIX: Get the shared ref from AppContext ---
-    midiStateRef,
-  } = useAppContext();
+  } = useWorkspaceContext();
+  
+  const midiStateRef = useRef({ liveCrossfaderValue: null });
   
   const [midiAccess, setMidiAccess] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -83,23 +95,15 @@ export function MIDIProvider({ children }) {
   const [selectedChannel, setSelectedChannel] = useState(0);
   const [midiMonitorData, setMidiMonitorData] = useState([]);
   const [showMidiMonitor, setShowMidiMonitor] = useState(false);
-  const [pendingLayerSelect, setPendingLayerSelect] = useState(null);
-  const [pendingParamUpdate, setPendingParamUpdate] = useState(null);
-  const [pendingGlobalAction, setPendingGlobalAction] = useState(null);
-  const [pendingCrossfaderUpdate, setPendingCrossfaderUpdate] = useState(null);
-  // --- FIX: REMOVED this local state ---
-  // const [liveCrossfaderValue, setLiveCrossfaderValue] = useState(null);
-  const [pendingNextScene, setPendingNextScene] = useState(null);
-  const [pendingPrevScene, setPendingPrevScene] = useState(null);
-  const [pendingNextWorkspace, setPendingNextWorkspace] = useState(null);
-  const [pendingPrevWorkspace, setPendingPrevWorkspace] = useState(null);
+  const [midiActionState, dispatch] = useReducer(midiActionsReducer, initialState);
+  const { pendingActions } = midiActionState;
 
+  const activeMidiMap = useMemo(() => stagedSetlist?.globalUserMidiMap || {}, [stagedSetlist]);
   const activeControllerMidiMapRef = useRef(activeMidiMap);
   const midiLearningRef = useRef(midiLearning);
   const learningLayerRef = useRef(learningLayer);
   const selectedChannelRef = useRef(selectedChannel);
   const connectionInProgressRef = useRef(false);
-  const pendingTimeoutRef = useRef(null);
   const connectTimeoutRef = useRef(null);
   const isUnmountingRef = useRef(false);
   const midiAccessRefForCallbacks = useRef(midiAccess);
@@ -129,24 +133,6 @@ export function MIDIProvider({ children }) {
     document.addEventListener('force-end-loading', handleForceEndLoading);
     return () => document.removeEventListener('force-end-loading', handleForceEndLoading);
   }, []);
-
-  useEffect(() => {
-    if (pendingLayerSelect || pendingParamUpdate || pendingGlobalAction || pendingCrossfaderUpdate || pendingNextScene || pendingPrevScene || pendingNextWorkspace || pendingPrevWorkspace) {
-      if (pendingTimeoutRef.current) clearTimeout(pendingTimeoutRef.current);
-      pendingTimeoutRef.current = setTimeout(() => {
-        setPendingLayerSelect(null);
-        setPendingParamUpdate(null);
-        setPendingGlobalAction(null);
-        setPendingCrossfaderUpdate(null);
-        setPendingNextScene(null);
-        setPendingPrevScene(null);
-        setPendingNextWorkspace(null);
-        setPendingPrevWorkspace(null);
-        pendingTimeoutRef.current = null;
-      }, PENDING_ACTION_EXPIRY_MS);
-    }
-    return () => { if (pendingTimeoutRef.current) clearTimeout(pendingTimeoutRef.current); };
-  }, [pendingLayerSelect, pendingParamUpdate, pendingGlobalAction, pendingCrossfaderUpdate, pendingNextScene, pendingPrevScene, pendingNextWorkspace, pendingPrevWorkspace]);
 
   const mapParameterToMIDI = useCallback((param, layer, mappingData) => {
     const currentMap = activeMidiMap || {};
@@ -233,39 +219,33 @@ export function MIDIProvider({ children }) {
     if (!isCC && !isNoteOn && !isPitch) return;
 
     const currentControllerMap = activeControllerMidiMapRef.current || {};
-    
-    if (currentControllerMap.global && isNoteOn) {
-        const globalMappings = currentControllerMap.global;
-        const actions = {
-            'nextScene': setPendingNextScene,
-            'prevScene': setPendingPrevScene,
-            'nextWorkspace': setPendingNextWorkspace,
-            'prevWorkspace': setPendingPrevWorkspace,
-            'pLockToggle': (ts) => setPendingGlobalAction({ action: 'pLockToggle', timestamp: ts })
+    const globalMappings = currentControllerMap.global;
+
+    if (globalMappings) {
+        const discreteActions = {
+            'nextScene': { type: 'nextScene' },
+            'prevScene': { type: 'prevScene' },
+            'nextWorkspace': { type: 'nextWorkspace' },
+            'prevWorkspace': { type: 'prevWorkspace' },
+            'pLockToggle': { type: 'globalAction', action: 'pLockToggle' }
         };
 
-        for (const actionName in actions) {
+        for (const actionName in discreteActions) {
             const mapping = globalMappings[actionName];
-            if (mapping && mapping.type === 'note' && mapping.number === data1 && (mapping.channel === undefined || mapping.channel === msgChan)) {
-                actions[actionName]({ timestamp });
+            if (!mapping) continue;
+
+            let isMatch = (mapping.type === 'note' && isNoteOn && mapping.number === data1) ||
+                          (mapping.type === 'cc' && isCC && mapping.number === data1);
+            
+            if (isMatch && (mapping.channel === undefined || mapping.channel === msgChan)) {
+                const { type, action } = discreteActions[actionName];
+                const payload = action ? { type, action, timestamp } : { type, timestamp };
+                dispatch({ type: 'QUEUE_ACTION', payload });
                 return;
             }
         }
-    }
 
-    const globalControls = currentControllerMap.global;
-    if (globalControls) {
-        const pLockMapping = globalControls['pLockToggle'];
-        if (pLockMapping) {
-          let isMatch = (pLockMapping.type === 'note' && isNoteOn && pLockMapping.number === data1 && (pLockMapping.channel === undefined || pLockMapping.channel === msgChan)) ||
-                        (pLockMapping.type === 'cc' && isCC && pLockMapping.number === data1 && (pLockMapping.channel === undefined || pLockMapping.channel === msgChan));
-          if (isMatch) {
-            setPendingGlobalAction({ action: 'pLockToggle', timestamp });
-            return;
-          }
-        }
-
-        const crossfaderMapping = globalControls['crossfader'];
+        const crossfaderMapping = globalMappings['crossfader'];
         if (crossfaderMapping) {
             let isMatch = false;
             let rawValue = data2;
@@ -281,21 +261,21 @@ export function MIDIProvider({ children }) {
 
             if(isMatch) {
                 const normalizedValue = normalizeMIDIValue(rawValue, midiMsgType);
-                // --- THIS IS THE FIX: Update the shared ref instead of local state ---
                 if (midiStateRef) {
                   midiStateRef.current.liveCrossfaderValue = normalizedValue;
                 }
-                setPendingCrossfaderUpdate({ value: normalizedValue, timestamp });
+                dispatch({ type: 'QUEUE_ACTION', payload: { type: 'crossfaderUpdate', value: normalizedValue, timestamp } });
                 return;
             }
         }
     }
 
+
     if (isNoteOn) {
         for (const layerId in layerMappingsRef.current) {
             const lsm = layerMappingsRef.current[layerId];
             if (lsm?.type === 'note' && lsm.number === data1 && (lsm.channel === undefined || lsm.channel === msgChan)) {
-                setPendingLayerSelect({ layer: parseInt(layerId, 10), timestamp });
+                dispatch({ type: 'QUEUE_ACTION', payload: { type: 'layerSelect', layer: parseInt(layerId, 10), timestamp } });
                 return;
             }
         }
@@ -325,7 +305,7 @@ export function MIDIProvider({ children }) {
 
             if (isMatch) {
                 const currentNormalizedMidiVal = normalizeMIDIValue(rawValue, midiMsgTypeForNormalization);
-                setPendingParamUpdate({ layer: parseInt(layerIdStr, 10), param: paramName, value: currentNormalizedMidiVal, timestamp });
+                dispatch({ type: 'QUEUE_ACTION', payload: { type: 'paramUpdate', layer: parseInt(layerIdStr, 10), param: paramName, value: currentNormalizedMidiVal, timestamp } });
                 return;
             }
         }
@@ -446,7 +426,6 @@ export function MIDIProvider({ children }) {
       });
     }
     if (connectTimeoutRef.current) { clearTimeout(connectTimeoutRef.current); connectTimeoutRef.current = null; }
-    if (pendingTimeoutRef.current) { clearTimeout(pendingTimeoutRef.current); pendingTimeoutRef.current = null; }
     connectionInProgressRef.current = false;
     if (forceFullDisconnect || isFinalUnmount || !isDevelopment) {
       setMidiAccess(null);
@@ -468,18 +447,7 @@ export function MIDIProvider({ children }) {
   const clearMIDIMonitor = useCallback(() => { setMidiMonitorData([]); }, []);
   
   const clearPendingActions = useCallback(() => {
-    setPendingLayerSelect(null);
-    setPendingParamUpdate(null);
-    setPendingGlobalAction(null);
-    setPendingCrossfaderUpdate(null);
-    setPendingNextScene(null);
-    setPendingPrevScene(null);
-    setPendingNextWorkspace(null);
-    setPendingPrevWorkspace(null);
-    if (pendingTimeoutRef.current) {
-      clearTimeout(pendingTimeoutRef.current);
-      pendingTimeoutRef.current = null;
-    }
+    dispatch({ type: 'CLEAR_QUEUE' });
   }, []);
 
   useEffect(() => {
@@ -494,26 +462,23 @@ export function MIDIProvider({ children }) {
     midiAccess, isConnected, isConnecting, error, midiInputs,
     midiMap: activeMidiMap,
     layerMappings, midiLearning, learningLayer, selectedChannel,
-    midiMonitorData, showMidiMonitor, pendingLayerSelect, pendingParamUpdate,
-    pendingGlobalAction, pendingCrossfaderUpdate, 
-    // --- FIX: REMOVED from context value ---
-    pendingNextScene, pendingPrevScene, pendingNextWorkspace, pendingPrevWorkspace,
+    midiMonitorData, showMidiMonitor, pendingActions,
     setShowMidiMonitor,
     connectMIDI, disconnectMIDI, startMIDILearn, stopMIDILearn,
     startLayerMIDILearn, stopLayerMIDILearn, clearAllMappings, setChannelFilter,
     clearMIDIMonitor, mapParameterToMIDI, clearPendingActions,
     startGlobalMIDILearn,
+    midiStateRef,
   }), [
     midiAccess, isConnected, isConnecting, error, midiInputs, 
     activeMidiMap,
     layerMappings, midiLearning, learningLayer, selectedChannel,
-    midiMonitorData, showMidiMonitor, pendingLayerSelect, pendingParamUpdate,
-    pendingGlobalAction, pendingCrossfaderUpdate, 
-    pendingNextScene, pendingPrevScene, pendingNextWorkspace, pendingPrevWorkspace,
+    midiMonitorData, showMidiMonitor, pendingActions,
     connectMIDI, disconnectMIDI, clearAllMappings, mapParameterToMIDI,
     setChannelFilter, clearMIDIMonitor, setShowMidiMonitor, clearPendingActions, stopMIDILearn,
     startMIDILearn, startLayerMIDILearn, stopLayerMIDILearn,
     startGlobalMIDILearn,
+    midiStateRef,
   ]);
 
   return (

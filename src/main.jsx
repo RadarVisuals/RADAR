@@ -4,9 +4,12 @@ import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import { UpProvider } from "./context/UpProvider.jsx";
 import { UserSessionProvider } from "./context/UserSessionContext.jsx";
-import { AppProvider } from "./context/AppContext.jsx";
+import { WorkspaceProvider } from "./context/WorkspaceContext.jsx";
+import { AssetProvider } from "./context/AssetContext.jsx";
+import { VisualEngineProvider } from "./context/VisualEngineContext.jsx";
 import { MIDIProvider } from "./context/MIDIContext.jsx";
 import { ToastProvider } from "./context/ToastContext.jsx";
+import { NotificationProvider } from "./context/NotificationContext.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import "./index.css";
 import { initializeHostUPConnector } from "./context/UpServerProvider.js";
@@ -28,20 +31,23 @@ if (!inIframe) {
   console.log("[main.jsx] Running inside an iframe, skipping Host UP Connector initialization.");
 }
 
-// The App component will now manage its own state and the provider tree.
-// This keeps main.jsx clean and focused on the initial render.
 const AppTree = (
   <ErrorBoundary>
     <UpProvider>
       <UserSessionProvider>
-        {/* Note: hasUserInitiated is now handled inside App/AppProvider */}
-        <AppProvider>
-          <MIDIProvider>
-            <ToastProvider>
-              <App />
-            </ToastProvider>
-          </MIDIProvider>
-        </AppProvider>
+        <WorkspaceProvider>
+          <AssetProvider>
+            <MIDIProvider>
+              <VisualEngineProvider>
+                <ToastProvider>
+                  <NotificationProvider>
+                    <App />
+                  </NotificationProvider>
+                </ToastProvider>
+              </VisualEngineProvider>
+            </MIDIProvider>
+          </AssetProvider>
+        </WorkspaceProvider>
       </UserSessionProvider>
     </UpProvider>
   </ErrorBoundary>
