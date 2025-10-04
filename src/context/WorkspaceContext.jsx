@@ -29,10 +29,6 @@ export const WorkspaceProvider = ({ children }) => {
     const [saveSuccess, setSaveSuccess] = useState(false);
     const [hasPendingChanges, setHasPendingChanges] = useState(false);
 
-    // --- THIS IS THE FIX (Part 1) ---
-    const [sceneUpdateTrigger, setSceneUpdateTrigger] = useState(0);
-    // --- END FIX ---
-
     const configServiceRef = useRef(null);
     const [configServiceInstanceReady, setConfigServiceInstanceReady] = useState(false);
     
@@ -470,11 +466,7 @@ export const WorkspaceProvider = ({ children }) => {
           newWorkspace.presets[newSceneName] = newSceneData;
           return newWorkspace;
         });
-        setActiveSceneName(newSceneName);
         setHasPendingChanges(true);
-        // --- THIS IS THE FIX (Part 1) ---
-        setSceneUpdateTrigger(prev => prev + 1);
-        // --- END FIX ---
     }, []);
     
     const deleteSceneFromStagedWorkspace = useCallback((nameToDelete) => {
@@ -649,10 +641,9 @@ export const WorkspaceProvider = ({ children }) => {
         removeTokenFromPalette,
         preloadWorkspace,
         setHasPendingChanges,
+        // --- FIX: Expose setActiveSceneName ---
         setActiveSceneName,
-        // --- THIS IS THE FIX (Part 1) ---
-        sceneUpdateTrigger,
-        // --- END FIX ---
+        // ------------------------------------
     }), [
         isLoading, loadingMessage, isFullyLoaded, isInitiallyResolved, loadError, isSaving, saveError, saveSuccess, hasPendingChanges,
         configServiceRef, configServiceInstanceReady,
@@ -680,10 +671,9 @@ export const WorkspaceProvider = ({ children }) => {
         addTokenToPalette,
         removeTokenFromPalette,
         preloadWorkspace,
+        setHasPendingChanges,
+        // --- FIX: Add setActiveSceneName to dependency array ---
         setActiveSceneName,
-        // --- THIS IS THE FIX (Part 1) ---
-        sceneUpdateTrigger,
-        // --- END FIX ---
     ]);
 
     return (

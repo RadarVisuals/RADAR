@@ -1,3 +1,4 @@
+// src/hooks/useCanvasOrchestrator.js
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import debounce from '../utils/debounce';
 import CanvasManager from '../utils/CanvasManager';
@@ -104,21 +105,32 @@ export function useCanvasOrchestrator({ canvasRefs, sideA, sideB, crossfaderValu
             if (manager) {
                 manager.setCrossfadeValue(crossfaderValue);
 
-                // --- START: FIX FOR OPACITY CONTROL ---
-                // 1. Get the opacity value from the layer's own configuration controls.
-                // Fallback to 1.0 if it's not defined.
+                // --- START: FIX FOR OPACITY AND RACE CONDITION ---
                 const layerOpacityA = sideA.config?.layers?.[layerIdStr]?.opacity ?? 1.0;
                 const layerOpacityB = sideB.config?.layers?.[layerIdStr]?.opacity ?? 1.0;
 
-                // 2. Calculate the opacity from the equal-power crossfader.
                 const angle = crossfaderValue * 0.5 * Math.PI;
                 const crossfadeOpacityA = Math.cos(angle);
                 const crossfadeOpacityB = Math.sin(angle);
 
-                // 3. Multiply them together to get the final opacity for each canvas.
-                const finalOpacityA = crossfadeOpacityA * layerOpacityA;
-                const finalOpacityB = crossfadeOpacityB * layerOpacityB;
+                let finalOpacityA = crossfadeOpacityA * layerOpacityA;
+                let finalOpacityB = crossfadeOpacityB * layerOpacityB;
 
+                // **RACE CONDITION FIX:** Check if the content is ready before making the canvas visible.
+                // Get the target token ID for each deck from the main state.
+                const targetTokenA_Assignment = sideA.config?.tokenAssignments?.[layerIdStr];
+                const targetTokenB_Assignment = sideB.config?.tokenAssignments?.[layerIdStr];
+                const targetTokenA_Id = typeof targetTokenA_Assignment === 'object' ? targetTokenA_Assignment.id : targetTokenA_Assignment;
+                const targetTokenB_Id = typeof targetTokenB_Assignment === 'object' ? targetTokenB_Assignment.id : targetTokenB_Assignment;
+
+                // Compare with the token ID the manager has actually loaded.
+                const isDeckA_ContentReady = manager.tokenA_id === targetTokenA_Id;
+                const isDeckB_ContentReady = manager.tokenB_id === targetTokenB_Id;
+
+                // If the content isn't ready, force opacity to 0 to prevent showing stale content.
+                if (!isDeckA_ContentReady) finalOpacityA = 0;
+                if (!isDeckB_ContentReady) finalOpacityB = 0;
+                
                 if (manager.canvasA) {
                     manager.canvasA.style.opacity = finalOpacityA;
                     manager.canvasA.style.mixBlendMode = sideA.config?.layers?.[layerIdStr]?.blendMode || 'normal';
@@ -127,7 +139,7 @@ export function useCanvasOrchestrator({ canvasRefs, sideA, sideB, crossfaderValu
                     manager.canvasB.style.opacity = finalOpacityB;
                     manager.canvasB.style.mixBlendMode = sideB.config?.layers?.[layerIdStr]?.blendMode || 'normal';
                 }
-                // --- END: FIX FOR OPACITY CONTROL ---
+                // --- END: FIX FOR OPACITY AND RACE CONDITION ---
             }
         }
     }, [crossfaderValue, managersReady, sideA, sideB]);

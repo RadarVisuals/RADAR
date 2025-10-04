@@ -129,7 +129,9 @@ function UIOverlay({
 }) {
   const { addToast } = useToast();
   const { stagedSetlist, loadWorkspace, activeWorkspaceName: currentWorkspaceName, isLoading: isConfigLoading, activeSceneName, fullSceneList: savedSceneList } = useWorkspaceContext();
-  const { renderedCrossfaderValue, isAutoFading, handleSceneSelect, handleCrossfaderChange } = useVisualEngineContext();
+  // --- FIX: Get the new commit handler ---
+  const { renderedCrossfaderValue, isAutoFading, handleSceneSelect, handleCrossfaderChange, handleCrossfaderCommit } = useVisualEngineContext();
+  // ------------------------------------
   const { unreadCount } = useNotificationContext();
   const { isRadarProjectAdmin, hostProfileAddress: currentProfileAddress } = useUserSession();
   const { isUiVisible, activePanel, toggleSidePanel, toggleInfoOverlay, toggleUiVisibility } = uiState;
@@ -141,9 +143,7 @@ function UIOverlay({
   const nextSceneIndexRef = useRef(0);
   const isMountedRef = useRef(false);
 
-  // --- THIS IS THE FIX: State is now held in the correct parent component ---
   const [sequencerIntervalMs, setSequencerIntervalMs] = useState(DEFAULT_SEQUENCER_INTERVAL);
-  // --- END FIX ---
 
   const workspaceList = useMemo(() => {
     if (!stagedSetlist?.workspaces) return [];
@@ -195,9 +195,6 @@ function UIOverlay({
         } else {
           nextSceneIndexRef.current = 0;
         }
-        // --- THIS IS THE FIX: Removed the immediate imperative call ---
-        // runNextSequenceStep(); // <--- REMOVED
-        // The useEffect hook will now handle the first step after the initial interval.
       } else {
         addToast('Sequencer stopped.', 'info', 2000);
         if (sequencerTimeoutRef.current) clearTimeout(sequencerTimeoutRef.current);
@@ -206,11 +203,9 @@ function UIOverlay({
     });
   };
 
-  // --- FIX: Logic simplified and corrected ---
   const shouldShowUI = useMemo(() => isReady, [isReady]);
   const showSceneBar = useMemo(() => shouldShowUI && isUiVisible && !activePanel && !!currentProfileAddress, [shouldShowUI, isUiVisible, activePanel, currentProfileAddress]);
   const mainUiContainerClass = `ui-elements-container ${shouldShowUI && isUiVisible ? "visible" : "hidden-by-opacity"}`;
-  // --- END FIX ---
 
   if (!isReady) {
     return null;
@@ -269,7 +264,9 @@ function UIOverlay({
                 <Crossfader
                   value={renderedCrossfaderValue}
                   onInput={handleCrossfaderChange}
-                  onChange={handleCrossfaderChange}
+                  // --- FIX: Use the new handler for the onChange event ---
+                  onChange={handleCrossfaderCommit}
+                  // ----------------------------------------------------
                   disabled={isAutoFading}
                 />
                 <MemoizedSceneSelectorBar

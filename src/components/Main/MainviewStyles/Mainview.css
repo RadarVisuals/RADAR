@@ -79,21 +79,23 @@
 
 
 /*
-  Core transition applied when opacity or transform changes.
-  This is the master duration for scene fades.
+  Core transition applied when transform changes.
+  Opacity transitions are now handled exclusively by JS to prevent race conditions.
 */
 .canvas {
-  transition-property: opacity, transform;
+  /* --- FIX: Removed 'opacity' from transition-property --- */
+  transition-property: transform;
   transition-duration: 500ms; /* This MUST match CANVAS_FADE_DURATION in JS */
   transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 /*
   .visible class is added by JS to set the final visible state.
-  The transition to these properties is governed by the base .canvas transition.
+  Opacity is now controlled by inline styles from the canvas orchestrator.
 */
 .canvas.visible {
-  opacity: 1;
+  /* --- FIX: Opacity is no longer controlled by this class --- */
+  /* opacity: 1; */
   visibility: visible;
   /* The final transform for a visible canvas is its external parallax position,
      which is handled by inline styles in CanvasManager.js.
@@ -101,21 +103,19 @@
   transform: scale(1);
 }
 
+/* --- FIX: The following two rules are the primary cause of the flicker and have been REMOVED --- */
 /*
-  A fading-out canvas is one that is already `.visible` but needs to animate to hidden.
-  This class overrides the opacity to trigger the transition defined on the base `.canvas` rule.
-*/
 .canvas.is-fading-out {
   opacity: 0 !important;
   transform: scale(0.95) !important;
-  z-index: 100 !important; /* Keep on top during its fade out */
+  z-index: 100 !important;
 }
 
-
-/* Applied to the canvas that is FADING IN */
 .canvas.is-fading-in {
   visibility: visible !important;
 }
+*/
+/* --- END FIX --- */
 
 
 /* Entity Logo */

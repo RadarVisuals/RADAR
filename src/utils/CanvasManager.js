@@ -71,13 +71,9 @@ class CanvasManager {
         this.layerId = layerId;
 
         try {
-            // --- START: FIX FOR PRE-MULTIPLIED ALPHA ---
-            // Create the context with premultipliedAlpha set to true. This aligns the canvas
-            // drawing with the browser's compositing engine, preventing opacity dips during CSS fades.
             const contextOptions = { alpha: true, willReadFrequently: false, premultipliedAlpha: true };
             this.ctxA = canvasA.getContext('2d', contextOptions);
             this.ctxB = canvasB.getContext('2d', contextOptions);
-            // --- END: FIX FOR PRE-MULTIPLIED ALPHA ---
 
             if (!this.ctxA || !this.ctxB) throw new Error(`Failed to get 2D context for Layer ${layerId}`);
         } catch (e) {
@@ -117,30 +113,45 @@ class CanvasManager {
 
     async setCrossfadeTarget(imageSrc, config, tokenId) {
         if (this.isDestroyed) throw new Error("Manager destroyed");
-        this.tokenB_id = tokenId || null;
-        if (!imageSrc || typeof imageSrc !== 'string') {
-            this.imageB = null; this.configB = config || this.getDefaultConfig();
+        
+        const newConfig = config || this.getDefaultConfig();
+        this.configB = newConfig;
+
+        this.driftStateB = newConfig?.driftState || { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
+        Object.keys(this.interpolatorsB).forEach(key => {
+            const interpolator = this.interpolatorsB[key];
+            const value = this.configB?.[key];
+            if (interpolator && value !== undefined) interpolator.snap(value);
+        });
+
+        // --- THIS IS THE FIX: Symmetrical reset for Deck B ---
+        // When applying a full new configuration (like from a scene snapshot),
+        // the new 'angle' property already contains the live rotation. We must reset
+        // the continuous rotation counter to prevent a visual jump.
+        this.continuousRotationAngleB = 0;
+        // --- END FIX ---
+
+        if (this.tokenB_id === tokenId) {
             return;
         }
+
+        this.tokenB_id = tokenId || null;
+        if (!imageSrc || typeof imageSrc !== 'string') {
+            this.imageB = null;
+            return;
+        }
+
         try {
             const decodedBitmap = await getDecodedImage(imageSrc);
             if (this.isDestroyed) return;
             if (decodedBitmap.width === 0 || decodedBitmap.height === 0) {
-                 this.imageB = null; this.configB = config || this.getDefaultConfig();
+                 this.imageB = null;
                  throw new Error(`Loaded crossfade image bitmap has zero dimensions: ${imageSrc.substring(0, 100)}`);
             }
             this.imageB = decodedBitmap;
-            this.configB = config || this.getDefaultConfig();
-            this.continuousRotationAngleB = 0;
-            this.driftStateB = { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
-            Object.keys(this.interpolatorsB).forEach(key => {
-                const interpolator = this.interpolatorsB[key];
-                const value = this.configB?.[key];
-                if (interpolator && value !== undefined) interpolator.snap(value);
-            });
         } catch (error) {
             if (this.isDestroyed) throw new Error("Manager destroyed during crossfade image load");
-            this.imageB = null; this.configB = config || this.getDefaultConfig();
+            this.imageB = null;
             throw error;
         }
     }
@@ -221,8 +232,13 @@ class CanvasManager {
         const mergedConfig = { ...defaultConfig, ...(newConfig || {}) };
         if (!BLEND_MODES.includes(mergedConfig.blendMode)) mergedConfig.blendMode = 'normal';
         this.configA = mergedConfig;
-        this.continuousRotationAngleA = 0;
+        
         this.driftStateA = newConfig?.driftState || { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
+        
+        // --- THIS IS THE FIX: Symmetrical reset for Deck A ---
+        this.continuousRotationAngleA = 0;
+        // --- END FIX ---
+
         Object.keys(this.interpolators).forEach(key => this.interpolators[key]?.snap(this.configA[key]));
         this.handleEnabledToggle(this.configA.enabled);
     }
@@ -302,12 +318,15 @@ class CanvasManager {
 
     async setImage(src, tokenId) {
         if (this.isDestroyed) return Promise.reject(new Error("Manager destroyed"));
+        
+        if (this.tokenA_id === tokenId && this.lastImageSrc === src) return Promise.resolve();
+
         this.tokenA_id = tokenId || null;
         if (!src || typeof src !== 'string') {
             this.imageA = null; this.lastImageSrc = null;
             return Promise.resolve();
         }
-        if (src === this.lastImageSrc && this.imageA) return Promise.resolve();
+        
         try {
             const decodedBitmap = await getDecodedImage(src);
             if (this.isDestroyed) return;

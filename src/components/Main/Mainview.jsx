@@ -250,16 +250,26 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     animationDataRef: sequencer.animationDataRef,
   }), [sequencer, handleTogglePLock]);
 
+  // --- START: FIX ---
+  // This function now determines all necessary classes for the two-stage transition.
   const getCanvasClasses = useCallback((layerIdStr) => {
     let classes = `canvas layer-${layerIdStr}`;
     const isOutgoing = isTransitioning && outgoingLayerIdsOnTransitionStart?.has(layerIdStr);
     const isStableAndVisible = !isTransitioning && renderState === 'rendered';
+    
+    // The incoming canvas is only made visible AFTER the fade-out is complete.
     const isIncomingAndReadyToFadeIn = isTransitioning && makeIncomingCanvasVisible;
-    if (isOutgoing) classes += ' visible is-fading-out';
-    else if (isStableAndVisible) classes += ' visible';
-    else if (isIncomingAndReadyToFadeIn) classes += ' visible is-fading-in';
+
+    if (isOutgoing) {
+      classes += ' visible is-fading-out';
+    } else if (isStableAndVisible) {
+      classes += ' visible';
+    } else if (isIncomingAndReadyToFadeIn) {
+      classes += ' visible is-fading-in';
+    }
     return classes;
   }, [isTransitioning, outgoingLayerIdsOnTransitionStart, renderState, makeIncomingCanvasVisible]);
+  // --- END: FIX ---
 
   const containerClass = `canvas-container ${isTransitioning ? 'transitioning-active' : ''} ${isWorkspaceTransitioning ? 'workspace-fading-out' : ''}`;
   

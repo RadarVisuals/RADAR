@@ -60,6 +60,7 @@ const EnhancedControlPanel = ({
     deleteSceneFromStagedWorkspace,
     setDefaultSceneInStagedWorkspace,
     isSaving,
+    setActiveSceneName,
   } = useWorkspaceContext();
 
   const {
@@ -69,7 +70,7 @@ const EnhancedControlPanel = ({
     updateLayerConfig: onLayerConfigChange,
     managerInstancesRef,
     renderedCrossfaderValue,
-    reloadSceneOntoInactiveDeck,
+    setLiveConfig,
   } = useVisualEngineContext();
 
   const {
@@ -82,7 +83,7 @@ const EnhancedControlPanel = ({
   const [newSceneName, setNewSceneName] = useState("");
   const [localIntervalInput, setLocalIntervalInput] = useState(sequencerIntervalMs / 1000);
   const [localDurationInput, setLocalDurationInput] = useState(crossfadeDurationMs / 1000);
-
+  
   useEffect(() => {
     setLocalIntervalInput(sequencerIntervalMs / 1000);
   }, [sequencerIntervalMs]);
@@ -123,7 +124,6 @@ const EnhancedControlPanel = ({
   }, [onLayerConfigChange, activeLayer]);
 
   const handleCreateScene = useCallback(() => {
-    const originalSceneName = activeSceneName;
     const name = newSceneName.trim();
     if (!name) {
       addToast("Scene name cannot be empty.", "warning");
@@ -136,25 +136,31 @@ const EnhancedControlPanel = ({
     }
     
     const managers = managerInstancesRef.current?.current;
-    let liveLayersConfig = {};
     const activeDeckIsA = renderedCrossfaderValue < 0.5;
+    let liveLayersConfig = {};
 
-    if (managers) {
+    if (managers && Object.keys(managers).length > 0) {
       for (const layerId in managers) {
         const manager = managers[layerId];
+        
         const sourceConfig = activeDeckIsA ? manager.configA : manager.configB;
         const sourceRotation = activeDeckIsA ? manager.continuousRotationAngleA : manager.continuousRotationAngleB;
         const sourceDriftState = activeDeckIsA ? manager.driftStateA : manager.driftStateB;
+        
         if (!sourceConfig) {
             console.warn(`[EnhancedControlPanel] Could not find source config for layer ${layerId} on the active deck. Skipping.`);
             continue;
         }
+        
         const liveConfig = JSON.parse(JSON.stringify(sourceConfig));
+        
         liveConfig.angle = (sourceConfig.angle + sourceRotation) % 360;
         liveConfig.driftState = JSON.parse(JSON.stringify(sourceDriftState));
+        
         for (const key in manager.playbackValues) {
           liveConfig[key] = manager.playbackValues[key];
         }
+        
         liveLayersConfig[layerId] = liveConfig;
       }
     } else {
@@ -170,14 +176,17 @@ const EnhancedControlPanel = ({
     };
 
     addNewSceneToStagedWorkspace(name, newSceneData);
+
+    // setActiveSceneName(name); // <-- THIS LINE IS THE PROBLEM AND IS REMOVED TO FIX THE RACE CONDITION
+
+    if (setLiveConfig) {
+      setLiveConfig(newSceneData);
+    }
+
     addToast(`Scene "${name}" created and staged.`, "success");
     setNewSceneName("");
-
-    if (originalSceneName && originalSceneName !== name && reloadSceneOntoInactiveDeck) {
-        reloadSceneOntoInactiveDeck(originalSceneName);
-    }
     
-  }, [newSceneName, savedSceneList, uiControlConfig, addNewSceneToStagedWorkspace, addToast, managerInstancesRef, renderedCrossfaderValue, activeSceneName, reloadSceneOntoInactiveDeck]);
+  }, [newSceneName, savedSceneList, uiControlConfig, addNewSceneToStagedWorkspace, addToast, managerInstancesRef, renderedCrossfaderValue, setActiveSceneName, setLiveConfig]);
 
   const handleDeleteScene = useCallback((nameToDelete) => {
     if (window.confirm(`Are you sure you want to delete the scene "${nameToDelete}"? This will be staged for the next save.`)) {

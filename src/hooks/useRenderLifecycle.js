@@ -88,34 +88,27 @@ export function useRenderLifecycle(options) {
     prevAddressRef.current = currentProfileAddress;
   }, [currentProfileAddress, resetLifecycle]);
   
-  // --- THIS IS THE FIX ---
-  // This useEffect now correctly determines the current loading state without getting stuck.
+  // This useEffect correctly determines the current loading state.
   useEffect(() => {
     const currentState = renderState;
 
-    // Highest priority: check for critical errors.
     if (loadError || upInitializationError || upFetchStateError) {
       if (currentState !== 'error') logStateChange('error', 'Critical error detected');
       return;
     }
 
-    // If we are already rendered or in a transition, don't revert to a loading state.
     if (['rendered', 'fading_out'].includes(currentState)) {
       return;
     }
 
-    // The key change is here: we now proceed to 'rendered' as soon as the data is loaded and the layout is valid.
-    // We no longer wait for `managersReady` in this specific check, as it can "flicker" during a re-render.
     const allPrimaryPrerequisitesMet = isInitiallyResolved && hasValidDimensions && isFullyLoaded;
 
     if (allPrimaryPrerequisitesMet) {
       logStateChange('rendered', 'All primary prerequisites (data, layout) met');
     } else {
-      // Set the loading message based on the first unmet condition.
       if (!isInitiallyResolved || !isFullyLoaded) {
         logStateChange('resolving_initial_config', 'Awaiting data resolution');
       } else if (!managersReady) {
-        // This state is now okay, because the primary condition check above will eventually pass.
         logStateChange('initializing_managers', 'Awaiting Managers');
       } else if (!hasValidDimensions) {
         logStateChange('waiting_layout', 'Awaiting valid dimensions');
@@ -125,13 +118,15 @@ export function useRenderLifecycle(options) {
     renderState, managersReady, isInitiallyResolved, hasValidDimensions, isFullyLoaded, 
     loadError, upInitializationError, upFetchStateError, logStateChange
   ]);
-  // --- END FIX ---
 
+  // This useEffect handles the START of a scene transition.
   useEffect(() => {
     if (isInitiallyResolved && configLoadNonce > lastAppliedNonceRef.current && renderState === 'rendered') {
       if (targetLayerConfigsForPreset) {
         setLoadingStatusMessage(TRANSITION_MESSAGE);
         setIsTransitioningInternal(true);
+        // --- FIX ---
+        // When transition starts, ensure the incoming canvas is NOT visible yet.
         setMakeIncomingCanvasVisible(false);
         outgoingLayerIdsOnTransitionStartRef.current = new Set(Object.keys(layerConfigs || {}));
         logStateChange('fading_out', 'New Scene Selected');
@@ -139,10 +134,13 @@ export function useRenderLifecycle(options) {
     }
   }, [configLoadNonce, isInitiallyResolved, renderState, layerConfigs, setLoadingStatusMessage, logStateChange, targetLayerConfigsForPreset]);
   
+  // This useEffect handles the MIDDLE of the transition (after fade-out is complete).
   useEffect(() => {
     if (renderState === 'fading_out') {
       const transitionTimer = setTimeout(() => {
         if (isMountedRef.current) {
+          // After the fade-out duration, we change the state to 'rendered'.
+          // This will trigger the next useEffect to start the fade-in.
           logStateChange('rendered', 'Transition fade-out complete');
           lastAppliedNonceRef.current = configLoadNonce;
         }
@@ -151,8 +149,12 @@ export function useRenderLifecycle(options) {
     }
   }, [renderState, configLoadNonce, logStateChange]);
 
+  // This useEffect handles the END of the transition (the fade-in).
   useEffect(() => {
     if (renderState !== "rendered") return;
+
+    // --- FIX ---
+    // Now that we are in the 'rendered' state post-transition, it's safe to make the incoming canvas visible.
     setMakeIncomingCanvasVisible(true);
     setIsStatusFadingOut(true);
     if (statusDisplayFadeTimeoutRef.current) {

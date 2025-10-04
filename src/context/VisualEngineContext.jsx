@@ -24,7 +24,7 @@ export const VisualEngineProvider = ({ children }) => {
     const { 
         isWorkspaceTransitioning, isFullyLoaded, stagedActiveWorkspace, 
         fullSceneList, setActiveSceneName, setHasPendingChanges,
-        activeSceneName 
+        activeSceneName,
     } = useWorkspaceContext();
 
     const { midiStateRef } = useMIDI();
@@ -68,21 +68,43 @@ export const VisualEngineProvider = ({ children }) => {
 
     useEffect(() => {
         const animateFader = () => {
-          const current = renderedValueRef.current;
-          const target = targetCrossfaderValue;
-          if (Math.abs(target - current) > 0.0001) {
-            const newRendered = lerp(current, target, CROSSFADER_LERP_FACTOR);
-            renderedValueRef.current = newRendered;
-            setRenderedCrossfaderValue(newRendered);
-          } else if (current !== target) {
-            renderedValueRef.current = target;
-            setRenderedCrossfaderValue(target);
-          }
-          faderAnimationRef.current = requestAnimationFrame(animateFader);
+            const current = renderedValueRef.current;
+            const target = targetCrossfaderValue;
+            let newRendered;
+
+            if (isAutoFading) {
+                // During auto-fade, we don't lerp; the animateCrossfade function handles it.
+            } else {
+                if (Math.abs(target - current) > 0.0001) {
+                    newRendered = lerp(current, target, CROSSFADER_LERP_FACTOR);
+                } else {
+                    newRendered = target; // Snap to target when close
+                }
+                
+                renderedValueRef.current = newRendered;
+                setRenderedCrossfaderValue(newRendered);
+
+                const isSettled = Math.abs(target - newRendered) < 0.0001;
+                if (isSettled) {
+                    if (target === 1.0) {
+                        const sceneNameB = sideB.config?.name;
+                        if (sceneNameB && activeSceneName !== sceneNameB) {
+                            setActiveSceneName(sceneNameB);
+                        }
+                    } else if (target === 0.0) {
+                        const sceneNameA = sideA.config?.name;
+                        if (sceneNameA && activeSceneName !== sceneNameA) {
+                            setActiveSceneName(sceneNameA);
+                        }
+                    }
+                }
+            }
+            
+            faderAnimationRef.current = requestAnimationFrame(animateFader);
         };
         faderAnimationRef.current = requestAnimationFrame(animateFader);
         return () => { if (faderAnimationRef.current) cancelAnimationFrame(faderAnimationRef.current); };
-    }, [targetCrossfaderValue]);
+    }, [targetCrossfaderValue, isAutoFading, sideA.config, sideB.config, activeSceneName, setActiveSceneName]);
 
     const animateCrossfade = useCallback((startTime, startValue, endValue, duration, targetSceneNameParam) => {
         const now = performance.now();
@@ -102,7 +124,6 @@ export const VisualEngineProvider = ({ children }) => {
         }
     }, [setIsAutoFading, setTargetCrossfaderValue, setActiveSceneName]);
     
-    // --- START: UNIFIED LIFECYCLE AND PRELOADING EFFECT ---
     useEffect(() => {
         const initialLoadJustFinished = !prevIsFullyLoaded && isFullyLoaded;
         const transitionJustFinished = prevIsWorkspaceTransitioning && !isWorkspaceTransitioning;
@@ -138,26 +159,46 @@ export const VisualEngineProvider = ({ children }) => {
                 setSideB({ config: startSceneConfig });
                 setSideA({ config: nextSceneConfig });
             }
+            
             setActiveSceneName(startSceneConfig.name);
             setTargetCrossfaderValue(initialFaderValue);
             setRenderedCrossfaderValue(initialFaderValue);
             renderedValueRef.current = initialFaderValue;
-        } else if (sceneNameChanged && isFullyLoaded && fullSceneList.length > 1 && !isAutoFading) {
+
+        } else if (sceneNameChanged && isFullyLoaded && !isAutoFading) {
+            const newActiveSceneData = fullSceneList.find(scene => scene.name === activeSceneName);
+            if (!newActiveSceneData) return;
+
+            const isOnDeckA = sideA.config?.name === activeSceneName;
+            const isOnDeckB = sideB.config?.name === activeSceneName;
+
+            if (!isOnDeckA && !isOnDeckB) {
+                const activeDeckIsA = renderedValueRef.current < 0.5;
+                if (activeDeckIsA) {
+                    setSideA({ config: JSON.parse(JSON.stringify(newActiveSceneData)) });
+                } else {
+                    setSideB({ config: JSON.parse(JSON.stringify(newActiveSceneData)) });
+                }
+            }
+
             const currentIndex = fullSceneList.findIndex(scene => scene.name === activeSceneName);
             if (currentIndex === -1) return;
 
             const nextIndex = (currentIndex + 1) % fullSceneList.length;
             const nextSceneData = JSON.parse(JSON.stringify(fullSceneList[nextIndex]));
-            const activeDeckIsA = renderedValueRef.current < 0.5;
 
-            if (activeDeckIsA) {
-                if (sideB.config?.name !== nextSceneData.name) setSideB({ config: nextSceneData });
+            const activeDeckIsNowA = renderedValueRef.current < 0.5;
+            if (activeDeckIsNowA) {
+                if (sideB.config?.name !== nextSceneData.name) {
+                    setSideB({ config: nextSceneData });
+                }
             } else {
-                if (sideA.config?.name !== nextSceneData.name) setSideA({ config: nextSceneData });
+                if (sideA.config?.name !== nextSceneData.name) {
+                    setSideA({ config: nextSceneData });
+                }
             }
         }
     }, [isWorkspaceTransitioning, isFullyLoaded, stagedActiveWorkspace, fullSceneList, prevIsFullyLoaded, prevIsWorkspaceTransitioning, activeSceneName, prevActiveSceneName, isAutoFading, midiStateRef, setActiveSceneName]);
-    // --- END: UNIFIED LIFECYCLE AND PRELOADING EFFECT ---
 
     const handleSceneSelect = useCallback((sceneName, duration = AUTO_FADE_DURATION_MS) => {
         if (isAutoFading || !fullSceneList || fullSceneList.length === 0) return;
@@ -196,17 +237,11 @@ export const VisualEngineProvider = ({ children }) => {
 
     const handleCrossfaderChange = useCallback((newValue) => {
         setTargetCrossfaderValue(newValue);
-        if (isAutoFading) return;
+    }, []);
     
-        const threshold = 0.001;
-        if (newValue >= 1.0 - threshold) {
-            const sceneNameB = sideB.config?.name;
-            if (sceneNameB && activeSceneName !== sceneNameB) setActiveSceneName(sceneNameB);
-        } else if (newValue <= threshold) {
-            const sceneNameA = sideA.config?.name;
-            if (sceneNameA && activeSceneName !== sceneNameA) setActiveSceneName(sceneNameA);
-        }
-    }, [isAutoFading, activeSceneName, sideA.config, sideB.config, setActiveSceneName]);
+    const handleCrossfaderCommit = useCallback((finalValue) => {
+        setTargetCrossfaderValue(finalValue);
+    }, []);
     
     const updateLayerConfig = useCallback((layerId, key, value, isMidiUpdate = false) => {
         const managers = managerInstancesRef.current?.current;
@@ -269,22 +304,21 @@ export const VisualEngineProvider = ({ children }) => {
         setHasPendingChanges(true);
     }, [setHasPendingChanges]);
 
+    // --- START OF FIX ---
+    // This function provides an imperative way to update the live configuration
+    // of the active deck without triggering a crossfade or other loading logic.
     const setLiveConfig = useCallback(
-        (newLayerConfigs, newTokenAssignments) => {
+        (newSceneData) => {
           const activeDeck = renderedValueRef.current < 0.5 ? 'A' : 'B';
           const stateSetter = activeDeck === 'A' ? setSideA : setSideB;
     
-          stateSetter(prev => {
-            if (!prev.config) return prev;
-            const newConfig = JSON.parse(JSON.stringify(prev.config));
-            newConfig.layers = newLayerConfigs || fallbackConfig.layers;
-            newConfig.tokenAssignments = newTokenAssignments || fallbackConfig.tokenAssignments;
-            return { ...prev, config: newConfig };
-          });
-          setHasPendingChanges(false);
+          // By setting the entire config object with a new timestamp, we ensure
+          // the useEffect in useCanvasOrchestrator will fire to apply the new config.
+          stateSetter({ config: newSceneData });
         },
-        [setHasPendingChanges]
+        [] // This function has no external dependencies
     );
+    // --- END OF FIX ---
 
     const reloadSceneOntoInactiveDeck = useCallback((sceneName) => {
         if (!fullSceneList || fullSceneList.length === 0) {
@@ -314,6 +348,7 @@ export const VisualEngineProvider = ({ children }) => {
         targetSceneName,
         handleSceneSelect,
         handleCrossfaderChange,
+        handleCrossfaderCommit,
         updateLayerConfig,
         updateTokenAssignment,
         setLiveConfig,
@@ -323,7 +358,9 @@ export const VisualEngineProvider = ({ children }) => {
         reloadSceneOntoInactiveDeck,
     }), [
         sideA, sideB, uiControlConfig, renderedCrossfaderValue, isAutoFading,
-        targetSceneName, handleSceneSelect, handleCrossfaderChange, updateLayerConfig, 
+        targetSceneName, handleSceneSelect, handleCrossfaderChange, 
+        handleCrossfaderCommit, 
+        updateLayerConfig, 
         updateTokenAssignment, setLiveConfig, registerManagerInstancesRef, 
         registerCanvasUpdateFns, managerInstancesRef, reloadSceneOntoInactiveDeck,
     ]);

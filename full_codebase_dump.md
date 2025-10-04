@@ -66,6 +66,12 @@ export default [
 ```
 
 ---
+### `full_codebase_dump.md`
+```md
+
+```
+
+---
 ### `index.html`
 ```html
 <!doctype html>
@@ -239,6 +245,9 @@ export const handler = async (event) => {
     "@lukso/lsp-smart-contracts": "^0.16.3",
     "@lukso/up-provider": "^0.3.5",
     "@p5-wrapper/react": "^4.4.2",
+    "@tensorflow-models/face-landmarks-detection": "^1.0.6",
+    "@tensorflow/tfjs-backend-webgl": "^4.22.0",
+    "@tensorflow/tfjs-core": "^4.22.0",
     "buffer": "^6.0.3",
     "ethers": "^6.13.5",
     "lodash-es": "^4.17.21",
@@ -271,6 +280,7 @@ export const handler = async (event) => {
     "vitest": "^1.6.0"
   }
 }
+
 ```
 
 ---
@@ -3519,16 +3529,26 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     animationDataRef: sequencer.animationDataRef,
   }), [sequencer, handleTogglePLock]);
 
+  // --- START: FIX ---
+  // This function now determines all necessary classes for the two-stage transition.
   const getCanvasClasses = useCallback((layerIdStr) => {
     let classes = `canvas layer-${layerIdStr}`;
     const isOutgoing = isTransitioning && outgoingLayerIdsOnTransitionStart?.has(layerIdStr);
     const isStableAndVisible = !isTransitioning && renderState === 'rendered';
+    
+    // The incoming canvas is only made visible AFTER the fade-out is complete.
     const isIncomingAndReadyToFadeIn = isTransitioning && makeIncomingCanvasVisible;
-    if (isOutgoing) classes += ' visible is-fading-out';
-    else if (isStableAndVisible) classes += ' visible';
-    else if (isIncomingAndReadyToFadeIn) classes += ' visible is-fading-in';
+
+    if (isOutgoing) {
+      classes += ' visible is-fading-out';
+    } else if (isStableAndVisible) {
+      classes += ' visible';
+    } else if (isIncomingAndReadyToFadeIn) {
+      classes += ' visible is-fading-in';
+    }
     return classes;
   }, [isTransitioning, outgoingLayerIdsOnTransitionStart, renderState, makeIncomingCanvasVisible]);
+  // --- END: FIX ---
 
   const containerClass = `canvas-container ${isTransitioning ? 'transitioning-active' : ''} ${isWorkspaceTransitioning ? 'workspace-fading-out' : ''}`;
   
@@ -3704,21 +3724,23 @@ export default MainView;
 
 
 /*
-  Core transition applied when opacity or transform changes.
-  This is the master duration for scene fades.
+  Core transition applied when transform changes.
+  Opacity transitions are now handled exclusively by JS to prevent race conditions.
 */
 .canvas {
-  transition-property: opacity, transform;
+  /* --- FIX: Removed 'opacity' from transition-property --- */
+  transition-property: transform;
   transition-duration: 500ms; /* This MUST match CANVAS_FADE_DURATION in JS */
   transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 /*
   .visible class is added by JS to set the final visible state.
-  The transition to these properties is governed by the base .canvas transition.
+  Opacity is now controlled by inline styles from the canvas orchestrator.
 */
 .canvas.visible {
-  opacity: 1;
+  /* --- FIX: Opacity is no longer controlled by this class --- */
+  /* opacity: 1; */
   visibility: visible;
   /* The final transform for a visible canvas is its external parallax position,
      which is handled by inline styles in CanvasManager.js.
@@ -3726,21 +3748,19 @@ export default MainView;
   transform: scale(1);
 }
 
+/* --- FIX: The following two rules are the primary cause of the flicker and have been REMOVED --- */
 /*
-  A fading-out canvas is one that is already `.visible` but needs to animate to hidden.
-  This class overrides the opacity to trigger the transition defined on the base `.canvas` rule.
-*/
 .canvas.is-fading-out {
   opacity: 0 !important;
   transform: scale(0.95) !important;
-  z-index: 100 !important; /* Keep on top during its fade out */
+  z-index: 100 !important;
 }
 
-
-/* Applied to the canvas that is FADING IN */
 .canvas.is-fading-in {
   visibility: visible !important;
 }
+*/
+/* --- END FIX --- */
 
 
 /* Entity Logo */
@@ -5319,6 +5339,7 @@ const EnhancedControlPanel = ({
     deleteSceneFromStagedWorkspace,
     setDefaultSceneInStagedWorkspace,
     isSaving,
+    setActiveSceneName,
   } = useWorkspaceContext();
 
   const {
@@ -5328,7 +5349,7 @@ const EnhancedControlPanel = ({
     updateLayerConfig: onLayerConfigChange,
     managerInstancesRef,
     renderedCrossfaderValue,
-    reloadSceneOntoInactiveDeck,
+    setLiveConfig,
   } = useVisualEngineContext();
 
   const {
@@ -5341,7 +5362,7 @@ const EnhancedControlPanel = ({
   const [newSceneName, setNewSceneName] = useState("");
   const [localIntervalInput, setLocalIntervalInput] = useState(sequencerIntervalMs / 1000);
   const [localDurationInput, setLocalDurationInput] = useState(crossfadeDurationMs / 1000);
-
+  
   useEffect(() => {
     setLocalIntervalInput(sequencerIntervalMs / 1000);
   }, [sequencerIntervalMs]);
@@ -5382,7 +5403,6 @@ const EnhancedControlPanel = ({
   }, [onLayerConfigChange, activeLayer]);
 
   const handleCreateScene = useCallback(() => {
-    const originalSceneName = activeSceneName;
     const name = newSceneName.trim();
     if (!name) {
       addToast("Scene name cannot be empty.", "warning");
@@ -5395,25 +5415,31 @@ const EnhancedControlPanel = ({
     }
     
     const managers = managerInstancesRef.current?.current;
-    let liveLayersConfig = {};
     const activeDeckIsA = renderedCrossfaderValue < 0.5;
+    let liveLayersConfig = {};
 
-    if (managers) {
+    if (managers && Object.keys(managers).length > 0) {
       for (const layerId in managers) {
         const manager = managers[layerId];
+        
         const sourceConfig = activeDeckIsA ? manager.configA : manager.configB;
         const sourceRotation = activeDeckIsA ? manager.continuousRotationAngleA : manager.continuousRotationAngleB;
         const sourceDriftState = activeDeckIsA ? manager.driftStateA : manager.driftStateB;
+        
         if (!sourceConfig) {
             console.warn(`[EnhancedControlPanel] Could not find source config for layer ${layerId} on the active deck. Skipping.`);
             continue;
         }
+        
         const liveConfig = JSON.parse(JSON.stringify(sourceConfig));
+        
         liveConfig.angle = (sourceConfig.angle + sourceRotation) % 360;
         liveConfig.driftState = JSON.parse(JSON.stringify(sourceDriftState));
+        
         for (const key in manager.playbackValues) {
           liveConfig[key] = manager.playbackValues[key];
         }
+        
         liveLayersConfig[layerId] = liveConfig;
       }
     } else {
@@ -5429,14 +5455,17 @@ const EnhancedControlPanel = ({
     };
 
     addNewSceneToStagedWorkspace(name, newSceneData);
+
+    // setActiveSceneName(name); // <-- THIS LINE IS THE PROBLEM AND IS REMOVED TO FIX THE RACE CONDITION
+
+    if (setLiveConfig) {
+      setLiveConfig(newSceneData);
+    }
+
     addToast(`Scene "${name}" created and staged.`, "success");
     setNewSceneName("");
-
-    if (originalSceneName && originalSceneName !== name && reloadSceneOntoInactiveDeck) {
-        reloadSceneOntoInactiveDeck(originalSceneName);
-    }
     
-  }, [newSceneName, savedSceneList, uiControlConfig, addNewSceneToStagedWorkspace, addToast, managerInstancesRef, renderedCrossfaderValue, activeSceneName, reloadSceneOntoInactiveDeck]);
+  }, [newSceneName, savedSceneList, uiControlConfig, addNewSceneToStagedWorkspace, addToast, managerInstancesRef, renderedCrossfaderValue, setActiveSceneName, setLiveConfig]);
 
   const handleDeleteScene = useCallback((nameToDelete) => {
     if (window.confirm(`Are you sure you want to delete the scene "${nameToDelete}"? This will be staged for the next save.`)) {
@@ -11779,7 +11808,9 @@ function UIOverlay({
 }) {
   const { addToast } = useToast();
   const { stagedSetlist, loadWorkspace, activeWorkspaceName: currentWorkspaceName, isLoading: isConfigLoading, activeSceneName, fullSceneList: savedSceneList } = useWorkspaceContext();
-  const { renderedCrossfaderValue, isAutoFading, handleSceneSelect, handleCrossfaderChange } = useVisualEngineContext();
+  // --- FIX: Get the new commit handler ---
+  const { renderedCrossfaderValue, isAutoFading, handleSceneSelect, handleCrossfaderChange, handleCrossfaderCommit } = useVisualEngineContext();
+  // ------------------------------------
   const { unreadCount } = useNotificationContext();
   const { isRadarProjectAdmin, hostProfileAddress: currentProfileAddress } = useUserSession();
   const { isUiVisible, activePanel, toggleSidePanel, toggleInfoOverlay, toggleUiVisibility } = uiState;
@@ -11791,9 +11822,7 @@ function UIOverlay({
   const nextSceneIndexRef = useRef(0);
   const isMountedRef = useRef(false);
 
-  // --- THIS IS THE FIX: State is now held in the correct parent component ---
   const [sequencerIntervalMs, setSequencerIntervalMs] = useState(DEFAULT_SEQUENCER_INTERVAL);
-  // --- END FIX ---
 
   const workspaceList = useMemo(() => {
     if (!stagedSetlist?.workspaces) return [];
@@ -11845,9 +11874,6 @@ function UIOverlay({
         } else {
           nextSceneIndexRef.current = 0;
         }
-        // --- THIS IS THE FIX: Removed the immediate imperative call ---
-        // runNextSequenceStep(); // <--- REMOVED
-        // The useEffect hook will now handle the first step after the initial interval.
       } else {
         addToast('Sequencer stopped.', 'info', 2000);
         if (sequencerTimeoutRef.current) clearTimeout(sequencerTimeoutRef.current);
@@ -11856,11 +11882,9 @@ function UIOverlay({
     });
   };
 
-  // --- FIX: Logic simplified and corrected ---
   const shouldShowUI = useMemo(() => isReady, [isReady]);
   const showSceneBar = useMemo(() => shouldShowUI && isUiVisible && !activePanel && !!currentProfileAddress, [shouldShowUI, isUiVisible, activePanel, currentProfileAddress]);
   const mainUiContainerClass = `ui-elements-container ${shouldShowUI && isUiVisible ? "visible" : "hidden-by-opacity"}`;
-  // --- END FIX ---
 
   if (!isReady) {
     return null;
@@ -11919,7 +11943,9 @@ function UIOverlay({
                 <Crossfader
                   value={renderedCrossfaderValue}
                   onInput={handleCrossfaderChange}
-                  onChange={handleCrossfaderChange}
+                  // --- FIX: Use the new handler for the onChange event ---
+                  onChange={handleCrossfaderCommit}
+                  // ----------------------------------------------------
                   disabled={isAutoFading}
                 />
                 <MemoizedSceneSelectorBar
@@ -13690,7 +13716,7 @@ export const VisualEngineProvider = ({ children }) => {
     const { 
         isWorkspaceTransitioning, isFullyLoaded, stagedActiveWorkspace, 
         fullSceneList, setActiveSceneName, setHasPendingChanges,
-        activeSceneName 
+        activeSceneName,
     } = useWorkspaceContext();
 
     const { midiStateRef } = useMIDI();
@@ -13734,21 +13760,43 @@ export const VisualEngineProvider = ({ children }) => {
 
     useEffect(() => {
         const animateFader = () => {
-          const current = renderedValueRef.current;
-          const target = targetCrossfaderValue;
-          if (Math.abs(target - current) > 0.0001) {
-            const newRendered = lerp(current, target, CROSSFADER_LERP_FACTOR);
-            renderedValueRef.current = newRendered;
-            setRenderedCrossfaderValue(newRendered);
-          } else if (current !== target) {
-            renderedValueRef.current = target;
-            setRenderedCrossfaderValue(target);
-          }
-          faderAnimationRef.current = requestAnimationFrame(animateFader);
+            const current = renderedValueRef.current;
+            const target = targetCrossfaderValue;
+            let newRendered;
+
+            if (isAutoFading) {
+                // During auto-fade, we don't lerp; the animateCrossfade function handles it.
+            } else {
+                if (Math.abs(target - current) > 0.0001) {
+                    newRendered = lerp(current, target, CROSSFADER_LERP_FACTOR);
+                } else {
+                    newRendered = target; // Snap to target when close
+                }
+                
+                renderedValueRef.current = newRendered;
+                setRenderedCrossfaderValue(newRendered);
+
+                const isSettled = Math.abs(target - newRendered) < 0.0001;
+                if (isSettled) {
+                    if (target === 1.0) {
+                        const sceneNameB = sideB.config?.name;
+                        if (sceneNameB && activeSceneName !== sceneNameB) {
+                            setActiveSceneName(sceneNameB);
+                        }
+                    } else if (target === 0.0) {
+                        const sceneNameA = sideA.config?.name;
+                        if (sceneNameA && activeSceneName !== sceneNameA) {
+                            setActiveSceneName(sceneNameA);
+                        }
+                    }
+                }
+            }
+            
+            faderAnimationRef.current = requestAnimationFrame(animateFader);
         };
         faderAnimationRef.current = requestAnimationFrame(animateFader);
         return () => { if (faderAnimationRef.current) cancelAnimationFrame(faderAnimationRef.current); };
-    }, [targetCrossfaderValue]);
+    }, [targetCrossfaderValue, isAutoFading, sideA.config, sideB.config, activeSceneName, setActiveSceneName]);
 
     const animateCrossfade = useCallback((startTime, startValue, endValue, duration, targetSceneNameParam) => {
         const now = performance.now();
@@ -13768,7 +13816,6 @@ export const VisualEngineProvider = ({ children }) => {
         }
     }, [setIsAutoFading, setTargetCrossfaderValue, setActiveSceneName]);
     
-    // --- START: UNIFIED LIFECYCLE AND PRELOADING EFFECT ---
     useEffect(() => {
         const initialLoadJustFinished = !prevIsFullyLoaded && isFullyLoaded;
         const transitionJustFinished = prevIsWorkspaceTransitioning && !isWorkspaceTransitioning;
@@ -13804,26 +13851,46 @@ export const VisualEngineProvider = ({ children }) => {
                 setSideB({ config: startSceneConfig });
                 setSideA({ config: nextSceneConfig });
             }
+            
             setActiveSceneName(startSceneConfig.name);
             setTargetCrossfaderValue(initialFaderValue);
             setRenderedCrossfaderValue(initialFaderValue);
             renderedValueRef.current = initialFaderValue;
-        } else if (sceneNameChanged && isFullyLoaded && fullSceneList.length > 1 && !isAutoFading) {
+
+        } else if (sceneNameChanged && isFullyLoaded && !isAutoFading) {
+            const newActiveSceneData = fullSceneList.find(scene => scene.name === activeSceneName);
+            if (!newActiveSceneData) return;
+
+            const isOnDeckA = sideA.config?.name === activeSceneName;
+            const isOnDeckB = sideB.config?.name === activeSceneName;
+
+            if (!isOnDeckA && !isOnDeckB) {
+                const activeDeckIsA = renderedValueRef.current < 0.5;
+                if (activeDeckIsA) {
+                    setSideA({ config: JSON.parse(JSON.stringify(newActiveSceneData)) });
+                } else {
+                    setSideB({ config: JSON.parse(JSON.stringify(newActiveSceneData)) });
+                }
+            }
+
             const currentIndex = fullSceneList.findIndex(scene => scene.name === activeSceneName);
             if (currentIndex === -1) return;
 
             const nextIndex = (currentIndex + 1) % fullSceneList.length;
             const nextSceneData = JSON.parse(JSON.stringify(fullSceneList[nextIndex]));
-            const activeDeckIsA = renderedValueRef.current < 0.5;
 
-            if (activeDeckIsA) {
-                if (sideB.config?.name !== nextSceneData.name) setSideB({ config: nextSceneData });
+            const activeDeckIsNowA = renderedValueRef.current < 0.5;
+            if (activeDeckIsNowA) {
+                if (sideB.config?.name !== nextSceneData.name) {
+                    setSideB({ config: nextSceneData });
+                }
             } else {
-                if (sideA.config?.name !== nextSceneData.name) setSideA({ config: nextSceneData });
+                if (sideA.config?.name !== nextSceneData.name) {
+                    setSideA({ config: nextSceneData });
+                }
             }
         }
     }, [isWorkspaceTransitioning, isFullyLoaded, stagedActiveWorkspace, fullSceneList, prevIsFullyLoaded, prevIsWorkspaceTransitioning, activeSceneName, prevActiveSceneName, isAutoFading, midiStateRef, setActiveSceneName]);
-    // --- END: UNIFIED LIFECYCLE AND PRELOADING EFFECT ---
 
     const handleSceneSelect = useCallback((sceneName, duration = AUTO_FADE_DURATION_MS) => {
         if (isAutoFading || !fullSceneList || fullSceneList.length === 0) return;
@@ -13862,17 +13929,11 @@ export const VisualEngineProvider = ({ children }) => {
 
     const handleCrossfaderChange = useCallback((newValue) => {
         setTargetCrossfaderValue(newValue);
-        if (isAutoFading) return;
+    }, []);
     
-        const threshold = 0.001;
-        if (newValue >= 1.0 - threshold) {
-            const sceneNameB = sideB.config?.name;
-            if (sceneNameB && activeSceneName !== sceneNameB) setActiveSceneName(sceneNameB);
-        } else if (newValue <= threshold) {
-            const sceneNameA = sideA.config?.name;
-            if (sceneNameA && activeSceneName !== sceneNameA) setActiveSceneName(sceneNameA);
-        }
-    }, [isAutoFading, activeSceneName, sideA.config, sideB.config, setActiveSceneName]);
+    const handleCrossfaderCommit = useCallback((finalValue) => {
+        setTargetCrossfaderValue(finalValue);
+    }, []);
     
     const updateLayerConfig = useCallback((layerId, key, value, isMidiUpdate = false) => {
         const managers = managerInstancesRef.current?.current;
@@ -13935,22 +13996,21 @@ export const VisualEngineProvider = ({ children }) => {
         setHasPendingChanges(true);
     }, [setHasPendingChanges]);
 
+    // --- START OF FIX ---
+    // This function provides an imperative way to update the live configuration
+    // of the active deck without triggering a crossfade or other loading logic.
     const setLiveConfig = useCallback(
-        (newLayerConfigs, newTokenAssignments) => {
+        (newSceneData) => {
           const activeDeck = renderedValueRef.current < 0.5 ? 'A' : 'B';
           const stateSetter = activeDeck === 'A' ? setSideA : setSideB;
     
-          stateSetter(prev => {
-            if (!prev.config) return prev;
-            const newConfig = JSON.parse(JSON.stringify(prev.config));
-            newConfig.layers = newLayerConfigs || fallbackConfig.layers;
-            newConfig.tokenAssignments = newTokenAssignments || fallbackConfig.tokenAssignments;
-            return { ...prev, config: newConfig };
-          });
-          setHasPendingChanges(false);
+          // By setting the entire config object with a new timestamp, we ensure
+          // the useEffect in useCanvasOrchestrator will fire to apply the new config.
+          stateSetter({ config: newSceneData });
         },
-        [setHasPendingChanges]
+        [] // This function has no external dependencies
     );
+    // --- END OF FIX ---
 
     const reloadSceneOntoInactiveDeck = useCallback((sceneName) => {
         if (!fullSceneList || fullSceneList.length === 0) {
@@ -13980,6 +14040,7 @@ export const VisualEngineProvider = ({ children }) => {
         targetSceneName,
         handleSceneSelect,
         handleCrossfaderChange,
+        handleCrossfaderCommit,
         updateLayerConfig,
         updateTokenAssignment,
         setLiveConfig,
@@ -13989,7 +14050,9 @@ export const VisualEngineProvider = ({ children }) => {
         reloadSceneOntoInactiveDeck,
     }), [
         sideA, sideB, uiControlConfig, renderedCrossfaderValue, isAutoFading,
-        targetSceneName, handleSceneSelect, handleCrossfaderChange, updateLayerConfig, 
+        targetSceneName, handleSceneSelect, handleCrossfaderChange, 
+        handleCrossfaderCommit, 
+        updateLayerConfig, 
         updateTokenAssignment, setLiveConfig, registerManagerInstancesRef, 
         registerCanvasUpdateFns, managerInstancesRef, reloadSceneOntoInactiveDeck,
     ]);
@@ -14047,10 +14110,6 @@ export const WorkspaceProvider = ({ children }) => {
     const [saveError, setSaveError] = useState(null);
     const [saveSuccess, setSaveSuccess] = useState(false);
     const [hasPendingChanges, setHasPendingChanges] = useState(false);
-
-    // --- THIS IS THE FIX (Part 1) ---
-    const [sceneUpdateTrigger, setSceneUpdateTrigger] = useState(0);
-    // --- END FIX ---
 
     const configServiceRef = useRef(null);
     const [configServiceInstanceReady, setConfigServiceInstanceReady] = useState(false);
@@ -14489,11 +14548,7 @@ export const WorkspaceProvider = ({ children }) => {
           newWorkspace.presets[newSceneName] = newSceneData;
           return newWorkspace;
         });
-        setActiveSceneName(newSceneName);
         setHasPendingChanges(true);
-        // --- THIS IS THE FIX (Part 1) ---
-        setSceneUpdateTrigger(prev => prev + 1);
-        // --- END FIX ---
     }, []);
     
     const deleteSceneFromStagedWorkspace = useCallback((nameToDelete) => {
@@ -14668,10 +14723,9 @@ export const WorkspaceProvider = ({ children }) => {
         removeTokenFromPalette,
         preloadWorkspace,
         setHasPendingChanges,
+        // --- FIX: Expose setActiveSceneName ---
         setActiveSceneName,
-        // --- THIS IS THE FIX (Part 1) ---
-        sceneUpdateTrigger,
-        // --- END FIX ---
+        // ------------------------------------
     }), [
         isLoading, loadingMessage, isFullyLoaded, isInitiallyResolved, loadError, isSaving, saveError, saveSuccess, hasPendingChanges,
         configServiceRef, configServiceInstanceReady,
@@ -14699,10 +14753,9 @@ export const WorkspaceProvider = ({ children }) => {
         addTokenToPalette,
         removeTokenFromPalette,
         preloadWorkspace,
+        setHasPendingChanges,
+        // --- FIX: Add setActiveSceneName to dependency array ---
         setActiveSceneName,
-        // --- THIS IS THE FIX (Part 1) ---
-        sceneUpdateTrigger,
-        // --- END FIX ---
     ]);
 
     return (
@@ -16064,6 +16117,7 @@ export function useCanvasContainer(options = {}) {
 ---
 ### `src\hooks\useCanvasOrchestrator.js`
 ```js
+// src/hooks/useCanvasOrchestrator.js
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import debounce from '../utils/debounce';
 import CanvasManager from '../utils/CanvasManager';
@@ -16170,21 +16224,32 @@ export function useCanvasOrchestrator({ canvasRefs, sideA, sideB, crossfaderValu
             if (manager) {
                 manager.setCrossfadeValue(crossfaderValue);
 
-                // --- START: FIX FOR OPACITY CONTROL ---
-                // 1. Get the opacity value from the layer's own configuration controls.
-                // Fallback to 1.0 if it's not defined.
+                // --- START: FIX FOR OPACITY AND RACE CONDITION ---
                 const layerOpacityA = sideA.config?.layers?.[layerIdStr]?.opacity ?? 1.0;
                 const layerOpacityB = sideB.config?.layers?.[layerIdStr]?.opacity ?? 1.0;
 
-                // 2. Calculate the opacity from the equal-power crossfader.
                 const angle = crossfaderValue * 0.5 * Math.PI;
                 const crossfadeOpacityA = Math.cos(angle);
                 const crossfadeOpacityB = Math.sin(angle);
 
-                // 3. Multiply them together to get the final opacity for each canvas.
-                const finalOpacityA = crossfadeOpacityA * layerOpacityA;
-                const finalOpacityB = crossfadeOpacityB * layerOpacityB;
+                let finalOpacityA = crossfadeOpacityA * layerOpacityA;
+                let finalOpacityB = crossfadeOpacityB * layerOpacityB;
 
+                // **RACE CONDITION FIX:** Check if the content is ready before making the canvas visible.
+                // Get the target token ID for each deck from the main state.
+                const targetTokenA_Assignment = sideA.config?.tokenAssignments?.[layerIdStr];
+                const targetTokenB_Assignment = sideB.config?.tokenAssignments?.[layerIdStr];
+                const targetTokenA_Id = typeof targetTokenA_Assignment === 'object' ? targetTokenA_Assignment.id : targetTokenA_Assignment;
+                const targetTokenB_Id = typeof targetTokenB_Assignment === 'object' ? targetTokenB_Assignment.id : targetTokenB_Assignment;
+
+                // Compare with the token ID the manager has actually loaded.
+                const isDeckA_ContentReady = manager.tokenA_id === targetTokenA_Id;
+                const isDeckB_ContentReady = manager.tokenB_id === targetTokenB_Id;
+
+                // If the content isn't ready, force opacity to 0 to prevent showing stale content.
+                if (!isDeckA_ContentReady) finalOpacityA = 0;
+                if (!isDeckB_ContentReady) finalOpacityB = 0;
+                
                 if (manager.canvasA) {
                     manager.canvasA.style.opacity = finalOpacityA;
                     manager.canvasA.style.mixBlendMode = sideA.config?.layers?.[layerIdStr]?.blendMode || 'normal';
@@ -16193,7 +16258,7 @@ export function useCanvasOrchestrator({ canvasRefs, sideA, sideB, crossfaderValu
                     manager.canvasB.style.opacity = finalOpacityB;
                     manager.canvasB.style.mixBlendMode = sideB.config?.layers?.[layerIdStr]?.blendMode || 'normal';
                 }
-                // --- END: FIX FOR OPACITY CONTROL ---
+                // --- END: FIX FOR OPACITY AND RACE CONDITION ---
             }
         }
     }, [crossfaderValue, managersReady, sideA, sideB]);
@@ -17378,34 +17443,27 @@ export function useRenderLifecycle(options) {
     prevAddressRef.current = currentProfileAddress;
   }, [currentProfileAddress, resetLifecycle]);
   
-  // --- THIS IS THE FIX ---
-  // This useEffect now correctly determines the current loading state without getting stuck.
+  // This useEffect correctly determines the current loading state.
   useEffect(() => {
     const currentState = renderState;
 
-    // Highest priority: check for critical errors.
     if (loadError || upInitializationError || upFetchStateError) {
       if (currentState !== 'error') logStateChange('error', 'Critical error detected');
       return;
     }
 
-    // If we are already rendered or in a transition, don't revert to a loading state.
     if (['rendered', 'fading_out'].includes(currentState)) {
       return;
     }
 
-    // The key change is here: we now proceed to 'rendered' as soon as the data is loaded and the layout is valid.
-    // We no longer wait for `managersReady` in this specific check, as it can "flicker" during a re-render.
     const allPrimaryPrerequisitesMet = isInitiallyResolved && hasValidDimensions && isFullyLoaded;
 
     if (allPrimaryPrerequisitesMet) {
       logStateChange('rendered', 'All primary prerequisites (data, layout) met');
     } else {
-      // Set the loading message based on the first unmet condition.
       if (!isInitiallyResolved || !isFullyLoaded) {
         logStateChange('resolving_initial_config', 'Awaiting data resolution');
       } else if (!managersReady) {
-        // This state is now okay, because the primary condition check above will eventually pass.
         logStateChange('initializing_managers', 'Awaiting Managers');
       } else if (!hasValidDimensions) {
         logStateChange('waiting_layout', 'Awaiting valid dimensions');
@@ -17415,13 +17473,15 @@ export function useRenderLifecycle(options) {
     renderState, managersReady, isInitiallyResolved, hasValidDimensions, isFullyLoaded, 
     loadError, upInitializationError, upFetchStateError, logStateChange
   ]);
-  // --- END FIX ---
 
+  // This useEffect handles the START of a scene transition.
   useEffect(() => {
     if (isInitiallyResolved && configLoadNonce > lastAppliedNonceRef.current && renderState === 'rendered') {
       if (targetLayerConfigsForPreset) {
         setLoadingStatusMessage(TRANSITION_MESSAGE);
         setIsTransitioningInternal(true);
+        // --- FIX ---
+        // When transition starts, ensure the incoming canvas is NOT visible yet.
         setMakeIncomingCanvasVisible(false);
         outgoingLayerIdsOnTransitionStartRef.current = new Set(Object.keys(layerConfigs || {}));
         logStateChange('fading_out', 'New Scene Selected');
@@ -17429,10 +17489,13 @@ export function useRenderLifecycle(options) {
     }
   }, [configLoadNonce, isInitiallyResolved, renderState, layerConfigs, setLoadingStatusMessage, logStateChange, targetLayerConfigsForPreset]);
   
+  // This useEffect handles the MIDDLE of the transition (after fade-out is complete).
   useEffect(() => {
     if (renderState === 'fading_out') {
       const transitionTimer = setTimeout(() => {
         if (isMountedRef.current) {
+          // After the fade-out duration, we change the state to 'rendered'.
+          // This will trigger the next useEffect to start the fade-in.
           logStateChange('rendered', 'Transition fade-out complete');
           lastAppliedNonceRef.current = configLoadNonce;
         }
@@ -17441,8 +17504,12 @@ export function useRenderLifecycle(options) {
     }
   }, [renderState, configLoadNonce, logStateChange]);
 
+  // This useEffect handles the END of the transition (the fade-in).
   useEffect(() => {
     if (renderState !== "rendered") return;
+
+    // --- FIX ---
+    // Now that we are in the 'rendered' state post-transition, it's safe to make the incoming canvas visible.
     setMakeIncomingCanvasVisible(true);
     setIsStatusFadingOut(true);
     if (statusDisplayFadeTimeoutRef.current) {
@@ -20722,13 +20789,9 @@ class CanvasManager {
         this.layerId = layerId;
 
         try {
-            // --- START: FIX FOR PRE-MULTIPLIED ALPHA ---
-            // Create the context with premultipliedAlpha set to true. This aligns the canvas
-            // drawing with the browser's compositing engine, preventing opacity dips during CSS fades.
             const contextOptions = { alpha: true, willReadFrequently: false, premultipliedAlpha: true };
             this.ctxA = canvasA.getContext('2d', contextOptions);
             this.ctxB = canvasB.getContext('2d', contextOptions);
-            // --- END: FIX FOR PRE-MULTIPLIED ALPHA ---
 
             if (!this.ctxA || !this.ctxB) throw new Error(`Failed to get 2D context for Layer ${layerId}`);
         } catch (e) {
@@ -20768,30 +20831,43 @@ class CanvasManager {
 
     async setCrossfadeTarget(imageSrc, config, tokenId) {
         if (this.isDestroyed) throw new Error("Manager destroyed");
-        this.tokenB_id = tokenId || null;
-        if (!imageSrc || typeof imageSrc !== 'string') {
-            this.imageB = null; this.configB = config || this.getDefaultConfig();
+        
+        const newConfig = config || this.getDefaultConfig();
+        this.configB = newConfig;
+
+        this.driftStateB = newConfig?.driftState || { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
+        Object.keys(this.interpolatorsB).forEach(key => {
+            const interpolator = this.interpolatorsB[key];
+            const value = this.configB?.[key];
+            if (interpolator && value !== undefined) interpolator.snap(value);
+        });
+
+        if (this.tokenB_id === tokenId) {
             return;
         }
+
+        this.tokenB_id = tokenId || null;
+        if (!imageSrc || typeof imageSrc !== 'string') {
+            this.imageB = null;
+            return;
+        }
+
         try {
             const decodedBitmap = await getDecodedImage(imageSrc);
             if (this.isDestroyed) return;
             if (decodedBitmap.width === 0 || decodedBitmap.height === 0) {
-                 this.imageB = null; this.configB = config || this.getDefaultConfig();
+                 this.imageB = null;
                  throw new Error(`Loaded crossfade image bitmap has zero dimensions: ${imageSrc.substring(0, 100)}`);
             }
             this.imageB = decodedBitmap;
-            this.configB = config || this.getDefaultConfig();
+            // --- START OF FIX ---
+            // When loading a new scene/image onto a deck, its continuous rotation must be reset
+            // because the new 'angle' property from the config serves as the new starting point.
             this.continuousRotationAngleB = 0;
-            this.driftStateB = { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
-            Object.keys(this.interpolatorsB).forEach(key => {
-                const interpolator = this.interpolatorsB[key];
-                const value = this.configB?.[key];
-                if (interpolator && value !== undefined) interpolator.snap(value);
-            });
+            // --- END OF FIX ---
         } catch (error) {
             if (this.isDestroyed) throw new Error("Manager destroyed during crossfade image load");
-            this.imageB = null; this.configB = config || this.getDefaultConfig();
+            this.imageB = null;
             throw error;
         }
     }
@@ -20872,8 +20948,15 @@ class CanvasManager {
         const mergedConfig = { ...defaultConfig, ...(newConfig || {}) };
         if (!BLEND_MODES.includes(mergedConfig.blendMode)) mergedConfig.blendMode = 'normal';
         this.configA = mergedConfig;
-        this.continuousRotationAngleA = 0;
+        
         this.driftStateA = newConfig?.driftState || { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
+        // --- START OF FIX ---
+        // When applying a full new configuration (like from a scene snapshot),
+        // the new 'angle' property already contains the live rotation. We must reset
+        // the continuous rotation counter to prevent a visual jump.
+        this.continuousRotationAngleA = 0;
+        // --- END OF FIX ---
+
         Object.keys(this.interpolators).forEach(key => this.interpolators[key]?.snap(this.configA[key]));
         this.handleEnabledToggle(this.configA.enabled);
     }
@@ -20953,12 +21036,15 @@ class CanvasManager {
 
     async setImage(src, tokenId) {
         if (this.isDestroyed) return Promise.reject(new Error("Manager destroyed"));
+        
+        if (this.tokenA_id === tokenId && this.lastImageSrc === src) return Promise.resolve();
+
         this.tokenA_id = tokenId || null;
         if (!src || typeof src !== 'string') {
             this.imageA = null; this.lastImageSrc = null;
             return Promise.resolve();
         }
-        if (src === this.lastImageSrc && this.imageA) return Promise.resolve();
+        
         try {
             const decodedBitmap = await getDecodedImage(src);
             if (this.isDestroyed) return;
@@ -20968,6 +21054,9 @@ class CanvasManager {
             }
             this.imageA = decodedBitmap;
             this.lastImageSrc = src;
+            // --- FIX: Do not reset continuous rotation when setting a new image. ---
+            // this.continuousRotationAngleA = 0; // <-- THIS LINE IS REMOVED
+            // --- END FIX ---
         } catch (error) {
             if (this.isDestroyed) return;
             this.imageA = null; this.lastImageSrc = null;
