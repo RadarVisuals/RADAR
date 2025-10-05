@@ -248,6 +248,7 @@ export const WorkspaceProvider = ({ children }) => {
           setLoadingMessage("");
           setIsWorkspaceTransitioning(false);
           workspaceToLoadRef.current = null;
+          setIsFullyLoaded(true);
         }
     }, [stagedSetlist, addToast, _loadWorkspaceFromCid, handleAsyncError]);
 

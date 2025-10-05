@@ -66,12 +66,6 @@ export default [
 ```
 
 ---
-### `full_codebase_dump.md`
-```md
-
-```
-
----
 ### `index.html`
 ```html
 <!doctype html>
@@ -14330,6 +14324,7 @@ export const WorkspaceProvider = ({ children }) => {
           setLoadingMessage("");
           setIsWorkspaceTransitioning(false);
           workspaceToLoadRef.current = null;
+          setIsFullyLoaded(true);
         }
     }, [stagedSetlist, addToast, _loadWorkspaceFromCid, handleAsyncError]);
 
@@ -20842,6 +20837,13 @@ class CanvasManager {
             if (interpolator && value !== undefined) interpolator.snap(value);
         });
 
+        // --- THIS IS THE FIX: Symmetrical reset for Deck B ---
+        // When applying a full new configuration (like from a scene snapshot),
+        // the new 'angle' property already contains the live rotation. We must reset
+        // the continuous rotation counter to prevent a visual jump.
+        this.continuousRotationAngleB = 0;
+        // --- END FIX ---
+
         if (this.tokenB_id === tokenId) {
             return;
         }
@@ -20860,11 +20862,6 @@ class CanvasManager {
                  throw new Error(`Loaded crossfade image bitmap has zero dimensions: ${imageSrc.substring(0, 100)}`);
             }
             this.imageB = decodedBitmap;
-            // --- START OF FIX ---
-            // When loading a new scene/image onto a deck, its continuous rotation must be reset
-            // because the new 'angle' property from the config serves as the new starting point.
-            this.continuousRotationAngleB = 0;
-            // --- END OF FIX ---
         } catch (error) {
             if (this.isDestroyed) throw new Error("Manager destroyed during crossfade image load");
             this.imageB = null;
@@ -20950,12 +20947,10 @@ class CanvasManager {
         this.configA = mergedConfig;
         
         this.driftStateA = newConfig?.driftState || { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
-        // --- START OF FIX ---
-        // When applying a full new configuration (like from a scene snapshot),
-        // the new 'angle' property already contains the live rotation. We must reset
-        // the continuous rotation counter to prevent a visual jump.
+        
+        // --- THIS IS THE FIX: Symmetrical reset for Deck A ---
         this.continuousRotationAngleA = 0;
-        // --- END OF FIX ---
+        // --- END FIX ---
 
         Object.keys(this.interpolators).forEach(key => this.interpolators[key]?.snap(this.configA[key]));
         this.handleEnabledToggle(this.configA.enabled);
@@ -21054,9 +21049,6 @@ class CanvasManager {
             }
             this.imageA = decodedBitmap;
             this.lastImageSrc = src;
-            // --- FIX: Do not reset continuous rotation when setting a new image. ---
-            // this.continuousRotationAngleA = 0; // <-- THIS LINE IS REMOVED
-            // --- END FIX ---
         } catch (error) {
             if (this.isDestroyed) return;
             this.imageA = null; this.lastImageSrc = null;
