@@ -228,7 +228,7 @@ const EventsPanel = ({
         )}
 
         <div className="form-actions">
-          <button className="btn btn-secondary btn-preview" onClick={handlePreview} disabled={typeof onPreviewEffect !== "function"} title="Trigger a preview of the current effect settings" > PREVIEW EFFECT </button>
+          <button className="btn btn-secondary btn-preview" onClick={handlePreview} disabled={readOnly || typeof onPreviewEffect !== "function"} title="Trigger a preview of the current effect settings" > PREVIEW EFFECT </button>
           <button className="btn btn-primary btn-save-reaction" onClick={handleStageLocally} disabled={readOnly || typeof onSaveReaction !== "function"} title={ readOnly ? "Cannot stage in read-only mode" : "Stage this reaction (must save globally via Save Panel)" } > STAGE REACTION </button>
         </div>
 

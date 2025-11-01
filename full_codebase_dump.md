@@ -3523,14 +3523,11 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     animationDataRef: sequencer.animationDataRef,
   }), [sequencer, handleTogglePLock]);
 
-  // --- START: FIX ---
-  // This function now determines all necessary classes for the two-stage transition.
   const getCanvasClasses = useCallback((layerIdStr) => {
     let classes = `canvas layer-${layerIdStr}`;
     const isOutgoing = isTransitioning && outgoingLayerIdsOnTransitionStart?.has(layerIdStr);
     const isStableAndVisible = !isTransitioning && renderState === 'rendered';
     
-    // The incoming canvas is only made visible AFTER the fade-out is complete.
     const isIncomingAndReadyToFadeIn = isTransitioning && makeIncomingCanvasVisible;
 
     if (isOutgoing) {
@@ -3542,18 +3539,21 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     }
     return classes;
   }, [isTransitioning, outgoingLayerIdsOnTransitionStart, renderState, makeIncomingCanvasVisible]);
-  // --- END: FIX ---
 
   const containerClass = `canvas-container ${isTransitioning ? 'transitioning-active' : ''} ${isWorkspaceTransitioning ? 'workspace-fading-out' : ''}`;
   
+  // --- START OF FIX: Simplified and more robust rendering logic ---
+  // The isReadyToRender flag, now correctly gated by the new logic in useCoreApplicationStateAndLifecycle,
+  // is the single source of truth for showing the main UI.
   const isReadyToRender = renderState === 'rendered';
-  
   const showLoadingIndicator = !!loadingMessage;
+  // --- END OF FIX ---
 
   return (
     <>
       <div id="fullscreen-root" ref={rootRef} className="main-view radar-cursor">
         
+        {/* The loading pill is now just an overlay, allowing the layout to mount behind it. */}
         <LoadingIndicatorPill message={loadingMessage} isVisible={showLoadingIndicator} />
 
         <CanvasContainerWrapper
@@ -3570,6 +3570,7 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
           noPingSelectors={NO_PING_SELECTORS}
         />
 
+        {/* This block will only render AFTER loading is fully complete and renderState is 'rendered' */}
         {isReadyToRender && (
           <>
             <FpsDisplay showFpsCounter={showFpsCounter} isFullscreenActive={isFullscreenActive} portalContainer={portalContainerNode} />
@@ -5275,11 +5276,9 @@ describe('ToastContainer Component', () => {
 import React, { useCallback, useMemo, useState, useEffect } from "react";
 import PropTypes from "prop-types";
 
-// Local Component Imports
 import Panel from "./Panel";
 import PLockController from './PLockController';
 
-// Hook Imports
 import { useProfileSessionState } from "../../hooks/configSelectors";
 import { useMIDI } from "../../context/MIDIContext";
 import { useWorkspaceContext } from "../../context/WorkspaceContext";
@@ -5288,7 +5287,6 @@ import { useToast } from "../../context/ToastContext";
 import { BLEND_MODES } from "../../config/global-config";
 import { sliderParams } from "../../config/sliderParams";
 
-// Asset Imports
 import {
   toplayerIcon,
   middlelayerIcon,
@@ -5296,7 +5294,6 @@ import {
   rotateIcon,
 } from "../../assets";
 
-// Styles
 import "./PanelStyles/EnhancedControlPanel.css";
 
 const getDefaultLayerConfigTemplate = () => ({
@@ -5449,9 +5446,6 @@ const EnhancedControlPanel = ({
     };
 
     addNewSceneToStagedWorkspace(name, newSceneData);
-
-    // setActiveSceneName(name); // <-- THIS LINE IS THE PROBLEM AND IS REMOVED TO FIX THE RACE CONDITION
-
     if (setLiveConfig) {
       setLiveConfig(newSceneData);
     }
@@ -5633,42 +5627,42 @@ const EnhancedControlPanel = ({
               <div className="global-mapping-label">Crossfader</div>
               <div className="global-mapping-controls">
                 <span className="layer-mapping-text" title={displayGlobalMidiMapping('crossfader')}>{displayGlobalMidiMapping('crossfader')}</span>
-                <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'crossfader') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('crossfader')} disabled={!midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Crossfader">{isLearning('global', 'crossfader') ? "..." : "Map"}</button>
+                <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'crossfader') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('crossfader')} disabled={!isProfileOwner || !midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Crossfader">{isLearning('global', 'crossfader') ? "..." : "Map"}</button>
               </div>
             </div>
             <div className="global-mapping-item">
               <div className="global-mapping-label">P-Lock Toggle</div>
               <div className="global-mapping-controls">
                 <span className="layer-mapping-text" title={displayGlobalMidiMapping('pLockToggle')}>{displayGlobalMidiMapping('pLockToggle')}</span>
-                <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'pLockToggle') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('pLockToggle')} disabled={!midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to P-Lock Toggle">{isLearning('global', 'pLockToggle') ? "..." : "Map"}</button>
+                <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'pLockToggle') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('pLockToggle')} disabled={!isProfileOwner || !midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to P-Lock Toggle">{isLearning('global', 'pLockToggle') ? "..." : "Map"}</button>
               </div>
             </div>
             <div className="global-mapping-item">
               <div className="global-mapping-label">Previous Scene</div>
               <div className="global-mapping-controls">
                 <span className="layer-mapping-text" title={displayGlobalMidiMapping('prevScene')}>{displayGlobalMidiMapping('prevScene')}</span>
-                <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'prevScene') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('prevScene')} disabled={!midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Previous Scene">{isLearning('global', 'prevScene') ? "..." : "Map"}</button>
+                <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'prevScene') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('prevScene')} disabled={!isProfileOwner || !midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Previous Scene">{isLearning('global', 'prevScene') ? "..." : "Map"}</button>
               </div>
             </div>
             <div className="global-mapping-item">
               <div className="global-mapping-label">Next Scene</div>
               <div className="global-mapping-controls">
                 <span className="layer-mapping-text" title={displayGlobalMidiMapping('nextScene')}>{displayGlobalMidiMapping('nextScene')}</span>
-                <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'nextScene') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('nextScene')} disabled={!midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Next Scene">{isLearning('global', 'nextScene') ? "..." : "Map"}</button>
+                <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'nextScene') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('nextScene')} disabled={!isProfileOwner || !midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Next Scene">{isLearning('global', 'nextScene') ? "..." : "Map"}</button>
               </div>
             </div>
             <div className="global-mapping-item">
               <div className="global-mapping-label">Previous Workspace</div>
               <div className="global-mapping-controls">
                 <span className="layer-mapping-text" title={displayGlobalMidiMapping('prevWorkspace')}>{displayGlobalMidiMapping('prevWorkspace')}</span>
-                <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'prevWorkspace') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('prevWorkspace')} disabled={!midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Previous Workspace">{isLearning('global', 'prevWorkspace') ? "..." : "Map"}</button>
+                <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'prevWorkspace') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('prevWorkspace')} disabled={!isProfileOwner || !midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Previous Workspace">{isLearning('global', 'prevWorkspace') ? "..." : "Map"}</button>
               </div>
             </div>
             <div className="global-mapping-item">
               <div className="global-mapping-label">Next Workspace</div>
               <div className="global-mapping-controls">
                 <span className="layer-mapping-text" title={displayGlobalMidiMapping('nextWorkspace')}>{displayGlobalMidiMapping('nextWorkspace')}</span>
-                <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'nextWorkspace') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('nextWorkspace')} disabled={!midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Next Workspace">{isLearning('global', 'nextWorkspace') ? "..." : "Map"}</button>
+                <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'nextWorkspace') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('nextWorkspace')} disabled={!isProfileOwner || !midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Next Workspace">{isLearning('global', 'nextWorkspace') ? "..." : "Map"}</button>
               </div>
             </div>
           </div>
@@ -5723,7 +5717,7 @@ const formatAddress = (address) => {
 };
 
 const EnhancedSavePanel = ({ onClose }) => {
-  const { hostProfileAddress, isPreviewMode, isHostProfileOwner, canSaveToHostProfile } = useUserSession();
+  const { hostProfileAddress, isHostProfileOwner, canSaveToHostProfile } = useUserSession();
   const {
     activeWorkspaceName,
     saveChanges,
@@ -5733,6 +5727,24 @@ const EnhancedSavePanel = ({ onClose }) => {
     hasPendingChanges,
   } = useWorkspaceContext();
   
+  // If the current user is a visitor, display a read-only message and nothing else.
+  if (!isHostProfileOwner) {
+    return (
+      <Panel title="VIEWING MODE" onClose={onClose} className="panel-from-toolbar enhanced-save-panel">
+          <div className="save-info visitor-banner">
+              <span aria-hidden="true">👤</span>
+              <div>
+                <div className="title">Viewing {formatAddress(hostProfileAddress)}'s Profile</div>
+                <div className="desc">
+                  You are viewing another user's profile. You can load and experiment with their scenes. Saving is disabled.
+                </div>
+              </div>
+            </div>
+      </Panel>
+    );
+  }
+
+  // The remainder of the component is for the profile owner.
   const canSave = canSaveToHostProfile;
   const isFirstSave = !activeWorkspaceName;
 
@@ -5749,19 +5761,16 @@ const EnhancedSavePanel = ({ onClose }) => {
 
   const handleSaveChanges = useCallback(async () => {
     if (!canSave || isSaving) return;
-
     if (isFirstSave) {
-      // On a first save, the action is more like creating than duplicating.
       const newName = window.prompt("Enter a name for your first workspace:");
       if (newName && newName.trim()) {
-        const result = await duplicateActiveWorkspace(newName.trim()); // It duplicates the "blank" state
+        const result = await duplicateActiveWorkspace(newName.trim());
         if (result.success) {
           onClose();
         }
       }
       return;
     }
-
     const result = await saveChanges();
     if (result.success) {
       onClose();
@@ -5769,16 +5778,13 @@ const EnhancedSavePanel = ({ onClose }) => {
   }, [canSave, isSaving, saveChanges, onClose, isFirstSave, duplicateActiveWorkspace]);
 
   const getPanelTitle = () => {
-    if (isPreviewMode) return "VISITOR PREVIEW";
     if (!hostProfileAddress) return "CONNECT PROFILE";
-    if (canSave) return "SAVE MANAGEMENT";
-    return `VIEWING PROFILE (${formatAddress(hostProfileAddress)})`;
+    return "SAVE MANAGEMENT";
   };
 
   const renderStatusIndicator = () => {
     if (isSaving) return <div className="status-indicator saving">Saving Changes...</div>;
-    if (hasPendingChanges && canSave) return <div className="status-indicator pending">Unsaved changes</div>;
-    if (!canSave && hostProfileAddress && !isPreviewMode) return <div className="status-indicator idle">Viewing mode. Changes are not saved.</div>;
+    if (hasPendingChanges) return <div className="status-indicator pending">Unsaved changes</div>;
     return <div className="status-indicator idle">Workspace is in sync</div>;
   };
 
@@ -5787,40 +5793,25 @@ const EnhancedSavePanel = ({ onClose }) => {
 
   return (
     <Panel title={getPanelTitle()} onClose={onClose} className="panel-from-toolbar enhanced-save-panel">
-      {canSave && hostProfileAddress && (
-        <>
-          <div className="config-section save-workspace-section">
-            {renderStatusIndicator()}
-            <button className="btn btn-block btn-primary" onClick={handleSaveChanges} disabled={isUpdateDisabled}>
-              {isSaving ? "SAVING..." : (isFirstSave ? "Save Workspace..." : "Update Current Workspace")}
-            </button>
-            <p className="form-help-text">
-              {isFirstSave
-                ? "Save your current scenes and settings as your first workspace."
-                : "Commit all changes in the current workspace (scenes, MIDI maps, etc.) to your profile."}
-            </p>
-          </div>
-          <div className="config-section">
-            <button className="btn btn-block btn-secondary" onClick={handleDuplicateWorkspace} disabled={isSaveAsDisabled}>
-              Duplicate Workspace...
-            </button>
-            <p className="form-help-text">
-              Saves a copy of the current workspace with a new name in your Setlist.
-            </p>
-          </div>
-        </>
-      )}
-      {!isHostProfileOwner && hostProfileAddress && (
-        <div className="save-info visitor-banner">
-            <span aria-hidden="true">👤</span>
-            <div>
-              <div className="title">Viewing Mode</div>
-              <div className="desc">
-                You are viewing another user's profile. You can load and experiment with their scenes. Saving is disabled.
-              </div>
-            </div>
-          </div>
-      )}
+      <div className="config-section save-workspace-section">
+        {renderStatusIndicator()}
+        <button className="btn btn-block btn-primary" onClick={handleSaveChanges} disabled={isUpdateDisabled}>
+          {isSaving ? "SAVING..." : (isFirstSave ? "Save Workspace..." : "Update Current Workspace")}
+        </button>
+        <p className="form-help-text">
+          {isFirstSave
+            ? "Save your current scenes and settings as your first workspace."
+            : "Commit all changes in the current workspace (scenes, MIDI maps, etc.) to your profile."}
+        </p>
+      </div>
+      <div className="config-section">
+        <button className="btn btn-block btn-secondary" onClick={handleDuplicateWorkspace} disabled={isSaveAsDisabled}>
+          Duplicate Workspace...
+        </button>
+        <p className="form-help-text">
+          Saves a copy of the current workspace with a new name in your Setlist.
+        </p>
+      </div>
     </Panel>
   );
 };
@@ -6065,7 +6056,7 @@ const EventsPanel = ({
         )}
 
         <div className="form-actions">
-          <button className="btn btn-secondary btn-preview" onClick={handlePreview} disabled={typeof onPreviewEffect !== "function"} title="Trigger a preview of the current effect settings" > PREVIEW EFFECT </button>
+          <button className="btn btn-secondary btn-preview" onClick={handlePreview} disabled={readOnly || typeof onPreviewEffect !== "function"} title="Trigger a preview of the current effect settings" > PREVIEW EFFECT </button>
           <button className="btn btn-primary btn-save-reaction" onClick={handleStageLocally} disabled={readOnly || typeof onSaveReaction !== "function"} title={ readOnly ? "Cannot stage in read-only mode" : "Stage this reaction (must save globally via Save Panel)" } > STAGE REACTION </button>
         </div>
 
@@ -6542,10 +6533,8 @@ const LazyLoadImage = ({ src, alt, className }) => {
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
-        // When the placeholder comes into view, set isVisible to true
         if (entry.isIntersecting) {
           setIsVisible(true);
-          // Stop observing this element once it's visible
           observer.unobserve(entry.target);
         }
       });
@@ -6563,21 +6552,26 @@ const LazyLoadImage = ({ src, alt, className }) => {
     };
   }, []);
 
-  // Only set the src attribute if the component is visible
   const imageSource = isVisible ? src : '';
 
   return (
     <div ref={imgRef} className={`lazy-image-container ${isLoaded ? 'loaded' : ''}`}>
-      <img
-        src={imageSource}
-        alt={alt}
-        className={className}
-        onLoad={() => setIsLoaded(true)}
-        style={{ opacity: isLoaded ? 1 : 0 }} // Fade in the image when loaded
-        draggable="false"
-        decoding="async"
-      />
-      {/* Show a shimmer placeholder while the image is loading */}
+      {/* === START OF FIX === */}
+      {/* Only render the img tag if there is a valid, non-empty imageSource */}
+      {imageSource ? (
+        <img
+          src={imageSource}
+          alt={alt}
+          className={className}
+          onLoad={() => setIsLoaded(true)}
+          style={{ opacity: isLoaded ? 1 : 0 }}
+          draggable="false"
+          decoding="async"
+        />
+      ) : null}
+      {/* === END OF FIX === */}
+
+      {/* This placeholder will now correctly remain visible if imageSource is empty */}
       {!isLoaded && <div className="placeholder-shimmer"></div>}
     </div>
   );
@@ -6596,7 +6590,7 @@ export default LazyLoadImage;
 ### `src\components\Panels\LibraryPanel.jsx`
 ```jsx
 // src/components/Panels/LibraryPanel.jsx
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import PropTypes from "prop-types";
 import Panel from "./Panel";
 import { useUserSession } from "../../context/UserSessionContext";
@@ -6618,186 +6612,285 @@ const formatAddress = (address, length = 4) => {
   return `${address.substring(0, displayLength + 2)}...${address.substring(address.length - displayLength)}`;
 };
 
+const CollectionCard = ({ collection, onRemove, canRemove }) => {
+    const renderImage = () => {
+        const imgTag = (
+            <img 
+                src={collection.imageUrl || `https://via.placeholder.com/80/252525/00f3ff.png?text=${collection.name?.charAt(0)?.toUpperCase() || "?"}`} 
+                alt={collection.name || "Collection"} 
+            />
+        );
+
+        if (collection.linkUrl) {
+            return (
+                <a 
+                    href={collection.linkUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="collection-link"
+                    title={`Visit ${collection.name}`}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    {imgTag}
+                </a>
+            );
+        }
+        return imgTag;
+    };
+
+    return (
+        <div className="collection-card">
+            <div className={`collection-image ${collection.linkUrl ? 'is-clickable' : ''}`}>
+                {renderImage()}
+            </div>
+            <div className="collection-info">
+                <h4 className="collection-name" title={collection.name}>{collection.name || "Unnamed"}</h4>
+                <div className="collection-address" title={collection.address}>{formatAddress(collection.address)}</div>
+            </div>
+            {canRemove && (
+                <button className="remove-button btn-icon" onClick={() => onRemove(collection.address)} title={`Remove ${collection.name}`} disabled={!canRemove}>✕</button>
+            )}
+        </div>
+    );
+};
+
+CollectionCard.propTypes = {
+  collection: PropTypes.object.isRequired,
+  onRemove: PropTypes.func,
+  canRemove: PropTypes.bool,
+};
+
 const LibraryPanel = ({ onClose }) => {
-  const { isRadarProjectAdmin } = useUserSession();
-  const { configServiceRef } = useWorkspaceContext();
+  const { isRadarProjectAdmin, isHostProfileOwner } = useUserSession();
+  const {
+    stagedActiveWorkspace,
+    addCollectionToPersonalLibrary,
+    removeCollectionFromPersonalLibrary,
+    configServiceRef,
+  } = useWorkspaceContext();
   const { officialWhitelist, refreshOfficialWhitelist } = useAssetContext();
   const { addToast } = useToast();
+  
+  const userLibrary = useMemo(() => stagedActiveWorkspace?.personalCollectionLibrary || [], [stagedActiveWorkspace]);
 
-  const [stagedWhitelist, setStagedWhitelist] = useState([]);
-  const [hasChanges, setHasChanges] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [newCollection, setNewCollection] = useState({ address: "", name: "", imageUrl: "" });
-  const [error, setError] = useState("");
-  const statusTimerRef = useRef(null);
+  const [newUserCollection, setNewUserCollection] = useState({ address: "", name: "", imageUrl: "" });
+  const [userError, setUserError] = useState("");
+  const userStatusTimerRef = useRef(null);
+  
+  const [stagedAdminWhitelist, setStagedAdminWhitelist] = useState([]);
+  const [hasAdminChanges, setHasAdminChanges] = useState(false);
+  const [isSavingAdmin, setIsSavingAdmin] = useState(false);
+  const [adminError, setAdminError] = useState("");
+  const [newAdminCollection, setNewAdminCollection] = useState({ address: "", name: "", imageUrl: "", linkUrl: "" });
+  const adminStatusTimerRef = useRef(null);
 
   useEffect(() => {
-    setStagedWhitelist(officialWhitelist || []);
-    setHasChanges(false);
-  }, [officialWhitelist]);
-
-  const displayError = useCallback((message, duration = 4000) => {
-    setError(message);
-    if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
-    if (duration > 0) {
-      statusTimerRef.current = setTimeout(() => setError(""), duration);
+    if (isRadarProjectAdmin) {
+      setStagedAdminWhitelist(officialWhitelist || []);
+      setHasAdminChanges(false);
     }
+  }, [officialWhitelist, isRadarProjectAdmin]);
+
+  const displayUserError = useCallback((message, duration = 4000) => {
+    setUserError(message);
+    if (userStatusTimerRef.current) clearTimeout(userStatusTimerRef.current);
+    if (duration > 0) userStatusTimerRef.current = setTimeout(() => setUserError(""), duration);
   }, []);
 
-  useEffect(() => () => { if (statusTimerRef.current) clearTimeout(statusTimerRef.current) }, []);
-
-  const handleInputChange = useCallback((e) => {
+  const handleUserInputChange = useCallback((e) => {
     const { name, value } = e.target;
-    setNewCollection((prev) => ({ ...prev, [name]: value }));
+    setNewUserCollection((prev) => ({ ...prev, [name]: value }));
   }, []);
 
-  const handleAddCollection = useCallback(() => {
-    const addressToAdd = newCollection.address.trim();
-    const nameToAdd = newCollection.name.trim();
+  const handleAddUserCollection = useCallback(() => {
+    const addressToAdd = newUserCollection.address.trim();
+    const nameToAdd = newUserCollection.name.trim();
 
-    if (!addressToAdd || !nameToAdd) { displayError("Address and Name are required."); return; }
-    if (!isAddress(addressToAdd)) { displayError("Invalid address format."); return; }
-    if ((stagedWhitelist || []).some(c => c.address.toLowerCase() === addressToAdd.toLowerCase())) {
-        displayError("This collection is already in the whitelist.");
+    if (!addressToAdd || !nameToAdd) { displayUserError("Address and Name are required."); return; }
+    if (!isAddress(addressToAdd)) { displayUserError("Invalid address format."); return; }
+    
+    const isAlreadyInOfficial = officialWhitelist.some(c => c.address.toLowerCase() === addressToAdd.toLowerCase());
+    const isAlreadyInUser = userLibrary.some(c => c.address.toLowerCase() === addressToAdd.toLowerCase());
+    
+    if (isAlreadyInOfficial || isAlreadyInUser) {
+        displayUserError("This collection is already in a library.");
         return;
     }
     
-    setStagedWhitelist(prev => [...(prev || []), {
+    addCollectionToPersonalLibrary({
       address: addressToAdd,
       name: nameToAdd,
-      imageUrl: newCollection.imageUrl.trim() || null,
-    }]);
-    setNewCollection({ address: "", name: "", imageUrl: "" });
-    setHasChanges(true);
-  }, [newCollection, stagedWhitelist, displayError]);
+      imageUrl: newUserCollection.imageUrl.trim() || null,
+    });
+    setNewUserCollection({ address: "", name: "", imageUrl: "" });
+  }, [newUserCollection, userLibrary, officialWhitelist, addCollectionToPersonalLibrary, displayUserError]);
 
-  const handleRemoveCollection = useCallback((addressToRemove) => {
-    setStagedWhitelist(prev => (prev || []).filter(c => c.address.toLowerCase() !== addressToRemove.toLowerCase()));
-    setHasChanges(true);
+  const displayAdminError = useCallback((message, duration = 4000) => {
+    setAdminError(message);
+    if (adminStatusTimerRef.current) clearTimeout(adminStatusTimerRef.current);
+    if (duration > 0) adminStatusTimerRef.current = setTimeout(() => setAdminError(""), duration);
+  }, []);
+  
+  const handleAdminInputChange = useCallback((e) => {
+    const { name, value } = e.target;
+    setNewAdminCollection((prev) => ({ ...prev, [name]: value }));
+  }, []);
+
+  const handleAdminAddCollection = useCallback(() => {
+    const addressToAdd = newAdminCollection.address.trim();
+    const nameToAdd = newAdminCollection.name.trim();
+
+    if (!addressToAdd || !nameToAdd) { displayAdminError("Address and Name are required."); return; }
+    if (!isAddress(addressToAdd)) { displayAdminError("Invalid address format."); return; }
+    if (stagedAdminWhitelist.some(c => c.address.toLowerCase() === addressToAdd.toLowerCase())) {
+        displayAdminError("This collection is already in the whitelist.");
+        return;
+    }
+    
+    setStagedAdminWhitelist(prev => [...prev, {
+      address: addressToAdd,
+      name: nameToAdd,
+      imageUrl: newAdminCollection.imageUrl.trim() || null,
+      linkUrl: newAdminCollection.linkUrl.trim() || null,
+    }]);
+    setNewAdminCollection({ address: "", name: "", imageUrl: "", linkUrl: "" });
+    setHasAdminChanges(true);
+  }, [newAdminCollection, stagedAdminWhitelist, displayAdminError]);
+
+  const handleAdminRemoveCollection = useCallback((addressToRemove) => {
+    setStagedAdminWhitelist(prev => prev.filter(c => c.address.toLowerCase() !== addressToRemove.toLowerCase()));
+    setHasAdminChanges(true);
   }, []);
 
   const handleSaveWhitelist = async () => {
-    if (!isRadarProjectAdmin || isSaving) return;
-    
-    setIsSaving(true);
-    addToast("Saving whitelist...", "info");
-
+    if (!isRadarProjectAdmin || isSavingAdmin) return;
+    setIsSavingAdmin(true);
+    addToast("Saving official whitelist...", "info");
     try {
         const service = configServiceRef.current;
-        if (!service || !service.checkReadyForWrite()) {
-            throw new Error("Configuration Service is not ready for writing.");
-        }
-
-        const newCid = await uploadJsonToPinata(stagedWhitelist, 'RADAR_OfficialWhitelist');
+        if (!service || !service.checkReadyForWrite()) throw new Error("Configuration Service is not ready for writing.");
+        const newCid = await uploadJsonToPinata(stagedAdminWhitelist, 'RADAR_OfficialWhitelist');
         const newIpfsUri = `ipfs://${newCid}`;
         const valueHex = stringToHex(newIpfsUri);
-
         await service.saveDataToKey(RADAR_OFFICIAL_ADMIN_ADDRESS, OFFICIAL_WHITELIST_KEY, valueHex);
-        
         await refreshOfficialWhitelist();
-        
         addToast("Official whitelist saved successfully!", "success");
-        setHasChanges(false);
+        setHasAdminChanges(false);
         onClose(); 
-
     } catch (error) {
         console.error("Failed to save whitelist:", error);
         addToast(`Error: ${error.message}`, "error");
     } finally {
-        setIsSaving(false);
+        setIsSavingAdmin(false);
     }
   };
-  
-  if (!isRadarProjectAdmin) {
-    return (
-        <Panel title="Collections" onClose={onClose} className="panel-from-toolbar library-panel">
-            <div className="collections-section section-box">
-                <h3 className="section-title">Official Collections</h3>
-                {(officialWhitelist || []).length > 0 ? (
-                  <div className="collections-grid">
-                    {(officialWhitelist || []).map((collection) => (
-                      <div key={collection.address} className="collection-card">
-                        <div className="collection-image">
-                          <img src={collection.imageUrl || `https://via.placeholder.com/80/252525/00f3ff.png?text=${collection.name?.charAt(0)?.toUpperCase() || "?"}`} alt={collection.name || "Collection"}/>
-                        </div>
-                        <div className="collection-info">
-                          <h4 className="collection-name" title={collection.name}>{collection.name || "Unnamed"}</h4>
-                          <div className="collection-address" title={collection.address}>{formatAddress(collection.address)}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="empty-message">No official collections have been whitelisted yet.</div>
-                )}
-            </div>
-        </Panel>
-    );
-  }
 
-  // Admin View:
+  useEffect(() => {
+    return () => {
+        if (userStatusTimerRef.current) clearTimeout(userStatusTimerRef.current);
+        if (adminStatusTimerRef.current) clearTimeout(adminStatusTimerRef.current);
+    }
+  }, []);
+
   return (
-    <Panel
-      title="Manage Whitelist"
-      onClose={onClose}
-      className="panel-from-toolbar library-panel events-panel-custom-scroll"
-    >
-      <div className="admin-header">
-        <div className="admin-badge">Admin Mode</div>
-        <p className="admin-description">
-          Add or remove collections from the official RADAR whitelist. Changes here will affect all users after saving.
-        </p>
-      </div>
-
-      {error && <div className="status-message error">{error}</div>}
-
-      <div className="add-collection-section section-box">
-        <h3 className="section-title">Add New Collection</h3>
-        <div className="form-group">
-          <label htmlFor="address">Collection Address*</label>
-          <input type="text" id="address" name="address" className="form-control" value={newCollection.address} onChange={handleInputChange} placeholder="0x..." disabled={isSaving} aria-required="true" />
+    <Panel title="Collections Library" onClose={onClose} className="panel-from-toolbar library-panel events-panel-custom-scroll">
+      
+      {isHostProfileOwner && (
+        <div className="add-collection-section section-box">
+          <h3 className="section-title">Add to My Library</h3>
+          {userError && <div className="status-message error">{userError}</div>}
+          <div className="form-group">
+            <label htmlFor="user-address">Collection Address*</label>
+            <input type="text" id="user-address" name="address" className="form-control" value={newUserCollection.address} onChange={handleUserInputChange} placeholder="0x..." aria-required="true" />
+          </div>
+          <div className="form-group">
+            <label htmlFor="user-name">Collection Name*</label>
+            <input type="text" id="user-name" name="name" className="form-control" value={newUserCollection.name} onChange={handleUserInputChange} placeholder="Name of the Collection" aria-required="true" />
+          </div>
+          <div className="form-group">
+            <label htmlFor="user-imageUrl">Image URL</label>
+            <input type="text" id="user-imageUrl" name="imageUrl" className="form-control" value={newUserCollection.imageUrl} onChange={handleUserInputChange} placeholder="https://... (optional)"/>
+          </div>
+          <button className="btn btn-block btn-secondary" onClick={handleAddUserCollection} disabled={!newUserCollection.address.trim() || !newUserCollection.name.trim() || !isAddress(newUserCollection.address.trim())}>
+            Add to My Library
+          </button>
+          <p className="form-help-text">Add an LSP7 or LSP8 collection. Changes must be saved via the main Save panel.</p>
         </div>
-        <div className="form-group">
-          <label htmlFor="name">Collection Name*</label>
-          <input type="text" id="name" name="name" className="form-control" value={newCollection.name} onChange={handleInputChange} placeholder="Name of the Collection" disabled={isSaving} aria-required="true" />
-        </div>
-        <div className="form-group">
-          <label htmlFor="imageUrl">Image URL</label>
-          <input type="text" id="imageUrl" name="imageUrl" className="form-control" value={newCollection.imageUrl} onChange={handleInputChange} placeholder="https://... (optional)" disabled={isSaving}/>
-        </div>
-        <button className="btn btn-block btn-secondary" onClick={handleAddCollection} disabled={isSaving || !newCollection.address.trim() || !newCollection.name.trim() || !isAddress(newCollection.address.trim())}>
-          Add to Staged List
-        </button>
-      </div>
+      )}
 
       <div className="collections-section section-box">
-        <h3 className="section-title">Staged Whitelist</h3>
-        {(stagedWhitelist || []).length === 0 && <div className="empty-message">The whitelist is currently empty.</div>}
-        
-        {(stagedWhitelist || []).length > 0 && (
+        <h3 className="section-title">{isHostProfileOwner ? 'My Library' : 'Personal Library'}</h3>
+        {userLibrary.length > 0 ? (
           <div className="collections-grid">
-            {(stagedWhitelist || []).map((collection) => (
-              <div key={collection.address} className="collection-card">
-                <div className="collection-image">
-                  <img src={collection.imageUrl || `https://via.placeholder.com/80/252525/00f3ff.png?text=${collection.name?.charAt(0)?.toUpperCase() || "?"}`} alt={collection.name || "Collection"}/>
-                </div>
-                <div className="collection-info">
-                  <h4 className="collection-name" title={collection.name}>{collection.name || "Unnamed"}</h4>
-                  <div className="collection-address" title={collection.address}>{formatAddress(collection.address)}</div>
-                </div>
-                <button className="remove-button btn-icon" onClick={() => handleRemoveCollection(collection.address)} title="Remove from Whitelist" disabled={isSaving}>✕</button>
-              </div>
+            {userLibrary.map(collection => (
+              <CollectionCard key={collection.address} collection={collection} onRemove={removeCollectionFromPersonalLibrary} canRemove={isHostProfileOwner} />
             ))}
           </div>
+        ) : (
+          <div className="empty-message">This user's personal library is empty.</div>
         )}
       </div>
 
-      <div className="config-section save-workspace-section">
-        {hasChanges && <div className="status-indicator pending">Whitelist has unsaved changes</div>}
-        <button className="btn btn-block btn-primary" onClick={handleSaveWhitelist} disabled={isSaving || !hasChanges}>
-          {isSaving ? "SAVING..." : "Save Official Whitelist"}
-        </button>
+      <div className="collections-section section-box">
+        <h3 className="section-title">Official Collections</h3>
+        {officialWhitelist.length > 0 ? (
+          <div className="collections-grid">
+            {officialWhitelist.map((collection) => (
+              <CollectionCard key={collection.address} collection={collection} canRemove={false} />
+            ))}
+          </div>
+        ) : (
+          <div className="empty-message">No official collections found.</div>
+        )}
       </div>
+
+      {isRadarProjectAdmin && (
+        <div className="admin-section-wrapper">
+          <div className="admin-header">
+            <div className="admin-badge">Admin Mode</div>
+            <p className="admin-description">Manage the global official whitelist. Changes here affect all users.</p>
+          </div>
+          {adminError && <div className="status-message error">{adminError}</div>}
+          <div className="add-collection-section section-box">
+            <h3 className="section-title">Add New Official Collection</h3>
+            <div className="form-group">
+              <label htmlFor="admin-address">Collection Address*</label>
+              <input type="text" id="admin-address" name="address" className="form-control" value={newAdminCollection.address} onChange={handleAdminInputChange} placeholder="0x..." disabled={isSavingAdmin} aria-required="true" />
+            </div>
+            <div className="form-group">
+              <label htmlFor="admin-name">Collection Name*</label>
+              <input type="text" id="admin-name" name="name" className="form-control" value={newAdminCollection.name} onChange={handleAdminInputChange} placeholder="Name of the Collection" disabled={isSavingAdmin} aria-required="true" />
+            </div>
+            <div className="form-group">
+              <label htmlFor="admin-imageUrl">Image URL</label>
+              <input type="text" id="admin-imageUrl" name="imageUrl" className="form-control" value={newAdminCollection.imageUrl} onChange={handleAdminInputChange} placeholder="https://... (optional)" disabled={isSavingAdmin}/>
+            </div>
+            <div className="form-group">
+              <label htmlFor="admin-linkUrl">Link URL</label>
+              <input type="text" id="admin-linkUrl" name="linkUrl" className="form-control" value={newAdminCollection.linkUrl} onChange={handleAdminInputChange} placeholder="https://... (optional, e.g., for minting)" disabled={isSavingAdmin}/>
+            </div>
+            <button className="btn btn-block btn-secondary" onClick={handleAdminAddCollection} disabled={isSavingAdmin || !newAdminCollection.address.trim() || !newAdminCollection.name.trim() || !isAddress(newAdminCollection.address.trim())}>
+              Add to Staged List
+            </button>
+          </div>
+          <div className="collections-section section-box">
+            <h3 className="section-title">Staged Official Whitelist</h3>
+            {stagedAdminWhitelist.length > 0 ? (
+              <div className="collections-grid">
+                {stagedAdminWhitelist.map((collection) => (
+                  <CollectionCard key={collection.address} collection={collection} onRemove={handleAdminRemoveCollection} canRemove={!isSavingAdmin} />
+                ))}
+              </div>
+            ) : <div className="empty-message">Official whitelist is empty.</div>}
+          </div>
+          <div className="config-section save-workspace-section">
+            {hasAdminChanges && <div className="status-indicator pending">Official whitelist has unsaved changes</div>}
+            <button className="btn btn-block btn-primary" onClick={handleSaveWhitelist} disabled={isSavingAdmin || !hasAdminChanges}>
+              {isSavingAdmin ? "SAVING..." : "Save Official Whitelist"}
+            </button>
+          </div>
+        </div>
+      )}
     </Panel>
   );
 };
@@ -8518,37 +8611,58 @@ input[type="range"].alpha-slider { background: linear-gradient( to right, rgba(v
   font-style: italic;
 }
 
-/* Grid for displaying collections */
+/* Grid for displaying collections - now single column for a list view */
 .library-panel .collections-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: var(--space-md);
+  grid-template-columns: 1fr; /* Each card takes the full width */
+  gap: var(--space-xs); /* Tighter spacing between items */
 }
 
-/* Individual collection card styling */
+/* Individual collection card styling - redesigned for horizontal layout */
 .library-panel .collection-card {
   background: rgba(0,0,0,0.2);
   border: 1px solid var(--color-border-dark);
   border-radius: var(--radius-md);
-  overflow: hidden;
   transition: all var(--transition-fast);
   position: relative;
-  display: flex;
-  flex-direction: column;
+  display: flex; /* Use flexbox for horizontal layout */
+  flex-direction: row; /* Align items in a row */
+  align-items: center; /* Vertically center image and text */
+  padding: var(--space-xs); /* Add some internal padding */
+  gap: var(--space-sm); /* Space between image and text block */
 }
 .library-panel .collection-card:hover {
   border-color: var(--color-primary-a30);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-primary-sm);
+  background: var(--color-primary-a05);
+  transform: translateY(-1px); /* More subtle hover effect */
+  box-shadow: none; /* Remove box-shadow for a flatter look */
 }
 
+/* Image container is now a fixed-size square */
 .library-panel .collection-image {
-  width: 100%;
-  padding-bottom: 56.25%; /* 16:9 Aspect Ratio */
-  height: 0;
+  width: 50px;
+  height: 50px;
+  flex-shrink: 0; /* Prevent the image from shrinking */
   position: relative;
   background: var(--color-bg);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  padding-bottom: 0; /* Remove aspect ratio padding */
 }
+
+/* --- ADDED: Ensure links inside image container fill space --- */
+.library-panel .collection-image .collection-link {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+/* Optional: visual cue for clickable images on hover */
+.library-panel .collection-image.is-clickable:hover {
+    opacity: 0.8;
+    box-shadow: 0 0 8px var(--color-primary-a30);
+}
+/* ----------------------------------------------------------- */
 
 .library-panel .collection-image img {
   position: absolute;
@@ -8559,32 +8673,39 @@ input[type="range"].alpha-slider { background: linear-gradient( to right, rgba(v
   object-fit: cover;
 }
 
+/* Info container holds the text and fills remaining space */
 .library-panel .collection-info {
-  padding: var(--space-sm);
+  padding: 0;
   flex-grow: 1;
+  overflow: hidden; /* Important for text-overflow to work */
+  min-width: 0; /* Fix for flexbox overflow issue */
 }
 
 .library-panel .collection-name {
-  font-size: var(--font-size-md);
+  font-size: var(--font-size-md); /* Keep name readable */
   color: var(--color-primary);
-  margin: 0 0 var(--space-xs) 0;
+  margin: 0 0 2px 0; /* Tighter margin */
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: ellipsis; /* Add ellipsis if name is too long */
 }
 
 .library-panel .collection-address {
   font-size: var(--font-size-xs);
   color: var(--color-text-muted);
   font-family: monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+/* Remove button is an overlay on the top right */
 .library-panel .remove-button {
   position: absolute;
-  top: 5px;
-  right: 5px;
-  width: 24px;
-  height: 24px;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.5);
   border: 1px solid var(--color-error-a50);
@@ -8592,11 +8713,16 @@ input[type="range"].alpha-slider { background: linear-gradient( to right, rgba(v
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 12px;
   line-height: 1;
   cursor: pointer;
   transition: all var(--transition-fast);
   z-index: 5;
+  opacity: 0; /* Hide by default */
+}
+
+.library-panel .collection-card:hover .remove-button {
+  opacity: 1; /* Show on card hover */
 }
 
 .library-panel .remove-button:hover {
@@ -8798,7 +8924,7 @@ input[type="range"].alpha-slider { background: linear-gradient( to right, rgba(v
   position: fixed;
   top: 5px;
   left: -20px;
-  z-index: 1000;
+  z-index: var(--z-panel-active);
   max-height: 90vh;
   animation: panel-slide-in 0.5s ease-out forwards;
   overflow: visible;
@@ -9931,7 +10057,7 @@ const SetsPanel = ({ onClose }) => {
         
         {canEdit && (
           <button 
-            id="create-workspace-btn" // <-- ID ADDED HERE
+            id="create-workspace-btn"
             className="btn btn-block" 
             onClick={handleCreateClick} 
             disabled={isLoading || isSaving}
@@ -10144,7 +10270,7 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
 
   const { updateTokenAssignment } = useVisualEngineContext();
 
-  const { visitorProfileAddress } = useUserSession();
+  const { visitorProfileAddress, isHostProfileOwner } = useUserSession();
 
   const isMountedRef = useRef(false);
   const hasFetchedInitialIdentifiers = useRef(false);
@@ -10166,6 +10292,22 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
   }, []);
 
   const userPalettes = useMemo(() => stagedActiveWorkspace?.userPalettes || {}, [stagedActiveWorkspace]);
+  const userLibrary = useMemo(() => stagedActiveWorkspace?.personalCollectionLibrary || [], [stagedActiveWorkspace]);
+
+  const combinedCollectionLibrary = useMemo(() => {
+    const collectionMap = new Map();
+    (officialWhitelist || []).forEach(c => {
+        if (c && c.address) {
+            collectionMap.set(c.address.toLowerCase(), { ...c, isOfficial: true });
+        }
+    });
+    (userLibrary || []).forEach(c => {
+        if (c && c.address && !collectionMap.has(c.address.toLowerCase())) {
+            collectionMap.set(c.address.toLowerCase(), { ...c, isOfficial: false });
+        }
+    });
+    return Array.from(collectionMap.values());
+  }, [officialWhitelist, userLibrary]);
 
   const paletteTokens = useMemo(() => {
     const palettes = {};
@@ -10184,8 +10326,8 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
   }, [loadedTokens, demoTokens, userPalettes]);
   
   const sortedCollectionLibrary = useMemo(() => {
-    if (!Array.isArray(officialWhitelist)) return [];
-    return [...officialWhitelist].sort((a, b) => {
+    if (!Array.isArray(combinedCollectionLibrary)) return [];
+    return [...combinedCollectionLibrary].sort((a, b) => {
       if (collectionSort === 'name') {
         return (a.name || '').localeCompare(b.name || '');
       }
@@ -10194,7 +10336,7 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
       }
       return 0;
     });
-  }, [officialWhitelist, collectionSort]);
+  }, [combinedCollectionLibrary, collectionSort]);
 
   useEffect(() => {
     const initialHasMore = {};
@@ -10310,17 +10452,17 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
 
   const renderTokenItem = useCallback((token, { onAddToPalette, onRemoveFromPalette, paletteName } = {}) => {
     const tokenImageSrc = token.metadata?.image ?? '';
-    if (!tokenImageSrc) return null;
+    
     return (
       <div className={`token-item ${selectedTokens[selectedLayer] === tokenImageSrc ? "selected" : ""}`} onMouseDown={(e) => handleTokenMouseDown(token, e)} onMouseUp={handleMouseUp} title={token.metadata.name}>
         <div className="token-image-container">
           <LazyLoadImage src={tokenImageSrc} alt={token.metadata.name} className="token-image" />
         </div>
-        {onAddToPalette && (<button className="add-to-palette-btn" onClick={(e) => { e.stopPropagation(); onAddToPalette(token); }} onMouseDown={(e) => e.stopPropagation()} title="Add to Palette">+</button>)}
-        {onRemoveFromPalette && paletteName && (<button className="remove-from-palette-btn" onClick={(e) => { e.stopPropagation(); onRemoveFromPalette(paletteName, token.id); }} onMouseDown={(e) => e.stopPropagation()} title="Remove from Palette">-</button>)}
+        {onAddToPalette && isHostProfileOwner && (<button className="add-to-palette-btn" onClick={(e) => { e.stopPropagation(); onAddToPalette(token); }} onMouseDown={(e) => e.stopPropagation()} title="Add to Palette">+</button>)}
+        {onRemoveFromPalette && paletteName && isHostProfileOwner && (<button className="remove-from-palette-btn" onClick={(e) => { e.stopPropagation(); onRemoveFromPalette(paletteName, token.id); }} onMouseDown={(e) => e.stopPropagation()} title="Remove from Palette">-</button>)}
       </div>
     );
-  }, [selectedLayer, selectedTokens, handleTokenMouseDown, handleMouseUp]);
+  }, [selectedLayer, selectedTokens, handleTokenMouseDown, handleMouseUp, isHostProfileOwner]);
 
   const overlayClassName = `overlay token-selector-overlay ${internalIsOpen || animationState === 'exiting' ? 'visible' : ''} state-${animationState} ${isPreviewMode ? 'preview-mode' : ''}`;
   if (!isOpen && animationState === 'hidden') return null;
@@ -10343,8 +10485,13 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
           <div className="token-display-area" ref={tokenDisplayAreaRef}>
             <div className="token-section palette-section">
               <div className="token-section-header"><h3>My Palettes</h3></div>
-              <div className="create-palette-form"><input type="text" value={newPaletteName} onChange={(e) => setNewPaletteName(e.target.value)} placeholder="New Palette Name" className="form-control" /><button onClick={handleCreatePalette} className="btn btn-sm" disabled={!newPaletteName.trim()}>Create</button></div>
-              {Object.keys(userPalettes).length > 0 ? (Object.keys(userPalettes).map(paletteName => (<div key={paletteName} className="collection-group"><div className="collection-header"><button onClick={() => toggleSection(paletteName)} className="collection-toggle-button">{paletteName} ({paletteTokens[paletteName]?.length || 0})<span className={`chevron ${expandedSections[paletteName] ? 'expanded' : ''}`}>›</span></button><button onClick={() => handleRemovePalette(paletteName)} className="delete-palette-btn" title={`Delete "${paletteName}" palette`}>🗑️</button></div>{expandedSections[paletteName] && (<TokenGrid scrollContainerRef={tokenDisplayAreaRef} tokens={paletteTokens[paletteName] || []} renderTokenItem={(token) => renderTokenItem(token, { onRemoveFromPalette: handleRemoveTokenFromPalette, paletteName })} hasMore={false} onLoadMore={()=>{}} isLoading={false} />)}</div>))) : <p className="no-items-message">Create a palette to organize tokens.</p>}
+              {isHostProfileOwner && (
+                <div className="create-palette-form">
+                  <input type="text" value={newPaletteName} onChange={(e) => setNewPaletteName(e.target.value)} placeholder="New Palette Name" className="form-control" />
+                  <button onClick={handleCreatePalette} className="btn btn-sm" disabled={!newPaletteName.trim()}>Create</button>
+                </div>
+              )}
+              {Object.keys(userPalettes).length > 0 ? (Object.keys(userPalettes).map(paletteName => (<div key={paletteName} className="collection-group"><div className="collection-header"><button onClick={() => toggleSection(paletteName)} className="collection-toggle-button">{paletteName} ({paletteTokens[paletteName]?.length || 0})<span className={`chevron ${expandedSections[paletteName] ? 'expanded' : ''}`}>›</span></button>{isHostProfileOwner && (<button onClick={() => handleRemovePalette(paletteName)} className="delete-palette-btn" title={`Delete "${paletteName}" palette`}>🗑️</button>)}</div>{expandedSections[paletteName] && (<TokenGrid scrollContainerRef={tokenDisplayAreaRef} tokens={paletteTokens[paletteName] || []} renderTokenItem={(token) => renderTokenItem(token, { onRemoveFromPalette: handleRemoveTokenFromPalette, paletteName })} hasMore={false} onLoadMore={()=>{}} isLoading={false} />)}</div>))) : <p className="no-items-message">Create a palette to organize tokens.</p>}
             </div>
             <div className="token-section">
               <div className="token-section-header"><h3>My Collections</h3><div className="sort-controls"><label htmlFor="collection-sort">Sort by:</label><select id="collection-sort" value={collectionSort} onChange={(e) => setCollectionSort(e.target.value)} className="custom-select custom-select-sm"><option value="name">Name</option><option value="addedAt">Date Added</option></select></div></div>
@@ -10356,7 +10503,7 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
           </div>
         </div>
       </div>
-      {paletteModalState.isOpen && (<div className="palette-modal-overlay" onClick={(e) => { e.stopPropagation(); setPaletteModalState({ isOpen: false, token: null }); }}><div className="palette-modal-content" onClick={(e) => e.stopPropagation()}><h4>Add to Palette</h4>{Object.keys(userPalettes).length > 0 ? (<div className="palette-list">{Object.keys(userPalettes).map(paletteName => (<button key={paletteName} onClick={() => handleSelectPaletteForToken(paletteName)} className="btn btn-block">{paletteName}</button>))}</div>) : <p>No palettes created yet.</p>}</div></div>)}
+      {paletteModalState.isOpen && isHostProfileOwner && (<div className="palette-modal-overlay" onClick={(e) => { e.stopPropagation(); setPaletteModalState({ isOpen: false, token: null }); }}><div className="palette-modal-content" onClick={(e) => e.stopPropagation()}><h4>Add to Palette</h4>{Object.keys(userPalettes).length > 0 ? (<div className="palette-list">{Object.keys(userPalettes).map(paletteName => (<button key={paletteName} onClick={() => handleSelectPaletteForToken(paletteName)} className="btn btn-block">{paletteName}</button>))}</div>) : <p>No palettes created yet.</p>}</div></div>)}
     </div>
   );
 };
@@ -10609,6 +10756,7 @@ import {
 
 const TopRightControls = ({
   isRadarProjectAdmin = false,
+  isHostProfileOwner = false,
   onWhitelistClick,
   showInfo = true,
   showToggleUI = true,
@@ -10637,16 +10785,16 @@ const TopRightControls = ({
         </button>
       )}
 
-      {isRadarProjectAdmin && isUiVisible && (
+      {isHostProfileOwner && isUiVisible && (
         <button
           className="toolbar-icon"
           onClick={onWhitelistClick}
-          title="Manage Official Collection Whitelist"
-          aria-label="Manage Whitelist"
+          title="Manage Collections Library"
+          aria-label="Manage Collections Library"
         >
           <img
             src={whitelistIcon}
-            alt="Manage Whitelist"
+            alt="Manage Collections"
             className="icon-image"
           />
         </button>
@@ -10698,6 +10846,7 @@ const TopRightControls = ({
 
 TopRightControls.propTypes = {
   isRadarProjectAdmin: PropTypes.bool,
+  isHostProfileOwner: PropTypes.bool,
   onWhitelistClick: PropTypes.func,
   showInfo: PropTypes.bool,
   showToggleUI: PropTypes.bool,
@@ -11806,7 +11955,7 @@ function UIOverlay({
   const { renderedCrossfaderValue, isAutoFading, handleSceneSelect, handleCrossfaderChange, handleCrossfaderCommit } = useVisualEngineContext();
   // ------------------------------------
   const { unreadCount } = useNotificationContext();
-  const { isRadarProjectAdmin, hostProfileAddress: currentProfileAddress } = useUserSession();
+  const { isRadarProjectAdmin, hostProfileAddress: currentProfileAddress, isHostProfileOwner } = useUserSession();
   const { isUiVisible, activePanel, toggleSidePanel, toggleInfoOverlay, toggleUiVisibility } = uiState;
   const { isAudioActive } = audioState;
   
@@ -11887,7 +12036,8 @@ function UIOverlay({
   return (
     <>
       {isReady && <MemoizedTopRightControls
-        isRadarProjectAdmin={isRadarProjectAdmin} 
+        isRadarProjectAdmin={isRadarProjectAdmin}
+        isHostProfileOwner={isHostProfileOwner}
         showInfo={true} 
         showToggleUI={true} 
         showEnhancedView={true}
@@ -11898,6 +12048,16 @@ function UIOverlay({
         isUiVisible={isUiVisible}
         isParallaxEnabled={configData.isParallaxEnabled}
         onToggleParallax={onToggleParallax}
+      />}
+      {isUiVisible && <MemoizedActivePanelRenderer
+          uiState={uiState}
+          audioState={audioState}
+          pLockProps={pLockProps}
+          onPreviewEffect={onPreviewEffect}
+          sequencerIntervalMs={sequencerIntervalMs}
+          onSetSequencerInterval={setSequencerIntervalMs}
+          crossfadeDurationMs={crossfadeDurationMs}
+          onSetCrossfadeDuration={onSetCrossfadeDuration}
       />}
       <div className={mainUiContainerClass}>
         {isUiVisible && (
@@ -11916,16 +12076,6 @@ function UIOverlay({
             {isReady && <div className="vertical-toolbar-container">
               <MemoizedVerticalToolbar activePanel={activePanel} setActivePanel={toggleSidePanel} notificationCount={unreadCount} />
             </div>}
-            <MemoizedActivePanelRenderer
-                uiState={uiState}
-                audioState={audioState}
-                pLockProps={pLockProps}
-                onPreviewEffect={onPreviewEffect}
-                sequencerIntervalMs={sequencerIntervalMs}
-                onSetSequencerInterval={setSequencerIntervalMs}
-                crossfadeDurationMs={crossfadeDurationMs}
-                onSetCrossfadeDuration={onSetCrossfadeDuration}
-            />
             {showSceneBar && (
               <div className="bottom-center-controls">
                 <WorkspaceSelectorDots
@@ -12348,8 +12498,8 @@ const OFFICIAL_WHITELIST_KEY = keccak256(stringToBytes("RADAR.OfficialWhitelist"
 const AssetContext = createContext();
 
 export const AssetProvider = ({ children }) => {
-  const { configServiceRef, configServiceInstanceReady } = useWorkspaceContext();
-  const { hostProfileAddress, visitorProfileAddress } = useUserSession();
+  const { configServiceRef, configServiceInstanceReady, stagedActiveWorkspace } = useWorkspaceContext();
+  const { hostProfileAddress, visitorProfileAddress, isRadarProjectAdmin } = useUserSession();
   const { addToast } = useToast();
 
   const [officialWhitelist, setOfficialWhitelist] = useState([]);
@@ -12385,29 +12535,62 @@ export const AssetProvider = ({ children }) => {
   const refreshOwnedTokens = useCallback(async (isSilent = false) => {
     const service = configServiceRef.current;
     const effectiveAddress = hostProfileAddress || visitorProfileAddress;
-    if (!effectiveAddress || officialWhitelist.length === 0 || !service) {
+    
+    const userLibrary = stagedActiveWorkspace?.personalCollectionLibrary || [];
+    
+    // Combine and deduplicate official and user libraries
+    const combinedCollectionsMap = new Map();
+    officialWhitelist.forEach(c => c && c.address && combinedCollectionsMap.set(c.address.toLowerCase(), c));
+    userLibrary.forEach(c => {
+        if (c && c.address && !combinedCollectionsMap.has(c.address.toLowerCase())) {
+            combinedCollectionsMap.set(c.address.toLowerCase(), c);
+        }
+    });
+    const allCollections = Array.from(combinedCollectionsMap.values());
+
+    if (!effectiveAddress || allCollections.length === 0 || !service) {
       setOwnedTokenIdentifiers({});
       setTokenFetchProgress({ loaded: 0, total: 0, loading: false });
       return;
     }
 
     setIsFetchingTokens(true);
-    setTokenFetchProgress({ loaded: 0, total: officialWhitelist.length, loading: true });
+    setTokenFetchProgress({ loaded: 0, total: allCollections.length, loading: true });
     if (!isSilent) addToast("Fetching token libraries...", "info", 2000);
 
     try {
-      const isAdminShowcase = effectiveAddress.toLowerCase() === RADAR_OFFICIAL_ADMIN_ADDRESS.toLowerCase();
-      
-      const identifierPromises = officialWhitelist.map(async (collection) => {
+      const isAdminShowcase = isRadarProjectAdmin && hostProfileAddress?.toLowerCase() === visitorProfileAddress?.toLowerCase();
+
+      const identifierPromises = allCollections.map(async (collection) => {
         const standard = await service.detectCollectionStandard(collection.address);
         let identifiers = [];
+
         if (standard === 'LSP8') {
           if (isAdminShowcase) {
+            // --- MODIFIED LOGIC WITH FALLBACK ---
+            // First, try to get all tokens for the showcase.
             identifiers = await service.getAllLSP8TokenIdsForCollection(collection.address);
+            
+            // If the showcase method returns no tokens (either because it failed or the collection is empty),
+            // fall back to getting just the owned tokens to ensure something is shown if owned.
+            if (identifiers.length === 0) {
+              if (import.meta.env.DEV) {
+                console.log(`[AssetContext] Admin showcase for ${collection.name} returned 0 tokens. Falling back to owned tokens check.`);
+              }
+              identifiers = await service.getOwnedLSP8TokenIdsForCollection(effectiveAddress, collection.address);
+            }
           } else {
+            // For all other users, reliably fetch only the tokens they own.
             identifiers = await service.getOwnedLSP8TokenIdsForCollection(effectiveAddress, collection.address);
           }
+        } else if (standard === 'LSP7') {
+          const balance = await service.getLSP7Balance(effectiveAddress, collection.address);
+          if (balance > 0) {
+            identifiers.push('LSP7_TOKEN');
+          }
         }
+        // --- END MODIFIED LOGIC ---
+
         setTokenFetchProgress(prev => ({ ...prev, loaded: prev.loaded + 1 }));
         return { address: collection.address, identifiers };
       });
@@ -12434,7 +12617,7 @@ export const AssetProvider = ({ children }) => {
       setIsFetchingTokens(false);
       setTokenFetchProgress(prev => ({ ...prev, loading: false }));
     }
-  }, [hostProfileAddress, visitorProfileAddress, officialWhitelist, addToast, configServiceRef]);
+  }, [hostProfileAddress, visitorProfileAddress, isRadarProjectAdmin, officialWhitelist, addToast, configServiceRef, stagedActiveWorkspace]);
 
   const contextValue = useMemo(() => ({
     officialWhitelist,
@@ -13177,7 +13360,8 @@ import {
   custom, // For Viem transport with EIP-1193 provider
   http,   // For Viem public client transport
   numberToHex,
-  getAddress, // <<< ADDED IMPORT
+  getAddress, // <<< ENSURED IMPORT
+  isAddress,  // <<< ADDED IMPORT
 } from "viem";
 import { lukso, luksoTestnet } from "viem/chains"; // Supported Viem chain definitions
 
@@ -13239,6 +13423,7 @@ const SUPPORTED_CHAINS = {
  * @property {import('viem').PublicClient|null} publicClient - Viem Public Client for the current chain. Null if chain is unsupported or RPC URL is missing.
  * @property {string|null} chainId - The current hexadecimal chain ID (e.g., '0x2a' for LUKSO Mainnet), or null if unsupported/disconnected.
  * @property {Array<string>} accounts - Array of EOA addresses controlled by the user, provided by the UP extension. `accounts[0]` is typically the active EOA.
+ * @property {string|null} userUPAddress - The Universal Profile address of the logged-in user.
  * @property {Array<string>} contextAccounts - Array of UP addresses relevant to the current context (e.g., the profile being viewed). `contextAccounts[0]` is the primary context UP.
  * @property {boolean} walletConnected - True if the provider is considered connected (valid chain, EOA accounts, and context UP accounts are present).
  * @property {boolean} isConnecting - Always false in this implementation; connection status is derived from events and available data. Kept for potential API consistency if other providers manage explicit connection states.
@@ -13305,6 +13490,10 @@ export function UpProvider({ children }) {
   const [walletConnected, setWalletConnected] = useState(false);
   /** @type {[Error | null, React.Dispatch<React.SetStateAction<Error | null>>]} */
   const [fetchStateError, setFetchStateError] = useState(null);
+  
+  // --- START OF FIX: Add state for the logged-in user's UP address ---
+  const [userUPAddress, setUserUPAddress] = useState(null);
+  // --- END OF FIX ---
 
   const hasCriticalError = useMemo(() => !!initializationError, [initializationError]);
   const currentChain = useMemo(() => chainId && SUPPORTED_CHAINS[chainId] ? SUPPORTED_CHAINS[chainId] : null, [chainId]);
@@ -13349,6 +13538,15 @@ export function UpProvider({ children }) {
                       contextAccounts.length > 0;
     setWalletConnected(connected);
   }, [chainId, accounts, contextAccounts]);
+  
+  // Safely checksum an array of addresses
+  const checksumAddressArray = (arr) => {
+    if (!Array.isArray(arr)) return [];
+    return arr.map(addr => {
+      try { return getAddress(addr); }
+      catch { return null; }
+    }).filter(Boolean);
+  };
 
   useEffect(() => {
     if (initializationError) {
@@ -13369,45 +13567,67 @@ export function UpProvider({ children }) {
     /** @type {{ current: boolean }} */
     const mountedRef = { current: true };
 
-    try {
-      const _initialAccounts = provider.accounts || [];
-      const _initialContextAccounts = provider.contextAccounts || [];
-      if (mountedRef.current) {
-        setAccounts(_initialAccounts);
-        setContextAccounts(_initialContextAccounts);
-      }
+    const fetchInitialData = async () => {
+        try {
+            const [_initialAccounts, _initialChainId] = await Promise.all([
+                provider.request({ method: "eth_accounts" }),
+                provider.request({ method: "eth_chainId" })
+            ]);
 
-      provider.request({ method: "eth_chainId" })
-        .then(rawChainId => {
-          if (!mountedRef.current) return;
-          const normalizedId = normalizeChainId(rawChainId);
-          const isValid = !!normalizedId && normalizedId !== "0x0" && !!SUPPORTED_CHAINS[normalizedId];
-          setChainId(isValid ? normalizedId : null);
-          updateConnectedStatus();
-        })
-        .catch(err => {
-            if (import.meta.env.DEV) console.warn("[UpProvider] Error fetching initial chainId:", err);
-            if (mountedRef.current) { setChainId(null); updateConnectedStatus(); }
-        });
-      updateConnectedStatus();
-    } catch (err) {
-      if (import.meta.env.DEV) console.error("[UpProvider] Error accessing initial provider properties:", err);
-      provider.request({ method: "eth_accounts" })
-        .then(_fallbackAccounts => {
-          if (!mountedRef.current) return;
-          setAccounts(_fallbackAccounts || []);
-          updateConnectedStatus();
-        })
-        .catch(fallbackErr => {
-            if (import.meta.env.DEV) console.warn("[UpProvider] Error fetching initial accounts (fallback):", fallbackErr);
-            if (mountedRef.current) { setAccounts([]); updateConnectedStatus(); }
-        });
-    }
+            if (!mountedRef.current) return;
 
-    const handleAccountsChanged = (_newAccounts) => {
+            const newAccs = checksumAddressArray(_initialAccounts || []);
+            setAccounts(newAccs);
+
+            // --- START OF FIX: Fetch user's UP address when accounts are available ---
+            if (newAccs.length > 0) {
+                try {
+                    const upAccounts = await provider.request({ method: 'up_getAccounts' });
+                    if (mountedRef.current && upAccounts && upAccounts.length > 0) {
+                        setUserUPAddress(getAddress(upAccounts[0]));
+                    }
+                } catch (upError) {
+                    if (import.meta.env.DEV) console.warn("[UpProvider] Could not fetch user's primary UP address via up_getAccounts:", upError);
+                }
+            } else {
+                setUserUPAddress(null);
+            }
+            // --- END OF FIX ---
+            
+            setContextAccounts(checksumAddressArray(provider.contextAccounts || []));
+
+            const normalizedId = normalizeChainId(_initialChainId);
+            const isValid = !!normalizedId && normalizedId !== "0x0" && !!SUPPORTED_CHAINS[normalizedId];
+            setChainId(isValid ? normalizedId : null);
+            
+            updateConnectedStatus();
+        } catch (err) {
+            if (import.meta.env.DEV) console.error("[UpProvider] Error during initial data fetch:", err);
+        }
+    };
+    
+    fetchInitialData();
+
+    const handleAccountsChanged = async (_newAccounts) => {
       if (!mountedRef.current) return;
-      const newAccs = Array.isArray(_newAccounts) ? _newAccounts : [];
+      const newAccs = checksumAddressArray(_newAccounts || []);
       setAccounts(newAccs);
+      
+      // --- START OF FIX: Re-fetch user UP on account change ---
+      if (newAccs.length > 0) {
+         try {
+            const upAccounts = await provider.request({ method: 'up_getAccounts' });
+            if (mountedRef.current && upAccounts && upAccounts.length > 0) {
+                setUserUPAddress(getAddress(upAccounts[0]));
+            }
+         } catch (upError) {
+            if (import.meta.env.DEV) console.warn("[UpProvider] Could not fetch user's primary UP address on account change:", upError);
+            setUserUPAddress(null);
+         }
+      } else {
+         setUserUPAddress(null);
+      }
+      // --- END OF FIX ---
       updateConnectedStatus();
     };
 
@@ -13420,14 +13640,14 @@ export function UpProvider({ children }) {
           if (import.meta.env.DEV) console.warn("[UpProvider Event] Chain changed to invalid/unsupported. Clearing accounts.");
           setAccounts([]);
           setContextAccounts([]);
+          setUserUPAddress(null); // --- FIX: Clear user UP on disconnect/invalid chain ---
       }
       updateConnectedStatus();
     };
 
     const handleContextAccountsChanged = (_newContextAccounts) => {
       if (!mountedRef.current) return;
-      const newContextAccs = Array.isArray(_newContextAccounts) ? _newContextAccounts : [];
-      setContextAccounts(newContextAccs);
+      setContextAccounts(checksumAddressArray(_newContextAccounts || []));
       updateConnectedStatus();
     };
 
@@ -13445,6 +13665,7 @@ export function UpProvider({ children }) {
     };
   }, [provider, initializationError, updateConnectedStatus]);
 
+
   const contextValue = useMemo(
     () => ({
       provider,
@@ -13452,6 +13673,7 @@ export function UpProvider({ children }) {
       publicClient,
       chainId,
       accounts,
+      userUPAddress, // --- FIX: Expose the user's UP address ---
       contextAccounts,
       walletConnected,
       isConnecting: false,
@@ -13460,7 +13682,7 @@ export function UpProvider({ children }) {
       hasCriticalError,
     }),
     [
-      provider, walletClient, publicClient, chainId, accounts, contextAccounts,
+      provider, walletClient, publicClient, chainId, accounts, userUPAddress, contextAccounts,
       walletConnected, initializationError, fetchStateError, hasCriticalError,
     ],
   );
@@ -13562,17 +13784,20 @@ export function initializeHostUPConnector() {
 ### `src\context\UserSessionContext.jsx`
 ```jsx
 // src/context/UserSessionContext.jsx
-import React, { createContext, useContext, useState, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useState, useMemo, useCallback, useEffect } from 'react';
 import PropTypes from 'prop-types';
 
 import { useUpProvider } from './UpProvider'; // Local context
 import { RADAR_OFFICIAL_ADMIN_ADDRESS } from '../config/global-config.js'; // Local config
 
 import { isAddress } from 'viem'; // Third-party utility
+import { ERC725 } from '@erc725/erc725.js';
+import lsp3ProfileSchema from '@erc725/erc725.js/schemas/LSP3ProfileMetadata.json';
+import { IPFS_GATEWAY } from '../config/global-config';
 
 export const defaultUserSessionContextValue = {
   hostProfileAddress: null,
-  visitorProfileAddress: null,
+  loggedInUserUPAddress: null,
   isHostProfileOwner: false,
   isRadarProjectAdmin: false,
   isPreviewMode: false,
@@ -13587,37 +13812,65 @@ export const defaultUserSessionContextValue = {
 const UserSessionContext = createContext(defaultUserSessionContextValue);
 
 export const UserSessionProvider = ({ children }) => {
-  const { accounts, contextAccounts } = useUpProvider();
+  const { accounts, contextAccounts, publicClient } = useUpProvider();
   const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [isHostProfileOwner, setIsHostProfileOwner] = useState(false);
+  
+  // --- START OF FIX: State to capture the logged-in user's own UP address ---
+  const [loggedInUserUPAddress, setLoggedInUserUPAddress] = useState(null);
+  // --- END OF FIX ---
 
-  // --- START: CORRECTED LOGIC ---
   const hostProfileAddress = useMemo(() => {
-    // The profile being viewed (the "host") is always the one provided by the extension's context.
     if (contextAccounts && contextAccounts.length > 0 && isAddress(contextAccounts[0])) {
       return contextAccounts[0];
     }
     return null;
   }, [contextAccounts]);
 
-  const visitorProfileAddress = useMemo(() => {
-    // The "visitor's" identity is also their active Universal Profile from the context.
-    // In this app's design, the host and visitor are the same entity.
-    if (contextAccounts && contextAccounts.length > 0 && isAddress(contextAccounts[0])) {
-      return contextAccounts[0];
-    }
-    return null;
-  }, [contextAccounts]);
+  // This effect correctly determines if the connected user owns the viewed profile.
+  useEffect(() => {
+    const controllerAddress = accounts && accounts.length > 0 ? accounts[0] : null;
+    const profileAddress = hostProfileAddress;
 
-  const isHostProfileOwner = useMemo(() => {
-    // For the UI, we determine "ownership" by checking if a controller wallet (EOA) is connected.
-    // The UP extension ensures this EOA has permissions for the active UP (hostProfileAddress).
-    const hasController = accounts && accounts.length > 0 && isAddress(accounts[0]);
-    return !!hasController && !!hostProfileAddress;
-  }, [accounts, hostProfileAddress]);
-  // --- END: CORRECTED LOGIC ---
+    if (!controllerAddress || !profileAddress || !publicClient) {
+      setIsHostProfileOwner(false);
+      return;
+    }
+
+    const checkOwnership = async () => {
+      try {
+        if (controllerAddress.toLowerCase() === profileAddress.toLowerCase()) {
+            setIsHostProfileOwner(true);
+            return;
+        }
+        const erc725 = new ERC725(lsp3ProfileSchema, profileAddress, publicClient.transport.url, { ipfsGateway: IPFS_GATEWAY });
+        const permissions = await erc725.getPermissions(controllerAddress);
+        const hasSuperSetData = ERC725.decodePermissions(permissions).SUPER_SETDATA;
+        setIsHostProfileOwner(hasSuperSetData);
+      } catch (error) {
+        setIsHostProfileOwner(false);
+      }
+    };
+    checkOwnership();
+  }, [accounts, hostProfileAddress, publicClient]);
+  
+  // --- START OF FIX: Effect to capture and retain the logged-in user's UP address ---
+  useEffect(() => {
+    // When the user is confirmed as the owner of the current profile,
+    // we know that `hostProfileAddress` is their own address. We capture it.
+    if (isHostProfileOwner && hostProfileAddress) {
+      setLoggedInUserUPAddress(hostProfileAddress);
+    }
+    
+    // If the user disconnects entirely (no controlling accounts), clear their UP address.
+    if (accounts && accounts.length === 0) {
+      setLoggedInUserUPAddress(null);
+    }
+  }, [isHostProfileOwner, hostProfileAddress, accounts]);
+  // --- END OF FIX ---
 
   const isRadarProjectAdmin = useMemo(() => {
-    if (!visitorProfileAddress || !RADAR_OFFICIAL_ADMIN_ADDRESS) return false;
+    if (!loggedInUserUPAddress || !isHostProfileOwner) return false;
     
     if (!isAddress(RADAR_OFFICIAL_ADMIN_ADDRESS)) {
         if (import.meta.env.DEV) {
@@ -13625,8 +13878,8 @@ export const UserSessionProvider = ({ children }) => {
         }
         return false;
     }
-    return visitorProfileAddress.toLowerCase() === RADAR_OFFICIAL_ADMIN_ADDRESS.toLowerCase();
-  }, [visitorProfileAddress]);
+    return loggedInUserUPAddress.toLowerCase() === RADAR_OFFICIAL_ADMIN_ADDRESS.toLowerCase();
+  }, [loggedInUserUPAddress, isHostProfileOwner]);
 
   const canSaveToHostProfile = useMemo(() => {
     return isHostProfileOwner && !isPreviewMode;
@@ -13637,19 +13890,18 @@ export const UserSessionProvider = ({ children }) => {
   }, []);
 
   const contextValue = useMemo(() => {
-    const val = {
+    return {
       hostProfileAddress,
-      visitorProfileAddress,
+      loggedInUserUPAddress,
       isHostProfileOwner,
       isRadarProjectAdmin,
       isPreviewMode,
       canSaveToHostProfile,
       togglePreviewMode,
     };
-    return val;
   }, [
     hostProfileAddress,
-    visitorProfileAddress,
+    loggedInUserUPAddress,
     isHostProfileOwner,
     isRadarProjectAdmin,
     isPreviewMode,
@@ -13711,6 +13963,7 @@ export const VisualEngineProvider = ({ children }) => {
         isWorkspaceTransitioning, isFullyLoaded, stagedActiveWorkspace, 
         fullSceneList, setActiveSceneName, setHasPendingChanges,
         activeSceneName,
+        isLoading,
     } = useWorkspaceContext();
 
     const { midiStateRef } = useMIDI();
@@ -13740,6 +13993,7 @@ export const VisualEngineProvider = ({ children }) => {
     const prevIsWorkspaceTransitioning = usePrevious(isWorkspaceTransitioning);
     const prevIsFullyLoaded = usePrevious(isFullyLoaded);
     const prevActiveSceneName = usePrevious(activeSceneName);
+    const prevFullSceneList = usePrevious(fullSceneList);
 
     const uiControlConfig = useMemo(() => {
         return renderedValueRef.current < 0.5 ? sideA.config : sideB.config;
@@ -13814,11 +14068,12 @@ export const VisualEngineProvider = ({ children }) => {
         const initialLoadJustFinished = !prevIsFullyLoaded && isFullyLoaded;
         const transitionJustFinished = prevIsWorkspaceTransitioning && !isWorkspaceTransitioning;
         const sceneNameChanged = activeSceneName !== prevActiveSceneName;
+        const sceneListChanged = prevFullSceneList !== fullSceneList;
 
         if (initialLoadJustFinished || transitionJustFinished) {
             const initialFaderValue = midiStateRef.current.liveCrossfaderValue !== null ? midiStateRef.current.liveCrossfaderValue : 0.0;
-            
-            if (!fullSceneList || fullSceneList.length === 0) {
+
+            if (!isLoading && (!fullSceneList || fullSceneList.length === 0)) {
                 const baseScene = { name: "Fallback", ts: Date.now(), layers: JSON.parse(JSON.stringify(fallbackConfig.layers)), tokenAssignments: JSON.parse(JSON.stringify(fallbackConfig.tokenAssignments)) };
                 setSideA({ config: baseScene });
                 setSideB({ config: baseScene });
@@ -13829,29 +14084,32 @@ export const VisualEngineProvider = ({ children }) => {
                 return;
             }
             
-            const initialSceneName = stagedActiveWorkspace.defaultPresetName || fullSceneList[0]?.name;
-            let startIndex = fullSceneList.findIndex(p => p.name === initialSceneName);
-            if (startIndex === -1) startIndex = 0;
-            
-            const nextIndex = fullSceneList.length > 1 ? (startIndex + 1) % fullSceneList.length : startIndex;
-            const startSceneConfig = JSON.parse(JSON.stringify(fullSceneList[startIndex]));
-            const nextSceneConfig = JSON.parse(JSON.stringify(fullSceneList[nextIndex]));
-            
-            const activeSideIsA = initialFaderValue < 0.5;
-            if (activeSideIsA) {
-                setSideA({ config: startSceneConfig });
-                setSideB({ config: nextSceneConfig });
-            } else {
-                setSideB({ config: startSceneConfig });
-                setSideA({ config: nextSceneConfig });
+            if (!isLoading && fullSceneList && fullSceneList.length > 0) {
+                const initialSceneName = stagedActiveWorkspace.defaultPresetName || fullSceneList[0]?.name;
+                let startIndex = fullSceneList.findIndex(p => p.name === initialSceneName);
+                if (startIndex === -1) startIndex = 0;
+                
+                const nextIndex = fullSceneList.length > 1 ? (startIndex + 1) % fullSceneList.length : startIndex;
+                const startSceneConfig = JSON.parse(JSON.stringify(fullSceneList[startIndex]));
+                const nextSceneConfig = JSON.parse(JSON.stringify(fullSceneList[nextIndex]));
+                
+                const activeSideIsA = initialFaderValue < 0.5;
+                if (activeSideIsA) {
+                    setSideA({ config: startSceneConfig });
+                    setSideB({ config: nextSceneConfig });
+                } else {
+                    setSideB({ config: startSceneConfig });
+                    setSideA({ config: nextSceneConfig });
+                }
+                
+                setActiveSceneName(startSceneConfig.name);
+                setTargetCrossfaderValue(initialFaderValue);
+                setRenderedCrossfaderValue(initialFaderValue);
+                renderedValueRef.current = initialFaderValue;
             }
-            
-            setActiveSceneName(startSceneConfig.name);
-            setTargetCrossfaderValue(initialFaderValue);
-            setRenderedCrossfaderValue(initialFaderValue);
-            renderedValueRef.current = initialFaderValue;
+        } else if ((sceneNameChanged || sceneListChanged) && isFullyLoaded && !isAutoFading) {
+            if (!activeSceneName || !fullSceneList || fullSceneList.length === 0) return;
 
-        } else if (sceneNameChanged && isFullyLoaded && !isAutoFading) {
             const newActiveSceneData = fullSceneList.find(scene => scene.name === activeSceneName);
             if (!newActiveSceneData) return;
 
@@ -13884,7 +14142,12 @@ export const VisualEngineProvider = ({ children }) => {
                 }
             }
         }
-    }, [isWorkspaceTransitioning, isFullyLoaded, stagedActiveWorkspace, fullSceneList, prevIsFullyLoaded, prevIsWorkspaceTransitioning, activeSceneName, prevActiveSceneName, isAutoFading, midiStateRef, setActiveSceneName]);
+    }, [
+        isWorkspaceTransitioning, isFullyLoaded, stagedActiveWorkspace, fullSceneList, 
+        prevIsFullyLoaded, prevIsWorkspaceTransitioning, activeSceneName, 
+        prevActiveSceneName, isAutoFading, midiStateRef, setActiveSceneName,
+        isLoading, prevFullSceneList,
+    ]);
 
     const handleSceneSelect = useCallback((sceneName, duration = AUTO_FADE_DURATION_MS) => {
         if (isAutoFading || !fullSceneList || fullSceneList.length === 0) return;
@@ -13990,21 +14253,23 @@ export const VisualEngineProvider = ({ children }) => {
         setHasPendingChanges(true);
     }, [setHasPendingChanges]);
 
-    // --- START OF FIX ---
-    // This function provides an imperative way to update the live configuration
-    // of the active deck without triggering a crossfade or other loading logic.
     const setLiveConfig = useCallback(
         (newSceneData) => {
           const activeDeck = renderedValueRef.current < 0.5 ? 'A' : 'B';
           const stateSetter = activeDeck === 'A' ? setSideA : setSideB;
     
-          // By setting the entire config object with a new timestamp, we ensure
-          // the useEffect in useCanvasOrchestrator will fire to apply the new config.
           stateSetter({ config: newSceneData });
+    
+          // --- THIS IS THE FIX ---
+          // Immediately update the activeSceneName when a new scene is created and set live.
+          // This ensures the rest of the app state (especially the inactive deck) stays in sync.
+          if (newSceneData?.name && activeSceneName !== newSceneData.name) {
+            setActiveSceneName(newSceneData.name);
+          }
+          // --- END FIX ---
         },
-        [] // This function has no external dependencies
+        [activeSceneName, setActiveSceneName] 
     );
-    // --- END OF FIX ---
 
     const reloadSceneOntoInactiveDeck = useCallback((sceneName) => {
         if (!fullSceneList || fullSceneList.length === 0) {
@@ -14089,7 +14354,7 @@ import { useAsyncErrorHandler } from '../hooks/useAsyncErrorHandler';
 const WorkspaceContext = createContext();
 
 export const WorkspaceProvider = ({ children }) => {
-    const { hostProfileAddress, isHostProfileOwner } = useUserSession();
+    const { hostProfileAddress, isHostProfileOwner, loggedInUserUPAddress } = useUserSession();
     const { provider, walletClient, publicClient } = useUpProvider();
     const { addToast } = useToast();
     const { handleAsyncError } = useAsyncErrorHandler();
@@ -14172,7 +14437,22 @@ export const WorkspaceProvider = ({ children }) => {
           setIsLoading(true);
           try {
             setLoadingMessage("Fetching Setlist...");
-            const loadedSetlist = await service.loadWorkspace(address);
+            let loadedSetlist = await service.loadWorkspace(address);
+
+            // --- START OF FIX: Fetch and merge visitor's MIDI map ---
+            if (!isHostProfileOwner && loggedInUserUPAddress) {
+                if (import.meta.env.DEV) console.log(`%c[WorkspaceContext] Visitor detected. Fetching MIDI map from logged-in user: ${loggedInUserUPAddress.slice(0,6)}`, 'color: #9b59b6; font-weight: bold;');
+                const visitorSetlist = await service.loadWorkspace(loggedInUserUPAddress);
+                if (visitorSetlist && visitorSetlist.globalUserMidiMap) {
+                    if (import.meta.env.DEV) console.log(`%c[WorkspaceContext] Visitor MIDI map found. Merging into host's setlist.`, 'color: #9b59b6;');
+                    loadedSetlist = {
+                        ...loadedSetlist,
+                        globalUserMidiMap: visitorSetlist.globalUserMidiMap,
+                    };
+                }
+            }
+            // --- END OF FIX ---
+
             if (prevProfileAddressRef.current !== address) return;
     
             setSetlist(loadedSetlist);
@@ -14200,7 +14480,7 @@ export const WorkspaceProvider = ({ children }) => {
             
             if (prevProfileAddressRef.current !== address) return;
     
-            setLoadingMessage("Preloading Assets...");
+            setLoadingMessage("Decoding Assets...");
             const imageUrlsToPreload = new Set();
             Object.values(loadedWorkspace.presets || {}).forEach(preset => {
                 Object.values(preset.tokenAssignments || {}).forEach(assignment => {
@@ -14254,14 +14534,7 @@ export const WorkspaceProvider = ({ children }) => {
             setIsInitiallyResolved(true);
           }
         }
-    }, [shouldStartLoading, hostProfileAddress, configServiceInstanceReady, isInitiallyResolved, addToast, _loadWorkspaceFromCid, handleAsyncError]);
-
-    useEffect(() => {
-        if (isInitiallyResolved && !hostProfileAddress && !isFullyLoaded) {
-          if (import.meta.env.DEV) console.log(`%c[WorkspaceContext] Resolved as DISCONNECTED. Setting isFullyLoaded = true.`, 'color: #2ecc71; font-weight: bold;');
-          setIsFullyLoaded(true);
-        }
-    }, [isInitiallyResolved, hostProfileAddress, isFullyLoaded]);
+    }, [shouldStartLoading, hostProfileAddress, configServiceInstanceReady, isInitiallyResolved, addToast, _loadWorkspaceFromCid, handleAsyncError, isHostProfileOwner, loggedInUserUPAddress]);
 
     const fullSceneList = useMemo(() => {
         if (!stagedActiveWorkspace?.presets) return [];
@@ -14294,23 +14567,23 @@ export const WorkspaceProvider = ({ children }) => {
             } else {
                 newWorkspace = null; // Ensure it's null on failure
             }
-
-            if (newWorkspace) {
-                const imageUrlsToPreload = new Set();
-                Object.values(newWorkspace.presets || {}).forEach(preset => {
-                  Object.values(preset.tokenAssignments || {}).forEach(assignment => {
-                    const src = resolveImageUrl(assignment);
-                    if (src) imageUrlsToPreload.add(src);
-                  });
-                });
-                if (imageUrlsToPreload.size > 0) {
-                  await preloadImages(Array.from(imageUrlsToPreload));
-                }
-                preloadedWorkspacesRef.current.set(workspaceName, newWorkspace);
-            }
           }
     
           if (newWorkspace) {
+            setLoadingMessage("Decoding assets...");
+            const imageUrlsToPreload = new Set();
+            Object.values(newWorkspace.presets || {}).forEach(preset => {
+              Object.values(preset.tokenAssignments || {}).forEach(assignment => {
+                const src = resolveImageUrl(assignment);
+                if (src) imageUrlsToPreload.add(src);
+              });
+            });
+
+            if (imageUrlsToPreload.size > 0) {
+              await preloadImages(Array.from(imageUrlsToPreload));
+            }
+
+            preloadedWorkspacesRef.current.set(workspaceName, newWorkspace);
             setActiveWorkspace(newWorkspace);
             setStagedActiveWorkspace(newWorkspace);
             setActiveWorkspaceName(workspaceName);
@@ -14657,6 +14930,36 @@ export const WorkspaceProvider = ({ children }) => {
         });
     }, []);
 
+    const addCollectionToPersonalLibrary = useCallback((collection) => {
+        if (!isHostProfileOwner) return;
+        setStagedActiveWorkspace(prev => {
+            const currentLibrary = prev?.personalCollectionLibrary || [];
+            if (currentLibrary.some(c => c.address.toLowerCase() === collection.address.toLowerCase())) {
+                addToast("This collection is already in your library.", "warning");
+                return prev;
+            }
+            const newWorkspace = { ...prev, personalCollectionLibrary: [...currentLibrary, collection] };
+            setHasPendingChanges(true);
+            addToast(`Collection "${collection.name}" added to your library.`, "success");
+            return newWorkspace;
+        });
+    }, [isHostProfileOwner, addToast]);
+    
+    const removeCollectionFromPersonalLibrary = useCallback((addressToRemove) => {
+        if (!isHostProfileOwner) return;
+        setStagedActiveWorkspace(prev => {
+            const currentLibrary = prev?.personalCollectionLibrary || [];
+            if (!currentLibrary.some(c => c.address.toLowerCase() === addressToRemove.toLowerCase())) {
+                return prev;
+            }
+            const newLibrary = currentLibrary.filter(c => c.address.toLowerCase() !== addressToRemove.toLowerCase());
+            const newWorkspace = { ...prev, personalCollectionLibrary: newLibrary };
+            setHasPendingChanges(true);
+            addToast(`Collection removed from your library.`, "info");
+            return newWorkspace;
+        });
+    }, [isHostProfileOwner, addToast]);
+
     const preloadWorkspace = useCallback(async (workspaceName) => {
         const service = configServiceRef.current;
         if (!service || !stagedSetlist?.workspaces[workspaceName]) return;
@@ -14716,11 +15019,11 @@ export const WorkspaceProvider = ({ children }) => {
         removePalette,
         addTokenToPalette,
         removeTokenFromPalette,
+        addCollectionToPersonalLibrary,
+        removeCollectionFromPersonalLibrary,
         preloadWorkspace,
         setHasPendingChanges,
-        // --- FIX: Expose setActiveSceneName ---
         setActiveSceneName,
-        // ------------------------------------
     }), [
         isLoading, loadingMessage, isFullyLoaded, isInitiallyResolved, loadError, isSaving, saveError, saveSuccess, hasPendingChanges,
         configServiceRef, configServiceInstanceReady,
@@ -14747,9 +15050,10 @@ export const WorkspaceProvider = ({ children }) => {
         removePalette,
         addTokenToPalette,
         removeTokenFromPalette,
+        addCollectionToPersonalLibrary,
+        removeCollectionFromPersonalLibrary,
         preloadWorkspace,
         setHasPendingChanges,
-        // --- FIX: Add setActiveSceneName to dependency array ---
         setActiveSceneName,
     ]);
 
@@ -15296,7 +15600,7 @@ export const useInteractionSettingsState = () => {
 /**
  * @typedef {object} ProfileSessionState
  * @property {string | null} currentProfileAddress - Address of the Universal Profile being viewed (host).
- * @property {string | null} visitorUPAddress - Address of the visitor's Universal Profile.
+ * @property {string | null} loggedInUserUPAddress - Address of the logged-in user's Universal Profile.
  * @property {boolean} isProfileOwner - True if visitor is owner of host profile.
  * @property {boolean} isVisitor - True if visitor is not the owner of the host profile.
  * @property {boolean} canSave - True if the current user has permissions to save changes to the host profile.
@@ -15311,7 +15615,7 @@ export const useProfileSessionState = () => {
   return useMemo(() => {
     const {
       hostProfileAddress,
-      visitorProfileAddress,
+      loggedInUserUPAddress, // Updated from visitorProfileAddress
       isHostProfileOwner,
       isRadarProjectAdmin,
       isPreviewMode,
@@ -15323,7 +15627,7 @@ export const useProfileSessionState = () => {
     
     return {
       currentProfileAddress: hostProfileAddress, 
-      visitorUPAddress: visitorProfileAddress,
+      loggedInUserUPAddress: loggedInUserUPAddress, // Updated
       isProfileOwner: isHostProfileOwner,
       isVisitor: !isHostProfileOwner,
       canSave: canSaveToHostProfile, 
@@ -16217,9 +16521,13 @@ export function useCanvasOrchestrator({ canvasRefs, sideA, sideB, crossfaderValu
         for (const layerIdStr in managers) {
             const manager = managers[layerIdStr];
             if (manager) {
+                // --- START: SIMPLIFIED LOGIC ---
+                // The CanvasManager's internal draw loop now handles interpolation.
+                // We just need to tell it the latest crossfader value.
                 manager.setCrossfadeValue(crossfaderValue);
+                // --- END: SIMPLIFIED LOGIC ---
 
-                // --- START: FIX FOR OPACITY AND RACE CONDITION ---
+                // --- START: FIX FOR OPACITY AND RACE CONDITION (Remains the same) ---
                 const layerOpacityA = sideA.config?.layers?.[layerIdStr]?.opacity ?? 1.0;
                 const layerOpacityB = sideB.config?.layers?.[layerIdStr]?.opacity ?? 1.0;
 
@@ -16231,17 +16539,14 @@ export function useCanvasOrchestrator({ canvasRefs, sideA, sideB, crossfaderValu
                 let finalOpacityB = crossfadeOpacityB * layerOpacityB;
 
                 // **RACE CONDITION FIX:** Check if the content is ready before making the canvas visible.
-                // Get the target token ID for each deck from the main state.
                 const targetTokenA_Assignment = sideA.config?.tokenAssignments?.[layerIdStr];
                 const targetTokenB_Assignment = sideB.config?.tokenAssignments?.[layerIdStr];
                 const targetTokenA_Id = typeof targetTokenA_Assignment === 'object' ? targetTokenA_Assignment.id : targetTokenA_Assignment;
                 const targetTokenB_Id = typeof targetTokenB_Assignment === 'object' ? targetTokenB_Assignment.id : targetTokenB_Assignment;
 
-                // Compare with the token ID the manager has actually loaded.
                 const isDeckA_ContentReady = manager.tokenA_id === targetTokenA_Id;
                 const isDeckB_ContentReady = manager.tokenB_id === targetTokenB_Id;
 
-                // If the content isn't ready, force opacity to 0 to prevent showing stale content.
                 if (!isDeckA_ContentReady) finalOpacityA = 0;
                 if (!isDeckB_ContentReady) finalOpacityB = 0;
                 
@@ -16346,12 +16651,13 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     loadError,
     activeWorkspaceName,
     isFullyLoaded,
+    isLoading,
   } = useWorkspaceContext();
 
   const {
     sideA,
     sideB,
-    renderedCrossfaderValue, // Use the rendered value for the orchestrator
+    renderedCrossfaderValue,
     uiControlConfig,
     updateLayerConfig,
   } = useVisualEngineContext();
@@ -16369,33 +16675,30 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     };
   }, []);
 
-  // --- FIX: Rely directly on sideA, sideB, and the renderedCrossfaderValue ---
-  const {
-    managersReady, managerInstancesRef,
-    stopCanvasAnimations, restartCanvasAnimations,
-    setCanvasLayerImage,
-    applyPlaybackValue, clearAllPlaybackValues,
-    handleCanvasResize,
-  } = useCanvasOrchestrator({
+  // --- START OF FIX: The master gate for the entire rendering pipeline ---
+  // The lifecycle hooks should only run after the initial workspace load is complete and not in a loading state.
+  const isReadyForLifecycle = isFullyLoaded && !isLoading;
+  // --- END OF FIX ---
+
+  const orchestrator = useCanvasOrchestrator({
     canvasRefs,
     sideA,
     sideB,
     crossfaderValue: renderedCrossfaderValue,
-    isInitiallyResolved,
+    isInitiallyResolved: isReadyForLifecycle,
     activeWorkspaceName,
   });
-  // --- END FIX ---
 
   const sequencer = usePLockSequencer({
     onValueUpdate: (layerId, paramName, value) => {
       updateLayerConfig(String(layerId), paramName, value); 
-      if (applyPlaybackValue) {
-        applyPlaybackValue(String(layerId), paramName, value);
+      if (orchestrator.applyPlaybackValue) {
+        orchestrator.applyPlaybackValue(String(layerId), paramName, value);
       }
     },
     onAnimationEnd: (finalStateSnapshot) => {
-      if (clearAllPlaybackValues) {
-        clearAllPlaybackValues();
+      if (orchestrator.clearAllPlaybackValues) {
+        orchestrator.clearAllPlaybackValues();
       }
       if (finalStateSnapshot) {
         for (const layerId in finalStateSnapshot) {
@@ -16417,10 +16720,10 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
   }, []);
 
   const onResizeCanvasContainer = useCallback(() => {
-    if (isMountedRef.current && typeof handleCanvasResize === 'function') {
-      handleCanvasResize();
+    if (isMountedRef.current && typeof orchestrator.handleCanvasResize === 'function') {
+      orchestrator.handleCanvasResize();
     }
-  }, [handleCanvasResize]);
+  }, [orchestrator.handleCanvasResize]);
 
   const { containerRef, hasValidDimensions, isContainerObservedVisible, isFullscreenActive, enterFullscreen } = useCanvasContainer({
     onResize: onResizeCanvasContainer,
@@ -16428,8 +16731,8 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
   });
 
   const renderLifecycleData = useRenderLifecycle({
-    managersReady,
-    isInitiallyResolved,
+    managersReady: orchestrator.managersReady,
+    isInitiallyResolved: isReadyForLifecycle,
     hasValidDimensions,
     isContainerObservedVisible,
     configLoadNonce: 0,
@@ -16440,70 +16743,78 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     loadError,
     upInitializationError,
     upFetchStateError,
-    stopAllAnimations: stopCanvasAnimations,
-    restartCanvasAnimations: restartCanvasAnimations,
-    isFullyLoaded, 
+    stopAllAnimations: orchestrator.stopCanvasAnimations,
+    restartCanvasAnimations: orchestrator.restartCanvasAnimations,
+    isFullyLoaded: isReadyForLifecycle,
   });
-  const {
-    renderState, loadingStatusMessage, isStatusFadingOut, showStatusDisplay,
-    showRetryButton, isTransitioning,
-    outgoingLayerIdsOnTransitionStart,
-    makeIncomingCanvasVisible,
-    isAnimating, handleManualRetry, resetLifecycle
-  } = renderLifecycleData;
 
   useEffect(() => {
-    internalResetLifecycleRef.current = resetLifecycle;
-  }, [resetLifecycle]);
+    internalResetLifecycleRef.current = renderLifecycleData.resetLifecycle;
+  }, [renderLifecycleData.resetLifecycle]);
 
   useAnimationLifecycleManager({
     isMounted: isMountedRef.current,
-    renderState,
+    renderState: renderLifecycleData.renderState,
     isContainerObservedVisible,
     isBenignOverlayActive,
     animatingPanel,
-    isAnimating,
-    isTransitioning,
-    restartCanvasAnimations,
-    stopCanvasAnimations,
+    isAnimating: renderLifecycleData.isAnimating,
+    isTransitioning: renderLifecycleData.isTransitioning,
+    restartCanvasAnimations: orchestrator.restartCanvasAnimations,
+    stopCanvasAnimations: orchestrator.stopCanvasAnimations,
   });
 
-  return useMemo(() => ({
-    containerRef,
-    managerInstancesRef,
-    audioState,
-    renderState,
-    loadingStatusMessage,
-    isStatusFadingOut,
-    showStatusDisplay,
-    showRetryButton,
-    isTransitioning,
-    outgoingLayerIdsOnTransitionStart,
-    makeIncomingCanvasVisible,
-    isAnimating,
-    handleManualRetry,
-    resetLifecycle,
-    managersReady,
-    stopCanvasAnimations,
-    restartCanvasAnimations,
-    setCanvasLayerImage,
-    hasValidDimensions,
-    isContainerObservedVisible,
-    isFullscreenActive,
-    enterFullscreen,
-    isMountedRef,
-    sequencer,
-    uiControlConfig,
-  }), [
-    containerRef, managerInstancesRef, audioState, renderState, loadingStatusMessage,
-    isStatusFadingOut, showStatusDisplay, showRetryButton, isTransitioning,
-    outgoingLayerIdsOnTransitionStart, makeIncomingCanvasVisible, isAnimating,
-    handleManualRetry,
-    resetLifecycle, managersReady,
-    stopCanvasAnimations, restartCanvasAnimations, setCanvasLayerImage,
-    hasValidDimensions, isContainerObservedVisible, isFullscreenActive, enterFullscreen,
+  // --- START OF FIX: Return a default 'not ready' state if the lifecycle gate is closed ---
+  return useMemo(() => {
+    // If we are not ready for the lifecycle, return a default "not ready" state.
+    if (!isReadyForLifecycle) {
+      return {
+        containerRef, managersReady: false, audioState, renderState: 'initializing',
+        loadingStatusMessage: '', isStatusFadingOut: false, showStatusDisplay: false,
+        showRetryButton: false, isTransitioning: false, outgoingLayerIdsOnTransitionStart: new Set(),
+        makeIncomingCanvasVisible: false, isAnimating: false, handleManualRetry: () => {},
+        resetLifecycle: () => {}, stopCanvasAnimations: () => {}, restartCanvasAnimations: () => {},
+        setCanvasLayerImage: () => {}, hasValidDimensions: false, isContainerObservedVisible: true,
+        isFullscreenActive: false, enterFullscreen: () => {}, isMountedRef, sequencer,
+        uiControlConfig: null, managerInstancesRef: { current: null },
+      };
+    }
+
+    // If ready, return the fully computed state.
+    return {
+      containerRef,
+      managerInstancesRef: orchestrator.managerInstancesRef,
+      audioState,
+      renderState: renderLifecycleData.renderState,
+      loadingStatusMessage: renderLifecycleData.loadingStatusMessage,
+      isStatusFadingOut: renderLifecycleData.isStatusFadingOut,
+      showStatusDisplay: renderLifecycleData.showStatusDisplay,
+      showRetryButton: renderLifecycleData.showRetryButton,
+      isTransitioning: renderLifecycleData.isTransitioning,
+      outgoingLayerIdsOnTransitionStart: renderLifecycleData.outgoingLayerIdsOnTransitionStart,
+      makeIncomingCanvasVisible: renderLifecycleData.makeIncomingCanvasVisible,
+      isAnimating: renderLifecycleData.isAnimating,
+      handleManualRetry: renderLifecycleData.handleManualRetry,
+      resetLifecycle: renderLifecycleData.resetLifecycle,
+      managersReady: orchestrator.managersReady,
+      stopCanvasAnimations: orchestrator.stopCanvasAnimations,
+      restartCanvasAnimations: orchestrator.restartCanvasAnimations,
+      setCanvasLayerImage: orchestrator.setCanvasLayerImage,
+      hasValidDimensions,
+      isContainerObservedVisible,
+      isFullscreenActive,
+      enterFullscreen,
+      isMountedRef,
+      sequencer,
+      uiControlConfig,
+    };
+  }, [
+    isReadyForLifecycle, // The master gate
+    containerRef, orchestrator, audioState, renderLifecycleData, hasValidDimensions,
+    isContainerObservedVisible, isFullscreenActive, enterFullscreen,
     isMountedRef, sequencer, uiControlConfig
   ]);
+  // --- END OF FIX ---
 };
 ```
 
@@ -17451,10 +17762,15 @@ export function useRenderLifecycle(options) {
       return;
     }
 
-    const allPrimaryPrerequisitesMet = isInitiallyResolved && hasValidDimensions && isFullyLoaded;
+    // --- THIS IS THE FIX ---
+    // The component is only truly ready to render when all prerequisites are met,
+    // INCLUDING the layerConfigs being populated from the VisualEngineContext.
+    // This prevents the 'rendered' state from being set prematurely.
+    const allPrimaryPrerequisitesMet = isInitiallyResolved && hasValidDimensions && isFullyLoaded && !!layerConfigs;
+    // --- END FIX ---
 
     if (allPrimaryPrerequisitesMet) {
-      logStateChange('rendered', 'All primary prerequisites (data, layout) met');
+      logStateChange('rendered', 'All primary prerequisites (data, layout, layerConfigs) met');
     } else {
       if (!isInitiallyResolved || !isFullyLoaded) {
         logStateChange('resolving_initial_config', 'Awaiting data resolution');
@@ -17466,7 +17782,8 @@ export function useRenderLifecycle(options) {
     }
   }, [
     renderState, managersReady, isInitiallyResolved, hasValidDimensions, isFullyLoaded, 
-    loadError, upInitializationError, upFetchStateError, logStateChange
+    loadError, upInitializationError, upFetchStateError, logStateChange,
+    layerConfigs, // <-- Dependency added
   ]);
 
   // This useEffect handles the START of a scene transition.
@@ -17475,8 +17792,6 @@ export function useRenderLifecycle(options) {
       if (targetLayerConfigsForPreset) {
         setLoadingStatusMessage(TRANSITION_MESSAGE);
         setIsTransitioningInternal(true);
-        // --- FIX ---
-        // When transition starts, ensure the incoming canvas is NOT visible yet.
         setMakeIncomingCanvasVisible(false);
         outgoingLayerIdsOnTransitionStartRef.current = new Set(Object.keys(layerConfigs || {}));
         logStateChange('fading_out', 'New Scene Selected');
@@ -17489,8 +17804,6 @@ export function useRenderLifecycle(options) {
     if (renderState === 'fading_out') {
       const transitionTimer = setTimeout(() => {
         if (isMountedRef.current) {
-          // After the fade-out duration, we change the state to 'rendered'.
-          // This will trigger the next useEffect to start the fade-in.
           logStateChange('rendered', 'Transition fade-out complete');
           lastAppliedNonceRef.current = configLoadNonce;
         }
@@ -17503,8 +17816,6 @@ export function useRenderLifecycle(options) {
   useEffect(() => {
     if (renderState !== "rendered") return;
 
-    // --- FIX ---
-    // Now that we are in the 'rendered' state post-transition, it's safe to make the incoming canvas visible.
     setMakeIncomingCanvasVisible(true);
     setIsStatusFadingOut(true);
     if (statusDisplayFadeTimeoutRef.current) {
@@ -18034,6 +18345,13 @@ const LSP8_ABI = [
     "outputs": [{ "name": "", "type": "uint256" }],
     "stateMutability": "view",
     "type": "function"
+  },
+  {
+    "inputs": [{ "name": "index", "type": "uint256" }],
+    "name": "tokenByIndex",
+    "outputs": [{ "name": "", "type": "bytes32" }],
+    "stateMutability": "view",
+    "type": "function"
   }
 ];
 
@@ -18175,7 +18493,6 @@ class ConfigurationService {
             throw new Error('Fetched data is not a valid setlist object.');
         }
 
-        // --- MIGRATION LOGIC ---
         if (typeof setlist === 'object' && setlist !== null && !setlist.globalUserMidiMap) {
           if (import.meta.env.DEV) console.log(`${logPrefix} Old setlist format detected. Attempting to migrate MIDI map.`);
           const defaultWorkspaceName = setlist.defaultWorkspaceName || Object.keys(setlist.workspaces)[0];
@@ -18187,7 +18504,6 @@ class ConfigurationService {
               }
           }
         }
-        // --- END MIGRATION LOGIC ---
 
         if (import.meta.env.DEV) console.log(`${logPrefix} Successfully loaded and parsed setlist.`);
         return setlist;
@@ -18409,24 +18725,55 @@ class ConfigurationService {
               functionName: "totalSupply",
           });
           const totalAsNumber = Number(total);
-          
-          const allTokenIndices = Array.from({ length: totalAsNumber }, (_, i) => i);
-          
-          if (import.meta.env.DEV) console.log(`${logPrefix} Found ${totalAsNumber} total tokens. Returning indices.`);
-          return allTokenIndices;
+
+          if (import.meta.env.DEV) console.log(`${logPrefix} Contract reports totalSupply: ${totalAsNumber}.`);
+          if (totalAsNumber === 0) return [];
+
+          const tokenByIndexPromises = [];
+          for (let i = 0; i < totalAsNumber; i++) {
+              tokenByIndexPromises.push(
+                  this.publicClient.readContract({
+                      address: checksummedCollectionAddr,
+                      abi: LSP8_ABI,
+                      functionName: "tokenByIndex",
+                      args: [BigInt(i)],
+                  })
+              );
+          }
+
+          if (import.meta.env.DEV) console.log(`${logPrefix} Fetching all ${totalAsNumber} token IDs via tokenByIndex...`);
+          const tokenIds = await Promise.all(tokenByIndexPromises);
+
+          if (import.meta.env.DEV) console.log(`${logPrefix} Successfully fetched token IDs:`, tokenIds);
+          return tokenIds.filter(Boolean);
       } catch (error) {
-          if (import.meta.env.DEV) console.error(`${logPrefix} Failed to fetch all tokens. Does contract have 'totalSupply'?`, error);
+          if (import.meta.env.DEV) console.error(`${logPrefix} Failed to fetch all tokens. The contract may not support 'totalSupply' or 'tokenByIndex'. Error:`, error.shortMessage || error.message);
           return [];
       }
   }
 
   async getTokenMetadata(collectionAddress, tokenId) {
-    const logPrefix = `[CS getTokenMetadata]`;
+    const logPrefix = `[CS getTokenMetadata Addr:${collectionAddress.slice(0, 10)} TokenId:${typeof tokenId === 'string' ? tokenId.slice(0, 10) : tokenId}]`;
+    if (import.meta.env.DEV) console.log(`${logPrefix} --- START METADATA FETCH ---`);
+    
     const checksummedCollectionAddr = getChecksumAddressSafe(collectionAddress);
     
     if (!this.checkReadyForRead() || !checksummedCollectionAddr) {
         if (import.meta.env.DEV) console.warn(`${logPrefix} Client not ready or invalid collection address.`);
         return null;
+    }
+    
+    if (tokenId === 'LSP7_TOKEN') {
+      if (import.meta.env.DEV) console.log(`${logPrefix} LSP7 asset detected. Fetching collection-level LSP4 metadata.`);
+      try {
+        const metadata = await this.getLSP4CollectionMetadata(collectionAddress);
+        if (metadata) {
+          return { name: metadata.name || 'LSP7 Token', image: metadata.image || null };
+        }
+      } catch (error) {
+        if (import.meta.env.DEV) console.error(`${logPrefix} Error fetching LSP7 collection metadata for ${collectionAddress}:`, error);
+      }
+      return { name: 'LSP7 Token', image: null };
     }
 
     try {
@@ -18434,6 +18781,8 @@ class ConfigurationService {
       const metadataUriBytes = await this.publicClient.readContract({
           address: checksummedCollectionAddr, abi: LSP8_ABI, functionName: "getDataForTokenId", args: [tokenId, lsp4Key]
       }).catch(() => null);
+
+      if (import.meta.env.DEV) console.log(`${logPrefix} Raw LSP4Metadata bytes from getDataForTokenId:`, metadataUriBytes);
 
       if (metadataUriBytes && metadataUriBytes !== '0x') {
         const decodedString = hexToUtf8Safe(metadataUriBytes);
@@ -18457,6 +18806,8 @@ class ConfigurationService {
             address: checksummedCollectionAddr, abi: LSP8_ABI, functionName: "getData", args: [baseUriKey]
         }).catch(() => null);
 
+        if (import.meta.env.DEV) console.log(`${logPrefix} Fallback check for BaseURI bytes:`, baseUriBytes);
+
         if (baseUriBytes && baseUriBytes !== '0x') {
           const decodedBaseUri = decodeVerifiableUriBytes(baseUriBytes);
           if (decodedBaseUri) {
@@ -18470,6 +18821,8 @@ class ConfigurationService {
         if (import.meta.env.DEV) console.log(`${logPrefix} No metadata URI found for tokenId ${tokenId.slice(0,10)}...`);
         return null;
       }
+      
+      if (import.meta.env.DEV) console.log(`${logPrefix} Final metadata URL to be fetched:`, finalMetadataUrl);
       
       let fetchableUrl = finalMetadataUrl;
       if (fetchableUrl.startsWith('ipfs://')) {
@@ -18489,25 +18842,51 @@ class ConfigurationService {
       const contentType = response.headers.get("content-type");
 
       if (contentType && contentType.includes("application/json")) {
-          const metadata = await response.json();
-          const lsp4Data = metadata.LSP4Metadata || metadata;
-          const name = lsp4Data.name || 'Unnamed Token';
-          const rawUrl = lsp4Data.images?.[0]?.[0]?.url || lsp4Data.icon?.[0]?.url || lsp4Data.assets?.[0]?.url;
-          let imageUrl = null;
+          const rawResponseText = await response.text();
+          if (import.meta.env.DEV) console.log(`${logPrefix} Raw response text from metadata URL:`, rawResponseText.substring(0, 500) + '...');
+
+          const metadata = JSON.parse(rawResponseText);
+          if (import.meta.env.DEV) console.log(`${logPrefix} Parsed metadata JSON:`, metadata);
           
-          if (rawUrl && typeof rawUrl === 'string') {
-            const trimmedUrl = rawUrl.trim();
-            if (trimmedUrl.startsWith('ipfs://')) {
-                imageUrl = `${IPFS_GATEWAY}${trimmedUrl.slice(7)}`;
-            } else if (trimmedUrl.startsWith('http') || trimmedUrl.startsWith('data:')) {
-                imageUrl = trimmedUrl;
-            }
+          const lsp4Data = metadata.LSP4Metadata || metadata;
+          if (import.meta.env.DEV) console.log(`${logPrefix} Extracted LSP4Metadata object:`, lsp4Data);
+          
+          const name = lsp4Data.name || 'Unnamed Token';
+
+          let imageUrl = null;
+          const imageAsset = lsp4Data.images?.[0]?.[0] || lsp4Data.icon?.[0] || lsp4Data.assets?.[0];
+          if (import.meta.env.DEV) console.log(`${logPrefix} Found image asset object:`, imageAsset);
+
+          if (imageAsset && imageAsset.url) {
+              let rawUrl = imageAsset.url.trim();
+              if (rawUrl.startsWith('ipfs://')) {
+                  imageUrl = `${IPFS_GATEWAY}${rawUrl.slice(7)}`;
+              } else if (rawUrl.startsWith('http') || rawUrl.startsWith('data:')) {
+                  imageUrl = rawUrl;
+              }
+
+              if (imageUrl && imageAsset.verification) {
+                  const { method, data } = imageAsset.verification;
+                  if (method && data) {
+                      const params = new URLSearchParams();
+                      params.append('method', method);
+                      params.append('data', data);
+                      imageUrl = `${imageUrl}?${params.toString()}`;
+                      if (import.meta.env.DEV) console.log(`${logPrefix} Appended verification params to URL.`);
+                  }
+              }
           }
+          
+          if (import.meta.env.DEV) console.log(`${logPrefix} Final resolved image URL:`, imageUrl);
+          if (import.meta.env.DEV) console.log(`${logPrefix} --- END METADATA FETCH ---`);
           return { name, image: imageUrl };
+
       } else if (contentType && contentType.startsWith("image/")) {
           const tokenIdNum = Number(BigInt(tokenId));
           const name = `Token #${tokenIdNum}`;
           const imageUrl = fetchableUrl;
+          if (import.meta.env.DEV) console.log(`${logPrefix} Direct image content type found. URL:`, imageUrl);
+          if (import.meta.env.DEV) console.log(`${logPrefix} --- END METADATA FETCH ---`);
           return { name, image: imageUrl };
       } else {
           throw new Error(`Unsupported content type: ${contentType}`);
@@ -18515,6 +18894,7 @@ class ConfigurationService {
 
     } catch (error) {
         if (import.meta.env.DEV) console.error(`${logPrefix} Error getting metadata for tokenId ${tokenId.slice(0,10)} in collection ${collectionAddress.slice(0,6)}...:`, error.message);
+        if (import.meta.env.DEV) console.log(`${logPrefix} --- END METADATA FETCH (WITH ERROR) ---`);
         return null;
     }
   }
@@ -18532,9 +18912,7 @@ class ConfigurationService {
     if (pageIdentifiers.length === 0) return [];
 
     const metadataFetchPromises = pageIdentifiers.map(async (identifier) => {
-        const tokenId = typeof identifier === 'number'
-            ? '0x' + identifier.toString(16).padStart(64, '0')
-            : identifier;
+        const tokenId = identifier;
         
         const metadata = await this.getTokenMetadata(collectionAddress, tokenId);
         return metadata ? { originalIdentifier: identifier, tokenId, metadata } : null;
@@ -18549,9 +18927,11 @@ class ConfigurationService {
       const { tokenId, metadata } = result.value;
       if (!metadata?.image) return null;
 
+      const uniqueId = `${collectionAddress}-${tokenId}`;
+
       return {
-          id: `${collectionAddress}-${tokenId}`,
-          type: 'owned',
+          id: uniqueId,
+          type: tokenId === 'LSP7_TOKEN' ? 'LSP7' : 'owned',
           address: collectionAddress,
           tokenId: tokenId,
           metadata: { name: metadata.name || 'Unnamed', image: metadata.image },
@@ -20005,7 +20385,7 @@ input[type="range"]:hover {
   position: fixed;
   top: var(--space-lg);
   left: var(--panel-left-position);
-  z-index: var(--z-controls);
+  /* Z-index is now controlled by the PanelWrapper */
   animation: slideInFromLeft var(--transition-normal) var(--transition-elastic);
 }
 
@@ -20683,6 +21063,7 @@ input[type="range"]:hover {
   --z-canvas: 100;
   --z-ui: 500;
   --z-controls: 1000;
+  --z-panel-active: 1001;
   --z-overlay: 1500;
   --z-top: 2000;
   --z-tooltip: 2500;
@@ -20690,8 +21071,9 @@ input[type="range"]:hover {
   --icon-size-sm: 24px;
   --icon-size-md: 28px;
   --icon-size-lg: 35px;
-  --panel-width: 400px;
-  --control-panel-width: 400px;
+  
+  --panel-width: 300px;
+  --control-panel-width: 300px;
 
   --blur-amount: 1px;
 
@@ -20774,6 +21156,12 @@ class CanvasManager {
 
     tokenA_id = null;
     tokenB_id = null;
+    
+    // === START: OBJECT POOLING PROPERTIES ===
+    _morphedConfig = {};
+    _morphedDriftState = { x: 0, y: 0 };
+    _morphedAngle = 0;
+    // === END: OBJECT POOLING PROPERTIES ===
 
     constructor(canvasA, canvasB, layerId) {
         if (!canvasA || !(canvasA instanceof HTMLCanvasElement) || !canvasB || !(canvasB instanceof HTMLCanvasElement)) {
@@ -20805,6 +21193,10 @@ class CanvasManager {
 
         this.driftStateA = { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
         this.driftStateB = { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
+        
+        // === START: OBJECT POOLING INITIALIZATION ===
+        this._morphedConfig = this.getDefaultConfig();
+        // === END: OBJECT POOLING INITIALIZATION ===
 
         this.interpolators = {};
         this.interpolatorsB = {};
@@ -20837,12 +21229,7 @@ class CanvasManager {
             if (interpolator && value !== undefined) interpolator.snap(value);
         });
 
-        // --- THIS IS THE FIX: Symmetrical reset for Deck B ---
-        // When applying a full new configuration (like from a scene snapshot),
-        // the new 'angle' property already contains the live rotation. We must reset
-        // the continuous rotation counter to prevent a visual jump.
         this.continuousRotationAngleB = 0;
-        // --- END FIX ---
 
         if (this.tokenB_id === tokenId) {
             return;
@@ -20948,9 +21335,7 @@ class CanvasManager {
         
         this.driftStateA = newConfig?.driftState || { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
         
-        // --- THIS IS THE FIX: Symmetrical reset for Deck A ---
         this.continuousRotationAngleA = 0;
-        // --- END FIX ---
 
         Object.keys(this.interpolators).forEach(key => this.interpolators[key]?.snap(this.configA[key]));
         this.handleEnabledToggle(this.configA.enabled);
@@ -21118,36 +21503,51 @@ class CanvasManager {
             this.ctxA.clearRect(0, 0, this.canvasA.width, this.canvasA.height);
             this.ctxB.clearRect(0, 0, this.canvasB.width, this.canvasB.height);
             const t = this.crossfadeValue;
+
             const liveConfigA = { ...this.configA };
-            const liveConfigB = { ...this.configB };
+            const liveConfigB = this.configB ? { ...this.configB } : null;
+
             for (const key in this.interpolators) liveConfigA[key] = this.playbackValues[key] ?? this.interpolators[key].getCurrentValue();
             if (liveConfigB) for (const key in this.interpolatorsB) liveConfigB[key] = this.interpolatorsB[key].getCurrentValue();
             
-            const morphedConfig = { ...liveConfigA };
-            const morphedDrift = { ...this.driftStateA };
-            let morphedAngle = this.continuousRotationAngleA;
-
+            // --- START: OBJECT POOLING REPLACEMENT ---
+            // Instead of creating new objects, we now mutate our pre-allocated ones.
             if (liveConfigA && liveConfigB) {
+                // Interpolate all numeric properties
                 for (const key in liveConfigA) {
                     if (typeof liveConfigA[key] === 'number' && typeof liveConfigB[key] === 'number') {
-                        morphedConfig[key] = lerp(liveConfigA[key], liveConfigB[key], t);
+                        this._morphedConfig[key] = lerp(liveConfigA[key], liveConfigB[key], t);
+                    } else {
+                        // For non-numeric properties (like blendMode), just take from the dominant side
+                        this._morphedConfig[key] = t < 0.5 ? liveConfigA[key] : liveConfigB[key];
                     }
                 }
-                morphedDrift.x = lerp(this.driftStateA.x, this.driftStateB.x, t);
-                morphedDrift.y = lerp(this.driftStateA.y, this.driftStateB.y, t);
+                
+                // Interpolate drift and angle
+                this._morphedDriftState.x = lerp(this.driftStateA.x, this.driftStateB.x, t);
+                this._morphedDriftState.y = lerp(this.driftStateA.y, this.driftStateB.y, t);
+                
                 let angleA = this.continuousRotationAngleA;
                 let angleB = this.continuousRotationAngleB;
-                if (angleB - angleA > 180) angleA += 360;
-                else if (angleB - angleA < -180) angleA -= 360;
-                morphedAngle = lerp(angleA, angleB, t);
+                if (angleB - angleA > 180) angleA += 360; else if (angleB - angleA < -180) angleA -= 360;
+                this._morphedAngle = lerp(angleA, angleB, t);
+
+            } else {
+                // If there's no Deck B, just use Deck A's values
+                Object.assign(this._morphedConfig, liveConfigA);
+                Object.assign(this._morphedDriftState, this.driftStateA);
+                this._morphedAngle = this.continuousRotationAngleA;
             }
 
             if (this.imageA && liveConfigA?.enabled) {
-                this._drawFrame(this.ctxA, this.imageA, morphedConfig, morphedAngle, morphedDrift);
+                // Use the reused objects for drawing
+                this._drawFrame(this.ctxA, this.imageA, this._morphedConfig, this._morphedAngle, this._morphedDriftState);
             }
             if (this.imageB && liveConfigB?.enabled) {
-                this._drawFrame(this.ctxB, this.imageB, morphedConfig, morphedAngle, morphedDrift);
+                // Use the SAME reused objects for drawing Deck B's canvas (they contain the same interpolated state)
+                this._drawFrame(this.ctxB, this.imageB, this._morphedConfig, this._morphedAngle, this._morphedDriftState);
             }
+            // --- END: OBJECT POOLING REPLACEMENT ---
 
         } catch (e) {
             if (import.meta.env.DEV) console.error(`[CM L${this.layerId}] draw: Unexpected draw error:`, e);

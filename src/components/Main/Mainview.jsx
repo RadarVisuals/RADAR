@@ -250,14 +250,11 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     animationDataRef: sequencer.animationDataRef,
   }), [sequencer, handleTogglePLock]);
 
-  // --- START: FIX ---
-  // This function now determines all necessary classes for the two-stage transition.
   const getCanvasClasses = useCallback((layerIdStr) => {
     let classes = `canvas layer-${layerIdStr}`;
     const isOutgoing = isTransitioning && outgoingLayerIdsOnTransitionStart?.has(layerIdStr);
     const isStableAndVisible = !isTransitioning && renderState === 'rendered';
     
-    // The incoming canvas is only made visible AFTER the fade-out is complete.
     const isIncomingAndReadyToFadeIn = isTransitioning && makeIncomingCanvasVisible;
 
     if (isOutgoing) {
@@ -269,18 +266,21 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     }
     return classes;
   }, [isTransitioning, outgoingLayerIdsOnTransitionStart, renderState, makeIncomingCanvasVisible]);
-  // --- END: FIX ---
 
   const containerClass = `canvas-container ${isTransitioning ? 'transitioning-active' : ''} ${isWorkspaceTransitioning ? 'workspace-fading-out' : ''}`;
   
+  // --- START OF FIX: Simplified and more robust rendering logic ---
+  // The isReadyToRender flag, now correctly gated by the new logic in useCoreApplicationStateAndLifecycle,
+  // is the single source of truth for showing the main UI.
   const isReadyToRender = renderState === 'rendered';
-  
   const showLoadingIndicator = !!loadingMessage;
+  // --- END OF FIX ---
 
   return (
     <>
       <div id="fullscreen-root" ref={rootRef} className="main-view radar-cursor">
         
+        {/* The loading pill is now just an overlay, allowing the layout to mount behind it. */}
         <LoadingIndicatorPill message={loadingMessage} isVisible={showLoadingIndicator} />
 
         <CanvasContainerWrapper
@@ -297,6 +297,7 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
           noPingSelectors={NO_PING_SELECTORS}
         />
 
+        {/* This block will only render AFTER loading is fully complete and renderState is 'rendered' */}
         {isReadyToRender && (
           <>
             <FpsDisplay showFpsCounter={showFpsCounter} isFullscreenActive={isFullscreenActive} portalContainer={portalContainerNode} />

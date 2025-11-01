@@ -79,37 +79,58 @@
   font-style: italic;
 }
 
-/* Grid for displaying collections */
+/* Grid for displaying collections - now single column for a list view */
 .library-panel .collections-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: var(--space-md);
+  grid-template-columns: 1fr; /* Each card takes the full width */
+  gap: var(--space-xs); /* Tighter spacing between items */
 }
 
-/* Individual collection card styling */
+/* Individual collection card styling - redesigned for horizontal layout */
 .library-panel .collection-card {
   background: rgba(0,0,0,0.2);
   border: 1px solid var(--color-border-dark);
   border-radius: var(--radius-md);
-  overflow: hidden;
   transition: all var(--transition-fast);
   position: relative;
-  display: flex;
-  flex-direction: column;
+  display: flex; /* Use flexbox for horizontal layout */
+  flex-direction: row; /* Align items in a row */
+  align-items: center; /* Vertically center image and text */
+  padding: var(--space-xs); /* Add some internal padding */
+  gap: var(--space-sm); /* Space between image and text block */
 }
 .library-panel .collection-card:hover {
   border-color: var(--color-primary-a30);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-primary-sm);
+  background: var(--color-primary-a05);
+  transform: translateY(-1px); /* More subtle hover effect */
+  box-shadow: none; /* Remove box-shadow for a flatter look */
 }
 
+/* Image container is now a fixed-size square */
 .library-panel .collection-image {
-  width: 100%;
-  padding-bottom: 56.25%; /* 16:9 Aspect Ratio */
-  height: 0;
+  width: 50px;
+  height: 50px;
+  flex-shrink: 0; /* Prevent the image from shrinking */
   position: relative;
   background: var(--color-bg);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  padding-bottom: 0; /* Remove aspect ratio padding */
 }
+
+/* --- ADDED: Ensure links inside image container fill space --- */
+.library-panel .collection-image .collection-link {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+/* Optional: visual cue for clickable images on hover */
+.library-panel .collection-image.is-clickable:hover {
+    opacity: 0.8;
+    box-shadow: 0 0 8px var(--color-primary-a30);
+}
+/* ----------------------------------------------------------- */
 
 .library-panel .collection-image img {
   position: absolute;
@@ -120,32 +141,39 @@
   object-fit: cover;
 }
 
+/* Info container holds the text and fills remaining space */
 .library-panel .collection-info {
-  padding: var(--space-sm);
+  padding: 0;
   flex-grow: 1;
+  overflow: hidden; /* Important for text-overflow to work */
+  min-width: 0; /* Fix for flexbox overflow issue */
 }
 
 .library-panel .collection-name {
-  font-size: var(--font-size-md);
+  font-size: var(--font-size-md); /* Keep name readable */
   color: var(--color-primary);
-  margin: 0 0 var(--space-xs) 0;
+  margin: 0 0 2px 0; /* Tighter margin */
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: ellipsis; /* Add ellipsis if name is too long */
 }
 
 .library-panel .collection-address {
   font-size: var(--font-size-xs);
   color: var(--color-text-muted);
   font-family: monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+/* Remove button is an overlay on the top right */
 .library-panel .remove-button {
   position: absolute;
-  top: 5px;
-  right: 5px;
-  width: 24px;
-  height: 24px;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.5);
   border: 1px solid var(--color-error-a50);
@@ -153,11 +181,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 12px;
   line-height: 1;
   cursor: pointer;
   transition: all var(--transition-fast);
   z-index: 5;
+  opacity: 0; /* Hide by default */
+}
+
+.library-panel .collection-card:hover .remove-button {
+  opacity: 1; /* Show on card hover */
 }
 
 .library-panel .remove-button:hover {

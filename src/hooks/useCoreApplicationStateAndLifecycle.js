@@ -23,12 +23,13 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     loadError,
     activeWorkspaceName,
     isFullyLoaded,
+    isLoading,
   } = useWorkspaceContext();
 
   const {
     sideA,
     sideB,
-    renderedCrossfaderValue, // Use the rendered value for the orchestrator
+    renderedCrossfaderValue,
     uiControlConfig,
     updateLayerConfig,
   } = useVisualEngineContext();
@@ -46,33 +47,30 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     };
   }, []);
 
-  // --- FIX: Rely directly on sideA, sideB, and the renderedCrossfaderValue ---
-  const {
-    managersReady, managerInstancesRef,
-    stopCanvasAnimations, restartCanvasAnimations,
-    setCanvasLayerImage,
-    applyPlaybackValue, clearAllPlaybackValues,
-    handleCanvasResize,
-  } = useCanvasOrchestrator({
+  // --- START OF FIX: The master gate for the entire rendering pipeline ---
+  // The lifecycle hooks should only run after the initial workspace load is complete and not in a loading state.
+  const isReadyForLifecycle = isFullyLoaded && !isLoading;
+  // --- END OF FIX ---
+
+  const orchestrator = useCanvasOrchestrator({
     canvasRefs,
     sideA,
     sideB,
     crossfaderValue: renderedCrossfaderValue,
-    isInitiallyResolved,
+    isInitiallyResolved: isReadyForLifecycle,
     activeWorkspaceName,
   });
-  // --- END FIX ---
 
   const sequencer = usePLockSequencer({
     onValueUpdate: (layerId, paramName, value) => {
       updateLayerConfig(String(layerId), paramName, value); 
-      if (applyPlaybackValue) {
-        applyPlaybackValue(String(layerId), paramName, value);
+      if (orchestrator.applyPlaybackValue) {
+        orchestrator.applyPlaybackValue(String(layerId), paramName, value);
       }
     },
     onAnimationEnd: (finalStateSnapshot) => {
-      if (clearAllPlaybackValues) {
-        clearAllPlaybackValues();
+      if (orchestrator.clearAllPlaybackValues) {
+        orchestrator.clearAllPlaybackValues();
       }
       if (finalStateSnapshot) {
         for (const layerId in finalStateSnapshot) {
@@ -94,10 +92,10 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
   }, []);
 
   const onResizeCanvasContainer = useCallback(() => {
-    if (isMountedRef.current && typeof handleCanvasResize === 'function') {
-      handleCanvasResize();
+    if (isMountedRef.current && typeof orchestrator.handleCanvasResize === 'function') {
+      orchestrator.handleCanvasResize();
     }
-  }, [handleCanvasResize]);
+  }, [orchestrator.handleCanvasResize]);
 
   const { containerRef, hasValidDimensions, isContainerObservedVisible, isFullscreenActive, enterFullscreen } = useCanvasContainer({
     onResize: onResizeCanvasContainer,
@@ -105,8 +103,8 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
   });
 
   const renderLifecycleData = useRenderLifecycle({
-    managersReady,
-    isInitiallyResolved,
+    managersReady: orchestrator.managersReady,
+    isInitiallyResolved: isReadyForLifecycle,
     hasValidDimensions,
     isContainerObservedVisible,
     configLoadNonce: 0,
@@ -117,68 +115,76 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     loadError,
     upInitializationError,
     upFetchStateError,
-    stopAllAnimations: stopCanvasAnimations,
-    restartCanvasAnimations: restartCanvasAnimations,
-    isFullyLoaded, 
+    stopAllAnimations: orchestrator.stopCanvasAnimations,
+    restartCanvasAnimations: orchestrator.restartCanvasAnimations,
+    isFullyLoaded: isReadyForLifecycle,
   });
-  const {
-    renderState, loadingStatusMessage, isStatusFadingOut, showStatusDisplay,
-    showRetryButton, isTransitioning,
-    outgoingLayerIdsOnTransitionStart,
-    makeIncomingCanvasVisible,
-    isAnimating, handleManualRetry, resetLifecycle
-  } = renderLifecycleData;
 
   useEffect(() => {
-    internalResetLifecycleRef.current = resetLifecycle;
-  }, [resetLifecycle]);
+    internalResetLifecycleRef.current = renderLifecycleData.resetLifecycle;
+  }, [renderLifecycleData.resetLifecycle]);
 
   useAnimationLifecycleManager({
     isMounted: isMountedRef.current,
-    renderState,
+    renderState: renderLifecycleData.renderState,
     isContainerObservedVisible,
     isBenignOverlayActive,
     animatingPanel,
-    isAnimating,
-    isTransitioning,
-    restartCanvasAnimations,
-    stopCanvasAnimations,
+    isAnimating: renderLifecycleData.isAnimating,
+    isTransitioning: renderLifecycleData.isTransitioning,
+    restartCanvasAnimations: orchestrator.restartCanvasAnimations,
+    stopCanvasAnimations: orchestrator.stopCanvasAnimations,
   });
 
-  return useMemo(() => ({
-    containerRef,
-    managerInstancesRef,
-    audioState,
-    renderState,
-    loadingStatusMessage,
-    isStatusFadingOut,
-    showStatusDisplay,
-    showRetryButton,
-    isTransitioning,
-    outgoingLayerIdsOnTransitionStart,
-    makeIncomingCanvasVisible,
-    isAnimating,
-    handleManualRetry,
-    resetLifecycle,
-    managersReady,
-    stopCanvasAnimations,
-    restartCanvasAnimations,
-    setCanvasLayerImage,
-    hasValidDimensions,
-    isContainerObservedVisible,
-    isFullscreenActive,
-    enterFullscreen,
-    isMountedRef,
-    sequencer,
-    uiControlConfig,
-  }), [
-    containerRef, managerInstancesRef, audioState, renderState, loadingStatusMessage,
-    isStatusFadingOut, showStatusDisplay, showRetryButton, isTransitioning,
-    outgoingLayerIdsOnTransitionStart, makeIncomingCanvasVisible, isAnimating,
-    handleManualRetry,
-    resetLifecycle, managersReady,
-    stopCanvasAnimations, restartCanvasAnimations, setCanvasLayerImage,
-    hasValidDimensions, isContainerObservedVisible, isFullscreenActive, enterFullscreen,
+  // --- START OF FIX: Return a default 'not ready' state if the lifecycle gate is closed ---
+  return useMemo(() => {
+    // If we are not ready for the lifecycle, return a default "not ready" state.
+    if (!isReadyForLifecycle) {
+      return {
+        containerRef, managersReady: false, audioState, renderState: 'initializing',
+        loadingStatusMessage: '', isStatusFadingOut: false, showStatusDisplay: false,
+        showRetryButton: false, isTransitioning: false, outgoingLayerIdsOnTransitionStart: new Set(),
+        makeIncomingCanvasVisible: false, isAnimating: false, handleManualRetry: () => {},
+        resetLifecycle: () => {}, stopCanvasAnimations: () => {}, restartCanvasAnimations: () => {},
+        setCanvasLayerImage: () => {}, hasValidDimensions: false, isContainerObservedVisible: true,
+        isFullscreenActive: false, enterFullscreen: () => {}, isMountedRef, sequencer,
+        uiControlConfig: null, managerInstancesRef: { current: null },
+      };
+    }
+
+    // If ready, return the fully computed state.
+    return {
+      containerRef,
+      managerInstancesRef: orchestrator.managerInstancesRef,
+      audioState,
+      renderState: renderLifecycleData.renderState,
+      loadingStatusMessage: renderLifecycleData.loadingStatusMessage,
+      isStatusFadingOut: renderLifecycleData.isStatusFadingOut,
+      showStatusDisplay: renderLifecycleData.showStatusDisplay,
+      showRetryButton: renderLifecycleData.showRetryButton,
+      isTransitioning: renderLifecycleData.isTransitioning,
+      outgoingLayerIdsOnTransitionStart: renderLifecycleData.outgoingLayerIdsOnTransitionStart,
+      makeIncomingCanvasVisible: renderLifecycleData.makeIncomingCanvasVisible,
+      isAnimating: renderLifecycleData.isAnimating,
+      handleManualRetry: renderLifecycleData.handleManualRetry,
+      resetLifecycle: renderLifecycleData.resetLifecycle,
+      managersReady: orchestrator.managersReady,
+      stopCanvasAnimations: orchestrator.stopCanvasAnimations,
+      restartCanvasAnimations: orchestrator.restartCanvasAnimations,
+      setCanvasLayerImage: orchestrator.setCanvasLayerImage,
+      hasValidDimensions,
+      isContainerObservedVisible,
+      isFullscreenActive,
+      enterFullscreen,
+      isMountedRef,
+      sequencer,
+      uiControlConfig,
+    };
+  }, [
+    isReadyForLifecycle, // The master gate
+    containerRef, orchestrator, audioState, renderLifecycleData, hasValidDimensions,
+    isContainerObservedVisible, isFullscreenActive, enterFullscreen,
     isMountedRef, sequencer, uiControlConfig
   ]);
+  // --- END OF FIX ---
 };

@@ -103,9 +103,13 @@ export function useCanvasOrchestrator({ canvasRefs, sideA, sideB, crossfaderValu
         for (const layerIdStr in managers) {
             const manager = managers[layerIdStr];
             if (manager) {
+                // --- START: SIMPLIFIED LOGIC ---
+                // The CanvasManager's internal draw loop now handles interpolation.
+                // We just need to tell it the latest crossfader value.
                 manager.setCrossfadeValue(crossfaderValue);
+                // --- END: SIMPLIFIED LOGIC ---
 
-                // --- START: FIX FOR OPACITY AND RACE CONDITION ---
+                // --- START: FIX FOR OPACITY AND RACE CONDITION (Remains the same) ---
                 const layerOpacityA = sideA.config?.layers?.[layerIdStr]?.opacity ?? 1.0;
                 const layerOpacityB = sideB.config?.layers?.[layerIdStr]?.opacity ?? 1.0;
 
@@ -117,17 +121,14 @@ export function useCanvasOrchestrator({ canvasRefs, sideA, sideB, crossfaderValu
                 let finalOpacityB = crossfadeOpacityB * layerOpacityB;
 
                 // **RACE CONDITION FIX:** Check if the content is ready before making the canvas visible.
-                // Get the target token ID for each deck from the main state.
                 const targetTokenA_Assignment = sideA.config?.tokenAssignments?.[layerIdStr];
                 const targetTokenB_Assignment = sideB.config?.tokenAssignments?.[layerIdStr];
                 const targetTokenA_Id = typeof targetTokenA_Assignment === 'object' ? targetTokenA_Assignment.id : targetTokenA_Assignment;
                 const targetTokenB_Id = typeof targetTokenB_Assignment === 'object' ? targetTokenB_Assignment.id : targetTokenB_Assignment;
 
-                // Compare with the token ID the manager has actually loaded.
                 const isDeckA_ContentReady = manager.tokenA_id === targetTokenA_Id;
                 const isDeckB_ContentReady = manager.tokenB_id === targetTokenB_Id;
 
-                // If the content isn't ready, force opacity to 0 to prevent showing stale content.
                 if (!isDeckA_ContentReady) finalOpacityA = 0;
                 if (!isDeckB_ContentReady) finalOpacityB = 0;
                 

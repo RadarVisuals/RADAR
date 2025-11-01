@@ -16,10 +16,8 @@ const LazyLoadImage = ({ src, alt, className }) => {
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
-        // When the placeholder comes into view, set isVisible to true
         if (entry.isIntersecting) {
           setIsVisible(true);
-          // Stop observing this element once it's visible
           observer.unobserve(entry.target);
         }
       });
@@ -37,21 +35,26 @@ const LazyLoadImage = ({ src, alt, className }) => {
     };
   }, []);
 
-  // Only set the src attribute if the component is visible
   const imageSource = isVisible ? src : '';
 
   return (
     <div ref={imgRef} className={`lazy-image-container ${isLoaded ? 'loaded' : ''}`}>
-      <img
-        src={imageSource}
-        alt={alt}
-        className={className}
-        onLoad={() => setIsLoaded(true)}
-        style={{ opacity: isLoaded ? 1 : 0 }} // Fade in the image when loaded
-        draggable="false"
-        decoding="async"
-      />
-      {/* Show a shimmer placeholder while the image is loading */}
+      {/* === START OF FIX === */}
+      {/* Only render the img tag if there is a valid, non-empty imageSource */}
+      {imageSource ? (
+        <img
+          src={imageSource}
+          alt={alt}
+          className={className}
+          onLoad={() => setIsLoaded(true)}
+          style={{ opacity: isLoaded ? 1 : 0 }}
+          draggable="false"
+          decoding="async"
+        />
+      ) : null}
+      {/* === END OF FIX === */}
+
+      {/* This placeholder will now correctly remain visible if imageSource is empty */}
       {!isLoaded && <div className="placeholder-shimmer"></div>}
     </div>
   );

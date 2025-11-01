@@ -13,8 +13,8 @@ const OFFICIAL_WHITELIST_KEY = keccak256(stringToBytes("RADAR.OfficialWhitelist"
 const AssetContext = createContext();
 
 export const AssetProvider = ({ children }) => {
-  const { configServiceRef, configServiceInstanceReady } = useWorkspaceContext();
-  const { hostProfileAddress, visitorProfileAddress } = useUserSession();
+  const { configServiceRef, configServiceInstanceReady, stagedActiveWorkspace } = useWorkspaceContext();
+  const { hostProfileAddress, visitorProfileAddress, isRadarProjectAdmin } = useUserSession();
   const { addToast } = useToast();
 
   const [officialWhitelist, setOfficialWhitelist] = useState([]);
@@ -50,29 +50,66 @@ export const AssetProvider = ({ children }) => {
   const refreshOwnedTokens = useCallback(async (isSilent = false) => {
     const service = configServiceRef.current;
     const effectiveAddress = hostProfileAddress || visitorProfileAddress;
-    if (!effectiveAddress || officialWhitelist.length === 0 || !service) {
+    
+    const userLibrary = stagedActiveWorkspace?.personalCollectionLibrary || [];
+    
+    // Combine and deduplicate official and user libraries
+    const combinedCollectionsMap = new Map();
+    officialWhitelist.forEach(c => c && c.address && combinedCollectionsMap.set(c.address.toLowerCase(), c));
+    userLibrary.forEach(c => {
+        if (c && c.address && !combinedCollectionsMap.has(c.address.toLowerCase())) {
+            combinedCollectionsMap.set(c.address.toLowerCase(), c);
+        }
+    });
+    const allCollections = Array.from(combinedCollectionsMap.values());
+
+    if (!effectiveAddress || allCollections.length === 0 || !service) {
       setOwnedTokenIdentifiers({});
       setTokenFetchProgress({ loaded: 0, total: 0, loading: false });
       return;
     }
 
     setIsFetchingTokens(true);
-    setTokenFetchProgress({ loaded: 0, total: officialWhitelist.length, loading: true });
+    setTokenFetchProgress({ loaded: 0, total: allCollections.length, loading: true });
     if (!isSilent) addToast("Fetching token libraries...", "info", 2000);
 
     try {
-      const isAdminShowcase = effectiveAddress.toLowerCase() === RADAR_OFFICIAL_ADMIN_ADDRESS.toLowerCase();
-      
-      const identifierPromises = officialWhitelist.map(async (collection) => {
+      // --- START OF MODIFICATION ---
+      // This now correctly identifies if the profile being viewed is the admin's,
+      // which enables the showcase mode for both the admin and any visitors.
+      const isAdminShowcase = hostProfileAddress?.toLowerCase() === RADAR_OFFICIAL_ADMIN_ADDRESS.toLowerCase();
+      // --- END OF MODIFICATION ---
+
+      const identifierPromises = allCollections.map(async (collection) => {
         const standard = await service.detectCollectionStandard(collection.address);
         let identifiers = [];
+
         if (standard === 'LSP8') {
           if (isAdminShowcase) {
+            // --- MODIFIED LOGIC WITH FALLBACK ---
+            // First, try to get all tokens for the showcase.
             identifiers = await service.getAllLSP8TokenIdsForCollection(collection.address);
+            
+            // If the showcase method returns no tokens (either because it failed or the collection is empty),
+            // fall back to getting just the owned tokens to ensure something is shown if owned.
+            if (identifiers.length === 0) {
+              if (import.meta.env.DEV) {
+                console.log(`[AssetContext] Admin showcase for ${collection.name} returned 0 tokens. Falling back to owned tokens check.`);
+              }
+              identifiers = await service.getOwnedLSP8TokenIdsForCollection(effectiveAddress, collection.address);
+            }
           } else {
+            // For all other users, reliably fetch only the tokens they own.
             identifiers = await service.getOwnedLSP8TokenIdsForCollection(effectiveAddress, collection.address);
           }
+        } else if (standard === 'LSP7') {
+          const balance = await service.getLSP7Balance(effectiveAddress, collection.address);
+          if (balance > 0) {
+            identifiers.push('LSP7_TOKEN');
+          }
         }
+        // --- END MODIFIED LOGIC ---
+
         setTokenFetchProgress(prev => ({ ...prev, loaded: prev.loaded + 1 }));
         return { address: collection.address, identifiers };
       });
@@ -99,7 +136,7 @@ export const AssetProvider = ({ children }) => {
       setIsFetchingTokens(false);
       setTokenFetchProgress(prev => ({ ...prev, loading: false }));
     }
-  }, [hostProfileAddress, visitorProfileAddress, officialWhitelist, addToast, configServiceRef]);
+  }, [hostProfileAddress, visitorProfileAddress, isRadarProjectAdmin, officialWhitelist, addToast, configServiceRef, stagedActiveWorkspace]);
 
   const contextValue = useMemo(() => ({
     officialWhitelist,

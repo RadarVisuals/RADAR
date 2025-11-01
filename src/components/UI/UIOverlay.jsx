@@ -133,7 +133,7 @@ function UIOverlay({
   const { renderedCrossfaderValue, isAutoFading, handleSceneSelect, handleCrossfaderChange, handleCrossfaderCommit } = useVisualEngineContext();
   // ------------------------------------
   const { unreadCount } = useNotificationContext();
-  const { isRadarProjectAdmin, hostProfileAddress: currentProfileAddress } = useUserSession();
+  const { isRadarProjectAdmin, hostProfileAddress: currentProfileAddress, isHostProfileOwner } = useUserSession();
   const { isUiVisible, activePanel, toggleSidePanel, toggleInfoOverlay, toggleUiVisibility } = uiState;
   const { isAudioActive } = audioState;
   
@@ -214,7 +214,8 @@ function UIOverlay({
   return (
     <>
       {isReady && <MemoizedTopRightControls
-        isRadarProjectAdmin={isRadarProjectAdmin} 
+        isRadarProjectAdmin={isRadarProjectAdmin}
+        isHostProfileOwner={isHostProfileOwner}
         showInfo={true} 
         showToggleUI={true} 
         showEnhancedView={true}
@@ -225,6 +226,16 @@ function UIOverlay({
         isUiVisible={isUiVisible}
         isParallaxEnabled={configData.isParallaxEnabled}
         onToggleParallax={onToggleParallax}
+      />}
+      {isUiVisible && <MemoizedActivePanelRenderer
+          uiState={uiState}
+          audioState={audioState}
+          pLockProps={pLockProps}
+          onPreviewEffect={onPreviewEffect}
+          sequencerIntervalMs={sequencerIntervalMs}
+          onSetSequencerInterval={setSequencerIntervalMs}
+          crossfadeDurationMs={crossfadeDurationMs}
+          onSetCrossfadeDuration={onSetCrossfadeDuration}
       />}
       <div className={mainUiContainerClass}>
         {isUiVisible && (
@@ -243,16 +254,6 @@ function UIOverlay({
             {isReady && <div className="vertical-toolbar-container">
               <MemoizedVerticalToolbar activePanel={activePanel} setActivePanel={toggleSidePanel} notificationCount={unreadCount} />
             </div>}
-            <MemoizedActivePanelRenderer
-                uiState={uiState}
-                audioState={audioState}
-                pLockProps={pLockProps}
-                onPreviewEffect={onPreviewEffect}
-                sequencerIntervalMs={sequencerIntervalMs}
-                onSetSequencerInterval={setSequencerIntervalMs}
-                crossfadeDurationMs={crossfadeDurationMs}
-                onSetCrossfadeDuration={onSetCrossfadeDuration}
-            />
             {showSceneBar && (
               <div className="bottom-center-controls">
                 <WorkspaceSelectorDots

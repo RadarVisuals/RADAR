@@ -13,7 +13,7 @@ import { useAsyncErrorHandler } from '../hooks/useAsyncErrorHandler';
 const WorkspaceContext = createContext();
 
 export const WorkspaceProvider = ({ children }) => {
-    const { hostProfileAddress, isHostProfileOwner } = useUserSession();
+    const { hostProfileAddress, isHostProfileOwner, loggedInUserUPAddress } = useUserSession();
     const { provider, walletClient, publicClient } = useUpProvider();
     const { addToast } = useToast();
     const { handleAsyncError } = useAsyncErrorHandler();
@@ -96,7 +96,22 @@ export const WorkspaceProvider = ({ children }) => {
           setIsLoading(true);
           try {
             setLoadingMessage("Fetching Setlist...");
-            const loadedSetlist = await service.loadWorkspace(address);
+            let loadedSetlist = await service.loadWorkspace(address);
+
+            // --- START OF FIX: Fetch and merge visitor's MIDI map ---
+            if (!isHostProfileOwner && loggedInUserUPAddress) {
+                if (import.meta.env.DEV) console.log(`%c[WorkspaceContext] Visitor detected. Fetching MIDI map from logged-in user: ${loggedInUserUPAddress.slice(0,6)}`, 'color: #9b59b6; font-weight: bold;');
+                const visitorSetlist = await service.loadWorkspace(loggedInUserUPAddress);
+                if (visitorSetlist && visitorSetlist.globalUserMidiMap) {
+                    if (import.meta.env.DEV) console.log(`%c[WorkspaceContext] Visitor MIDI map found. Merging into host's setlist.`, 'color: #9b59b6;');
+                    loadedSetlist = {
+                        ...loadedSetlist,
+                        globalUserMidiMap: visitorSetlist.globalUserMidiMap,
+                    };
+                }
+            }
+            // --- END OF FIX ---
+
             if (prevProfileAddressRef.current !== address) return;
     
             setSetlist(loadedSetlist);
@@ -124,7 +139,7 @@ export const WorkspaceProvider = ({ children }) => {
             
             if (prevProfileAddressRef.current !== address) return;
     
-            setLoadingMessage("Preloading Assets...");
+            setLoadingMessage("Decoding Assets...");
             const imageUrlsToPreload = new Set();
             Object.values(loadedWorkspace.presets || {}).forEach(preset => {
                 Object.values(preset.tokenAssignments || {}).forEach(assignment => {
@@ -178,14 +193,7 @@ export const WorkspaceProvider = ({ children }) => {
             setIsInitiallyResolved(true);
           }
         }
-    }, [shouldStartLoading, hostProfileAddress, configServiceInstanceReady, isInitiallyResolved, addToast, _loadWorkspaceFromCid, handleAsyncError]);
-
-    useEffect(() => {
-        if (isInitiallyResolved && !hostProfileAddress && !isFullyLoaded) {
-          if (import.meta.env.DEV) console.log(`%c[WorkspaceContext] Resolved as DISCONNECTED. Setting isFullyLoaded = true.`, 'color: #2ecc71; font-weight: bold;');
-          setIsFullyLoaded(true);
-        }
-    }, [isInitiallyResolved, hostProfileAddress, isFullyLoaded]);
+    }, [shouldStartLoading, hostProfileAddress, configServiceInstanceReady, isInitiallyResolved, addToast, _loadWorkspaceFromCid, handleAsyncError, isHostProfileOwner, loggedInUserUPAddress]);
 
     const fullSceneList = useMemo(() => {
         if (!stagedActiveWorkspace?.presets) return [];
@@ -218,23 +226,23 @@ export const WorkspaceProvider = ({ children }) => {
             } else {
                 newWorkspace = null; // Ensure it's null on failure
             }
-
-            if (newWorkspace) {
-                const imageUrlsToPreload = new Set();
-                Object.values(newWorkspace.presets || {}).forEach(preset => {
-                  Object.values(preset.tokenAssignments || {}).forEach(assignment => {
-                    const src = resolveImageUrl(assignment);
-                    if (src) imageUrlsToPreload.add(src);
-                  });
-                });
-                if (imageUrlsToPreload.size > 0) {
-                  await preloadImages(Array.from(imageUrlsToPreload));
-                }
-                preloadedWorkspacesRef.current.set(workspaceName, newWorkspace);
-            }
           }
     
           if (newWorkspace) {
+            setLoadingMessage("Decoding assets...");
+            const imageUrlsToPreload = new Set();
+            Object.values(newWorkspace.presets || {}).forEach(preset => {
+              Object.values(preset.tokenAssignments || {}).forEach(assignment => {
+                const src = resolveImageUrl(assignment);
+                if (src) imageUrlsToPreload.add(src);
+              });
+            });
+
+            if (imageUrlsToPreload.size > 0) {
+              await preloadImages(Array.from(imageUrlsToPreload));
+            }
+
+            preloadedWorkspacesRef.current.set(workspaceName, newWorkspace);
             setActiveWorkspace(newWorkspace);
             setStagedActiveWorkspace(newWorkspace);
             setActiveWorkspaceName(workspaceName);
@@ -581,6 +589,36 @@ export const WorkspaceProvider = ({ children }) => {
         });
     }, []);
 
+    const addCollectionToPersonalLibrary = useCallback((collection) => {
+        if (!isHostProfileOwner) return;
+        setStagedActiveWorkspace(prev => {
+            const currentLibrary = prev?.personalCollectionLibrary || [];
+            if (currentLibrary.some(c => c.address.toLowerCase() === collection.address.toLowerCase())) {
+                addToast("This collection is already in your library.", "warning");
+                return prev;
+            }
+            const newWorkspace = { ...prev, personalCollectionLibrary: [...currentLibrary, collection] };
+            setHasPendingChanges(true);
+            addToast(`Collection "${collection.name}" added to your library.`, "success");
+            return newWorkspace;
+        });
+    }, [isHostProfileOwner, addToast]);
+    
+    const removeCollectionFromPersonalLibrary = useCallback((addressToRemove) => {
+        if (!isHostProfileOwner) return;
+        setStagedActiveWorkspace(prev => {
+            const currentLibrary = prev?.personalCollectionLibrary || [];
+            if (!currentLibrary.some(c => c.address.toLowerCase() === addressToRemove.toLowerCase())) {
+                return prev;
+            }
+            const newLibrary = currentLibrary.filter(c => c.address.toLowerCase() !== addressToRemove.toLowerCase());
+            const newWorkspace = { ...prev, personalCollectionLibrary: newLibrary };
+            setHasPendingChanges(true);
+            addToast(`Collection removed from your library.`, "info");
+            return newWorkspace;
+        });
+    }, [isHostProfileOwner, addToast]);
+
     const preloadWorkspace = useCallback(async (workspaceName) => {
         const service = configServiceRef.current;
         if (!service || !stagedSetlist?.workspaces[workspaceName]) return;
@@ -640,11 +678,11 @@ export const WorkspaceProvider = ({ children }) => {
         removePalette,
         addTokenToPalette,
         removeTokenFromPalette,
+        addCollectionToPersonalLibrary,
+        removeCollectionFromPersonalLibrary,
         preloadWorkspace,
         setHasPendingChanges,
-        // --- FIX: Expose setActiveSceneName ---
         setActiveSceneName,
-        // ------------------------------------
     }), [
         isLoading, loadingMessage, isFullyLoaded, isInitiallyResolved, loadError, isSaving, saveError, saveSuccess, hasPendingChanges,
         configServiceRef, configServiceInstanceReady,
@@ -671,9 +709,10 @@ export const WorkspaceProvider = ({ children }) => {
         removePalette,
         addTokenToPalette,
         removeTokenFromPalette,
+        addCollectionToPersonalLibrary,
+        removeCollectionFromPersonalLibrary,
         preloadWorkspace,
         setHasPendingChanges,
-        // --- FIX: Add setActiveSceneName to dependency array ---
         setActiveSceneName,
     ]);
 

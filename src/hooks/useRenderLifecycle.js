@@ -101,10 +101,15 @@ export function useRenderLifecycle(options) {
       return;
     }
 
-    const allPrimaryPrerequisitesMet = isInitiallyResolved && hasValidDimensions && isFullyLoaded;
+    // --- THIS IS THE FIX ---
+    // The component is only truly ready to render when all prerequisites are met,
+    // INCLUDING the layerConfigs being populated from the VisualEngineContext.
+    // This prevents the 'rendered' state from being set prematurely.
+    const allPrimaryPrerequisitesMet = isInitiallyResolved && hasValidDimensions && isFullyLoaded && !!layerConfigs;
+    // --- END FIX ---
 
     if (allPrimaryPrerequisitesMet) {
-      logStateChange('rendered', 'All primary prerequisites (data, layout) met');
+      logStateChange('rendered', 'All primary prerequisites (data, layout, layerConfigs) met');
     } else {
       if (!isInitiallyResolved || !isFullyLoaded) {
         logStateChange('resolving_initial_config', 'Awaiting data resolution');
@@ -116,7 +121,8 @@ export function useRenderLifecycle(options) {
     }
   }, [
     renderState, managersReady, isInitiallyResolved, hasValidDimensions, isFullyLoaded, 
-    loadError, upInitializationError, upFetchStateError, logStateChange
+    loadError, upInitializationError, upFetchStateError, logStateChange,
+    layerConfigs, // <-- Dependency added
   ]);
 
   // This useEffect handles the START of a scene transition.
@@ -125,8 +131,6 @@ export function useRenderLifecycle(options) {
       if (targetLayerConfigsForPreset) {
         setLoadingStatusMessage(TRANSITION_MESSAGE);
         setIsTransitioningInternal(true);
-        // --- FIX ---
-        // When transition starts, ensure the incoming canvas is NOT visible yet.
         setMakeIncomingCanvasVisible(false);
         outgoingLayerIdsOnTransitionStartRef.current = new Set(Object.keys(layerConfigs || {}));
         logStateChange('fading_out', 'New Scene Selected');
@@ -139,8 +143,6 @@ export function useRenderLifecycle(options) {
     if (renderState === 'fading_out') {
       const transitionTimer = setTimeout(() => {
         if (isMountedRef.current) {
-          // After the fade-out duration, we change the state to 'rendered'.
-          // This will trigger the next useEffect to start the fade-in.
           logStateChange('rendered', 'Transition fade-out complete');
           lastAppliedNonceRef.current = configLoadNonce;
         }
@@ -153,8 +155,6 @@ export function useRenderLifecycle(options) {
   useEffect(() => {
     if (renderState !== "rendered") return;
 
-    // --- FIX ---
-    // Now that we are in the 'rendered' state post-transition, it's safe to make the incoming canvas visible.
     setMakeIncomingCanvasVisible(true);
     setIsStatusFadingOut(true);
     if (statusDisplayFadeTimeoutRef.current) {

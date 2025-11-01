@@ -234,7 +234,7 @@ input[type="range"]:hover {
   position: fixed;
   top: var(--space-lg);
   left: var(--panel-left-position);
-  z-index: var(--z-controls);
+  /* Z-index is now controlled by the PanelWrapper */
   animation: slideInFromLeft var(--transition-normal) var(--transition-elastic);
 }
 

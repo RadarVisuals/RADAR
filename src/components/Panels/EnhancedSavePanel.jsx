@@ -15,7 +15,7 @@ const formatAddress = (address) => {
 };
 
 const EnhancedSavePanel = ({ onClose }) => {
-  const { hostProfileAddress, isPreviewMode, isHostProfileOwner, canSaveToHostProfile } = useUserSession();
+  const { hostProfileAddress, isHostProfileOwner, canSaveToHostProfile } = useUserSession();
   const {
     activeWorkspaceName,
     saveChanges,
@@ -25,6 +25,24 @@ const EnhancedSavePanel = ({ onClose }) => {
     hasPendingChanges,
   } = useWorkspaceContext();
   
+  // If the current user is a visitor, display a read-only message and nothing else.
+  if (!isHostProfileOwner) {
+    return (
+      <Panel title="VIEWING MODE" onClose={onClose} className="panel-from-toolbar enhanced-save-panel">
+          <div className="save-info visitor-banner">
+              <span aria-hidden="true">👤</span>
+              <div>
+                <div className="title">Viewing {formatAddress(hostProfileAddress)}'s Profile</div>
+                <div className="desc">
+                  You are viewing another user's profile. You can load and experiment with their scenes. Saving is disabled.
+                </div>
+              </div>
+            </div>
+      </Panel>
+    );
+  }
+
+  // The remainder of the component is for the profile owner.
   const canSave = canSaveToHostProfile;
   const isFirstSave = !activeWorkspaceName;
 
@@ -41,19 +59,16 @@ const EnhancedSavePanel = ({ onClose }) => {
 
   const handleSaveChanges = useCallback(async () => {
     if (!canSave || isSaving) return;
-
     if (isFirstSave) {
-      // On a first save, the action is more like creating than duplicating.
       const newName = window.prompt("Enter a name for your first workspace:");
       if (newName && newName.trim()) {
-        const result = await duplicateActiveWorkspace(newName.trim()); // It duplicates the "blank" state
+        const result = await duplicateActiveWorkspace(newName.trim());
         if (result.success) {
           onClose();
         }
       }
       return;
     }
-
     const result = await saveChanges();
     if (result.success) {
       onClose();
@@ -61,16 +76,13 @@ const EnhancedSavePanel = ({ onClose }) => {
   }, [canSave, isSaving, saveChanges, onClose, isFirstSave, duplicateActiveWorkspace]);
 
   const getPanelTitle = () => {
-    if (isPreviewMode) return "VISITOR PREVIEW";
     if (!hostProfileAddress) return "CONNECT PROFILE";
-    if (canSave) return "SAVE MANAGEMENT";
-    return `VIEWING PROFILE (${formatAddress(hostProfileAddress)})`;
+    return "SAVE MANAGEMENT";
   };
 
   const renderStatusIndicator = () => {
     if (isSaving) return <div className="status-indicator saving">Saving Changes...</div>;
-    if (hasPendingChanges && canSave) return <div className="status-indicator pending">Unsaved changes</div>;
-    if (!canSave && hostProfileAddress && !isPreviewMode) return <div className="status-indicator idle">Viewing mode. Changes are not saved.</div>;
+    if (hasPendingChanges) return <div className="status-indicator pending">Unsaved changes</div>;
     return <div className="status-indicator idle">Workspace is in sync</div>;
   };
 
@@ -79,40 +91,25 @@ const EnhancedSavePanel = ({ onClose }) => {
 
   return (
     <Panel title={getPanelTitle()} onClose={onClose} className="panel-from-toolbar enhanced-save-panel">
-      {canSave && hostProfileAddress && (
-        <>
-          <div className="config-section save-workspace-section">
-            {renderStatusIndicator()}
-            <button className="btn btn-block btn-primary" onClick={handleSaveChanges} disabled={isUpdateDisabled}>
-              {isSaving ? "SAVING..." : (isFirstSave ? "Save Workspace..." : "Update Current Workspace")}
-            </button>
-            <p className="form-help-text">
-              {isFirstSave
-                ? "Save your current scenes and settings as your first workspace."
-                : "Commit all changes in the current workspace (scenes, MIDI maps, etc.) to your profile."}
-            </p>
-          </div>
-          <div className="config-section">
-            <button className="btn btn-block btn-secondary" onClick={handleDuplicateWorkspace} disabled={isSaveAsDisabled}>
-              Duplicate Workspace...
-            </button>
-            <p className="form-help-text">
-              Saves a copy of the current workspace with a new name in your Setlist.
-            </p>
-          </div>
-        </>
-      )}
-      {!isHostProfileOwner && hostProfileAddress && (
-        <div className="save-info visitor-banner">
-            <span aria-hidden="true">👤</span>
-            <div>
-              <div className="title">Viewing Mode</div>
-              <div className="desc">
-                You are viewing another user's profile. You can load and experiment with their scenes. Saving is disabled.
-              </div>
-            </div>
-          </div>
-      )}
+      <div className="config-section save-workspace-section">
+        {renderStatusIndicator()}
+        <button className="btn btn-block btn-primary" onClick={handleSaveChanges} disabled={isUpdateDisabled}>
+          {isSaving ? "SAVING..." : (isFirstSave ? "Save Workspace..." : "Update Current Workspace")}
+        </button>
+        <p className="form-help-text">
+          {isFirstSave
+            ? "Save your current scenes and settings as your first workspace."
+            : "Commit all changes in the current workspace (scenes, MIDI maps, etc.) to your profile."}
+        </p>
+      </div>
+      <div className="config-section">
+        <button className="btn btn-block btn-secondary" onClick={handleDuplicateWorkspace} disabled={isSaveAsDisabled}>
+          Duplicate Workspace...
+        </button>
+        <p className="form-help-text">
+          Saves a copy of the current workspace with a new name in your Setlist.
+        </p>
+      </div>
     </Panel>
   );
 };

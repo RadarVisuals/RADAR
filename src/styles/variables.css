@@ -93,6 +93,7 @@
   --z-canvas: 100;
   --z-ui: 500;
   --z-controls: 1000;
+  --z-panel-active: 1001;
   --z-overlay: 1500;
   --z-top: 2000;
   --z-tooltip: 2500;
@@ -100,8 +101,9 @@
   --icon-size-sm: 24px;
   --icon-size-md: 28px;
   --icon-size-lg: 35px;
-  --panel-width: 400px;
-  --control-panel-width: 400px;
+  
+  --panel-width: 300px;
+  --control-panel-width: 300px;
 
   --blur-amount: 1px;
 

@@ -60,7 +60,7 @@ export const useInteractionSettingsState = () => {
 /**
  * @typedef {object} ProfileSessionState
  * @property {string | null} currentProfileAddress - Address of the Universal Profile being viewed (host).
- * @property {string | null} visitorUPAddress - Address of the visitor's Universal Profile.
+ * @property {string | null} loggedInUserUPAddress - Address of the logged-in user's Universal Profile.
  * @property {boolean} isProfileOwner - True if visitor is owner of host profile.
  * @property {boolean} isVisitor - True if visitor is not the owner of the host profile.
  * @property {boolean} canSave - True if the current user has permissions to save changes to the host profile.
@@ -75,7 +75,7 @@ export const useProfileSessionState = () => {
   return useMemo(() => {
     const {
       hostProfileAddress,
-      visitorProfileAddress,
+      loggedInUserUPAddress, // Updated from visitorProfileAddress
       isHostProfileOwner,
       isRadarProjectAdmin,
       isPreviewMode,
@@ -87,7 +87,7 @@ export const useProfileSessionState = () => {
     
     return {
       currentProfileAddress: hostProfileAddress, 
-      visitorUPAddress: visitorProfileAddress,
+      loggedInUserUPAddress: loggedInUserUPAddress, // Updated
       isProfileOwner: isHostProfileOwner,
       isVisitor: !isHostProfileOwner,
       canSave: canSaveToHostProfile, 

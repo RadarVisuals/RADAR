@@ -61,7 +61,7 @@ const SetsPanel = ({ onClose }) => {
         
         {canEdit && (
           <button 
-            id="create-workspace-btn" // <-- ID ADDED HERE
+            id="create-workspace-btn"
             className="btn btn-block" 
             onClick={handleCreateClick} 
             disabled={isLoading || isSaving}

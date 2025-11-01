@@ -3,7 +3,7 @@
   position: fixed;
   top: 5px;
   left: -20px;
-  z-index: 1000;
+  z-index: var(--z-panel-active);
   max-height: 90vh;
   animation: panel-slide-in 0.5s ease-out forwards;
   overflow: visible;

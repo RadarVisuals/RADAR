@@ -67,6 +67,13 @@ const LSP8_ABI = [
     "outputs": [{ "name": "", "type": "uint256" }],
     "stateMutability": "view",
     "type": "function"
+  },
+  {
+    "inputs": [{ "name": "index", "type": "uint256" }],
+    "name": "tokenByIndex",
+    "outputs": [{ "name": "", "type": "bytes32" }],
+    "stateMutability": "view",
+    "type": "function"
   }
 ];
 
@@ -208,7 +215,6 @@ class ConfigurationService {
             throw new Error('Fetched data is not a valid setlist object.');
         }
 
-        // --- MIGRATION LOGIC ---
         if (typeof setlist === 'object' && setlist !== null && !setlist.globalUserMidiMap) {
           if (import.meta.env.DEV) console.log(`${logPrefix} Old setlist format detected. Attempting to migrate MIDI map.`);
           const defaultWorkspaceName = setlist.defaultWorkspaceName || Object.keys(setlist.workspaces)[0];
@@ -220,7 +226,6 @@ class ConfigurationService {
               }
           }
         }
-        // --- END MIGRATION LOGIC ---
 
         if (import.meta.env.DEV) console.log(`${logPrefix} Successfully loaded and parsed setlist.`);
         return setlist;
@@ -442,24 +447,55 @@ class ConfigurationService {
               functionName: "totalSupply",
           });
           const totalAsNumber = Number(total);
-          
-          const allTokenIndices = Array.from({ length: totalAsNumber }, (_, i) => i);
-          
-          if (import.meta.env.DEV) console.log(`${logPrefix} Found ${totalAsNumber} total tokens. Returning indices.`);
-          return allTokenIndices;
+
+          if (import.meta.env.DEV) console.log(`${logPrefix} Contract reports totalSupply: ${totalAsNumber}.`);
+          if (totalAsNumber === 0) return [];
+
+          const tokenByIndexPromises = [];
+          for (let i = 0; i < totalAsNumber; i++) {
+              tokenByIndexPromises.push(
+                  this.publicClient.readContract({
+                      address: checksummedCollectionAddr,
+                      abi: LSP8_ABI,
+                      functionName: "tokenByIndex",
+                      args: [BigInt(i)],
+                  })
+              );
+          }
+
+          if (import.meta.env.DEV) console.log(`${logPrefix} Fetching all ${totalAsNumber} token IDs via tokenByIndex...`);
+          const tokenIds = await Promise.all(tokenByIndexPromises);
+
+          if (import.meta.env.DEV) console.log(`${logPrefix} Successfully fetched token IDs:`, tokenIds);
+          return tokenIds.filter(Boolean);
       } catch (error) {
-          if (import.meta.env.DEV) console.error(`${logPrefix} Failed to fetch all tokens. Does contract have 'totalSupply'?`, error);
+          if (import.meta.env.DEV) console.error(`${logPrefix} Failed to fetch all tokens. The contract may not support 'totalSupply' or 'tokenByIndex'. Error:`, error.shortMessage || error.message);
           return [];
       }
   }
 
   async getTokenMetadata(collectionAddress, tokenId) {
-    const logPrefix = `[CS getTokenMetadata]`;
+    const logPrefix = `[CS getTokenMetadata Addr:${collectionAddress.slice(0, 10)} TokenId:${typeof tokenId === 'string' ? tokenId.slice(0, 10) : tokenId}]`;
+    if (import.meta.env.DEV) console.log(`${logPrefix} --- START METADATA FETCH ---`);
+    
     const checksummedCollectionAddr = getChecksumAddressSafe(collectionAddress);
     
     if (!this.checkReadyForRead() || !checksummedCollectionAddr) {
         if (import.meta.env.DEV) console.warn(`${logPrefix} Client not ready or invalid collection address.`);
         return null;
+    }
+    
+    if (tokenId === 'LSP7_TOKEN') {
+      if (import.meta.env.DEV) console.log(`${logPrefix} LSP7 asset detected. Fetching collection-level LSP4 metadata.`);
+      try {
+        const metadata = await this.getLSP4CollectionMetadata(collectionAddress);
+        if (metadata) {
+          return { name: metadata.name || 'LSP7 Token', image: metadata.image || null };
+        }
+      } catch (error) {
+        if (import.meta.env.DEV) console.error(`${logPrefix} Error fetching LSP7 collection metadata for ${collectionAddress}:`, error);
+      }
+      return { name: 'LSP7 Token', image: null };
     }
 
     try {
@@ -467,6 +503,8 @@ class ConfigurationService {
       const metadataUriBytes = await this.publicClient.readContract({
           address: checksummedCollectionAddr, abi: LSP8_ABI, functionName: "getDataForTokenId", args: [tokenId, lsp4Key]
       }).catch(() => null);
+
+      if (import.meta.env.DEV) console.log(`${logPrefix} Raw LSP4Metadata bytes from getDataForTokenId:`, metadataUriBytes);
 
       if (metadataUriBytes && metadataUriBytes !== '0x') {
         const decodedString = hexToUtf8Safe(metadataUriBytes);
@@ -490,6 +528,8 @@ class ConfigurationService {
             address: checksummedCollectionAddr, abi: LSP8_ABI, functionName: "getData", args: [baseUriKey]
         }).catch(() => null);
 
+        if (import.meta.env.DEV) console.log(`${logPrefix} Fallback check for BaseURI bytes:`, baseUriBytes);
+
         if (baseUriBytes && baseUriBytes !== '0x') {
           const decodedBaseUri = decodeVerifiableUriBytes(baseUriBytes);
           if (decodedBaseUri) {
@@ -503,6 +543,8 @@ class ConfigurationService {
         if (import.meta.env.DEV) console.log(`${logPrefix} No metadata URI found for tokenId ${tokenId.slice(0,10)}...`);
         return null;
       }
+      
+      if (import.meta.env.DEV) console.log(`${logPrefix} Final metadata URL to be fetched:`, finalMetadataUrl);
       
       let fetchableUrl = finalMetadataUrl;
       if (fetchableUrl.startsWith('ipfs://')) {
@@ -522,25 +564,51 @@ class ConfigurationService {
       const contentType = response.headers.get("content-type");
 
       if (contentType && contentType.includes("application/json")) {
-          const metadata = await response.json();
-          const lsp4Data = metadata.LSP4Metadata || metadata;
-          const name = lsp4Data.name || 'Unnamed Token';
-          const rawUrl = lsp4Data.images?.[0]?.[0]?.url || lsp4Data.icon?.[0]?.url || lsp4Data.assets?.[0]?.url;
-          let imageUrl = null;
+          const rawResponseText = await response.text();
+          if (import.meta.env.DEV) console.log(`${logPrefix} Raw response text from metadata URL:`, rawResponseText.substring(0, 500) + '...');
+
+          const metadata = JSON.parse(rawResponseText);
+          if (import.meta.env.DEV) console.log(`${logPrefix} Parsed metadata JSON:`, metadata);
           
-          if (rawUrl && typeof rawUrl === 'string') {
-            const trimmedUrl = rawUrl.trim();
-            if (trimmedUrl.startsWith('ipfs://')) {
-                imageUrl = `${IPFS_GATEWAY}${trimmedUrl.slice(7)}`;
-            } else if (trimmedUrl.startsWith('http') || trimmedUrl.startsWith('data:')) {
-                imageUrl = trimmedUrl;
-            }
+          const lsp4Data = metadata.LSP4Metadata || metadata;
+          if (import.meta.env.DEV) console.log(`${logPrefix} Extracted LSP4Metadata object:`, lsp4Data);
+          
+          const name = lsp4Data.name || 'Unnamed Token';
+
+          let imageUrl = null;
+          const imageAsset = lsp4Data.images?.[0]?.[0] || lsp4Data.icon?.[0] || lsp4Data.assets?.[0];
+          if (import.meta.env.DEV) console.log(`${logPrefix} Found image asset object:`, imageAsset);
+
+          if (imageAsset && imageAsset.url) {
+              let rawUrl = imageAsset.url.trim();
+              if (rawUrl.startsWith('ipfs://')) {
+                  imageUrl = `${IPFS_GATEWAY}${rawUrl.slice(7)}`;
+              } else if (rawUrl.startsWith('http') || rawUrl.startsWith('data:')) {
+                  imageUrl = rawUrl;
+              }
+
+              if (imageUrl && imageAsset.verification) {
+                  const { method, data } = imageAsset.verification;
+                  if (method && data) {
+                      const params = new URLSearchParams();
+                      params.append('method', method);
+                      params.append('data', data);
+                      imageUrl = `${imageUrl}?${params.toString()}`;
+                      if (import.meta.env.DEV) console.log(`${logPrefix} Appended verification params to URL.`);
+                  }
+              }
           }
+          
+          if (import.meta.env.DEV) console.log(`${logPrefix} Final resolved image URL:`, imageUrl);
+          if (import.meta.env.DEV) console.log(`${logPrefix} --- END METADATA FETCH ---`);
           return { name, image: imageUrl };
+
       } else if (contentType && contentType.startsWith("image/")) {
           const tokenIdNum = Number(BigInt(tokenId));
           const name = `Token #${tokenIdNum}`;
           const imageUrl = fetchableUrl;
+          if (import.meta.env.DEV) console.log(`${logPrefix} Direct image content type found. URL:`, imageUrl);
+          if (import.meta.env.DEV) console.log(`${logPrefix} --- END METADATA FETCH ---`);
           return { name, image: imageUrl };
       } else {
           throw new Error(`Unsupported content type: ${contentType}`);
@@ -548,6 +616,7 @@ class ConfigurationService {
 
     } catch (error) {
         if (import.meta.env.DEV) console.error(`${logPrefix} Error getting metadata for tokenId ${tokenId.slice(0,10)} in collection ${collectionAddress.slice(0,6)}...:`, error.message);
+        if (import.meta.env.DEV) console.log(`${logPrefix} --- END METADATA FETCH (WITH ERROR) ---`);
         return null;
     }
   }
@@ -565,9 +634,7 @@ class ConfigurationService {
     if (pageIdentifiers.length === 0) return [];
 
     const metadataFetchPromises = pageIdentifiers.map(async (identifier) => {
-        const tokenId = typeof identifier === 'number'
-            ? '0x' + identifier.toString(16).padStart(64, '0')
-            : identifier;
+        const tokenId = identifier;
         
         const metadata = await this.getTokenMetadata(collectionAddress, tokenId);
         return metadata ? { originalIdentifier: identifier, tokenId, metadata } : null;
@@ -582,9 +649,11 @@ class ConfigurationService {
       const { tokenId, metadata } = result.value;
       if (!metadata?.image) return null;
 
+      const uniqueId = `${collectionAddress}-${tokenId}`;
+
       return {
-          id: `${collectionAddress}-${tokenId}`,
-          type: 'owned',
+          id: uniqueId,
+          type: tokenId === 'LSP7_TOKEN' ? 'LSP7' : 'owned',
           address: collectionAddress,
           tokenId: tokenId,
           metadata: { name: metadata.name || 'Unnamed', image: metadata.image },

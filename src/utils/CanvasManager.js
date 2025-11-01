@@ -61,6 +61,12 @@ class CanvasManager {
 
     tokenA_id = null;
     tokenB_id = null;
+    
+    // === START: OBJECT POOLING PROPERTIES ===
+    _morphedConfig = {};
+    _morphedDriftState = { x: 0, y: 0 };
+    _morphedAngle = 0;
+    // === END: OBJECT POOLING PROPERTIES ===
 
     constructor(canvasA, canvasB, layerId) {
         if (!canvasA || !(canvasA instanceof HTMLCanvasElement) || !canvasB || !(canvasB instanceof HTMLCanvasElement)) {
@@ -92,6 +98,10 @@ class CanvasManager {
 
         this.driftStateA = { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
         this.driftStateB = { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
+        
+        // === START: OBJECT POOLING INITIALIZATION ===
+        this._morphedConfig = this.getDefaultConfig();
+        // === END: OBJECT POOLING INITIALIZATION ===
 
         this.interpolators = {};
         this.interpolatorsB = {};
@@ -124,12 +134,7 @@ class CanvasManager {
             if (interpolator && value !== undefined) interpolator.snap(value);
         });
 
-        // --- THIS IS THE FIX: Symmetrical reset for Deck B ---
-        // When applying a full new configuration (like from a scene snapshot),
-        // the new 'angle' property already contains the live rotation. We must reset
-        // the continuous rotation counter to prevent a visual jump.
         this.continuousRotationAngleB = 0;
-        // --- END FIX ---
 
         if (this.tokenB_id === tokenId) {
             return;
@@ -235,9 +240,7 @@ class CanvasManager {
         
         this.driftStateA = newConfig?.driftState || { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
         
-        // --- THIS IS THE FIX: Symmetrical reset for Deck A ---
         this.continuousRotationAngleA = 0;
-        // --- END FIX ---
 
         Object.keys(this.interpolators).forEach(key => this.interpolators[key]?.snap(this.configA[key]));
         this.handleEnabledToggle(this.configA.enabled);
@@ -405,36 +408,51 @@ class CanvasManager {
             this.ctxA.clearRect(0, 0, this.canvasA.width, this.canvasA.height);
             this.ctxB.clearRect(0, 0, this.canvasB.width, this.canvasB.height);
             const t = this.crossfadeValue;
+
             const liveConfigA = { ...this.configA };
-            const liveConfigB = { ...this.configB };
+            const liveConfigB = this.configB ? { ...this.configB } : null;
+
             for (const key in this.interpolators) liveConfigA[key] = this.playbackValues[key] ?? this.interpolators[key].getCurrentValue();
             if (liveConfigB) for (const key in this.interpolatorsB) liveConfigB[key] = this.interpolatorsB[key].getCurrentValue();
             
-            const morphedConfig = { ...liveConfigA };
-            const morphedDrift = { ...this.driftStateA };
-            let morphedAngle = this.continuousRotationAngleA;
-
+            // --- START: OBJECT POOLING REPLACEMENT ---
+            // Instead of creating new objects, we now mutate our pre-allocated ones.
             if (liveConfigA && liveConfigB) {
+                // Interpolate all numeric properties
                 for (const key in liveConfigA) {
                     if (typeof liveConfigA[key] === 'number' && typeof liveConfigB[key] === 'number') {
-                        morphedConfig[key] = lerp(liveConfigA[key], liveConfigB[key], t);
+                        this._morphedConfig[key] = lerp(liveConfigA[key], liveConfigB[key], t);
+                    } else {
+                        // For non-numeric properties (like blendMode), just take from the dominant side
+                        this._morphedConfig[key] = t < 0.5 ? liveConfigA[key] : liveConfigB[key];
                     }
                 }
-                morphedDrift.x = lerp(this.driftStateA.x, this.driftStateB.x, t);
-                morphedDrift.y = lerp(this.driftStateA.y, this.driftStateB.y, t);
+                
+                // Interpolate drift and angle
+                this._morphedDriftState.x = lerp(this.driftStateA.x, this.driftStateB.x, t);
+                this._morphedDriftState.y = lerp(this.driftStateA.y, this.driftStateB.y, t);
+                
                 let angleA = this.continuousRotationAngleA;
                 let angleB = this.continuousRotationAngleB;
-                if (angleB - angleA > 180) angleA += 360;
-                else if (angleB - angleA < -180) angleA -= 360;
-                morphedAngle = lerp(angleA, angleB, t);
+                if (angleB - angleA > 180) angleA += 360; else if (angleB - angleA < -180) angleA -= 360;
+                this._morphedAngle = lerp(angleA, angleB, t);
+
+            } else {
+                // If there's no Deck B, just use Deck A's values
+                Object.assign(this._morphedConfig, liveConfigA);
+                Object.assign(this._morphedDriftState, this.driftStateA);
+                this._morphedAngle = this.continuousRotationAngleA;
             }
 
             if (this.imageA && liveConfigA?.enabled) {
-                this._drawFrame(this.ctxA, this.imageA, morphedConfig, morphedAngle, morphedDrift);
+                // Use the reused objects for drawing
+                this._drawFrame(this.ctxA, this.imageA, this._morphedConfig, this._morphedAngle, this._morphedDriftState);
             }
             if (this.imageB && liveConfigB?.enabled) {
-                this._drawFrame(this.ctxB, this.imageB, morphedConfig, morphedAngle, morphedDrift);
+                // Use the SAME reused objects for drawing Deck B's canvas (they contain the same interpolated state)
+                this._drawFrame(this.ctxB, this.imageB, this._morphedConfig, this._morphedAngle, this._morphedDriftState);
             }
+            // --- END: OBJECT POOLING REPLACEMENT ---
 
         } catch (e) {
             if (import.meta.env.DEV) console.error(`[CM L${this.layerId}] draw: Unexpected draw error:`, e);

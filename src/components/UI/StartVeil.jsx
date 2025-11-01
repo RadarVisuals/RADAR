@@ -2,7 +2,7 @@
 import React, { useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import R_WEBP_ASSET from "../../assets/R.webp";
-import './StartVeil.css';
+import './Startveil.css';
 
 const StartVeil = ({ onStart }) => {
   const logoRef = useRef(null);

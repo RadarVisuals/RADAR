@@ -1,15 +1,18 @@
 // src/context/UserSessionContext.jsx
-import React, { createContext, useContext, useState, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useState, useMemo, useCallback, useEffect } from 'react';
 import PropTypes from 'prop-types';
 
 import { useUpProvider } from './UpProvider'; // Local context
 import { RADAR_OFFICIAL_ADMIN_ADDRESS } from '../config/global-config.js'; // Local config
 
 import { isAddress } from 'viem'; // Third-party utility
+import { ERC725 } from '@erc725/erc725.js';
+import lsp3ProfileSchema from '@erc725/erc725.js/schemas/LSP3ProfileMetadata.json';
+import { IPFS_GATEWAY } from '../config/global-config';
 
 export const defaultUserSessionContextValue = {
   hostProfileAddress: null,
-  visitorProfileAddress: null,
+  loggedInUserUPAddress: null,
   isHostProfileOwner: false,
   isRadarProjectAdmin: false,
   isPreviewMode: false,
@@ -24,37 +27,65 @@ export const defaultUserSessionContextValue = {
 const UserSessionContext = createContext(defaultUserSessionContextValue);
 
 export const UserSessionProvider = ({ children }) => {
-  const { accounts, contextAccounts } = useUpProvider();
+  const { accounts, contextAccounts, publicClient } = useUpProvider();
   const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [isHostProfileOwner, setIsHostProfileOwner] = useState(false);
+  
+  // --- START OF FIX: State to capture the logged-in user's own UP address ---
+  const [loggedInUserUPAddress, setLoggedInUserUPAddress] = useState(null);
+  // --- END OF FIX ---
 
-  // --- START: CORRECTED LOGIC ---
   const hostProfileAddress = useMemo(() => {
-    // The profile being viewed (the "host") is always the one provided by the extension's context.
     if (contextAccounts && contextAccounts.length > 0 && isAddress(contextAccounts[0])) {
       return contextAccounts[0];
     }
     return null;
   }, [contextAccounts]);
 
-  const visitorProfileAddress = useMemo(() => {
-    // The "visitor's" identity is also their active Universal Profile from the context.
-    // In this app's design, the host and visitor are the same entity.
-    if (contextAccounts && contextAccounts.length > 0 && isAddress(contextAccounts[0])) {
-      return contextAccounts[0];
-    }
-    return null;
-  }, [contextAccounts]);
+  // This effect correctly determines if the connected user owns the viewed profile.
+  useEffect(() => {
+    const controllerAddress = accounts && accounts.length > 0 ? accounts[0] : null;
+    const profileAddress = hostProfileAddress;
 
-  const isHostProfileOwner = useMemo(() => {
-    // For the UI, we determine "ownership" by checking if a controller wallet (EOA) is connected.
-    // The UP extension ensures this EOA has permissions for the active UP (hostProfileAddress).
-    const hasController = accounts && accounts.length > 0 && isAddress(accounts[0]);
-    return !!hasController && !!hostProfileAddress;
-  }, [accounts, hostProfileAddress]);
-  // --- END: CORRECTED LOGIC ---
+    if (!controllerAddress || !profileAddress || !publicClient) {
+      setIsHostProfileOwner(false);
+      return;
+    }
+
+    const checkOwnership = async () => {
+      try {
+        if (controllerAddress.toLowerCase() === profileAddress.toLowerCase()) {
+            setIsHostProfileOwner(true);
+            return;
+        }
+        const erc725 = new ERC725(lsp3ProfileSchema, profileAddress, publicClient.transport.url, { ipfsGateway: IPFS_GATEWAY });
+        const permissions = await erc725.getPermissions(controllerAddress);
+        const hasSuperSetData = ERC725.decodePermissions(permissions).SUPER_SETDATA;
+        setIsHostProfileOwner(hasSuperSetData);
+      } catch (error) {
+        setIsHostProfileOwner(false);
+      }
+    };
+    checkOwnership();
+  }, [accounts, hostProfileAddress, publicClient]);
+  
+  // --- START OF FIX: Effect to capture and retain the logged-in user's UP address ---
+  useEffect(() => {
+    // When the user is confirmed as the owner of the current profile,
+    // we know that `hostProfileAddress` is their own address. We capture it.
+    if (isHostProfileOwner && hostProfileAddress) {
+      setLoggedInUserUPAddress(hostProfileAddress);
+    }
+    
+    // If the user disconnects entirely (no controlling accounts), clear their UP address.
+    if (accounts && accounts.length === 0) {
+      setLoggedInUserUPAddress(null);
+    }
+  }, [isHostProfileOwner, hostProfileAddress, accounts]);
+  // --- END OF FIX ---
 
   const isRadarProjectAdmin = useMemo(() => {
-    if (!visitorProfileAddress || !RADAR_OFFICIAL_ADMIN_ADDRESS) return false;
+    if (!loggedInUserUPAddress || !isHostProfileOwner) return false;
     
     if (!isAddress(RADAR_OFFICIAL_ADMIN_ADDRESS)) {
         if (import.meta.env.DEV) {
@@ -62,8 +93,8 @@ export const UserSessionProvider = ({ children }) => {
         }
         return false;
     }
-    return visitorProfileAddress.toLowerCase() === RADAR_OFFICIAL_ADMIN_ADDRESS.toLowerCase();
-  }, [visitorProfileAddress]);
+    return loggedInUserUPAddress.toLowerCase() === RADAR_OFFICIAL_ADMIN_ADDRESS.toLowerCase();
+  }, [loggedInUserUPAddress, isHostProfileOwner]);
 
   const canSaveToHostProfile = useMemo(() => {
     return isHostProfileOwner && !isPreviewMode;
@@ -74,19 +105,18 @@ export const UserSessionProvider = ({ children }) => {
   }, []);
 
   const contextValue = useMemo(() => {
-    const val = {
+    return {
       hostProfileAddress,
-      visitorProfileAddress,
+      loggedInUserUPAddress,
       isHostProfileOwner,
       isRadarProjectAdmin,
       isPreviewMode,
       canSaveToHostProfile,
       togglePreviewMode,
     };
-    return val;
   }, [
     hostProfileAddress,
-    visitorProfileAddress,
+    loggedInUserUPAddress,
     isHostProfileOwner,
     isRadarProjectAdmin,
     isPreviewMode,

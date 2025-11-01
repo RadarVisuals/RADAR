@@ -47,7 +47,7 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
 
   const { updateTokenAssignment } = useVisualEngineContext();
 
-  const { visitorProfileAddress } = useUserSession();
+  const { visitorProfileAddress, isHostProfileOwner } = useUserSession();
 
   const isMountedRef = useRef(false);
   const hasFetchedInitialIdentifiers = useRef(false);
@@ -69,6 +69,22 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
   }, []);
 
   const userPalettes = useMemo(() => stagedActiveWorkspace?.userPalettes || {}, [stagedActiveWorkspace]);
+  const userLibrary = useMemo(() => stagedActiveWorkspace?.personalCollectionLibrary || [], [stagedActiveWorkspace]);
+
+  const combinedCollectionLibrary = useMemo(() => {
+    const collectionMap = new Map();
+    (officialWhitelist || []).forEach(c => {
+        if (c && c.address) {
+            collectionMap.set(c.address.toLowerCase(), { ...c, isOfficial: true });
+        }
+    });
+    (userLibrary || []).forEach(c => {
+        if (c && c.address && !collectionMap.has(c.address.toLowerCase())) {
+            collectionMap.set(c.address.toLowerCase(), { ...c, isOfficial: false });
+        }
+    });
+    return Array.from(collectionMap.values());
+  }, [officialWhitelist, userLibrary]);
 
   const paletteTokens = useMemo(() => {
     const palettes = {};
@@ -87,8 +103,8 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
   }, [loadedTokens, demoTokens, userPalettes]);
   
   const sortedCollectionLibrary = useMemo(() => {
-    if (!Array.isArray(officialWhitelist)) return [];
-    return [...officialWhitelist].sort((a, b) => {
+    if (!Array.isArray(combinedCollectionLibrary)) return [];
+    return [...combinedCollectionLibrary].sort((a, b) => {
       if (collectionSort === 'name') {
         return (a.name || '').localeCompare(b.name || '');
       }
@@ -97,7 +113,7 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
       }
       return 0;
     });
-  }, [officialWhitelist, collectionSort]);
+  }, [combinedCollectionLibrary, collectionSort]);
 
   useEffect(() => {
     const initialHasMore = {};
@@ -213,17 +229,17 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
 
   const renderTokenItem = useCallback((token, { onAddToPalette, onRemoveFromPalette, paletteName } = {}) => {
     const tokenImageSrc = token.metadata?.image ?? '';
-    if (!tokenImageSrc) return null;
+    
     return (
       <div className={`token-item ${selectedTokens[selectedLayer] === tokenImageSrc ? "selected" : ""}`} onMouseDown={(e) => handleTokenMouseDown(token, e)} onMouseUp={handleMouseUp} title={token.metadata.name}>
         <div className="token-image-container">
           <LazyLoadImage src={tokenImageSrc} alt={token.metadata.name} className="token-image" />
         </div>
-        {onAddToPalette && (<button className="add-to-palette-btn" onClick={(e) => { e.stopPropagation(); onAddToPalette(token); }} onMouseDown={(e) => e.stopPropagation()} title="Add to Palette">+</button>)}
-        {onRemoveFromPalette && paletteName && (<button className="remove-from-palette-btn" onClick={(e) => { e.stopPropagation(); onRemoveFromPalette(paletteName, token.id); }} onMouseDown={(e) => e.stopPropagation()} title="Remove from Palette">-</button>)}
+        {onAddToPalette && isHostProfileOwner && (<button className="add-to-palette-btn" onClick={(e) => { e.stopPropagation(); onAddToPalette(token); }} onMouseDown={(e) => e.stopPropagation()} title="Add to Palette">+</button>)}
+        {onRemoveFromPalette && paletteName && isHostProfileOwner && (<button className="remove-from-palette-btn" onClick={(e) => { e.stopPropagation(); onRemoveFromPalette(paletteName, token.id); }} onMouseDown={(e) => e.stopPropagation()} title="Remove from Palette">-</button>)}
       </div>
     );
-  }, [selectedLayer, selectedTokens, handleTokenMouseDown, handleMouseUp]);
+  }, [selectedLayer, selectedTokens, handleTokenMouseDown, handleMouseUp, isHostProfileOwner]);
 
   const overlayClassName = `overlay token-selector-overlay ${internalIsOpen || animationState === 'exiting' ? 'visible' : ''} state-${animationState} ${isPreviewMode ? 'preview-mode' : ''}`;
   if (!isOpen && animationState === 'hidden') return null;
@@ -246,8 +262,13 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
           <div className="token-display-area" ref={tokenDisplayAreaRef}>
             <div className="token-section palette-section">
               <div className="token-section-header"><h3>My Palettes</h3></div>
-              <div className="create-palette-form"><input type="text" value={newPaletteName} onChange={(e) => setNewPaletteName(e.target.value)} placeholder="New Palette Name" className="form-control" /><button onClick={handleCreatePalette} className="btn btn-sm" disabled={!newPaletteName.trim()}>Create</button></div>
-              {Object.keys(userPalettes).length > 0 ? (Object.keys(userPalettes).map(paletteName => (<div key={paletteName} className="collection-group"><div className="collection-header"><button onClick={() => toggleSection(paletteName)} className="collection-toggle-button">{paletteName} ({paletteTokens[paletteName]?.length || 0})<span className={`chevron ${expandedSections[paletteName] ? 'expanded' : ''}`}>›</span></button><button onClick={() => handleRemovePalette(paletteName)} className="delete-palette-btn" title={`Delete "${paletteName}" palette`}>🗑️</button></div>{expandedSections[paletteName] && (<TokenGrid scrollContainerRef={tokenDisplayAreaRef} tokens={paletteTokens[paletteName] || []} renderTokenItem={(token) => renderTokenItem(token, { onRemoveFromPalette: handleRemoveTokenFromPalette, paletteName })} hasMore={false} onLoadMore={()=>{}} isLoading={false} />)}</div>))) : <p className="no-items-message">Create a palette to organize tokens.</p>}
+              {isHostProfileOwner && (
+                <div className="create-palette-form">
+                  <input type="text" value={newPaletteName} onChange={(e) => setNewPaletteName(e.target.value)} placeholder="New Palette Name" className="form-control" />
+                  <button onClick={handleCreatePalette} className="btn btn-sm" disabled={!newPaletteName.trim()}>Create</button>
+                </div>
+              )}
+              {Object.keys(userPalettes).length > 0 ? (Object.keys(userPalettes).map(paletteName => (<div key={paletteName} className="collection-group"><div className="collection-header"><button onClick={() => toggleSection(paletteName)} className="collection-toggle-button">{paletteName} ({paletteTokens[paletteName]?.length || 0})<span className={`chevron ${expandedSections[paletteName] ? 'expanded' : ''}`}>›</span></button>{isHostProfileOwner && (<button onClick={() => handleRemovePalette(paletteName)} className="delete-palette-btn" title={`Delete "${paletteName}" palette`}>🗑️</button>)}</div>{expandedSections[paletteName] && (<TokenGrid scrollContainerRef={tokenDisplayAreaRef} tokens={paletteTokens[paletteName] || []} renderTokenItem={(token) => renderTokenItem(token, { onRemoveFromPalette: handleRemoveTokenFromPalette, paletteName })} hasMore={false} onLoadMore={()=>{}} isLoading={false} />)}</div>))) : <p className="no-items-message">Create a palette to organize tokens.</p>}
             </div>
             <div className="token-section">
               <div className="token-section-header"><h3>My Collections</h3><div className="sort-controls"><label htmlFor="collection-sort">Sort by:</label><select id="collection-sort" value={collectionSort} onChange={(e) => setCollectionSort(e.target.value)} className="custom-select custom-select-sm"><option value="name">Name</option><option value="addedAt">Date Added</option></select></div></div>
@@ -259,7 +280,7 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
           </div>
         </div>
       </div>
-      {paletteModalState.isOpen && (<div className="palette-modal-overlay" onClick={(e) => { e.stopPropagation(); setPaletteModalState({ isOpen: false, token: null }); }}><div className="palette-modal-content" onClick={(e) => e.stopPropagation()}><h4>Add to Palette</h4>{Object.keys(userPalettes).length > 0 ? (<div className="palette-list">{Object.keys(userPalettes).map(paletteName => (<button key={paletteName} onClick={() => handleSelectPaletteForToken(paletteName)} className="btn btn-block">{paletteName}</button>))}</div>) : <p>No palettes created yet.</p>}</div></div>)}
+      {paletteModalState.isOpen && isHostProfileOwner && (<div className="palette-modal-overlay" onClick={(e) => { e.stopPropagation(); setPaletteModalState({ isOpen: false, token: null }); }}><div className="palette-modal-content" onClick={(e) => e.stopPropagation()}><h4>Add to Palette</h4>{Object.keys(userPalettes).length > 0 ? (<div className="palette-list">{Object.keys(userPalettes).map(paletteName => (<button key={paletteName} onClick={() => handleSelectPaletteForToken(paletteName)} className="btn btn-block">{paletteName}</button>))}</div>) : <p>No palettes created yet.</p>}</div></div>)}
     </div>
   );
 };

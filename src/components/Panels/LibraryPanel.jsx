@@ -1,5 +1,5 @@
 // src/components/Panels/LibraryPanel.jsx
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import PropTypes from "prop-types";
 import Panel from "./Panel";
 import { useUserSession } from "../../context/UserSessionContext";
@@ -21,186 +21,285 @@ const formatAddress = (address, length = 4) => {
   return `${address.substring(0, displayLength + 2)}...${address.substring(address.length - displayLength)}`;
 };
 
+const CollectionCard = ({ collection, onRemove, canRemove }) => {
+    const renderImage = () => {
+        const imgTag = (
+            <img 
+                src={collection.imageUrl || `https://via.placeholder.com/80/252525/00f3ff.png?text=${collection.name?.charAt(0)?.toUpperCase() || "?"}`} 
+                alt={collection.name || "Collection"} 
+            />
+        );
+
+        if (collection.linkUrl) {
+            return (
+                <a 
+                    href={collection.linkUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="collection-link"
+                    title={`Visit ${collection.name}`}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    {imgTag}
+                </a>
+            );
+        }
+        return imgTag;
+    };
+
+    return (
+        <div className="collection-card">
+            <div className={`collection-image ${collection.linkUrl ? 'is-clickable' : ''}`}>
+                {renderImage()}
+            </div>
+            <div className="collection-info">
+                <h4 className="collection-name" title={collection.name}>{collection.name || "Unnamed"}</h4>
+                <div className="collection-address" title={collection.address}>{formatAddress(collection.address)}</div>
+            </div>
+            {canRemove && (
+                <button className="remove-button btn-icon" onClick={() => onRemove(collection.address)} title={`Remove ${collection.name}`} disabled={!canRemove}>✕</button>
+            )}
+        </div>
+    );
+};
+
+CollectionCard.propTypes = {
+  collection: PropTypes.object.isRequired,
+  onRemove: PropTypes.func,
+  canRemove: PropTypes.bool,
+};
+
 const LibraryPanel = ({ onClose }) => {
-  const { isRadarProjectAdmin } = useUserSession();
-  const { configServiceRef } = useWorkspaceContext();
+  const { isRadarProjectAdmin, isHostProfileOwner } = useUserSession();
+  const {
+    stagedActiveWorkspace,
+    addCollectionToPersonalLibrary,
+    removeCollectionFromPersonalLibrary,
+    configServiceRef,
+  } = useWorkspaceContext();
   const { officialWhitelist, refreshOfficialWhitelist } = useAssetContext();
   const { addToast } = useToast();
+  
+  const userLibrary = useMemo(() => stagedActiveWorkspace?.personalCollectionLibrary || [], [stagedActiveWorkspace]);
 
-  const [stagedWhitelist, setStagedWhitelist] = useState([]);
-  const [hasChanges, setHasChanges] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [newCollection, setNewCollection] = useState({ address: "", name: "", imageUrl: "" });
-  const [error, setError] = useState("");
-  const statusTimerRef = useRef(null);
+  const [newUserCollection, setNewUserCollection] = useState({ address: "", name: "", imageUrl: "" });
+  const [userError, setUserError] = useState("");
+  const userStatusTimerRef = useRef(null);
+  
+  const [stagedAdminWhitelist, setStagedAdminWhitelist] = useState([]);
+  const [hasAdminChanges, setHasAdminChanges] = useState(false);
+  const [isSavingAdmin, setIsSavingAdmin] = useState(false);
+  const [adminError, setAdminError] = useState("");
+  const [newAdminCollection, setNewAdminCollection] = useState({ address: "", name: "", imageUrl: "", linkUrl: "" });
+  const adminStatusTimerRef = useRef(null);
 
   useEffect(() => {
-    setStagedWhitelist(officialWhitelist || []);
-    setHasChanges(false);
-  }, [officialWhitelist]);
-
-  const displayError = useCallback((message, duration = 4000) => {
-    setError(message);
-    if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
-    if (duration > 0) {
-      statusTimerRef.current = setTimeout(() => setError(""), duration);
+    if (isRadarProjectAdmin) {
+      setStagedAdminWhitelist(officialWhitelist || []);
+      setHasAdminChanges(false);
     }
+  }, [officialWhitelist, isRadarProjectAdmin]);
+
+  const displayUserError = useCallback((message, duration = 4000) => {
+    setUserError(message);
+    if (userStatusTimerRef.current) clearTimeout(userStatusTimerRef.current);
+    if (duration > 0) userStatusTimerRef.current = setTimeout(() => setUserError(""), duration);
   }, []);
 
-  useEffect(() => () => { if (statusTimerRef.current) clearTimeout(statusTimerRef.current) }, []);
-
-  const handleInputChange = useCallback((e) => {
+  const handleUserInputChange = useCallback((e) => {
     const { name, value } = e.target;
-    setNewCollection((prev) => ({ ...prev, [name]: value }));
+    setNewUserCollection((prev) => ({ ...prev, [name]: value }));
   }, []);
 
-  const handleAddCollection = useCallback(() => {
-    const addressToAdd = newCollection.address.trim();
-    const nameToAdd = newCollection.name.trim();
+  const handleAddUserCollection = useCallback(() => {
+    const addressToAdd = newUserCollection.address.trim();
+    const nameToAdd = newUserCollection.name.trim();
 
-    if (!addressToAdd || !nameToAdd) { displayError("Address and Name are required."); return; }
-    if (!isAddress(addressToAdd)) { displayError("Invalid address format."); return; }
-    if ((stagedWhitelist || []).some(c => c.address.toLowerCase() === addressToAdd.toLowerCase())) {
-        displayError("This collection is already in the whitelist.");
+    if (!addressToAdd || !nameToAdd) { displayUserError("Address and Name are required."); return; }
+    if (!isAddress(addressToAdd)) { displayUserError("Invalid address format."); return; }
+    
+    const isAlreadyInOfficial = officialWhitelist.some(c => c.address.toLowerCase() === addressToAdd.toLowerCase());
+    const isAlreadyInUser = userLibrary.some(c => c.address.toLowerCase() === addressToAdd.toLowerCase());
+    
+    if (isAlreadyInOfficial || isAlreadyInUser) {
+        displayUserError("This collection is already in a library.");
         return;
     }
     
-    setStagedWhitelist(prev => [...(prev || []), {
+    addCollectionToPersonalLibrary({
       address: addressToAdd,
       name: nameToAdd,
-      imageUrl: newCollection.imageUrl.trim() || null,
-    }]);
-    setNewCollection({ address: "", name: "", imageUrl: "" });
-    setHasChanges(true);
-  }, [newCollection, stagedWhitelist, displayError]);
+      imageUrl: newUserCollection.imageUrl.trim() || null,
+    });
+    setNewUserCollection({ address: "", name: "", imageUrl: "" });
+  }, [newUserCollection, userLibrary, officialWhitelist, addCollectionToPersonalLibrary, displayUserError]);
 
-  const handleRemoveCollection = useCallback((addressToRemove) => {
-    setStagedWhitelist(prev => (prev || []).filter(c => c.address.toLowerCase() !== addressToRemove.toLowerCase()));
-    setHasChanges(true);
+  const displayAdminError = useCallback((message, duration = 4000) => {
+    setAdminError(message);
+    if (adminStatusTimerRef.current) clearTimeout(adminStatusTimerRef.current);
+    if (duration > 0) adminStatusTimerRef.current = setTimeout(() => setAdminError(""), duration);
+  }, []);
+  
+  const handleAdminInputChange = useCallback((e) => {
+    const { name, value } = e.target;
+    setNewAdminCollection((prev) => ({ ...prev, [name]: value }));
+  }, []);
+
+  const handleAdminAddCollection = useCallback(() => {
+    const addressToAdd = newAdminCollection.address.trim();
+    const nameToAdd = newAdminCollection.name.trim();
+
+    if (!addressToAdd || !nameToAdd) { displayAdminError("Address and Name are required."); return; }
+    if (!isAddress(addressToAdd)) { displayAdminError("Invalid address format."); return; }
+    if (stagedAdminWhitelist.some(c => c.address.toLowerCase() === addressToAdd.toLowerCase())) {
+        displayAdminError("This collection is already in the whitelist.");
+        return;
+    }
+    
+    setStagedAdminWhitelist(prev => [...prev, {
+      address: addressToAdd,
+      name: nameToAdd,
+      imageUrl: newAdminCollection.imageUrl.trim() || null,
+      linkUrl: newAdminCollection.linkUrl.trim() || null,
+    }]);
+    setNewAdminCollection({ address: "", name: "", imageUrl: "", linkUrl: "" });
+    setHasAdminChanges(true);
+  }, [newAdminCollection, stagedAdminWhitelist, displayAdminError]);
+
+  const handleAdminRemoveCollection = useCallback((addressToRemove) => {
+    setStagedAdminWhitelist(prev => prev.filter(c => c.address.toLowerCase() !== addressToRemove.toLowerCase()));
+    setHasAdminChanges(true);
   }, []);
 
   const handleSaveWhitelist = async () => {
-    if (!isRadarProjectAdmin || isSaving) return;
-    
-    setIsSaving(true);
-    addToast("Saving whitelist...", "info");
-
+    if (!isRadarProjectAdmin || isSavingAdmin) return;
+    setIsSavingAdmin(true);
+    addToast("Saving official whitelist...", "info");
     try {
         const service = configServiceRef.current;
-        if (!service || !service.checkReadyForWrite()) {
-            throw new Error("Configuration Service is not ready for writing.");
-        }
-
-        const newCid = await uploadJsonToPinata(stagedWhitelist, 'RADAR_OfficialWhitelist');
+        if (!service || !service.checkReadyForWrite()) throw new Error("Configuration Service is not ready for writing.");
+        const newCid = await uploadJsonToPinata(stagedAdminWhitelist, 'RADAR_OfficialWhitelist');
         const newIpfsUri = `ipfs://${newCid}`;
         const valueHex = stringToHex(newIpfsUri);
-
         await service.saveDataToKey(RADAR_OFFICIAL_ADMIN_ADDRESS, OFFICIAL_WHITELIST_KEY, valueHex);
-        
         await refreshOfficialWhitelist();
-        
         addToast("Official whitelist saved successfully!", "success");
-        setHasChanges(false);
+        setHasAdminChanges(false);
         onClose(); 
-
     } catch (error) {
         console.error("Failed to save whitelist:", error);
         addToast(`Error: ${error.message}`, "error");
     } finally {
-        setIsSaving(false);
+        setIsSavingAdmin(false);
     }
   };
-  
-  if (!isRadarProjectAdmin) {
-    return (
-        <Panel title="Collections" onClose={onClose} className="panel-from-toolbar library-panel">
-            <div className="collections-section section-box">
-                <h3 className="section-title">Official Collections</h3>
-                {(officialWhitelist || []).length > 0 ? (
-                  <div className="collections-grid">
-                    {(officialWhitelist || []).map((collection) => (
-                      <div key={collection.address} className="collection-card">
-                        <div className="collection-image">
-                          <img src={collection.imageUrl || `https://via.placeholder.com/80/252525/00f3ff.png?text=${collection.name?.charAt(0)?.toUpperCase() || "?"}`} alt={collection.name || "Collection"}/>
-                        </div>
-                        <div className="collection-info">
-                          <h4 className="collection-name" title={collection.name}>{collection.name || "Unnamed"}</h4>
-                          <div className="collection-address" title={collection.address}>{formatAddress(collection.address)}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="empty-message">No official collections have been whitelisted yet.</div>
-                )}
-            </div>
-        </Panel>
-    );
-  }
 
-  // Admin View:
+  useEffect(() => {
+    return () => {
+        if (userStatusTimerRef.current) clearTimeout(userStatusTimerRef.current);
+        if (adminStatusTimerRef.current) clearTimeout(adminStatusTimerRef.current);
+    }
+  }, []);
+
   return (
-    <Panel
-      title="Manage Whitelist"
-      onClose={onClose}
-      className="panel-from-toolbar library-panel events-panel-custom-scroll"
-    >
-      <div className="admin-header">
-        <div className="admin-badge">Admin Mode</div>
-        <p className="admin-description">
-          Add or remove collections from the official RADAR whitelist. Changes here will affect all users after saving.
-        </p>
-      </div>
-
-      {error && <div className="status-message error">{error}</div>}
-
-      <div className="add-collection-section section-box">
-        <h3 className="section-title">Add New Collection</h3>
-        <div className="form-group">
-          <label htmlFor="address">Collection Address*</label>
-          <input type="text" id="address" name="address" className="form-control" value={newCollection.address} onChange={handleInputChange} placeholder="0x..." disabled={isSaving} aria-required="true" />
+    <Panel title="Collections Library" onClose={onClose} className="panel-from-toolbar library-panel events-panel-custom-scroll">
+      
+      {isHostProfileOwner && (
+        <div className="add-collection-section section-box">
+          <h3 className="section-title">Add to My Library</h3>
+          {userError && <div className="status-message error">{userError}</div>}
+          <div className="form-group">
+            <label htmlFor="user-address">Collection Address*</label>
+            <input type="text" id="user-address" name="address" className="form-control" value={newUserCollection.address} onChange={handleUserInputChange} placeholder="0x..." aria-required="true" />
+          </div>
+          <div className="form-group">
+            <label htmlFor="user-name">Collection Name*</label>
+            <input type="text" id="user-name" name="name" className="form-control" value={newUserCollection.name} onChange={handleUserInputChange} placeholder="Name of the Collection" aria-required="true" />
+          </div>
+          <div className="form-group">
+            <label htmlFor="user-imageUrl">Image URL</label>
+            <input type="text" id="user-imageUrl" name="imageUrl" className="form-control" value={newUserCollection.imageUrl} onChange={handleUserInputChange} placeholder="https://... (optional)"/>
+          </div>
+          <button className="btn btn-block btn-secondary" onClick={handleAddUserCollection} disabled={!newUserCollection.address.trim() || !newUserCollection.name.trim() || !isAddress(newUserCollection.address.trim())}>
+            Add to My Library
+          </button>
+          <p className="form-help-text">Add an LSP7 or LSP8 collection. Changes must be saved via the main Save panel.</p>
         </div>
-        <div className="form-group">
-          <label htmlFor="name">Collection Name*</label>
-          <input type="text" id="name" name="name" className="form-control" value={newCollection.name} onChange={handleInputChange} placeholder="Name of the Collection" disabled={isSaving} aria-required="true" />
-        </div>
-        <div className="form-group">
-          <label htmlFor="imageUrl">Image URL</label>
-          <input type="text" id="imageUrl" name="imageUrl" className="form-control" value={newCollection.imageUrl} onChange={handleInputChange} placeholder="https://... (optional)" disabled={isSaving}/>
-        </div>
-        <button className="btn btn-block btn-secondary" onClick={handleAddCollection} disabled={isSaving || !newCollection.address.trim() || !newCollection.name.trim() || !isAddress(newCollection.address.trim())}>
-          Add to Staged List
-        </button>
-      </div>
+      )}
 
       <div className="collections-section section-box">
-        <h3 className="section-title">Staged Whitelist</h3>
-        {(stagedWhitelist || []).length === 0 && <div className="empty-message">The whitelist is currently empty.</div>}
-        
-        {(stagedWhitelist || []).length > 0 && (
+        <h3 className="section-title">{isHostProfileOwner ? 'My Library' : 'Personal Library'}</h3>
+        {userLibrary.length > 0 ? (
           <div className="collections-grid">
-            {(stagedWhitelist || []).map((collection) => (
-              <div key={collection.address} className="collection-card">
-                <div className="collection-image">
-                  <img src={collection.imageUrl || `https://via.placeholder.com/80/252525/00f3ff.png?text=${collection.name?.charAt(0)?.toUpperCase() || "?"}`} alt={collection.name || "Collection"}/>
-                </div>
-                <div className="collection-info">
-                  <h4 className="collection-name" title={collection.name}>{collection.name || "Unnamed"}</h4>
-                  <div className="collection-address" title={collection.address}>{formatAddress(collection.address)}</div>
-                </div>
-                <button className="remove-button btn-icon" onClick={() => handleRemoveCollection(collection.address)} title="Remove from Whitelist" disabled={isSaving}>✕</button>
-              </div>
+            {userLibrary.map(collection => (
+              <CollectionCard key={collection.address} collection={collection} onRemove={removeCollectionFromPersonalLibrary} canRemove={isHostProfileOwner} />
             ))}
           </div>
+        ) : (
+          <div className="empty-message">This user's personal library is empty.</div>
         )}
       </div>
 
-      <div className="config-section save-workspace-section">
-        {hasChanges && <div className="status-indicator pending">Whitelist has unsaved changes</div>}
-        <button className="btn btn-block btn-primary" onClick={handleSaveWhitelist} disabled={isSaving || !hasChanges}>
-          {isSaving ? "SAVING..." : "Save Official Whitelist"}
-        </button>
+      <div className="collections-section section-box">
+        <h3 className="section-title">Official Collections</h3>
+        {officialWhitelist.length > 0 ? (
+          <div className="collections-grid">
+            {officialWhitelist.map((collection) => (
+              <CollectionCard key={collection.address} collection={collection} canRemove={false} />
+            ))}
+          </div>
+        ) : (
+          <div className="empty-message">No official collections found.</div>
+        )}
       </div>
+
+      {isRadarProjectAdmin && (
+        <div className="admin-section-wrapper">
+          <div className="admin-header">
+            <div className="admin-badge">Admin Mode</div>
+            <p className="admin-description">Manage the global official whitelist. Changes here affect all users.</p>
+          </div>
+          {adminError && <div className="status-message error">{adminError}</div>}
+          <div className="add-collection-section section-box">
+            <h3 className="section-title">Add New Official Collection</h3>
+            <div className="form-group">
+              <label htmlFor="admin-address">Collection Address*</label>
+              <input type="text" id="admin-address" name="address" className="form-control" value={newAdminCollection.address} onChange={handleAdminInputChange} placeholder="0x..." disabled={isSavingAdmin} aria-required="true" />
+            </div>
+            <div className="form-group">
+              <label htmlFor="admin-name">Collection Name*</label>
+              <input type="text" id="admin-name" name="name" className="form-control" value={newAdminCollection.name} onChange={handleAdminInputChange} placeholder="Name of the Collection" disabled={isSavingAdmin} aria-required="true" />
+            </div>
+            <div className="form-group">
+              <label htmlFor="admin-imageUrl">Image URL</label>
+              <input type="text" id="admin-imageUrl" name="imageUrl" className="form-control" value={newAdminCollection.imageUrl} onChange={handleAdminInputChange} placeholder="https://... (optional)" disabled={isSavingAdmin}/>
+            </div>
+            <div className="form-group">
+              <label htmlFor="admin-linkUrl">Link URL</label>
+              <input type="text" id="admin-linkUrl" name="linkUrl" className="form-control" value={newAdminCollection.linkUrl} onChange={handleAdminInputChange} placeholder="https://... (optional, e.g., for minting)" disabled={isSavingAdmin}/>
+            </div>
+            <button className="btn btn-block btn-secondary" onClick={handleAdminAddCollection} disabled={isSavingAdmin || !newAdminCollection.address.trim() || !newAdminCollection.name.trim() || !isAddress(newAdminCollection.address.trim())}>
+              Add to Staged List
+            </button>
+          </div>
+          <div className="collections-section section-box">
+            <h3 className="section-title">Staged Official Whitelist</h3>
+            {stagedAdminWhitelist.length > 0 ? (
+              <div className="collections-grid">
+                {stagedAdminWhitelist.map((collection) => (
+                  <CollectionCard key={collection.address} collection={collection} onRemove={handleAdminRemoveCollection} canRemove={!isSavingAdmin} />
+                ))}
+              </div>
+            ) : <div className="empty-message">Official whitelist is empty.</div>}
+          </div>
+          <div className="config-section save-workspace-section">
+            {hasAdminChanges && <div className="status-indicator pending">Official whitelist has unsaved changes</div>}
+            <button className="btn btn-block btn-primary" onClick={handleSaveWhitelist} disabled={isSavingAdmin || !hasAdminChanges}>
+              {isSavingAdmin ? "SAVING..." : "Save Official Whitelist"}
+            </button>
+          </div>
+        </div>
+      )}
     </Panel>
   );
 };

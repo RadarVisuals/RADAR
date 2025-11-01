@@ -14,6 +14,7 @@ import {
 
 const TopRightControls = ({
   isRadarProjectAdmin = false,
+  isHostProfileOwner = false,
   onWhitelistClick,
   showInfo = true,
   showToggleUI = true,
@@ -42,16 +43,16 @@ const TopRightControls = ({
         </button>
       )}
 
-      {isRadarProjectAdmin && isUiVisible && (
+      {isHostProfileOwner && isUiVisible && (
         <button
           className="toolbar-icon"
           onClick={onWhitelistClick}
-          title="Manage Official Collection Whitelist"
-          aria-label="Manage Whitelist"
+          title="Manage Collections Library"
+          aria-label="Manage Collections Library"
         >
           <img
             src={whitelistIcon}
-            alt="Manage Whitelist"
+            alt="Manage Collections"
             className="icon-image"
           />
         </button>
@@ -103,6 +104,7 @@ const TopRightControls = ({
 
 TopRightControls.propTypes = {
   isRadarProjectAdmin: PropTypes.bool,
+  isHostProfileOwner: PropTypes.bool,
   onWhitelistClick: PropTypes.func,
   showInfo: PropTypes.bool,
   showToggleUI: PropTypes.bool,
