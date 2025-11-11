@@ -56,7 +56,7 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
 
   useEffect(() => {
     if (isOpen && !hasFetchedInitialIdentifiers.current) {
-      if (import.meta.env.DEV) console.log("[TokenSelectorOverlay] Opened, triggering token identifier fetch.");
+      if (import.meta.env.DEV) console.log("[TokenSelectorOverlay] Opened for the first time, triggering token identifier fetch.");
       refreshOwnedTokens();
       hasFetchedInitialIdentifiers.current = true;
     }
@@ -85,13 +85,18 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
     });
     return Array.from(collectionMap.values());
   }, [officialWhitelist, userLibrary]);
+  
+  // <-- NEW: Memoize the expensive token map separately
+  const combinedTokenMap = useMemo(() => {
+    const map = new Map();
+    Object.values(loadedTokens).flat().forEach(t => map.set(t.id, t));
+    demoTokens.forEach(t => map.set(t.id, t));
+    return map;
+  }, [loadedTokens, demoTokens]);
 
+  // <-- UPDATED: This calculation is now very cheap
   const paletteTokens = useMemo(() => {
     const palettes = {};
-    const combinedTokenMap = new Map();
-    Object.values(loadedTokens).flat().forEach(t => combinedTokenMap.set(t.id, t));
-    demoTokens.forEach(t => combinedTokenMap.set(t.id, t));
-
     if (userPalettes) {
       for (const paletteName in userPalettes) {
         palettes[paletteName] = userPalettes[paletteName]
@@ -100,7 +105,7 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
       }
     }
     return palettes;
-  }, [loadedTokens, demoTokens, userPalettes]);
+  }, [combinedTokenMap, userPalettes]);
   
   const sortedCollectionLibrary = useMemo(() => {
     if (!Array.isArray(combinedCollectionLibrary)) return [];

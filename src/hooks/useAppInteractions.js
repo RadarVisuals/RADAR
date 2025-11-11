@@ -22,7 +22,7 @@ export const useAppInteractions = (props) => {
     onPrevWorkspace,
   } = props;
 
-  const { visitorProfileAddress } = useUserSession();
+  const { hostProfileAddress } = useUserSession(); // <-- CORRECTED
   const uiStateHook = useUIState('tab1');
   const { addNotification, unreadCount } = useNotificationContext();
   const { stagedActiveWorkspace } = useWorkspaceContext();
@@ -59,7 +59,7 @@ export const useAppInteractions = (props) => {
     }
   }, [isMountedRef, addNotification, savedReactions, processEffect, createDefaultEffect]);
 
-  useLsp1Events(visitorProfileAddress, handleEventReceived);
+  useLsp1Events(hostProfileAddress, handleEventReceived); // <-- CORRECTED
 
   useEffect(() => {
     if (pendingActions && pendingActions.length > 0) {

@@ -79,7 +79,6 @@ const SUPPORTED_CHAINS = {
  * @property {import('viem').PublicClient|null} publicClient - Viem Public Client for the current chain. Null if chain is unsupported or RPC URL is missing.
  * @property {string|null} chainId - The current hexadecimal chain ID (e.g., '0x2a' for LUKSO Mainnet), or null if unsupported/disconnected.
  * @property {Array<string>} accounts - Array of EOA addresses controlled by the user, provided by the UP extension. `accounts[0]` is typically the active EOA.
- * @property {string|null} userUPAddress - The Universal Profile address of the logged-in user.
  * @property {Array<string>} contextAccounts - Array of UP addresses relevant to the current context (e.g., the profile being viewed). `contextAccounts[0]` is the primary context UP.
  * @property {boolean} walletConnected - True if the provider is considered connected (valid chain, EOA accounts, and context UP accounts are present).
  * @property {boolean} isConnecting - Always false in this implementation; connection status is derived from events and available data. Kept for potential API consistency if other providers manage explicit connection states.
@@ -147,10 +146,6 @@ export function UpProvider({ children }) {
   /** @type {[Error | null, React.Dispatch<React.SetStateAction<Error | null>>]} */
   const [fetchStateError, setFetchStateError] = useState(null);
   
-  // --- START OF FIX: Add state for the logged-in user's UP address ---
-  const [userUPAddress, setUserUPAddress] = useState(null);
-  // --- END OF FIX ---
-
   const hasCriticalError = useMemo(() => !!initializationError, [initializationError]);
   const currentChain = useMemo(() => chainId && SUPPORTED_CHAINS[chainId] ? SUPPORTED_CHAINS[chainId] : null, [chainId]);
   const connectedEOA = useMemo(() => (accounts?.length > 0 ? accounts[0] : null), [accounts]);
@@ -234,21 +229,6 @@ export function UpProvider({ children }) {
 
             const newAccs = checksumAddressArray(_initialAccounts || []);
             setAccounts(newAccs);
-
-            // --- START OF FIX: Fetch user's UP address when accounts are available ---
-            if (newAccs.length > 0) {
-                try {
-                    const upAccounts = await provider.request({ method: 'up_getAccounts' });
-                    if (mountedRef.current && upAccounts && upAccounts.length > 0) {
-                        setUserUPAddress(getAddress(upAccounts[0]));
-                    }
-                } catch (upError) {
-                    if (import.meta.env.DEV) console.warn("[UpProvider] Could not fetch user's primary UP address via up_getAccounts:", upError);
-                }
-            } else {
-                setUserUPAddress(null);
-            }
-            // --- END OF FIX ---
             
             setContextAccounts(checksumAddressArray(provider.contextAccounts || []));
 
@@ -269,21 +249,6 @@ export function UpProvider({ children }) {
       const newAccs = checksumAddressArray(_newAccounts || []);
       setAccounts(newAccs);
       
-      // --- START OF FIX: Re-fetch user UP on account change ---
-      if (newAccs.length > 0) {
-         try {
-            const upAccounts = await provider.request({ method: 'up_getAccounts' });
-            if (mountedRef.current && upAccounts && upAccounts.length > 0) {
-                setUserUPAddress(getAddress(upAccounts[0]));
-            }
-         } catch (upError) {
-            if (import.meta.env.DEV) console.warn("[UpProvider] Could not fetch user's primary UP address on account change:", upError);
-            setUserUPAddress(null);
-         }
-      } else {
-         setUserUPAddress(null);
-      }
-      // --- END OF FIX ---
       updateConnectedStatus();
     };
 
@@ -296,7 +261,6 @@ export function UpProvider({ children }) {
           if (import.meta.env.DEV) console.warn("[UpProvider Event] Chain changed to invalid/unsupported. Clearing accounts.");
           setAccounts([]);
           setContextAccounts([]);
-          setUserUPAddress(null); // --- FIX: Clear user UP on disconnect/invalid chain ---
       }
       updateConnectedStatus();
     };
@@ -329,7 +293,6 @@ export function UpProvider({ children }) {
       publicClient,
       chainId,
       accounts,
-      userUPAddress, // --- FIX: Expose the user's UP address ---
       contextAccounts,
       walletConnected,
       isConnecting: false,
@@ -338,7 +301,7 @@ export function UpProvider({ children }) {
       hasCriticalError,
     }),
     [
-      provider, walletClient, publicClient, chainId, accounts, userUPAddress, contextAccounts,
+      provider, walletClient, publicClient, chainId, accounts, contextAccounts,
       walletConnected, initializationError, fetchStateError, hasCriticalError,
     ],
   );

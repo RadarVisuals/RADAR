@@ -1,13 +1,11 @@
 // src/hooks/useProfileCache.js
 import { useState, useCallback, useMemo } from "react";
-
 import { ERC725 } from "@erc725/erc725.js";
 import lsp3ProfileSchema from "@erc725/erc725.js/schemas/LSP3ProfileMetadata.json";
-
 import { isAddress } from "viem";
+import { useUpProvider } from "../context/UpProvider"; // <-- IMPORT ADDED
 
 // Configuration
-const RPC_URL = import.meta.env.VITE_LUKSO_MAINNET_RPC_URL || "https://rpc.mainnet.lukso.network";
 const IPFS_GATEWAY = import.meta.env.VITE_IPFS_GATEWAY || "https://api.universalprofile.cloud/ipfs/";
 
 // In-memory Cache (shared across hook instances within the session)
@@ -42,6 +40,7 @@ const DEBOUNCE_DELAY_MS = 300;
  * @returns {ProfileCacheResult} An object containing functions to get profile data and the loading status.
  */
 export function useProfileCache() {
+  const { publicClient } = useUpProvider(); // <-- CLIENT FROM CONTEXT
   // State to track loading status for THIS hook instance
   const [isLoadingAddress, setIsLoadingAddress] = useState(null);
 
@@ -89,7 +88,11 @@ export function useProfileCache() {
       setIsLoadingAddress(lowerAddress);
 
       try {
-        const erc725Instance = new ERC725(lsp3ProfileSchema, lowerAddress, RPC_URL, { ipfsGateway: IPFS_GATEWAY });
+        // Use the shared publicClient from the context instead of creating a new connection
+        if (!publicClient) {
+          throw new Error("Public client is not available.");
+        }
+        const erc725Instance = new ERC75(lsp3ProfileSchema, lowerAddress, publicClient.transport, { ipfsGateway: IPFS_GATEWAY });
         const fetchedData = await erc725Instance.fetchData("LSP3Profile");
 
         if (fetchedData?.value?.LSP3Profile) {
@@ -150,7 +153,7 @@ export function useProfileCache() {
         }
       }
     },
-    [isLoadingAddress],
+    [isLoadingAddress, publicClient], // <-- DEPENDENCY ADDED
   );
 
   /**
