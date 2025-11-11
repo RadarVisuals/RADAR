@@ -92,7 +92,7 @@ export function useProfileCache() {
         if (!publicClient) {
           throw new Error("Public client is not available.");
         }
-        const erc725Instance = new ERC75(lsp3ProfileSchema, lowerAddress, publicClient.transport, { ipfsGateway: IPFS_GATEWAY });
+        const erc725Instance = new ERC725(lsp3ProfileSchema, lowerAddress, publicClient.transport, { ipfsGateway: IPFS_GATEWAY });
         const fetchedData = await erc725Instance.fetchData("LSP3Profile");
 
         if (fetchedData?.value?.LSP3Profile) {
