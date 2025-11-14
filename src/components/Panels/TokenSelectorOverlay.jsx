@@ -33,7 +33,7 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
   const [hasMoreToLoad, setHasMoreToLoad] = useState({});
 
   const {
-    stagedActiveWorkspace,
+    stagedSetlist,
     addPalette, removePalette, addTokenToPalette, removeTokenFromPalette,
     configServiceRef,
   } = useWorkspaceContext();
@@ -68,8 +68,53 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
     }));
   }, []);
 
-  const userPalettes = useMemo(() => stagedActiveWorkspace?.userPalettes || {}, [stagedActiveWorkspace]);
-  const userLibrary = useMemo(() => stagedActiveWorkspace?.personalCollectionLibrary || [], [stagedActiveWorkspace]);
+  const userPalettes = useMemo(() => stagedSetlist?.userPalettes || {}, [stagedSetlist]);
+  const userLibrary = useMemo(() => stagedSetlist?.personalCollectionLibrary || [], [stagedSetlist]);
+
+  useEffect(() => {
+    if (!isOpen || !userPalettes || !configServiceRef.current) {
+        return;
+    }
+
+    const allPaletteTokenIds = Object.values(userPalettes).flat();
+    if (allPaletteTokenIds.length === 0) {
+        return;
+    }
+
+    const fetchMissingPaletteTokens = async () => {
+        const currentlyLoadedIds = new Set(Object.values(loadedTokens).flat().map(t => t.id));
+        
+        const missingTokenIds = allPaletteTokenIds.filter(id => !currentlyLoadedIds.has(id));
+
+        if (missingTokenIds.length === 0) {
+            return;
+        }
+
+        if (import.meta.env.DEV) {
+            console.log(`[TokenSelector] Found ${missingTokenIds.length} palette tokens with missing metadata. Fetching...`);
+        }
+
+        const newTokens = await configServiceRef.current.getTokensMetadataByIds(missingTokenIds);
+
+        if (newTokens && newTokens.length > 0) {
+            setLoadedTokens(prev => {
+                const newLoadedTokens = { ...prev };
+                newTokens.forEach(token => {
+                    const { address } = token;
+                    if (!newLoadedTokens[address]) {
+                        newLoadedTokens[address] = [];
+                    }
+                    if (!newLoadedTokens[address].some(t => t.id === token.id)) {
+                        newLoadedTokens[address].push(token);
+                    }
+                });
+                return newLoadedTokens;
+            });
+        }
+    };
+
+    fetchMissingPaletteTokens();
+  }, [isOpen, userPalettes, configServiceRef, loadedTokens]);
 
   const combinedCollectionLibrary = useMemo(() => {
     const collectionMap = new Map();
@@ -86,7 +131,6 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
     return Array.from(collectionMap.values());
   }, [officialWhitelist, userLibrary]);
   
-  // <-- NEW: Memoize the expensive token map separately
   const combinedTokenMap = useMemo(() => {
     const map = new Map();
     Object.values(loadedTokens).flat().forEach(t => map.set(t.id, t));
@@ -94,7 +138,6 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
     return map;
   }, [loadedTokens, demoTokens]);
 
-  // <-- UPDATED: This calculation is now very cheap
   const paletteTokens = useMemo(() => {
     const palettes = {};
     if (userPalettes) {

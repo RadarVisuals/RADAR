@@ -72,7 +72,7 @@ CollectionCard.propTypes = {
 const LibraryPanel = ({ onClose }) => {
   const { isRadarProjectAdmin, isHostProfileOwner } = useUserSession();
   const {
-    stagedActiveWorkspace,
+    stagedSetlist,
     addCollectionToPersonalLibrary,
     removeCollectionFromPersonalLibrary,
     configServiceRef,
@@ -80,7 +80,7 @@ const LibraryPanel = ({ onClose }) => {
   const { officialWhitelist, refreshOfficialWhitelist } = useAssetContext();
   const { addToast } = useToast();
   
-  const userLibrary = useMemo(() => stagedActiveWorkspace?.personalCollectionLibrary || [], [stagedActiveWorkspace]);
+  const userLibrary = useMemo(() => stagedSetlist?.personalCollectionLibrary || [], [stagedSetlist]);
 
   const [newUserCollection, setNewUserCollection] = useState({ address: "", name: "", imageUrl: "" });
   const [userError, setUserError] = useState("");

@@ -78,8 +78,8 @@ export const WorkspaceProvider = ({ children }) => {
         const service = configServiceRef.current;
         const profileChanged = currentAddress !== prevProfileAddressRef.current;
         
-        const emptySetlist = { defaultWorkspaceName: null, workspaces: {}, globalUserMidiMap: {} };
-        const emptyWorkspace = { presets: {}, defaultPresetName: null, globalEventReactions: {}, personalCollectionLibrary: [], userPalettes: {} };
+        const emptySetlist = { defaultWorkspaceName: null, workspaces: {}, globalUserMidiMap: {}, personalCollectionLibrary: [], userPalettes: {} };
+        const emptyWorkspace = { presets: {}, defaultPresetName: null, globalEventReactions: {} };
     
         if (profileChanged) {
           if (import.meta.env.DEV) console.log(`%c[WorkspaceContext] Profile changed from ${prevProfileAddressRef.current?.slice(0,6)} to ${currentAddress?.slice(0,6)}. Resetting state.`, 'color: #f39c12;');
@@ -98,7 +98,6 @@ export const WorkspaceProvider = ({ children }) => {
             setLoadingMessage("Fetching Setlist...");
             let loadedSetlist = await service.loadWorkspace(address);
 
-            // --- START OF FIX: Fetch and merge visitor's MIDI map ---
             if (!isHostProfileOwner && loggedInUserUPAddress) {
                 if (import.meta.env.DEV) console.log(`%c[WorkspaceContext] Visitor detected. Fetching MIDI map from logged-in user: ${loggedInUserUPAddress.slice(0,6)}`, 'color: #9b59b6; font-weight: bold;');
                 const visitorSetlist = await service.loadWorkspace(loggedInUserUPAddress);
@@ -110,7 +109,6 @@ export const WorkspaceProvider = ({ children }) => {
                     };
                 }
             }
-            // --- END OF FIX ---
 
             if (prevProfileAddressRef.current !== address) return;
     
@@ -382,8 +380,6 @@ export const WorkspaceProvider = ({ children }) => {
                 },
                 defaultPresetName: "Default",
                 globalEventReactions: {},
-                personalCollectionLibrary: [],
-                userPalettes: {}
             };
       
             const defaultAssignments = fallbackConfig.tokenAssignments || {};
@@ -405,7 +401,7 @@ export const WorkspaceProvider = ({ children }) => {
             preloadedWorkspacesRef.current.set(newName, newWorkspace);
       
             setStagedSetlist(prev => {
-                const newSetlist = prev ? JSON.parse(JSON.stringify(prev)) : { workspaces: {}, defaultWorkspaceName: null };
+                const newSetlist = prev ? JSON.parse(JSON.stringify(prev)) : { workspaces: {}, defaultWorkspaceName: null, personalCollectionLibrary: [], userPalettes: {} };
                 newSetlist.workspaces[newName] = { cid: newWorkspaceCID, lastModified: Date.now() };
                 return newSetlist;
             });
@@ -471,7 +467,7 @@ export const WorkspaceProvider = ({ children }) => {
 
     const addNewSceneToStagedWorkspace = useCallback((newSceneName, newSceneData) => {
         setStagedActiveWorkspace(prev => {
-          const newWorkspace = prev ? JSON.parse(JSON.stringify(prev)) : { presets: {}, defaultPresetName: null, globalMidiMap: {}, globalEventReactions: {}, personalCollectionLibrary: [], userPalettes: {} };
+          const newWorkspace = prev ? JSON.parse(JSON.stringify(prev)) : { presets: {}, defaultPresetName: null, globalMidiMap: {}, globalEventReactions: {} };
           newWorkspace.presets[newSceneName] = newSceneData;
           return newWorkspace;
         });
@@ -537,85 +533,87 @@ export const WorkspaceProvider = ({ children }) => {
     }, []);
 
     const addPalette = useCallback((paletteName) => {
-        setStagedActiveWorkspace(prev => {
-          const newWorkspace = { ...prev, userPalettes: { ...(prev?.userPalettes || {}) } };
-          if (newWorkspace.userPalettes[paletteName]) {
-            addToast(`Palette "${paletteName}" already exists.`, "warning");
-            return prev;
-          }
-          newWorkspace.userPalettes[paletteName] = [];
-          addToast(`Palette "${paletteName}" created.`, "success");
-          setHasPendingChanges(true);
-          return newWorkspace;
+        setStagedSetlist(prev => {
+            const newSetlist = { ...prev, userPalettes: { ...(prev?.userPalettes || {}) } };
+            if (newSetlist.userPalettes[paletteName]) {
+                addToast(`Palette "${paletteName}" already exists.`, "warning");
+                return prev;
+            }
+            newSetlist.userPalettes[paletteName] = [];
+            addToast(`Palette "${paletteName}" created.`, "success");
+            setHasPendingChanges(true);
+            return newSetlist;
         });
     }, [addToast]);
     
     const removePalette = useCallback((paletteName) => {
-        setStagedActiveWorkspace(prev => {
-          const newWorkspace = { ...prev, userPalettes: { ...(prev?.userPalettes || {}) } };
-          if (!newWorkspace.userPalettes[paletteName]) return prev;
-          delete newWorkspace.userPalettes[paletteName];
-          addToast(`Palette "${paletteName}" removed.`, "info");
-          setHasPendingChanges(true);
-          return newWorkspace;
+        setStagedSetlist(prev => {
+            const newSetlist = { ...prev, userPalettes: { ...(prev?.userPalettes || {}) } };
+            if (!newSetlist.userPalettes[paletteName]) return prev;
+            delete newSetlist.userPalettes[paletteName];
+            addToast(`Palette "${paletteName}" removed.`, "info");
+            setHasPendingChanges(true);
+            return newSetlist;
         });
     }, [addToast]);
     
     const addTokenToPalette = useCallback((paletteName, tokenId) => {
-        setStagedActiveWorkspace(prev => {
-          const newWorkspace = { ...prev, userPalettes: { ...(prev?.userPalettes || {}) } };
-          const palette = newWorkspace.userPalettes[paletteName];
-          if (!palette) {
-            addToast(`Palette "${paletteName}" not found.`, "error"); return prev;
-          }
-          if (palette.includes(tokenId)) {
-            addToast("Token is already in this palette.", "info"); return prev;
-          }
-          newWorkspace.userPalettes[paletteName] = [...palette, tokenId];
-          addToast(`Token added to "${paletteName}".`, "success");
-          setHasPendingChanges(true);
-          return newWorkspace;
+        setStagedSetlist(prev => {
+            const newSetlist = { ...prev, userPalettes: { ...(prev?.userPalettes || {}) } };
+            const palette = newSetlist.userPalettes[paletteName];
+            if (!palette) {
+                addToast(`Palette "${paletteName}" not found.`, "error");
+                return prev;
+            }
+            if (palette.includes(tokenId)) {
+                addToast("Token is already in this palette.", "info");
+                return prev;
+            }
+            newSetlist.userPalettes[paletteName] = [...palette, tokenId];
+            addToast(`Token added to "${paletteName}".`, "success");
+            setHasPendingChanges(true);
+            return newSetlist;
         });
     }, [addToast]);
     
     const removeTokenFromPalette = useCallback((paletteName, tokenId) => {
-        setStagedActiveWorkspace(prev => {
-          const newWorkspace = { ...prev, userPalettes: { ...(prev?.userPalettes || {}) } };
-          const palette = newWorkspace.userPalettes[paletteName];
-          if (!palette) return prev;
-          newWorkspace.userPalettes[paletteName] = palette.filter(id => id !== tokenId);
-          setHasPendingChanges(true);
-          return newWorkspace;
+        setStagedSetlist(prev => {
+            const newSetlist = { ...prev, userPalettes: { ...(prev?.userPalettes || {}) } };
+            const palette = newSetlist.userPalettes[paletteName];
+            if (!palette) return prev;
+            newSetlist.userPalettes[paletteName] = palette.filter(id => id !== tokenId);
+            setHasPendingChanges(true);
+            return newSetlist;
         });
     }, []);
 
     const addCollectionToPersonalLibrary = useCallback((collection) => {
         if (!isHostProfileOwner) return;
-        setStagedActiveWorkspace(prev => {
+        setStagedSetlist(prev => {
             const currentLibrary = prev?.personalCollectionLibrary || [];
             if (currentLibrary.some(c => c.address.toLowerCase() === collection.address.toLowerCase())) {
                 addToast("This collection is already in your library.", "warning");
                 return prev;
             }
-            const newWorkspace = { ...prev, personalCollectionLibrary: [...currentLibrary, collection] };
+            const newSetlist = { ...prev, personalCollectionLibrary: [...currentLibrary, collection] };
             setHasPendingChanges(true);
             addToast(`Collection "${collection.name}" added to your library.`, "success");
-            return newWorkspace;
+            return newSetlist;
         });
     }, [isHostProfileOwner, addToast]);
     
     const removeCollectionFromPersonalLibrary = useCallback((addressToRemove) => {
         if (!isHostProfileOwner) return;
-        setStagedActiveWorkspace(prev => {
+        setStagedSetlist(prev => {
             const currentLibrary = prev?.personalCollectionLibrary || [];
             if (!currentLibrary.some(c => c.address.toLowerCase() === addressToRemove.toLowerCase())) {
                 return prev;
             }
             const newLibrary = currentLibrary.filter(c => c.address.toLowerCase() !== addressToRemove.toLowerCase());
-            const newWorkspace = { ...prev, personalCollectionLibrary: newLibrary };
+            const newSetlist = { ...prev, personalCollectionLibrary: newLibrary };
             setHasPendingChanges(true);
             addToast(`Collection removed from your library.`, "info");
-            return newWorkspace;
+            return newSetlist;
         });
     }, [isHostProfileOwner, addToast]);
 

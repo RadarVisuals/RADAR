@@ -190,7 +190,7 @@ class ConfigurationService {
   }
 
   async loadWorkspace(profileAddress) {
-    const defaultSetlist = { defaultWorkspaceName: null, workspaces: {}, globalUserMidiMap: {} };
+    const defaultSetlist = { defaultWorkspaceName: null, workspaces: {}, globalUserMidiMap: {}, personalCollectionLibrary: [], userPalettes: {} };
     if (!this.checkReadyForRead()) return defaultSetlist;
     const checksummedProfileAddr = getChecksumAddressSafe(profileAddress);
     if (!checksummedProfileAddr) return defaultSetlist;
@@ -618,6 +618,51 @@ class ConfigurationService {
         if (import.meta.env.DEV) console.error(`${logPrefix} Error getting metadata for tokenId ${tokenId.slice(0,10)} in collection ${collectionAddress.slice(0,6)}...:`, error.message);
         if (import.meta.env.DEV) console.log(`${logPrefix} --- END METADATA FETCH (WITH ERROR) ---`);
         return null;
+    }
+  }
+
+  async getTokensMetadataByIds(tokenIds) {
+    const logPrefix = `[CS getTokensMetadataByIds]`;
+    if (!this.checkReadyForRead() || !Array.isArray(tokenIds) || tokenIds.length === 0) {
+        return [];
+    }
+
+    if (import.meta.env.DEV) console.log(`${logPrefix} Fetching metadata for ${tokenIds.length} specific token IDs.`);
+
+    const tokensByCollection = tokenIds.reduce((acc, fullId) => {
+        const parts = fullId.split('-');
+        if (parts.length === 2) {
+            const collectionAddress = parts[0];
+            const tokenId = parts[1];
+            if (!acc[collectionAddress]) {
+                acc[collectionAddress] = [];
+            }
+            acc[collectionAddress].push(tokenId);
+        }
+        return acc;
+    }, {});
+
+    const allPromises = Object.entries(tokensByCollection).map(async ([collectionAddress, specificTokenIds]) => {
+        const metadataPromises = specificTokenIds.map(async (tokenId) => {
+            const metadata = await this.getTokenMetadata(collectionAddress, tokenId);
+            return metadata ? {
+                id: `${collectionAddress}-${tokenId}`,
+                type: tokenId === 'LSP7_TOKEN' ? 'LSP7' : 'owned',
+                address: collectionAddress,
+                tokenId: tokenId,
+                metadata: { name: metadata.name || 'Unnamed', image: metadata.image },
+            } : null;
+        });
+        return Promise.all(metadataPromises);
+    });
+
+    try {
+        const resultsByCollection = await Promise.all(allPromises);
+        const finalTokenData = resultsByCollection.flat().filter(Boolean);
+        return finalTokenData;
+    } catch (error) {
+        if (import.meta.env.DEV) console.error(`${logPrefix} Error fetching batch metadata:`, error);
+        return [];
     }
   }
 
