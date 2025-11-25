@@ -1,4 +1,4 @@
-import { Application, Container, Sprite, Texture, Graphics, Filter, GlProgram, SimplePlane, RenderTexture } from 'pixi.js';
+import { Application, Container, Sprite, Texture, Graphics, Filter, GlProgram, Mesh, PlaneGeometry, RenderTexture } from 'pixi.js';
 import { 
     AdvancedBloomFilter, 
     RGBSplitFilter, 
@@ -416,16 +416,20 @@ export default class PixiEngine {
         resolution: this.app.renderer.resolution
     });
 
-    // Create Mesh (2x2 = 4 vertices)
-    this.projectionMesh = new SimplePlane(this.renderTexture, 2, 2);
-    this.projectionMesh.width = width;
-    this.projectionMesh.height = height;
+    // Create Mesh with PlaneGeometry (2x2 vertices) to replace SimplePlane in v8
+    const geometry = new PlaneGeometry({
+        width,
+        height,
+        verticesX: 2,
+        verticesY: 2
+    });
+
+    this.projectionMesh = new Mesh({
+        geometry,
+        texture: this.renderTexture
+    });
     
-    // Reset corners to fill screen
-    this.updateCorner(0, 0, 0);           // TL
-    this.updateCorner(1, width, 0);       // TR
-    this.updateCorner(2, 0, height);      // BL
-    this.updateCorner(3, width, height);  // BR
+    // No initial corner update needed as PlaneGeometry creates defaults
   }
 
   setMappingMode(isActive) {
@@ -445,10 +449,16 @@ export default class PixiEngine {
   // Called by React UI to warp the texture
   updateCorner(index, x, y) {
     if (!this.projectionMesh) return;
-    const buffer = this.projectionMesh.geometry.getBuffer('aVertexPosition');
-    buffer.data[index * 2] = x;
-    buffer.data[index * 2 + 1] = y;
-    buffer.update();
+    // Accessing position attribute buffer directly in v8
+    const attribute = this.projectionMesh.geometry.getAttribute('aPosition');
+    if (!attribute) return;
+    
+    const buffer = attribute.buffer;
+    if (buffer.data) {
+        buffer.data[index * 2] = x;
+        buffer.data[index * 2 + 1] = y;
+        buffer.update(); // Flag for upload
+    }
   }
 
   initEffects() {

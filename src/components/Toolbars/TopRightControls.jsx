@@ -10,11 +10,7 @@ import {
   eyeIcon,
   eyeopenIcon,
   parallaxIcon,
-  // mapIcon // Uncomment when you have a map icon
 } from "../../assets";
-
-// Placeholder: Reusing enlargeIcon for Map if mapIcon doesn't exist yet
-const mapIcon = enlargeIcon; 
 
 const TopRightControls = ({
   isRadarProjectAdmin = false,
@@ -29,9 +25,6 @@ const TopRightControls = ({
   isUiVisible = true,
   isParallaxEnabled,
   onToggleParallax,
-  // --- NEW ---
-  isMappingMode,
-  onToggleMapping
 }) => {
   return (
     <div className={`top-right-controls-container ${!isUiVisible ? "ui-hidden" : ""}`}>
@@ -49,24 +42,6 @@ const TopRightControls = ({
           />
         </button>
       )}
-
-      {/* --- NEW MAPPING BUTTON --- */}
-      {isUiVisible && (
-        <button
-          className={`toolbar-icon ${isMappingMode ? "active" : ""}`}
-          onClick={onToggleMapping}
-          title={isMappingMode ? "Exit Projection Mapping" : "Enter Projection Mapping"}
-          aria-label="Toggle Projection Mapping"
-        >
-          <img
-            src={mapIcon} 
-            alt="Map"
-            className="icon-image"
-            style={{ transform: isMappingMode ? 'scale(0.8)' : 'scale(1)' }} // Visual feedback
-          />
-        </button>
-      )}
-      {/* ------------------------ */}
 
       {isHostProfileOwner && isUiVisible && (
         <button
@@ -140,9 +115,6 @@ TopRightControls.propTypes = {
   isUiVisible: PropTypes.bool,
   isParallaxEnabled: PropTypes.bool,
   onToggleParallax: PropTypes.func,
-  // --- NEW ---
-  isMappingMode: PropTypes.bool,
-  onToggleMapping: PropTypes.func
 };
 
 export default TopRightControls;
