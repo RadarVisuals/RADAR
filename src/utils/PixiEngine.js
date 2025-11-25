@@ -1,5 +1,4 @@
-// src/utils/PixiEngine.js
-import { Application, Container, Sprite, Texture, Graphics, Filter, GlProgram } from 'pixi.js';
+import { Application, Container, Sprite, Texture, Graphics, Filter, GlProgram, SimplePlane, RenderTexture } from 'pixi.js';
 import { 
     AdvancedBloomFilter, 
     RGBSplitFilter, 
@@ -126,7 +125,6 @@ class VolumetricLightFilter extends Filter {
     set density(v) { this.resources.volumetricUniforms.uniforms.uDensity = v; }
     get decay() { return this.resources.volumetricUniforms.uniforms.uDecay; }
     set decay(v) { this.resources.volumetricUniforms.uniforms.uDecay = v; }
-    // New setters for position
     set lightX(v) { this.resources.volumetricUniforms.uniforms.uLightPos.x = v; }
     set lightY(v) { this.resources.volumetricUniforms.uniforms.uLightPos.y = v; }
 }
@@ -199,7 +197,7 @@ class LiquidFilter extends Filter {
     set intensity(v) { this.resources.liquidUniforms.uniforms.uIntensity = v; }
 }
 
-// --- 3. WAVE DISTORT (Cleaned: Just the wave, no RGB/Darkness) ---
+// --- 3. WAVE DISTORT ---
 const waveDistortFragment = `
     precision highp float;
     in vec2 vTextureCoord;
@@ -211,15 +209,8 @@ const waveDistortFragment = `
 
     void main() {
         vec2 uv = vTextureCoord;
-        
-        // Vertical wave displacement
-        // Frequency varies slightly with time for organic feel
         float wave = sin(uv.y * 20.0 + uTime * 5.0) * 0.005 * uIntensity;
-        
-        // Apply displacement
         uv.x += wave;
-        
-        // Simple texture sample - no color manipulation
         finalColor = texture(uTexture, uv);
     }
 `;
@@ -368,6 +359,12 @@ export default class PixiEngine {
     };
     this._morphedConfig = {};
     this._morphedDriftState = { x: 0, y: 0 };
+
+    // --- MAPPING PROPS ---
+    this.mainLayerGroup = new Container(); // Holds all visual layers
+    this.isMappingActive = false;
+    this.renderTexture = null;
+    this.projectionMesh = null;
   }
 
   async init() {
@@ -383,6 +380,7 @@ export default class PixiEngine {
       preference: 'webgl',
     });
 
+    // 1. Create Layers and add them to mainLayerGroup instead of stage
     ['1', '2', '3'].forEach(id => {
       const container = new Container();
       const deckA = new PixiLayerDeck(id, 'A');
@@ -390,14 +388,67 @@ export default class PixiEngine {
       container.addChild(deckA.container);
       container.addChild(deckB.container);
       this.layers[id] = { container, deckA, deckB };
-      this.app.stage.addChild(container);
+      
+      // Added to group instead of stage
+      this.mainLayerGroup.addChild(container);
     });
+
+    // 2. Add main group to stage (default state)
+    this.app.stage.addChild(this.mainLayerGroup);
+
+    // 3. Initialize Projection Mapping Resources
+    this.initMappingResources();
 
     this.initEffects();
     this.app.renderer.on('resize', () => this.handleResize());
     this.handleResize(); 
     this.app.ticker.add((ticker) => this.update(ticker));
     this.isReady = true;
+  }
+
+  initMappingResources() {
+    const { width, height } = this.app.screen;
+    
+    // Create render texture (Virtual Screen)
+    this.renderTexture = RenderTexture.create({
+        width,
+        height,
+        resolution: this.app.renderer.resolution
+    });
+
+    // Create Mesh (2x2 = 4 vertices)
+    this.projectionMesh = new SimplePlane(this.renderTexture, 2, 2);
+    this.projectionMesh.width = width;
+    this.projectionMesh.height = height;
+    
+    // Reset corners to fill screen
+    this.updateCorner(0, 0, 0);           // TL
+    this.updateCorner(1, width, 0);       // TR
+    this.updateCorner(2, 0, height);      // BL
+    this.updateCorner(3, width, height);  // BR
+  }
+
+  setMappingMode(isActive) {
+    this.isMappingActive = isActive;
+
+    if (isActive) {
+        // Remove visuals from screen, add mesh to screen
+        this.app.stage.removeChild(this.mainLayerGroup);
+        this.app.stage.addChild(this.projectionMesh);
+    } else {
+        // Remove mesh, put visuals back on screen
+        this.app.stage.removeChild(this.projectionMesh);
+        this.app.stage.addChild(this.mainLayerGroup);
+    }
+  }
+
+  // Called by React UI to warp the texture
+  updateCorner(index, x, y) {
+    if (!this.projectionMesh) return;
+    const buffer = this.projectionMesh.geometry.getBuffer('aVertexPosition');
+    buffer.data[index * 2] = x;
+    buffer.data[index * 2 + 1] = y;
+    buffer.update();
   }
 
   initEffects() {
@@ -418,7 +469,9 @@ export default class PixiEngine {
 
     Object.values(this.filters).forEach(f => f.enabled = false);
 
-    this.app.stage.filters = [
+    // Apply filters to the main group. 
+    // This ensures effects are applied "inside" the texture before it gets warped in mapping mode.
+    this.mainLayerGroup.filters = [
         this.filters.liquid,
         this.filters.kaleidoscope, 
         this.filters.twist, 
@@ -435,6 +488,12 @@ export default class PixiEngine {
   handleResize() {
     const w = this.app.renderer.width;
     const h = this.app.renderer.height;
+    
+    // Resize render texture if mapping
+    if (this.renderTexture) {
+        this.renderTexture.resize(w, h);
+    }
+
     const logicalW = w / this.app.renderer.resolution;
     const logicalH = h / this.app.renderer.resolution;
     
@@ -525,6 +584,16 @@ export default class PixiEngine {
       this.applyStateToDeck(layer.deckA, morphedState, opacityA, currentBeatFactor);
       this.applyStateToDeck(layer.deckB, morphedState, opacityB, currentBeatFactor);
     });
+
+    // --- RENDER PIPELINE SWITCH ---
+    if (this.isMappingActive) {
+        // Render kaleidoscope into the texture
+        this.app.renderer.render({
+            container: this.mainLayerGroup,
+            target: this.renderTexture
+        });
+        // The app loop automatically renders the stage (which contains projectionMesh)
+    }
   }
 
   stepPhysics(deck, deltaTime, now) {

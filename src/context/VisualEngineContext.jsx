@@ -35,6 +35,10 @@ export const VisualEngineProvider = ({ children }) => {
     const [isAutoFading, setIsAutoFading] = useState(false);
     const [targetSceneName, setTargetSceneName] = useState(null);
     
+    // --- NEW STATE FOR PROJECTION MAPPING ---
+    const [isMappingMode, setIsMappingMode] = useState(false);
+    // ----------------------------------------
+
     // --- Effects State ---
     const [effectsConfig, setEffectsConfig] = useState({
         bloom: { enabled: false, intensity: 1.0, blur: 8, threshold: 0.5 },
@@ -45,7 +49,6 @@ export const VisualEngineProvider = ({ children }) => {
         crt: { enabled: false, curvature: 1, lineWidth: 1, noise: 0.1 },
         kaleidoscope: { enabled: false, sides: 6, angle: 0 },
         
-        // Premium Effects
         liquid: { enabled: false, intensity: 0.02, scale: 3.0, speed: 0.5 },
         volumetric: { enabled: false, exposure: 0.3, decay: 0.95, density: 0.8, weight: 0.4, threshold: 0.5, x: 0.5, y: 0.5 },
         waveDistort: { enabled: false, intensity: 0.5 },
@@ -67,6 +70,20 @@ export const VisualEngineProvider = ({ children }) => {
 
     const uiControlConfig = useMemo(() => renderedValueRef.current < 0.5 ? sideA.config : sideB.config, [renderedCrossfaderValue, sideA.config, sideB.config]);
 
+    // --- NEW TOGGLE FUNCTION ---
+    const toggleMappingMode = useCallback(() => {
+        setIsMappingMode(prev => {
+            const newState = !prev;
+            // Access Pixi Engine via ref and update mode
+            const engine = managerInstancesRef.current?.engineRef?.current;
+            if (engine) {
+                engine.setMappingMode(newState);
+            }
+            return newState;
+        });
+    }, []);
+    // ---------------------------
+
     useEffect(() => {
         return () => {
             if (faderAnimationRef.current) cancelAnimationFrame(faderAnimationRef.current);
@@ -74,6 +91,9 @@ export const VisualEngineProvider = ({ children }) => {
         };
     }, []);
 
+    // ... (Existing useEffects for Crossfader Animation and Scene Loading remain unchanged) ...
+    // [Omitted for brevity, keep existing code here]
+    
     // Crossfader Animation Loop
     useEffect(() => {
         const animateFader = () => {
@@ -273,6 +293,9 @@ export const VisualEngineProvider = ({ children }) => {
         updateLayerConfig, updateTokenAssignment, updateEffectConfig,
         setLiveConfig, registerManagerInstancesRef, registerCanvasUpdateFns,
         managerInstancesRef, reloadSceneOntoInactiveDeck,
+        // --- NEW EXPORTS ---
+        isMappingMode,
+        toggleMappingMode,
     }), [
         sideA, sideB, uiControlConfig, renderedCrossfaderValue, isAutoFading, targetSceneName,
         effectsConfig,
@@ -280,6 +303,9 @@ export const VisualEngineProvider = ({ children }) => {
         updateLayerConfig, updateTokenAssignment, updateEffectConfig,
         setLiveConfig, registerManagerInstancesRef, registerCanvasUpdateFns, 
         managerInstancesRef, reloadSceneOntoInactiveDeck,
+        // --- NEW DEPS ---
+        isMappingMode,
+        toggleMappingMode
     ]);
 
     return (

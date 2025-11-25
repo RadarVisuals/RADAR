@@ -17,9 +17,11 @@ import GlobalMIDIStatus from '../MIDI/GlobalMIDIStatus';
 import AudioStatusIcon from '../Audio/AudioStatusIcon';
 import SceneSelectorBar from './SceneSelectorBar';
 import LibraryPanel from '../Panels/LibraryPanel';
-import EffectsPanel from '../Panels/EffectsPanel'; // --- NEW IMPORT ---
+import EffectsPanel from '../Panels/EffectsPanel';
 import Crossfader from './Crossfader';
 import WorkspaceSelectorDots from './WorkspaceSelectorDots';
+import MappingOverlay from './MappingOverlay'; // --- NEW IMPORT ---
+
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useVisualEngineContext } from '../../context/VisualEngineContext';
 import { useNotificationContext } from '../../context/NotificationContext';
@@ -61,24 +63,7 @@ const ActivePanelRenderer = (props) => {
 
     switch (activePanel) {
         case "controls":
-            return (
-                <PanelWrapper key="controls-panel" className={panelWrapperClassName}>
-                    <EnhancedControlPanel
-                        onToggleMinimize={closePanel}
-                        activeTab={activeLayerTab}
-                        onTabChange={setActiveLayerTab}
-                        pLockProps={pLockProps}
-                        onSceneSelect={(sceneName) => handleSceneSelect(sceneName, crossfadeDurationMs)}
-                        sequencerIntervalMs={sequencerIntervalMs}
-                        onSetSequencerInterval={onSetSequencerInterval}
-                        crossfadeDurationMs={crossfadeDurationMs}
-                        onSetCrossfadeDuration={onSetCrossfadeDuration}
-                        isAutoFading={isAutoFading}
-                        activeLayerConfigs={uiControlConfig?.layers}
-                        onLayerConfigChange={updateLayerConfig}
-                    />
-                </PanelWrapper>
-            );
+            return ( <PanelWrapper key="controls-panel" className={panelWrapperClassName}> <EnhancedControlPanel onToggleMinimize={closePanel} activeTab={activeLayerTab} onTabChange={setActiveLayerTab} pLockProps={pLockProps} onSceneSelect={(sceneName) => handleSceneSelect(sceneName, crossfadeDurationMs)} sequencerIntervalMs={sequencerIntervalMs} onSetSequencerInterval={onSetSequencerInterval} crossfadeDurationMs={crossfadeDurationMs} onSetCrossfadeDuration={onSetCrossfadeDuration} isAutoFading={isAutoFading} activeLayerConfigs={uiControlConfig?.layers} onLayerConfigChange={updateLayerConfig} /> </PanelWrapper> );
         case "notifications":
             return ( <PanelWrapper key="notifications-panel" className={panelWrapperClassName}><NotificationPanel onClose={closePanel} /></PanelWrapper> );
         case "events":
@@ -91,7 +76,7 @@ const ActivePanelRenderer = (props) => {
             return ( <PanelWrapper key="audio-panel" className={panelWrapperClassName}><AudioControlPanel onClose={closePanel} isAudioActive={isAudioActive} setIsAudioActive={setIsAudioActive} audioSettings={audioSettings} setAudioSettings={setAudioSettings} analyzerData={analyzerData} /></PanelWrapper> );
         case "whitelist":
             return ( <PanelWrapper key="whitelist-panel" className={panelWrapperClassName}><LibraryPanel onClose={closePanel} /></PanelWrapper> );
-        case "fx": // --- NEW CASE ---
+        case "fx":
             return ( <PanelWrapper key="fx-panel" className={panelWrapperClassName}><EffectsPanel onClose={closePanel} /></PanelWrapper> );
         case "tokens":
             return ( <TokenSelectorOverlay key="token-selector-overlay" isOpen={activePanel === "tokens"} onClose={handleTokenSelectorClose} onTokenApplied={updateTokenAssignment} /> );
@@ -132,7 +117,7 @@ function UIOverlay({
 }) {
   const { addToast } = useToast();
   const { stagedSetlist, loadWorkspace, activeWorkspaceName: currentWorkspaceName, isLoading: isConfigLoading, activeSceneName, fullSceneList: savedSceneList } = useWorkspaceContext();
-  const { renderedCrossfaderValue, isAutoFading, handleSceneSelect, handleCrossfaderChange, handleCrossfaderCommit } = useVisualEngineContext();
+  const { renderedCrossfaderValue, isAutoFading, handleSceneSelect, handleCrossfaderChange, handleCrossfaderCommit, isMappingMode, toggleMappingMode } = useVisualEngineContext();
   const { unreadCount } = useNotificationContext();
   const { isRadarProjectAdmin, hostProfileAddress: currentProfileAddress, isHostProfileOwner } = useUserSession();
   const { isUiVisible, activePanel, toggleSidePanel, toggleInfoOverlay, toggleUiVisibility } = uiState;
@@ -214,6 +199,9 @@ function UIOverlay({
   
   return (
     <>
+      {/* --- RENDER MAPPING OVERLAY --- */}
+      {isMappingMode && isUiVisible && <MappingOverlay />}
+
       {isReady && <MemoizedTopRightControls
         isRadarProjectAdmin={isRadarProjectAdmin}
         isHostProfileOwner={isHostProfileOwner}
@@ -227,6 +215,9 @@ function UIOverlay({
         isUiVisible={isUiVisible}
         isParallaxEnabled={configData.isParallaxEnabled}
         onToggleParallax={onToggleParallax}
+        // --- Pass Mapping Props ---
+        isMappingMode={isMappingMode}
+        onToggleMapping={toggleMappingMode}
       />}
       {isUiVisible && <MemoizedActivePanelRenderer
           uiState={uiState}
