@@ -51,4 +51,4 @@ export { default as ufoIcon } from "./UFO.svg"; // Added missing
 export { default as setsIcon } from './sets.webp';
 export { default as R } from './R.webp';
 export { default as parallaxIcon } from './parallax.webp';
-export { default as FXIcon } from './FX.webp';
+export { default as fxIcon } from './FX.webp';

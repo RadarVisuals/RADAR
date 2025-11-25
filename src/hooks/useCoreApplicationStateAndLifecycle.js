@@ -1,6 +1,6 @@
 // src/hooks/useCoreApplicationStateAndLifecycle.js
 import { useRef, useEffect, useCallback, useMemo } from "react";
-import { useCanvasOrchestrator } from "./useCanvasOrchestrator";
+import { usePixiOrchestrator } from "./usePixiOrchestrator"; 
 import { useRenderLifecycle } from './useRenderLifecycle';
 import { useCanvasContainer } from './useCanvasContainer';
 import { useAudioVisualizer } from './useAudioVisualizer';
@@ -13,7 +13,6 @@ import { useUserSession } from '../context/UserSessionContext';
 
 export const useCoreApplicationStateAndLifecycle = (props) => {
   const {
-    canvasRefs,
     isBenignOverlayActive,
     animatingPanel,
   } = props;
@@ -39,6 +38,7 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
 
   const isMountedRef = useRef(false);
   const internalResetLifecycleRef = useRef(null);
+  const canvasRef = useRef(null); 
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -47,30 +47,26 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     };
   }, []);
 
-  // --- START OF FIX: The master gate for the entire rendering pipeline ---
-  // The lifecycle hooks should only run after the initial workspace load is complete and not in a loading state.
   const isReadyForLifecycle = isFullyLoaded && !isLoading;
-  // --- END OF FIX ---
 
-  const orchestrator = useCanvasOrchestrator({
-    canvasRefs,
+  const orchestrator = usePixiOrchestrator({
+    canvasRef,
     sideA,
     sideB,
     crossfaderValue: renderedCrossfaderValue,
-    isInitiallyResolved: isReadyForLifecycle,
-    activeWorkspaceName,
+    isReady: isReadyForLifecycle,
   });
 
   const sequencer = usePLockSequencer({
     onValueUpdate: (layerId, paramName, value) => {
       updateLayerConfig(String(layerId), paramName, value); 
-      if (orchestrator.applyPlaybackValue) {
+      if (orchestrator.isEngineReady && orchestrator.applyPlaybackValue) {
         orchestrator.applyPlaybackValue(String(layerId), paramName, value);
       }
     },
     onAnimationEnd: (finalStateSnapshot) => {
-      if (orchestrator.clearAllPlaybackValues) {
-        orchestrator.clearAllPlaybackValues();
+      if (orchestrator.isEngineReady && orchestrator.clearPlaybackValues) {
+        orchestrator.clearPlaybackValues();
       }
       if (finalStateSnapshot) {
         for (const layerId in finalStateSnapshot) {
@@ -85,17 +81,12 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
   const audioState = useAudioVisualizer();
 
   const handleZeroDimensionsOrchestrator = useCallback(() => {
-    if (isMountedRef.current && internalResetLifecycleRef.current && typeof internalResetLifecycleRef.current === 'function') {
-      if (import.meta.env.DEV) console.log("[CoreAppLifecycle] Zero dimensions detected, triggering lifecycle reset.");
+    if (isMountedRef.current && internalResetLifecycleRef.current) {
       internalResetLifecycleRef.current();
     }
   }, []);
 
-  const onResizeCanvasContainer = useCallback(() => {
-    if (isMountedRef.current && typeof orchestrator.handleCanvasResize === 'function') {
-      orchestrator.handleCanvasResize();
-    }
-  }, [orchestrator.handleCanvasResize]);
+  const onResizeCanvasContainer = useCallback(() => {}, []);
 
   const { containerRef, hasValidDimensions, isContainerObservedVisible, isFullscreenActive, enterFullscreen } = useCanvasContainer({
     onResize: onResizeCanvasContainer,
@@ -103,7 +94,7 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
   });
 
   const renderLifecycleData = useRenderLifecycle({
-    managersReady: orchestrator.managersReady,
+    managersReady: orchestrator.isEngineReady,
     isInitiallyResolved: isReadyForLifecycle,
     hasValidDimensions,
     isContainerObservedVisible,
@@ -136,12 +127,11 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     stopCanvasAnimations: orchestrator.stopCanvasAnimations,
   });
 
-  // --- START OF FIX: Return a default 'not ready' state if the lifecycle gate is closed ---
   return useMemo(() => {
-    // If we are not ready for the lifecycle, return a default "not ready" state.
     if (!isReadyForLifecycle) {
       return {
-        containerRef, managersReady: false, audioState, renderState: 'initializing',
+        containerRef, pixiCanvasRef: canvasRef,
+        managersReady: false, audioState, renderState: 'initializing',
         loadingStatusMessage: '', isStatusFadingOut: false, showStatusDisplay: false,
         showRetryButton: false, isTransitioning: false, outgoingLayerIdsOnTransitionStart: new Set(),
         makeIncomingCanvasVisible: false, isAnimating: false, handleManualRetry: () => {},
@@ -152,9 +142,9 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
       };
     }
 
-    // If ready, return the fully computed state.
     return {
       containerRef,
+      pixiCanvasRef: canvasRef,
       managerInstancesRef: orchestrator.managerInstancesRef,
       audioState,
       renderState: renderLifecycleData.renderState,
@@ -168,7 +158,7 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
       isAnimating: renderLifecycleData.isAnimating,
       handleManualRetry: renderLifecycleData.handleManualRetry,
       resetLifecycle: renderLifecycleData.resetLifecycle,
-      managersReady: orchestrator.managersReady,
+      managersReady: orchestrator.isEngineReady,
       stopCanvasAnimations: orchestrator.stopCanvasAnimations,
       restartCanvasAnimations: orchestrator.restartCanvasAnimations,
       setCanvasLayerImage: orchestrator.setCanvasLayerImage,
@@ -181,10 +171,9 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
       uiControlConfig,
     };
   }, [
-    isReadyForLifecycle, // The master gate
+    isReadyForLifecycle,
     containerRef, orchestrator, audioState, renderLifecycleData, hasValidDimensions,
     isContainerObservedVisible, isFullscreenActive, enterFullscreen,
     isMountedRef, sequencer, uiControlConfig
   ]);
-  // --- END OF FIX ---
 };

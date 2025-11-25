@@ -1,9 +1,23 @@
-// netlify/functions/unpin.js
-
 export const handler = async (event) => {
-  // Netlify automatically provides the handler function with an 'event' object.
+  // 1. SECURITY: Strict Origin Check
+  const origin = event.headers.origin || event.headers.Origin;
+  const allowedOrigins = [
+    'https://radar725.netlify.app',
+    'https://www.radar725.netlify.app'
+  ];
+  const isLocalhost = origin && (
+    origin.includes('localhost') || 
+    origin.includes('127.0.0.1')
+  );
 
-  // 1. Only allow POST requests
+  if (origin && !allowedOrigins.includes(origin) && !isLocalhost) {
+     return { 
+       statusCode: 403, 
+       body: JSON.stringify({ error: 'Forbidden: Request prohibited from this origin.' }) 
+     };
+  }
+
+  // 2. Method Check
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
@@ -11,7 +25,7 @@ export const handler = async (event) => {
     };
   }
 
-  // 2. Parse the CID from the request body
+  // 3. Parse & Validate CID
   let cid;
   try {
     const body = JSON.parse(event.body);
@@ -23,29 +37,28 @@ export const handler = async (event) => {
     };
   }
 
-  // 3. Validate the CID format (CIDv0 or CIDv1)
+  // Regex to ensure this is actually an IPFS CID and not a malicious command
   const cidRegex = /^(Qm[1-9A-HJ-NP-Za-km-z]{44}|b[A-Za-z2-7]{58,})$/;
   if (!cid || typeof cid !== 'string' || !cidRegex.test(cid)) {
     return {
       statusCode: 400,
-      body: JSON.stringify({ error: 'Invalid or missing CID format' }),
+      body: JSON.stringify({ error: 'Invalid CID format' }),
     };
   }
 
-  // 4. Get your secret Pinata JWT from Netlify's environment variables
-  const PINATA_JWT = process.env.PINATA_JWT; // Use a non-prefixed variable for backend secrets
+  // 4. Load Secret Key
+  const PINATA_JWT = process.env.PINATA_JWT;
 
   if (!PINATA_JWT) {
-    console.error('Server Error: PINATA_JWT environment variable is not set on Netlify.');
+    console.error('CRITICAL: PINATA_JWT is missing in Netlify Environment Variables.');
     return {
       statusCode: 500,
       body: JSON.stringify({ error: 'Server configuration error' }),
     };
   }
 
-  // 5. Call the Pinata API to unpin the file
+  // 5. Send Delete Request to Pinata
   try {
-    // Use the globally available fetch in the Netlify runtime
     const response = await fetch(`https://api.pinata.cloud/pinning/unpin/${cid}`, {
       method: 'DELETE',
       headers: {
@@ -56,14 +69,12 @@ export const handler = async (event) => {
     if (!response.ok) {
       const errorData = await response.text();
       console.error(`Pinata API Error (${response.status}) for CID ${cid}: ${errorData}`);
-      // Don't expose detailed Pinata errors to the client for security.
       return {
-        statusCode: 502, // Bad Gateway, since we had an issue with an upstream service
-        body: JSON.stringify({ error: 'Failed to communicate with pinning service.' }),
+        statusCode: 502, 
+        body: JSON.stringify({ error: 'Failed to communicate with storage service.' }),
       };
     }
 
-    // 6. Return a success response
     return {
       statusCode: 200,
       body: JSON.stringify({ success: true, message: `Unpin request for ${cid} successful.` }),

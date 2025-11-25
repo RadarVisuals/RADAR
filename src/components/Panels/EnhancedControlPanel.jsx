@@ -131,38 +131,44 @@ const EnhancedControlPanel = ({
       }
     }
     
+    // --- UPDATED LOGIC START ---
     const managers = managerInstancesRef.current?.current;
     const activeDeckIsA = renderedCrossfaderValue < 0.5;
+    const activeDeckChar = activeDeckIsA ? 'A' : 'B';
     let liveLayersConfig = {};
 
     if (managers && Object.keys(managers).length > 0) {
       for (const layerId in managers) {
         const manager = managers[layerId];
         
-        const sourceConfig = activeDeckIsA ? manager.configA : manager.configB;
-        const sourceRotation = activeDeckIsA ? manager.continuousRotationAngleA : manager.continuousRotationAngleB;
-        const sourceDriftState = activeDeckIsA ? manager.driftStateA : manager.driftStateB;
+        // Retrieve state via the new getter method on the proxy
+        const currentState = manager.getState ? manager.getState(activeDeckChar) : null;
         
-        if (!sourceConfig) {
-            console.warn(`[EnhancedControlPanel] Could not find source config for layer ${layerId} on the active deck. Skipping.`);
+        if (!currentState) {
+            console.warn(`[EnhancedControlPanel] Could not retrieve state for layer ${layerId}. Skipping.`);
             continue;
         }
         
-        const liveConfig = JSON.parse(JSON.stringify(sourceConfig));
+        const liveConfig = JSON.parse(JSON.stringify(currentState.config));
         
-        liveConfig.angle = (sourceConfig.angle + sourceRotation) % 360;
-        liveConfig.driftState = JSON.parse(JSON.stringify(sourceDriftState));
+        // IMPORTANT: Capture physics states (angle, drift) so the scene loads exactly as seen
+        liveConfig.angle = (currentState.config.angle + currentState.continuousRotationAngle) % 360;
+        liveConfig.driftState = JSON.parse(JSON.stringify(currentState.driftState));
         
-        for (const key in manager.playbackValues) {
-          liveConfig[key] = manager.playbackValues[key];
+        // Merge any P-Locked values if present
+        if (currentState.playbackValues) {
+            for (const key in currentState.playbackValues) {
+                liveConfig[key] = currentState.playbackValues[key];
+            }
         }
         
         liveLayersConfig[layerId] = liveConfig;
       }
     } else {
-      console.warn("[EnhancedControlPanel] CanvasManagers not found, creating scene from React state. This may not capture the exact live animation frame.");
+      console.warn("[EnhancedControlPanel] CanvasManagers not found, fallback to React state.");
       liveLayersConfig = JSON.parse(JSON.stringify(uiControlConfig.layers));
     }
+    // --- UPDATED LOGIC END ---
 
     const newSceneData = {
       name,

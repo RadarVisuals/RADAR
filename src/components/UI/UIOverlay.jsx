@@ -17,6 +17,7 @@ import GlobalMIDIStatus from '../MIDI/GlobalMIDIStatus';
 import AudioStatusIcon from '../Audio/AudioStatusIcon';
 import SceneSelectorBar from './SceneSelectorBar';
 import LibraryPanel from '../Panels/LibraryPanel';
+import EffectsPanel from '../Panels/EffectsPanel'; // --- NEW IMPORT ---
 import Crossfader from './Crossfader';
 import WorkspaceSelectorDots from './WorkspaceSelectorDots';
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
@@ -47,8 +48,8 @@ const GeneralConnectPill = () => {
 const ActivePanelRenderer = (props) => {
     const { 
       uiState, audioState, pLockProps, onPreviewEffect,
-      sequencerIntervalMs, onSetSequencerInterval, // <-- Receive from props
-      crossfadeDurationMs, onSetCrossfadeDuration, // <-- Receive from props
+      sequencerIntervalMs, onSetSequencerInterval, 
+      crossfadeDurationMs, onSetCrossfadeDuration, 
     } = props;
     const { activePanel, animatingPanel, activeLayerTab, closePanel, setActiveLayerTab } = uiState;
     const { isAudioActive, audioSettings, analyzerData, setIsAudioActive, setAudioSettings } = audioState;
@@ -90,6 +91,8 @@ const ActivePanelRenderer = (props) => {
             return ( <PanelWrapper key="audio-panel" className={panelWrapperClassName}><AudioControlPanel onClose={closePanel} isAudioActive={isAudioActive} setIsAudioActive={setIsAudioActive} audioSettings={audioSettings} setAudioSettings={setAudioSettings} analyzerData={analyzerData} /></PanelWrapper> );
         case "whitelist":
             return ( <PanelWrapper key="whitelist-panel" className={panelWrapperClassName}><LibraryPanel onClose={closePanel} /></PanelWrapper> );
+        case "fx": // --- NEW CASE ---
+            return ( <PanelWrapper key="fx-panel" className={panelWrapperClassName}><EffectsPanel onClose={closePanel} /></PanelWrapper> );
         case "tokens":
             return ( <TokenSelectorOverlay key="token-selector-overlay" isOpen={activePanel === "tokens"} onClose={handleTokenSelectorClose} onTokenApplied={updateTokenAssignment} /> );
         default:
@@ -121,7 +124,7 @@ function UIOverlay({
   uiState,
   audioState,
   pLockProps,
-  isReady = false, // Default value here replaces defaultProps
+  isReady = false,
   actions,
   configData,
   crossfadeDurationMs,
@@ -129,9 +132,7 @@ function UIOverlay({
 }) {
   const { addToast } = useToast();
   const { stagedSetlist, loadWorkspace, activeWorkspaceName: currentWorkspaceName, isLoading: isConfigLoading, activeSceneName, fullSceneList: savedSceneList } = useWorkspaceContext();
-  // --- FIX: Get the new commit handler ---
   const { renderedCrossfaderValue, isAutoFading, handleSceneSelect, handleCrossfaderChange, handleCrossfaderCommit } = useVisualEngineContext();
-  // ------------------------------------
   const { unreadCount } = useNotificationContext();
   const { isRadarProjectAdmin, hostProfileAddress: currentProfileAddress, isHostProfileOwner } = useUserSession();
   const { isUiVisible, activePanel, toggleSidePanel, toggleInfoOverlay, toggleUiVisibility } = uiState;
@@ -265,9 +266,7 @@ function UIOverlay({
                 <Crossfader
                   value={renderedCrossfaderValue}
                   onInput={handleCrossfaderChange}
-                  // --- FIX: Use the new handler for the onChange event ---
                   onChange={handleCrossfaderCommit}
-                  // ----------------------------------------------------
                   disabled={isAutoFading}
                 />
                 <MemoizedSceneSelectorBar

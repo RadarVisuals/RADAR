@@ -2,27 +2,23 @@
 import React, { useRef, useEffect, useMemo, useState, useCallback } from "react";
 import PropTypes from "prop-types";
 
-// Custom Hooks
 import { useUpProvider } from "../../context/UpProvider.jsx";
 import { useCoreApplicationStateAndLifecycle } from '../../hooks/useCoreApplicationStateAndLifecycle';
 import { useAppInteractions } from '../../hooks/useAppInteractions';
 import { useWorkspaceContext } from "../../context/WorkspaceContext";
 import { useVisualEngineContext } from "../../context/VisualEngineContext";
 
-// UI Components
 import ToastContainer from "../Notifications/ToastContainer";
 import UIOverlay from '../UI/UIOverlay';
-import CanvasContainerWrapper from '../MainViewParts/CanvasContainerWrapper';
+import PixiCanvasWrapper from '../MainViewParts/PixiCanvasWrapper';
 import FpsDisplay from '../MainViewParts/FpsDisplay';
 import StatusIndicator from '../MainViewParts/StatusIndicator';
 import AudioAnalyzerWrapper from '../MainViewParts/AudioAnalyzerWrapper';
 import CriticalErrorDisplay from '../MainViewParts/CriticalErrorDisplay';
 
-// Config & Assets
 import { BLEND_MODES } from "../../config/global-config";
 import { PING_COLOR, PING_STROKE_WIDTH, NO_PING_SELECTORS } from "../../config/uiConstants";
 
-// Styles
 import "./MainviewStyles/Mainview.css";
 
 const DEFAULT_CROSSFADE_DURATION = 1000;
@@ -65,18 +61,6 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   
   const rootRef = useRef(null);
   
-  const canvasRef1A = useRef(null);
-  const canvasRef1B = useRef(null);
-  const canvasRef2A = useRef(null);
-  const canvasRef2B = useRef(null);
-  const canvasRef3A = useRef(null);
-  const canvasRef3B = useRef(null);
-  const canvasRefs = useMemo(() => ({
-    "1": { A: canvasRef1A, B: canvasRef1B },
-    "2": { A: canvasRef2A, B: canvasRef2B },
-    "3": { A: canvasRef3A, B: canvasRef3B },
-  }), []);
-
   const [isParallaxEnabled, setIsParallaxEnabled] = useState(false);
   const toggleParallax = useCallback(() => setIsParallaxEnabled(prev => !prev), []);
   const [crossfadeDurationMs, setCrossfadeDurationMs] = useState(DEFAULT_CROSSFADE_DURATION);
@@ -104,16 +88,17 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   }, [isWorkspaceTransitioning, _executeLoadAfterFade]);
 
   const coreApp = useCoreApplicationStateAndLifecycle({
-    canvasRefs,
+    canvasRefs: {}, 
     animatingPanel: localAnimatingPanel, 
     isBenignOverlayActive: localIsBenignOverlayActive,
   });
 
   const {
-    containerRef, managerInstancesRef, audioState,
+    containerRef, 
+    pixiCanvasRef,
+    managerInstancesRef, audioState,
     renderState, loadingStatusMessage: renderLifecycleMessage, isStatusFadingOut, showStatusDisplay,
-    showRetryButton, isTransitioning, outgoingLayerIdsOnTransitionStart,
-    makeIncomingCanvasVisible, 
+    showRetryButton, isTransitioning,
     handleManualRetry,
     managersReady,
     setCanvasLayerImage,
@@ -142,12 +127,9 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     const updateParallax = () => {
       if (managerInstancesRef.current) {
         const { x, y } = isParallaxEnabled ? mousePositionRef.current : { x: 0, y: 0 };
-        
-        Object.values(managerInstancesRef.current).forEach(manager => {
-          if (manager?.setParallaxOffset) {
-            manager.setParallaxOffset(x, y);
-          }
-        });
+        if (managerInstancesRef.current['1'] && managerInstancesRef.current['1'].setParallax) {
+             managerInstancesRef.current['1'].setParallax(x, y);
+        }
       }
       parallaxRafIdRef.current = requestAnimationFrame(updateParallax);
     };
@@ -250,54 +232,26 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     animationDataRef: sequencer.animationDataRef,
   }), [sequencer, handleTogglePLock]);
 
-  const getCanvasClasses = useCallback((layerIdStr) => {
-    let classes = `canvas layer-${layerIdStr}`;
-    const isOutgoing = isTransitioning && outgoingLayerIdsOnTransitionStart?.has(layerIdStr);
-    const isStableAndVisible = !isTransitioning && renderState === 'rendered';
-    
-    const isIncomingAndReadyToFadeIn = isTransitioning && makeIncomingCanvasVisible;
-
-    if (isOutgoing) {
-      classes += ' visible is-fading-out';
-    } else if (isStableAndVisible) {
-      classes += ' visible';
-    } else if (isIncomingAndReadyToFadeIn) {
-      classes += ' visible is-fading-in';
-    }
-    return classes;
-  }, [isTransitioning, outgoingLayerIdsOnTransitionStart, renderState, makeIncomingCanvasVisible]);
-
   const containerClass = `canvas-container ${isTransitioning ? 'transitioning-active' : ''} ${isWorkspaceTransitioning ? 'workspace-fading-out' : ''}`;
   
-  // --- START OF FIX: Simplified and more robust rendering logic ---
-  // The isReadyToRender flag, now correctly gated by the new logic in useCoreApplicationStateAndLifecycle,
-  // is the single source of truth for showing the main UI.
   const isReadyToRender = renderState === 'rendered';
   const showLoadingIndicator = !!loadingMessage;
-  // --- END OF FIX ---
 
   return (
     <>
       <div id="fullscreen-root" ref={rootRef} className="main-view radar-cursor">
         
-        {/* The loading pill is now just an overlay, allowing the layout to mount behind it. */}
         <LoadingIndicatorPill message={loadingMessage} isVisible={showLoadingIndicator} />
 
-        <CanvasContainerWrapper
+        <PixiCanvasWrapper
           containerRef={containerRef}
-          canvasRefs={{
-            '1A': canvasRef1A, '1B': canvasRef1B,
-            '2A': canvasRef2A, '2B': canvasRef2B,
-            '3A': canvasRef3A, '3B': canvasRef3B,
-          }}
+          canvasRef={pixiCanvasRef}
           containerClass={containerClass}
-          baseCanvasClass={getCanvasClasses}
           pingColor={PING_COLOR}
           pingStrokeWidth={PING_STROKE_WIDTH}
           noPingSelectors={NO_PING_SELECTORS}
         />
 
-        {/* This block will only render AFTER loading is fully complete and renderState is 'rendered' */}
         {isReadyToRender && (
           <>
             <FpsDisplay showFpsCounter={showFpsCounter} isFullscreenActive={isFullscreenActive} portalContainer={portalContainerNode} />
