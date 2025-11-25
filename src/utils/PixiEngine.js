@@ -12,6 +12,7 @@ import {
 } from 'pixi-filters';
 import { sliderParams } from '../config/sliderParams';
 import ValueInterpolator from './ValueInterpolator';
+import { getDecodedImage } from './imageDecoder'; // <--- Added Import
 
 // Mapping for Pixi Blend Modes
 const BLEND_MODE_MAP = {
@@ -691,14 +692,28 @@ export default class PixiEngine {
 
   async setTexture(layerId, deckSide, imageSrc, tokenId) {
     if (!this.isReady || !this.layers[layerId]) return;
+    
     const deck = deckSide === 'A' ? this.layers[layerId].deckA : this.layers[layerId].deckB;
+    
     if (deck.tokenId === tokenId) return;
+    
     deck.tokenId = tokenId;
-    if (!imageSrc) { deck.setTexture(Texture.EMPTY); return; }
+    
+    if (!imageSrc) { 
+        deck.setTexture(Texture.EMPTY); 
+        return; 
+    }
+
     try {
-      const texture = await Assets.load(imageSrc);
-      if (deck.tokenId === tokenId) deck.setTexture(texture);
-    } catch (e) { console.warn(`[PixiEngine] Failed to load texture: ${imageSrc}`, e); }
+      const imageBitmap = await getDecodedImage(imageSrc);
+      const texture = Texture.from(imageBitmap);
+
+      if (deck.tokenId === tokenId) {
+          deck.setTexture(texture);
+      }
+    } catch (e) { 
+      console.warn(`[PixiEngine] Failed to load texture: ${imageSrc}`, e); 
+    }
   }
 
   updateConfig(layerId, key, value, deckSide = 'A') {
