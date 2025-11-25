@@ -12,13 +12,8 @@ const EffectControl = ({ label, effectKey, params, config, onChange }) => {
         onChange(effectKey, 'enabled', e.target.checked);
     };
 
-    const handleSliderChange = (param, e) => {
-        onChange(effectKey, param, parseFloat(e.target.value));
-    };
-
-    // New handler for dropdown inputs
-    const handleSelectChange = (param, e) => {
-        onChange(effectKey, param, parseFloat(e.target.value));
+    const handleChange = (param, value) => {
+        onChange(effectKey, param, parseFloat(value));
     };
 
     return (
@@ -39,7 +34,7 @@ const EffectControl = ({ label, effectKey, params, config, onChange }) => {
                                 <select 
                                     className="custom-select custom-select-sm"
                                     value={config[effectKey]?.[p.key] !== undefined ? config[effectKey][p.key] : p.default}
-                                    onChange={(e) => handleSelectChange(p.key, e)}
+                                    onChange={(e) => handleChange(p.key, e.target.value)}
                                     style={{ flexGrow: 1, padding: '2px 5px', height: '20px' }}
                                 >
                                     {p.options.map(opt => (
@@ -54,7 +49,7 @@ const EffectControl = ({ label, effectKey, params, config, onChange }) => {
                                         max={p.max} 
                                         step={p.step}
                                         value={config[effectKey]?.[p.key] !== undefined ? config[effectKey][p.key] : p.default}
-                                        onChange={(e) => handleSliderChange(p.key, e)}
+                                        onChange={(e) => handleChange(p.key, e.target.value)}
                                         className="param-slider"
                                     />
                                     <span className="param-value">{(config[effectKey]?.[p.key] !== undefined ? config[effectKey][p.key] : p.default).toFixed(p.decimals || 1)}</span>
@@ -71,7 +66,20 @@ const EffectControl = ({ label, effectKey, params, config, onChange }) => {
 EffectControl.propTypes = {
     label: PropTypes.string.isRequired,
     effectKey: PropTypes.string.isRequired,
-    params: PropTypes.array.isRequired,
+    params: PropTypes.arrayOf(PropTypes.shape({
+        key: PropTypes.string.isRequired,
+        label: PropTypes.string.isRequired,
+        type: PropTypes.string,
+        min: PropTypes.number,
+        max: PropTypes.number,
+        step: PropTypes.number,
+        default: PropTypes.number,
+        decimals: PropTypes.number,
+        options: PropTypes.arrayOf(PropTypes.shape({
+            value: PropTypes.number.isRequired,
+            label: PropTypes.string.isRequired
+        }))
+    })).isRequired,
     config: PropTypes.object.isRequired,
     onChange: PropTypes.func.isRequired,
 };
@@ -83,9 +91,47 @@ const EffectsPanel = ({ onClose }) => {
         <Panel title="GLOBAL EFFECTS" onClose={onClose} className="panel-from-toolbar effects-panel">
             <div className="effects-content">
                 
-                <h4 className="config-section-title" style={{marginTop:0}}>Distortion & Transition</h4>
+                <h4 className="config-section-title" style={{marginTop:0}}>Atmosphere & Flow (Premium)</h4>
+
+                <EffectControl 
+                    label="LIQUID FLOW" 
+                    effectKey="liquid"
+                    config={effectsConfig}
+                    onChange={updateEffectConfig}
+                    params={[
+                        { key: 'intensity', label: 'Amount', min: 0, max: 0.1, step: 0.001, default: 0.02, decimals: 3 },
+                        { key: 'scale', label: 'Density', min: 0.1, max: 10, step: 0.1, default: 3.0, decimals: 1 },
+                        { key: 'speed', label: 'Flow Spd', min: 0, max: 2.0, step: 0.1, default: 0.5, decimals: 1 }
+                    ]}
+                />
+
+                <EffectControl 
+                    label="VOLUMETRIC LIGHT" 
+                    effectKey="volumetric"
+                    config={effectsConfig}
+                    onChange={updateEffectConfig}
+                    params={[
+                        { key: 'exposure', label: 'Brightness', min: 0, max: 1.0, step: 0.01, default: 0.3, decimals: 2 },
+                        { key: 'threshold', label: 'Threshold', min: 0, max: 1.0, step: 0.01, default: 0.5, decimals: 2 },
+                        { key: 'decay', label: 'Decay', min: 0.8, max: 1.0, step: 0.001, default: 0.95, decimals: 3 },
+                        { key: 'density', label: 'Density', min: 0, max: 1.0, step: 0.01, default: 0.8, decimals: 2 },
+                        { key: 'x', label: 'Light X', min: 0, max: 1.0, step: 0.01, default: 0.5, decimals: 2 },
+                        { key: 'y', label: 'Light Y', min: 0, max: 1.0, step: 0.01, default: 0.5, decimals: 2 }
+                    ]}
+                />
+
+                <EffectControl 
+                    label="WAVE DISTORT" 
+                    effectKey="waveDistort"
+                    config={effectsConfig}
+                    onChange={updateEffectConfig}
+                    params={[
+                        { key: 'intensity', label: 'Amplitude', min: 0, max: 2.0, step: 0.01, default: 0.5, decimals: 2 }
+                    ]}
+                />
+
+                <h4 className="config-section-title">Distortion & Geometry</h4>
                 
-                {/* 1. Kaleidoscope - NEW EFFECT */}
                 <EffectControl 
                     label="KALEIDOSCOPE (MIRROR)" 
                     effectKey="kaleidoscope"
@@ -111,21 +157,6 @@ const EffectsPanel = ({ onClose }) => {
                     ]}
                 />
 
-                {/* 2. Datamosh */}
-                <EffectControl 
-                    label="DATAMOSH (X-FADE)" 
-                    effectKey="datamosh"
-                    config={effectsConfig}
-                    onChange={updateEffectConfig}
-                    params={[
-                        { key: 'scale', label: 'Melt Amount', min: 0, max: 500, step: 10, default: 200, decimals: 0 },
-                        { key: 'speed', label: 'Flow Speed', min: 0, max: 20, step: 0.5, default: 2, decimals: 1 },
-                        { key: 'zoom', label: 'Wave Size', min: 0.1, max: 3.0, step: 0.1, default: 1.0, decimals: 1 },
-                        { key: 'angle', label: 'Flow Angle', min: 0, max: 360, step: 1, default: 25, decimals: 0 }
-                    ]}
-                />
-
-                {/* 3. Twist */}
                 <EffectControl 
                     label="VOID VORTEX (TWIST)" 
                     effectKey="twist"
@@ -133,65 +164,33 @@ const EffectsPanel = ({ onClose }) => {
                     onChange={updateEffectConfig}
                     params={[
                         { key: 'radius', label: 'Radius', min: 100, max: 1000, step: 10, default: 400, decimals: 0 },
-                        { key: 'angle', label: 'Twist Strength', min: -10, max: 10, step: 0.1, default: 4, decimals: 1 }
+                        { key: 'angle', label: 'Twist', min: -10, max: 10, step: 0.1, default: 4, decimals: 1 }
                     ]}
                 />
 
-                {/* 4. Zoom Blur */}
                 <EffectControl 
                     label="WARP DRIVE (ZOOM)" 
                     effectKey="zoomBlur"
                     config={effectsConfig}
                     onChange={updateEffectConfig}
                     params={[
-                        { key: 'strength', label: 'Intensity', min: 0, max: 0.5, step: 0.01, default: 0.1, decimals: 2 },
+                        { key: 'strength', label: 'Strength', min: 0, max: 0.5, step: 0.01, default: 0.1, decimals: 2 },
                         { key: 'innerRadius', label: 'Safe Zone', min: 0, max: 200, step: 10, default: 50, decimals: 0 }
                     ]}
                 />
 
-                <h4 className="config-section-title">Lighting & Glitch</h4>
+                <h4 className="config-section-title">Color & Texture</h4>
 
-                {/* 5. God Rays */}
-                <EffectControl 
-                    label="GOD RAYS (VOLUMETRIC)" 
-                    effectKey="godray"
-                    config={effectsConfig}
-                    onChange={updateEffectConfig}
-                    params={[
-                        { key: 'gain', label: 'Brightness', min: 0, max: 1, step: 0.01, default: 0.5, decimals: 2 },
-                        { key: 'lacunarity', label: 'Density', min: 0, max: 5, step: 0.1, default: 2.5, decimals: 1 }
-                    ]}
-                />
-
-                {/* 6. Glitch */}
-                <EffectControl 
-                    label="DIGITAL NOISE (GLITCH)" 
-                    effectKey="glitch"
-                    config={effectsConfig}
-                    onChange={updateEffectConfig}
-                    params={[
-                        { key: 'slices', label: 'Slices', min: 2, max: 50, step: 1, default: 10, decimals: 0 },
-                        { key: 'offset', label: 'Offset', min: 0, max: 100, step: 1, default: 10, decimals: 0 },
-                        { key: 'direction', label: 'Direction', min: 0, max: 360, step: 10, default: 0, decimals: 0 }
-                    ]}
-                />
-
-                {/* 7. RGB Split */}
                 <EffectControl 
                     label="CHROMATIC ABERRATION" 
                     effectKey="rgb"
                     config={effectsConfig}
                     onChange={updateEffectConfig}
                     params={[
-                        { key: 'red', label: 'Red Offset', min: -20, max: 20, step: 1, default: 2, decimals: 0 },
-                        { key: 'blue', label: 'Blue Offset', min: -20, max: 20, step: 1, default: 2, decimals: 0 },
-                        { key: 'green', label: 'Green Offset', min: -20, max: 20, step: 1, default: 0, decimals: 0 }
+                        { key: 'amount', label: 'Offset', min: 0, max: 20, step: 1, default: 2, decimals: 0 }
                     ]}
                 />
 
-                <h4 className="config-section-title">Post Processing</h4>
-
-                {/* 8. Bloom */}
                 <EffectControl 
                     label="BLOOM (GLOW)" 
                     effectKey="bloom"
@@ -204,20 +203,18 @@ const EffectsPanel = ({ onClose }) => {
                     ]}
                 />
 
-                {/* 9. CRT */}
                 <EffectControl 
                     label="CRT MONITOR (RETRO)" 
                     effectKey="crt"
                     config={effectsConfig}
                     onChange={updateEffectConfig}
                     params={[
-                        { key: 'curvature', label: 'Curvature', min: 0, max: 10, step: 0.1, default: 1, decimals: 1 },
+                        { key: 'curvature', label: 'Curve', min: 0, max: 10, step: 0.1, default: 1, decimals: 1 },
                         { key: 'lineWidth', label: 'Scanlines', min: 0, max: 5, step: 0.1, default: 1, decimals: 1 },
                         { key: 'noise', label: 'Static', min: 0, max: 0.5, step: 0.01, default: 0.1, decimals: 2 }
                     ]}
                 />
 
-                {/* 10. Pixelate */}
                 <EffectControl 
                     label="PIXELATE (8-BIT)" 
                     effectKey="pixelate"

@@ -37,16 +37,19 @@ export const VisualEngineProvider = ({ children }) => {
     
     // --- Effects State ---
     const [effectsConfig, setEffectsConfig] = useState({
-        bloom: { enabled: false, intensity: 1.0, blur: 8 },
-        glitch: { enabled: false, slices: 10, offset: 10 },
+        bloom: { enabled: false, intensity: 1.0, blur: 8, threshold: 0.5 },
         rgb: { enabled: false, amount: 2 },
         pixelate: { enabled: false, size: 10 },
-        datamosh: { enabled: false, scale: 150, speed: 2 },
-        // NEW EFFECTS
-        godray: { enabled: false, gain: 0.5, lacunarity: 2.5, time: 0 },
         twist: { enabled: false, radius: 400, angle: 4, offset: { x: 0, y: 0 } },
-        zoomBlur: { enabled: false, strength: 0.1, center: { x: 0, y: 0 }, innerRadius: 50 },
-        crt: { enabled: false, curvature: 1, lineWidth: 1, lineContrast: 0.25, noise: 0.1 }
+        zoomBlur: { enabled: false, strength: 0.1, innerRadius: 50 },
+        crt: { enabled: false, curvature: 1, lineWidth: 1, noise: 0.1 },
+        kaleidoscope: { enabled: false, sides: 6, angle: 0 },
+        
+        // Premium Effects
+        liquid: { enabled: false, intensity: 0.02, scale: 3.0, speed: 0.5 },
+        volumetric: { enabled: false, exposure: 0.3, decay: 0.95, density: 0.8, weight: 0.4, threshold: 0.5, x: 0.5, y: 0.5 },
+        waveDistort: { enabled: false, intensity: 0.5 },
+        oldFilm: { enabled: false, noise: 0.3, scratch: 0.1, vignetting: 0.3 }
     });
 
     const faderAnimationRef = useRef();
@@ -71,15 +74,14 @@ export const VisualEngineProvider = ({ children }) => {
         };
     }, []);
 
+    // Crossfader Animation Loop
     useEffect(() => {
         const animateFader = () => {
             const current = renderedValueRef.current;
             const target = targetCrossfaderValue;
             let newRendered;
 
-            if (isAutoFading) {
-                // Handled by animateCrossfade
-            } else {
+            if (!isAutoFading) {
                 if (Math.abs(target - current) > 0.0001) {
                     newRendered = lerp(current, target, CROSSFADER_LERP_FACTOR);
                 } else {
@@ -123,6 +125,7 @@ export const VisualEngineProvider = ({ children }) => {
         }
     }, [setIsAutoFading, setTargetCrossfaderValue, setActiveSceneName]);
     
+    // Logic to handle scene loading, fallbacks, and deck assignments
     useEffect(() => {
         const initialLoadJustFinished = !prevIsFullyLoaded && isFullyLoaded;
         const transitionJustFinished = prevIsWorkspaceTransitioning && !isWorkspaceTransitioning;
@@ -176,6 +179,7 @@ export const VisualEngineProvider = ({ children }) => {
         const activeDeckIsA = renderedValueRef.current < 0.5;
         const activeSceneNameOnDeck = activeDeckIsA ? sideA.config?.name : sideB.config?.name;
         if (activeSceneNameOnDeck === sceneName) return;
+        
         if (!activeDeckIsA && sideA.config?.name === sceneName) { setIsAutoFading(true); animateCrossfade(performance.now(), renderedValueRef.current, 0.0, duration, sceneName); return; }
         if (activeDeckIsA && sideB.config?.name === sceneName) { setIsAutoFading(true); animateCrossfade(performance.now(), renderedValueRef.current, 1.0, duration, sceneName); return; }
         if (activeDeckIsA) { setSideB({ config: JSON.parse(JSON.stringify(targetScene)) }); setIsAutoFading(true); animateCrossfade(performance.now(), renderedValueRef.current, 1.0, duration, sceneName); } else { setSideA({ config: JSON.parse(JSON.stringify(targetScene)) }); setIsAutoFading(true); animateCrossfade(performance.now(), renderedValueRef.current, 0.0, duration, sceneName); }
@@ -190,11 +194,13 @@ export const VisualEngineProvider = ({ children }) => {
         const manager = managers[String(layerId)];
         if (!manager) return;
         const activeDeck = renderedValueRef.current < 0.5 ? 'A' : 'B';
+        
         if (isMidiUpdate && INTERPOLATED_MIDI_PARAMS.includes(key)) {
           if (activeDeck === 'A') manager.setTargetValue(key, value); else manager.setTargetValueB(key, value);
         } else {
           if (activeDeck === 'A') manager.updateConfigProperty(key, value); else manager.updateConfigBProperty(key, value);
         }
+
         const stateSetter = activeDeck === 'A' ? setSideA : setSideB;
         stateSetter(prev => {
           if (!prev.config) return prev;
@@ -214,6 +220,7 @@ export const VisualEngineProvider = ({ children }) => {
         if (!idToSave || !srcToLoad) return;
         const assignmentObject = { id: idToSave, src: srcToLoad };
         const targetDeck = renderedValueRef.current < 0.5 ? 'A' : 'B';
+        
         const stateSetter = targetDeck === 'A' ? setSideA : setSideB;
         stateSetter(prev => {
           if (!prev.config) return prev;
@@ -222,6 +229,7 @@ export const VisualEngineProvider = ({ children }) => {
           newConfig.tokenAssignments[String(layerId)] = assignmentObject;
           return { ...prev, config: newConfig };
         });
+
         try { await setCanvasLayerImage(String(layerId), srcToLoad, idToSave); } catch (e) { console.error(e); }
         setHasPendingChanges(true);
     }, [setHasPendingChanges]);
@@ -243,9 +251,7 @@ export const VisualEngineProvider = ({ children }) => {
         stateSetter({ config: JSON.parse(JSON.stringify(cleanSceneData)) });
     }, [fullSceneList]);
 
-    // --- Update Effect Config Handler ---
     const updateEffectConfig = useCallback((effectName, param, value) => {
-        // 1. Update React State
         setEffectsConfig(prev => ({
             ...prev,
             [effectName]: {
@@ -254,7 +260,6 @@ export const VisualEngineProvider = ({ children }) => {
             }
         }));
 
-        // 2. Update Pixi Engine immediately via Proxy/Hook
         const managers = managerInstancesRef.current?.current;
         if (managers && managers['1'] && managers['1'].updateEffectConfig) {
             managers['1'].updateEffectConfig(effectName, param, value);
