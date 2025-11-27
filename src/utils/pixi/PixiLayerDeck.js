@@ -5,8 +5,10 @@ import { sliderParams } from '../../config/sliderParams';
 import { getDecodedImage } from '../imageDecoder';
 import { MAX_TOTAL_OFFSET, MIDI_INTERPOLATION_DURATION, BLEND_MODE_MAP } from './PixiConstants';
 
-// Matches your previous "Normal" look. 
-// 0.5 ensures 'Size: 1.0' isn't too overwhelming initially.
+// --- SCALE FIX ---
+// 0.5 reduces the base calculation by half. 
+// This makes 'Size: 2.5' behave more like 'Size: 1.25' relative to the screen,
+// restoring the "Kaleidoscope" look instead of the "Macro Zoom" look.
 const BASE_SCALE_MODIFIER = 0.5;
 
 class Quadrant {
@@ -15,8 +17,7 @@ class Quadrant {
     this.mask = new Graphics();
     this.sprite = new Sprite();
     
-    // We will manipulate the anchor dynamically in applyRenderState
-    // to handle panning without moving the center of rotation.
+    // Center anchor so scaling/rotation happens from the middle of the sprite
     this.sprite.anchor.set(0.5);
     
     this.container.mask = this.mask;
@@ -197,7 +198,6 @@ export class PixiLayerDeck {
     }
     this.container.visible = true;
 
-    // Dimensions
     const screenW = screen.width; 
     const screenH = screen.height;
     const halfW = screenW / 2; 
@@ -206,84 +206,65 @@ export class PixiLayerDeck {
     const pX = parallaxOffset.x * parallaxFactor;
     const pY = parallaxOffset.y * parallaxFactor;
     
-    // Total Panning Offset
-    const offsetX = (state.xaxis / 10) + state.driftX + pX;
-    const offsetY = (state.yaxis / 10) + state.driftY + pY;
+    const targetX = halfW + (state.xaxis / 10) + state.driftX + pX;
+    const targetY = halfH + (state.yaxis / 10) + state.driftY + pY;
     
-    // Texture Dimensions for Anchor Calc
+    // Scale Logic
     const tex = this.quadrants[0].sprite.texture;
-    const texValid = tex && tex.valid && tex.width > 1;
-    const texW = texValid ? tex.width : halfW;
-    const texH = texValid ? tex.height : halfH;
-
-    // --- DRIFT FIX: ANCHOR SHIFT ---
-    // Instead of moving the sprite (which changes rotation origin),
-    // we shift the anchor. This keeps rotation centered on screen.
-    const anchorX = 0.5 - (offsetX / texW);
-    const anchorY = 0.5 - (offsetY / texH);
-
-    // --- SCALE FIX: CONTAIN & DAMPEN ---
     let screenRelativeScale = 1.0;
-    if (texValid) {
-        // Fit inside quadrant (Contain)
-        const fitWidth = halfW / texW;
-        const fitHeight = halfH / texH;
+    
+    if (tex && tex.valid && tex.width > 1) {
+        // Calculate ratio to fit inside the quadrant
+        const fitWidth = halfW / tex.width;
+        const fitHeight = halfH / tex.height;
+        
+        // --- KEY FIX HERE ---
+        // Use Math.min ("Contain") instead of Math.max ("Cover")
+        // This ensures the image isn't pre-zoomed to fill the screen before the Size slider applies.
         screenRelativeScale = Math.min(fitWidth, fitHeight);
     }
     
-    // Apply dampener to fix "Zoomed In" feel
+    // Apply dampener to align '2.5' slider value with legacy appearance
     const finalScale = Math.max(0.001, state.size * screenRelativeScale * beatFactor * BASE_SCALE_MODIFIER);
     
     const finalAlpha = state.opacity * alphaMult;
     const blend = BLEND_MODE_MAP[state.blendMode] || 'normal';
 
-    // --- APPLY TO QUADRANTS ---
-    // All sprites are positioned at the CENTERS of their quadrants (or screen center)
-    // The visual shift happens via the anchor calculated above.
-    
-    const centerX = halfW;
-    const centerY = halfH;
-
     // 1. Top-Left
     this._updateQuadrant(this.quadrants[0], 
-        centerX, centerY, 
-        anchorX, anchorY,
+        targetX, targetY, 
         finalScale, finalScale, 
         state.totalAngleRad, 
         finalAlpha, blend
     );
 
-    // 2. Top-Right (Mirrored X)
+    // 2. Top-Right (Mirror X)
     this._updateQuadrant(this.quadrants[1], 
-        centerX, centerY,
-        anchorX, anchorY, // Same anchor, negative scale handles flip
+        screenW - targetX, targetY, 
         -finalScale, finalScale, 
         -state.totalAngleRad, 
         finalAlpha, blend
     );
 
-    // 3. Bottom-Left (Mirrored Y)
+    // 3. Bottom-Left (Mirror Y)
     this._updateQuadrant(this.quadrants[2], 
-        centerX, centerY, 
-        anchorX, anchorY,
+        targetX, screenH - targetY, 
         finalScale, -finalScale, 
         -state.totalAngleRad, 
         finalAlpha, blend
     );
 
-    // 4. Bottom-Right (Mirrored Both)
+    // 4. Bottom-Right (Mirror Both)
     this._updateQuadrant(this.quadrants[3], 
-        centerX, centerY, 
-        anchorX, anchorY,
+        screenW - targetX, screenH - targetY, 
         -finalScale, -finalScale, 
         state.totalAngleRad, 
         finalAlpha, blend
     );
   }
 
-  _updateQuadrant(quad, x, y, ax, ay, sx, sy, rot, alpha, blend) {
+  _updateQuadrant(quad, x, y, sx, sy, rot, alpha, blend) {
     quad.sprite.position.set(x, y); 
-    quad.sprite.anchor.set(ax, ay); // Key Fix: Dynamic Anchor
     quad.sprite.scale.set(sx, sy); 
     quad.sprite.rotation = rot; 
     quad.sprite.alpha = alpha; 
