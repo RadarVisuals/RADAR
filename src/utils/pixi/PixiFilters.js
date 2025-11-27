@@ -80,6 +80,7 @@ export class VolumetricLightFilter extends Filter {
                 }
             }
         });
+        // Padding removed to align UV center with screen center
     }
     get exposure() { return this.resources.volumetricUniforms.uniforms.uExposure; }
     set exposure(v) { this.resources.volumetricUniforms.uniforms.uExposure = v; }
@@ -150,6 +151,7 @@ export class LiquidFilter extends Filter {
                 }
             }
         });
+        // Padding removed to align UV center with screen center
     }
     get time() { return this.resources.liquidUniforms.uniforms.uTime; }
     set time(v) { this.resources.liquidUniforms.uniforms.uTime = v; }
@@ -190,6 +192,7 @@ export class WaveDistortFilter extends Filter {
                 }
             }
         });
+        // Padding removed to align UV center with screen center
     }
     get time() { return this.resources.waveUniforms.uniforms.uTime; }
     set time(v) { this.resources.waveUniforms.uniforms.uTime = v; }
@@ -238,6 +241,8 @@ export class KaleidoscopeFilter extends Filter {
                 kaleidoscopeUniforms: { sides: { value: 6.0, type: 'f32' }, angle: { value: 0.0, type: 'f32' }, uScreenSize: { value: { x: 1.0, y: 1.0 }, type: 'vec2<f32>' } }
             }
         });
+        // Kaleidoscope typically fills screen and doesn't need padding for stability
+        this.padding = 0; 
     }
     get sides() { return this.resources.kaleidoscopeUniforms.uniforms.sides; }
     set sides(value) { this.resources.kaleidoscopeUniforms.uniforms.sides = value; }

@@ -31,11 +31,13 @@ export default class PixiEngine {
     
     await this.app.init({
       canvas: this.canvas,
-      resizeTo: window,
+      // Change resizeTo from 'window' to parentElement.
+      // This ensures it respects the container size in iframe/fullscreen correctly.
+      resizeTo: this.canvas.parentElement, 
       backgroundAlpha: 0,
       antialias: true,
       resolution: window.devicePixelRatio || 1,
-      autoDensity: true, // This pairs with resolution to ensure CSS pixels match physical pixels
+      autoDensity: true,
       powerPreference: 'high-performance', 
       preference: 'webgl',
     });
@@ -69,7 +71,6 @@ export default class PixiEngine {
   }
 
   initMappingResources() {
-    // Resources must match the logical screen dimensions for mapping
     const { width, height } = this.app.screen;
     this.renderTexture = RenderTexture.create({ width, height, resolution: this.app.renderer.resolution });
     const geometry = new PlaneGeometry({ width, height, verticesX: 2, verticesY: 2 });
@@ -100,7 +101,6 @@ export default class PixiEngine {
   handleResize() {
     if (!this.app.renderer) return;
 
-    // Use logical CSS screen dimensions
     const w = this.app.screen.width;
     const h = this.app.screen.height;
     
@@ -108,7 +108,10 @@ export default class PixiEngine {
         this.renderTexture.resize(w, h);
     }
     
-    this.app.stage.filterArea = this.app.screen; 
+    // --- FIX: Apply filterArea to mainLayerGroup, not just stage ---
+    if (this.mainLayerGroup) {
+        this.mainLayerGroup.filterArea = this.app.screen;
+    }
     
     Object.values(this.layers).forEach(layer => {
       layer.deckA.resize(this.app.renderer);
@@ -127,6 +130,15 @@ export default class PixiEngine {
   update(ticker) {
     const now = performance.now();
     const deltaTime = ticker.deltaTime / 60; 
+
+    // --- FIX START ---
+    // Ensure the filter area stays locked to the screen dimensions.
+    // This prevents the filter coordinate system from jumping around 
+    // as the underlying layers rotate and change their bounding box.
+    if (this.app && this.app.screen && this.mainLayerGroup) {
+        this.mainLayerGroup.filterArea = this.app.screen;
+    }
+    // --- FIX END ---
 
     this.effectsManager.update(ticker, this.app.renderer);
 
