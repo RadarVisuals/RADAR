@@ -4,6 +4,7 @@ import PropTypes from 'prop-types';
 import { useUserSession } from './UserSessionContext';
 import { useToast } from './ToastContext';
 import { useUpProvider } from './UpProvider';
+import { useSceneContext } from './SceneContext';
 import ConfigurationService from '../services/ConfigurationService';
 import { uploadJsonToPinata } from '../services/PinataService.js';
 import { preloadImages, resolveImageUrl } from '../utils/imageDecoder.js';
@@ -13,11 +14,26 @@ import { useAsyncErrorHandler } from '../hooks/useAsyncErrorHandler';
 const WorkspaceContext = createContext();
 
 export const WorkspaceProvider = ({ children }) => {
+    // --- Context Consumption ---
+    const { 
+        setStagedActiveWorkspace, 
+        setActiveSceneName, 
+        activeSceneName,
+        stagedActiveWorkspace, 
+        setHasPendingChanges,
+        hasPendingChanges,
+        fullSceneList,
+        addNewSceneToStagedWorkspace,
+        deleteSceneFromStagedWorkspace,
+        setDefaultSceneInStagedWorkspace
+    } = useSceneContext();
+
     const { hostProfileAddress, isHostProfileOwner, loggedInUserUPAddress } = useUserSession();
     const { provider, walletClient, publicClient } = useUpProvider();
     const { addToast } = useToast();
     const { handleAsyncError } = useAsyncErrorHandler();
 
+    // --- State: Infrastructure & Loading ---
     const [shouldStartLoading, setShouldStartLoading] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [loadingMessage, setLoadingMessage] = useState("Initializing...");
@@ -27,18 +43,15 @@ export const WorkspaceProvider = ({ children }) => {
     const [isSaving, setIsSaving] = useState(false);
     const [saveError, setSaveError] = useState(null);
     const [saveSuccess, setSaveSuccess] = useState(false);
-    const [hasPendingChanges, setHasPendingChanges] = useState(false);
 
-    const configServiceRef = useRef(null);
-    const [configServiceInstanceReady, setConfigServiceInstanceReady] = useState(false);
-    
+    // --- State: Setlist (The Container of Workspaces) ---
     const [setlist, setSetlist] = useState(null);
     const [stagedSetlist, setStagedSetlist] = useState(null);
-    const [activeWorkspace, setActiveWorkspace] = useState(null);
-    const [stagedActiveWorkspace, setStagedActiveWorkspace] = useState(null);
     const [activeWorkspaceName, setActiveWorkspaceName] = useState(null);
-    const [activeSceneName, setActiveSceneName] = useState(null);
     
+    // --- Refs ---
+    const configServiceRef = useRef(null);
+    const [configServiceInstanceReady, setConfigServiceInstanceReady] = useState(false);
     const [isWorkspaceTransitioning, setIsWorkspaceTransitioning] = useState(false);
     const workspaceToLoadRef = useRef(null);
     const [newlyCreatedWorkspace, setNewlyCreatedWorkspace] = useState(null);
@@ -47,7 +60,7 @@ export const WorkspaceProvider = ({ children }) => {
     const prevProfileAddressRef = useRef(null);
 
     const startLoadingProcess = useCallback(() => {
-        if(import.meta.env.DEV) console.log('%c[WorkspaceContext] User initiated loading process.', 'color: #1abc9c; font-weight: bold;');
+        if(import.meta.env.DEV) console.log('%c[WorkspaceContext] Loading initiated.', 'color: #1abc9c;');
         setShouldStartLoading(true);
     }, []);
 
@@ -56,39 +69,36 @@ export const WorkspaceProvider = ({ children }) => {
             configServiceRef.current = new ConfigurationService(provider, walletClient, publicClient);
             configServiceRef.current.publicClient = publicClient;
             configServiceRef.current.walletClient = walletClient;
-            const isReady = configServiceRef.current.checkReadyForRead();
-            setConfigServiceInstanceReady(isReady);
+            setConfigServiceInstanceReady(configServiceRef.current.checkReadyForRead());
         }
     }, [provider, publicClient, walletClient]);
 
     const _loadWorkspaceFromCid = useCallback(async (cid) => {
         const service = configServiceRef.current;
         if (!service || !cid) return null;
-        const workspaceData = await service._loadWorkspaceFromCID(cid);
-        return workspaceData;
+        return await service._loadWorkspaceFromCID(cid);
     }, []);
 
+    // --- Main Load Logic ---
     useEffect(() => {
-        if (!shouldStartLoading) {
-          if(import.meta.env.DEV) console.log('%c[WorkspaceContext] Waiting for user interaction to start loading.', 'color: #e67e22;');
-          return;
-        }
+        if (!shouldStartLoading) return;
     
         const currentAddress = hostProfileAddress;
         const service = configServiceRef.current;
         const profileChanged = currentAddress !== prevProfileAddressRef.current;
         
-        const emptySetlist = { defaultWorkspaceName: null, workspaces: {}, globalUserMidiMap: {}, personalCollectionLibrary: [], userPalettes: {} };
-        const emptyWorkspace = { presets: {}, defaultPresetName: null, globalEventReactions: {} };
+        const emptySetlist = { 
+            defaultWorkspaceName: null, workspaces: {}, globalUserMidiMap: {}, 
+            personalCollectionLibrary: [], userPalettes: {}, globalEventReactions: {} 
+        };
+        const emptyWorkspace = { presets: {}, defaultPresetName: null };
     
         if (profileChanged) {
-          if (import.meta.env.DEV) console.log(`%c[WorkspaceContext] Profile changed from ${prevProfileAddressRef.current?.slice(0,6)} to ${currentAddress?.slice(0,6)}. Resetting state.`, 'color: #f39c12;');
           prevProfileAddressRef.current = currentAddress;
-          setIsLoading(true);
-          setLoadingMessage("Initializing...");
-          setIsFullyLoaded(false);
-          setIsInitiallyResolved(false); setLoadError(null); setHasPendingChanges(false);
-          setSetlist(null); setStagedSetlist(null); setActiveWorkspace(null); setStagedActiveWorkspace(null);
+          setIsLoading(true); setLoadingMessage("Initializing...");
+          setIsFullyLoaded(false); setIsInitiallyResolved(false); setLoadError(null); setHasPendingChanges(false);
+          setSetlist(null); setStagedSetlist(null); 
+          setStagedActiveWorkspace(null); // Clear SceneContext
           setActiveWorkspaceName(null); setActiveSceneName(null);
         }
     
@@ -98,15 +108,14 @@ export const WorkspaceProvider = ({ children }) => {
             setLoadingMessage("Fetching Setlist...");
             let loadedSetlist = await service.loadWorkspace(address);
 
+            // Visitor Merge Logic
             if (!isHostProfileOwner && loggedInUserUPAddress) {
-                if (import.meta.env.DEV) console.log(`%c[WorkspaceContext] Visitor detected. Fetching MIDI map from logged-in user: ${loggedInUserUPAddress.slice(0,6)}`, 'color: #9b59b6; font-weight: bold;');
                 const visitorSetlist = await service.loadWorkspace(loggedInUserUPAddress);
-                if (visitorSetlist && visitorSetlist.globalUserMidiMap) {
-                    if (import.meta.env.DEV) console.log(`%c[WorkspaceContext] Visitor MIDI map found. Merging into host's setlist.`, 'color: #9b59b6;');
-                    loadedSetlist = {
-                        ...loadedSetlist,
-                        globalUserMidiMap: visitorSetlist.globalUserMidiMap,
-                    };
+                if (visitorSetlist) {
+                    const mergedSetlist = { ...loadedSetlist };
+                    if (visitorSetlist.globalUserMidiMap) mergedSetlist.globalUserMidiMap = visitorSetlist.globalUserMidiMap;
+                    if (visitorSetlist.globalEventReactions) mergedSetlist.globalEventReactions = visitorSetlist.globalEventReactions;
+                    loadedSetlist = mergedSetlist;
                 }
             }
 
@@ -123,11 +132,7 @@ export const WorkspaceProvider = ({ children }) => {
             if (workspaceInfo && workspaceInfo.cid) {
                 setLoadingMessage(`Loading Workspace: ${defaultWorkspaceName}...`);
                 const result = await handleAsyncError(_loadWorkspaceFromCid(workspaceInfo.cid));
-                if (result.success) {
-                    loadedWorkspace = result.data;
-                } else {
-                    loadedWorkspace = null; // Ensure it's null on failure
-                }
+                loadedWorkspace = result.success ? result.data : null;
             }
             
             if (!loadedWorkspace) {
@@ -146,16 +151,13 @@ export const WorkspaceProvider = ({ children }) => {
                 });
             });
     
-            if (imageUrlsToPreload.size > 0) {
-                await preloadImages(Array.from(imageUrlsToPreload));
-            }
+            if (imageUrlsToPreload.size > 0) await preloadImages(Array.from(imageUrlsToPreload));
     
             if (prevProfileAddressRef.current !== address) return;
     
-            setActiveWorkspace(loadedWorkspace);
+            // --- Handover to SceneContext ---
             setStagedActiveWorkspace(loadedWorkspace);
             setActiveWorkspaceName(defaultWorkspaceName);
-            
             const initialSceneName = loadedWorkspace.defaultPresetName || Object.keys(loadedWorkspace.presets || {})[0] || null;
             setActiveSceneName(initialSceneName);
             
@@ -167,48 +169,30 @@ export const WorkspaceProvider = ({ children }) => {
               setLoadError(error.message || "Failed to load setlist.");
               addToast("Could not load your setlist.", "error");
               setSetlist(emptySetlist); setStagedSetlist(emptySetlist);
-              setActiveWorkspace(emptyWorkspace); setStagedActiveWorkspace(emptyWorkspace);
+              setStagedActiveWorkspace(emptyWorkspace);
             }
           } finally {
             if (prevProfileAddressRef.current === address) {
-              setIsLoading(false);
-              setLoadingMessage("");
-              if(import.meta.env.DEV) console.log(`%c[WorkspaceContext] Load sequence finished for ${address?.slice(0,6)}. Setting isFullyLoaded = true.`, 'color: #2ecc71; font-weight: bold;');
+              setIsLoading(false); setLoadingMessage("");
               setIsFullyLoaded(true);
             }
           }
         };
         
         if (configServiceInstanceReady && !isInitiallyResolved) {
-          if (currentAddress) {
-            if (import.meta.env.DEV) console.log(`%c[WorkspaceContext] Initializing for connected profile: ${currentAddress.slice(0,6)}...`, 'color: #f39c12;');
-            loadInitialData(currentAddress);
-          } else {
-            if (import.meta.env.DEV) console.log(`%c[WorkspaceContext] Initializing for DISCONNECTED state.`, 'color: #f39c12;');
+          if (currentAddress) loadInitialData(currentAddress);
+          else {
             setSetlist(emptySetlist); setStagedSetlist(emptySetlist);
-            setActiveWorkspace(emptyWorkspace); setStagedActiveWorkspace(emptyWorkspace);
-            setIsLoading(false);
-            setIsInitiallyResolved(true);
+            setStagedActiveWorkspace(emptyWorkspace);
+            setIsLoading(false); setIsInitiallyResolved(true);
           }
         }
-    }, [shouldStartLoading, hostProfileAddress, configServiceInstanceReady, isInitiallyResolved, addToast, _loadWorkspaceFromCid, handleAsyncError, isHostProfileOwner, loggedInUserUPAddress]);
-
-    const fullSceneList = useMemo(() => {
-        if (!stagedActiveWorkspace?.presets) return [];
-        const validScenes = Object.values(stagedActiveWorkspace.presets).filter(
-            (item) => item && typeof item.name === 'string'
-        );
-        return [...validScenes].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-    }, [stagedActiveWorkspace]);
+    }, [shouldStartLoading, hostProfileAddress, configServiceInstanceReady, isInitiallyResolved, addToast, _loadWorkspaceFromCid, handleAsyncError, isHostProfileOwner, loggedInUserUPAddress, setStagedActiveWorkspace, setActiveSceneName, setHasPendingChanges]);
 
     const _executeLoadAfterFade = useCallback(async () => {
         const workspaceName = workspaceToLoadRef.current;
         if (!workspaceName || !stagedSetlist || !stagedSetlist.workspaces[workspaceName]) {
-          const errorMsg = `Target workspace '${workspaceName}' not found for loading.`;
-          addToast(errorMsg, 'error');
-          setIsLoading(false);
-          setLoadingMessage("");
-          setIsWorkspaceTransitioning(false);
+          setIsLoading(false); setLoadingMessage(""); setIsWorkspaceTransitioning(false);
           return;
         }
     
@@ -219,11 +203,7 @@ export const WorkspaceProvider = ({ children }) => {
           } else {
             const workspaceInfo = stagedSetlist.workspaces[workspaceName];
             const result = await handleAsyncError(_loadWorkspaceFromCid(workspaceInfo.cid));
-            if (result.success) {
-                newWorkspace = result.data;
-            } else {
-                newWorkspace = null; // Ensure it's null on failure
-            }
+            newWorkspace = result.success ? result.data : null;
           }
     
           if (newWorkspace) {
@@ -236,44 +216,34 @@ export const WorkspaceProvider = ({ children }) => {
               });
             });
 
-            if (imageUrlsToPreload.size > 0) {
-              await preloadImages(Array.from(imageUrlsToPreload));
-            }
+            if (imageUrlsToPreload.size > 0) await preloadImages(Array.from(imageUrlsToPreload));
 
             preloadedWorkspacesRef.current.set(workspaceName, newWorkspace);
-            setActiveWorkspace(newWorkspace);
+            
             setStagedActiveWorkspace(newWorkspace);
             setActiveWorkspaceName(workspaceName);
+            
             addToast(`Workspace "${workspaceName}" loaded.`, 'success');
           }
-    
         } catch (error) {
           addToast(error.message, 'error');
         } finally {
-          setIsLoading(false);
-          setLoadingMessage("");
-          setIsWorkspaceTransitioning(false);
-          workspaceToLoadRef.current = null;
-          setIsFullyLoaded(true);
+          setIsLoading(false); setLoadingMessage(""); setIsWorkspaceTransitioning(false);
+          workspaceToLoadRef.current = null; setIsFullyLoaded(true);
         }
-    }, [stagedSetlist, addToast, _loadWorkspaceFromCid, handleAsyncError]);
+    }, [stagedSetlist, addToast, _loadWorkspaceFromCid, handleAsyncError, setStagedActiveWorkspace, setActiveWorkspaceName]);
 
     const loadWorkspace = useCallback(async (workspaceName) => {
         if (isWorkspaceTransitioning) return;
-    
         if (!stagedSetlist || !stagedSetlist.workspaces[workspaceName]) {
-            const errorMsg = `Workspace '${workspaceName}' not found.`;
-            addToast(errorMsg, 'error');
-            return { success: false, error: errorMsg };
+            addToast(`Workspace '${workspaceName}' not found.`, 'error');
+            return { success: false };
         }
-    
         setIsFullyLoaded(false); 
-    
         setLoadingMessage(`Switching to ${workspaceName}...`);
         setIsLoading(true);
         setIsWorkspaceTransitioning(true);
         workspaceToLoadRef.current = workspaceName;
-    
         return { success: true };
     }, [isWorkspaceTransitioning, stagedSetlist, addToast]);
 
@@ -284,139 +254,102 @@ export const WorkspaceProvider = ({ children }) => {
         }
     }, [newlyCreatedWorkspace, stagedSetlist, loadWorkspace]);
 
-    const saveChanges = useCallback(async (workspaceNameToSave = activeWorkspaceName, setlistToSave = stagedSetlist) => {
+    const saveChanges = useCallback(async (workspaceNameToSave = activeWorkspaceName) => {
         const service = configServiceRef.current;
         const addressToSave = hostProfileAddress;
         if (!service || !addressToSave || !service.checkReadyForWrite()) {
-            const errorMsg = "Save service not ready or no profile connected.";
-            addToast(errorMsg, "error");
-            return { success: false, error: errorMsg };
+            addToast("Save service not ready.", "error");
+            return { success: false };
         }
-        if (!setlistToSave || !stagedActiveWorkspace || !workspaceNameToSave) {
-            addToast("Data not fully loaded, cannot save.", "error");
-            return { success: false, error: "Data not loaded" };
-        }
-        setIsSaving(true);
-        setSaveError(null);
-        setSaveSuccess(false);
+        setIsSaving(true); setSaveError(null); setSaveSuccess(false);
         try {
             const workspaceToUpload = JSON.parse(JSON.stringify(stagedActiveWorkspace));
-            delete workspaceToUpload.globalMidiMap;
             
-            addToast("Uploading workspace data...", "info", 2000);
+            delete workspaceToUpload.globalMidiMap;
+            delete workspaceToUpload.globalEventReactions;
+            
+            addToast("Uploading workspace...", "info", 2000);
             const newWorkspaceCid = await uploadJsonToPinata(workspaceToUpload, `RADAR_Workspace_${workspaceNameToSave}`);
-            if (!newWorkspaceCid) throw new Error("Failed to upload workspace to IPFS.");
+            if (!newWorkspaceCid) throw new Error("Failed to upload workspace.");
     
-            const newSetlist = JSON.parse(JSON.stringify(setlistToSave));
+            const newSetlist = JSON.parse(JSON.stringify(stagedSetlist));
             if (!newSetlist.workspaces[workspaceNameToSave]) {
               newSetlist.workspaces[workspaceNameToSave] = {};
             }
             newSetlist.workspaces[workspaceNameToSave].cid = newWorkspaceCid;
+            newSetlist.workspaces[workspaceNameToSave].lastModified = Date.now();
     
-            addToast("Saving setlist to your profile...", "info", 2000);
+            addToast("Saving setlist...", "info", 2000);
             await service.saveSetlist(addressToSave, newSetlist);
     
             setSetlist(newSetlist);
             setStagedSetlist(newSetlist);
-            if (workspaceNameToSave === activeWorkspaceName) {
-                setActiveWorkspace(stagedActiveWorkspace);
-            }
+            
             setHasPendingChanges(false);
             setSaveSuccess(true);
-            addToast("Changes saved successfully!", "success");
+            addToast("Saved successfully!", "success");
             return { success: true, newSetlist };
         } catch (error) {
             const errorMsg = error.message || "Unknown save error.";
-            addToast(`Error saving changes: ${errorMsg}`, 'error');
+            addToast(`Error saving: ${errorMsg}`, 'error');
             setSaveError(errorMsg);
-            setSaveSuccess(false);
             return { success: false, error: errorMsg };
         } finally {
             setIsSaving(false);
         }
-    }, [stagedSetlist, activeWorkspaceName, stagedActiveWorkspace, hostProfileAddress, addToast]);
-
-    const duplicateActiveWorkspace = useCallback(async (newName) => {
-        if (!newName || typeof newName !== 'string') {
-            addToast("Invalid workspace name provided.", "error");
-            return { success: false, error: "Invalid name" };
-        }
-        if (stagedSetlist?.workspaces[newName]) {
-            addToast(`Workspace "${newName}" already exists.`, "error");
-            return { success: false, error: "Name exists" };
-        }
-    
-        const newSetlist = JSON.parse(JSON.stringify(stagedSetlist));
-        newSetlist.workspaces[newName] = { cid: '' };
-    
-        const result = await saveChanges(newName, newSetlist);
-        
-        if (result.success) {
-            setActiveWorkspaceName(newName);
-            addToast(`Workspace "${newName}" created and loaded.`, 'success');
-        }
-        return result;
-    
-    }, [stagedSetlist, saveChanges, addToast]);
+    }, [stagedSetlist, activeWorkspaceName, stagedActiveWorkspace, hostProfileAddress, addToast, setHasPendingChanges]);
 
     const createNewWorkspace = useCallback(async (newName) => {
         if (isLoading) return;
-        if (!newName || typeof newName !== 'string') {
-            addToast("Invalid workspace name provided.", "error");
-            return;
-        }
-        if (stagedSetlist?.workspaces[newName]) {
-            addToast(`Workspace name "${newName}" is already taken.`, "error");
-            return;
-        }
+        if (stagedSetlist?.workspaces[newName]) { addToast("Name exists.", "error"); return; }
       
-        setIsLoading(true);
-        setLoadingMessage(`Creating "${newName}"...`);
-      
+        setIsLoading(true); setLoadingMessage(`Creating "${newName}"...`);
         try {
             const newWorkspace = {
-                presets: {
-                    "Default": { name: "Default", ts: Date.now(), layers: fallbackConfig.layers, tokenAssignments: fallbackConfig.tokenAssignments }
-                },
+                presets: { "Default": { name: "Default", ts: Date.now(), layers: fallbackConfig.layers, tokenAssignments: fallbackConfig.tokenAssignments } },
                 defaultPresetName: "Default",
-                globalEventReactions: {},
             };
       
-            const defaultAssignments = fallbackConfig.tokenAssignments || {};
             const imageUrlsToPreload = new Set();
-            Object.values(defaultAssignments).forEach(assignment => {
+            Object.values(newWorkspace.presets.Default.tokenAssignments).forEach(assignment => {
                 const src = resolveImageUrl(assignment);
-                if (src) {
-                    imageUrlsToPreload.add(src);
-                }
+                if (src) imageUrlsToPreload.add(src);
             });
-      
-            if (imageUrlsToPreload.size > 0) {
-                await preloadImages(Array.from(imageUrlsToPreload));
-            }
+            if (imageUrlsToPreload.size > 0) await preloadImages(Array.from(imageUrlsToPreload));
       
             const newWorkspaceCID = await uploadJsonToPinata(newWorkspace, `RADAR_Workspace_${newName}`);
-            if (!newWorkspaceCID) throw new Error("Failed to upload new workspace.");
+            if (!newWorkspaceCID) throw new Error("Upload failed.");
       
             preloadedWorkspacesRef.current.set(newName, newWorkspace);
       
             setStagedSetlist(prev => {
-                const newSetlist = prev ? JSON.parse(JSON.stringify(prev)) : { workspaces: {}, defaultWorkspaceName: null, personalCollectionLibrary: [], userPalettes: {} };
+                const newSetlist = prev ? JSON.parse(JSON.stringify(prev)) : { workspaces: {}, defaultWorkspaceName: null };
                 newSetlist.workspaces[newName] = { cid: newWorkspaceCID, lastModified: Date.now() };
                 return newSetlist;
             });
       
             setHasPendingChanges(true);
-            addToast(`Workspace "${newName}" created. Save your setlist to persist it.`, "success");
-            
+            addToast(`Workspace "${newName}" created.`, "success");
             setNewlyCreatedWorkspace(newName);
-      
         } catch (error) {
-            addToast(`Error creating workspace: ${error.message}`, "error");
-            setIsLoading(false);
-            setLoadingMessage("");
+            addToast(`Error: ${error.message}`, "error");
+        } finally {
+            setIsLoading(false); setLoadingMessage("");
         }
-    }, [stagedSetlist, addToast, isLoading]);
+    }, [stagedSetlist, addToast, isLoading, setHasPendingChanges]);
+
+    const duplicateActiveWorkspace = useCallback(async (newName) => {
+        if (stagedSetlist?.workspaces[newName]) { addToast("Name exists.", "error"); return { success: false }; }
+        const newSetlist = JSON.parse(JSON.stringify(stagedSetlist));
+        newSetlist.workspaces[newName] = { cid: '' }; 
+        
+        const result = await saveChanges(newName);
+        if (result.success) {
+            setActiveWorkspaceName(newName);
+            addToast(`Duplicated to "${newName}".`, 'success');
+        }
+        return result;
+    }, [stagedSetlist, saveChanges, addToast, setActiveWorkspaceName]);
 
     const deleteWorkspaceFromSet = useCallback((workspaceName) => {
         setStagedSetlist(prev => {
@@ -427,10 +360,10 @@ export const WorkspaceProvider = ({ children }) => {
             newSetlist.defaultWorkspaceName = Object.keys(newSetlist.workspaces)[0] || null;
           }
           setHasPendingChanges(true);
-          addToast(`Workspace "${workspaceName}" deleted. Save changes to confirm.`, 'info');
+          addToast(`Deleted "${workspaceName}".`, 'info');
           return newSetlist;
         });
-    }, [addToast]);
+    }, [addToast, setHasPendingChanges]);
     
     const renameWorkspaceInSet = useCallback((oldName, newName) => {
         setStagedSetlist(prev => {
@@ -453,52 +386,23 @@ export const WorkspaceProvider = ({ children }) => {
           addToast(`Workspace renamed to "${newName}".`, 'success');
           return newSetlist;
         });
-    }, [addToast, activeWorkspaceName]);
+    }, [addToast, activeWorkspaceName, setHasPendingChanges]);
     
     const setDefaultWorkspaceInSet = useCallback((workspaceName) => {
         setStagedSetlist(prev => {
           if (!prev || !prev.workspaces[workspaceName]) return prev;
-          const newSetlist = { ...prev, defaultWorkspaceName: workspaceName };
           setHasPendingChanges(true);
-          addToast(`"${workspaceName}" is now the default workspace.`, 'success');
-          return newSetlist;
+          addToast(`Default: "${workspaceName}"`, 'success');
+          return { ...prev, defaultWorkspaceName: workspaceName };
         });
-    }, [addToast]);
-
-    const addNewSceneToStagedWorkspace = useCallback((newSceneName, newSceneData) => {
-        setStagedActiveWorkspace(prev => {
-          const newWorkspace = prev ? JSON.parse(JSON.stringify(prev)) : { presets: {}, defaultPresetName: null, globalMidiMap: {}, globalEventReactions: {} };
-          newWorkspace.presets[newSceneName] = newSceneData;
-          return newWorkspace;
-        });
-        setHasPendingChanges(true);
-    }, []);
-    
-    const deleteSceneFromStagedWorkspace = useCallback((nameToDelete) => {
-        setStagedActiveWorkspace(prev => {
-          if (!prev || !prev.presets || !prev.presets[nameToDelete]) return prev;
-          const newWorkspace = JSON.parse(JSON.stringify(prev));
-          delete newWorkspace.presets[nameToDelete];
-          if (newWorkspace.defaultPresetName === nameToDelete) newWorkspace.defaultPresetName = null;
-          return newWorkspace;
-        });
-        setHasPendingChanges(true);
-    }, []);
-    
-    const setDefaultSceneInStagedWorkspace = useCallback((nameToSet) => {
-        setStagedActiveWorkspace(prev => {
-          if (!prev || !prev.presets || !prev.presets[nameToSet]) return prev;
-          return { ...prev, defaultPresetName: nameToSet };
-        });
-        setHasPendingChanges(true);
-    }, []);
+    }, [addToast, setHasPendingChanges]);
 
     const updateGlobalMidiMap = useCallback((newMap) => {
         if (isHostProfileOwner) {
             setStagedSetlist(prev => ({ ...prev, globalUserMidiMap: newMap || {} }));
             setHasPendingChanges(true);
         }
-    }, [isHostProfileOwner]);
+    }, [isHostProfileOwner, setHasPendingChanges]);
     
     const updateLayerMidiMappings = useCallback((layerId, mappingData) => {
         if (isHostProfileOwner) {
@@ -509,19 +413,20 @@ export const WorkspaceProvider = ({ children }) => {
           });
           setHasPendingChanges(true);
         }
-    }, [isHostProfileOwner]);
+    }, [isHostProfileOwner, setHasPendingChanges]);
 
     const updateGlobalEventReactions = useCallback((eventType, reactionData) => {
-        if (!eventType || !reactionData) return;
-        setStagedActiveWorkspace(prev => ({
-          ...prev, globalEventReactions: { ...(prev?.globalEventReactions || {}), [eventType]: reactionData }
+        if (!isHostProfileOwner) return;
+        setStagedSetlist(prev => ({
+          ...prev, 
+          globalEventReactions: { ...(prev?.globalEventReactions || {}), [eventType]: reactionData }
         }));
         setHasPendingChanges(true);
-    }, []);
+    }, [isHostProfileOwner, setHasPendingChanges]);
     
     const deleteGlobalEventReaction = useCallback((eventType) => {
-        if (!eventType) return;
-        setStagedActiveWorkspace(prev => {
+        if (!isHostProfileOwner) return;
+        setStagedSetlist(prev => {
           const newReactions = { ...(prev?.globalEventReactions || {}) };
           if (newReactions[eventType]) {
             delete newReactions[eventType];
@@ -530,7 +435,7 @@ export const WorkspaceProvider = ({ children }) => {
           }
           return prev;
         });
-    }, []);
+    }, [isHostProfileOwner, setHasPendingChanges]);
 
     const addPalette = useCallback((paletteName) => {
         setStagedSetlist(prev => {
@@ -544,37 +449,29 @@ export const WorkspaceProvider = ({ children }) => {
             setHasPendingChanges(true);
             return newSetlist;
         });
-    }, [addToast]);
+    }, [setHasPendingChanges, addToast]);
     
     const removePalette = useCallback((paletteName) => {
         setStagedSetlist(prev => {
             const newSetlist = { ...prev, userPalettes: { ...(prev?.userPalettes || {}) } };
-            if (!newSetlist.userPalettes[paletteName]) return prev;
             delete newSetlist.userPalettes[paletteName];
             addToast(`Palette "${paletteName}" removed.`, "info");
             setHasPendingChanges(true);
             return newSetlist;
         });
-    }, [addToast]);
+    }, [setHasPendingChanges, addToast]);
     
     const addTokenToPalette = useCallback((paletteName, tokenId) => {
         setStagedSetlist(prev => {
             const newSetlist = { ...prev, userPalettes: { ...(prev?.userPalettes || {}) } };
             const palette = newSetlist.userPalettes[paletteName];
-            if (!palette) {
-                addToast(`Palette "${paletteName}" not found.`, "error");
-                return prev;
-            }
-            if (palette.includes(tokenId)) {
-                addToast("Token is already in this palette.", "info");
-                return prev;
-            }
+            if (!palette || palette.includes(tokenId)) return prev;
             newSetlist.userPalettes[paletteName] = [...palette, tokenId];
-            addToast(`Token added to "${paletteName}".`, "success");
+            addToast("Added to palette.", "success");
             setHasPendingChanges(true);
             return newSetlist;
         });
-    }, [addToast]);
+    }, [setHasPendingChanges, addToast]);
     
     const removeTokenFromPalette = useCallback((paletteName, tokenId) => {
         setStagedSetlist(prev => {
@@ -585,7 +482,7 @@ export const WorkspaceProvider = ({ children }) => {
             setHasPendingChanges(true);
             return newSetlist;
         });
-    }, []);
+    }, [setHasPendingChanges]);
 
     const addCollectionToPersonalLibrary = useCallback((collection) => {
         if (!isHostProfileOwner) return;
@@ -595,42 +492,35 @@ export const WorkspaceProvider = ({ children }) => {
                 addToast("This collection is already in your library.", "warning");
                 return prev;
             }
-            const newSetlist = { ...prev, personalCollectionLibrary: [...currentLibrary, collection] };
             setHasPendingChanges(true);
             addToast(`Collection "${collection.name}" added to your library.`, "success");
-            return newSetlist;
+            return { ...prev, personalCollectionLibrary: [...currentLibrary, collection] };
         });
-    }, [isHostProfileOwner, addToast]);
+    }, [isHostProfileOwner, setHasPendingChanges, addToast]);
     
     const removeCollectionFromPersonalLibrary = useCallback((addressToRemove) => {
         if (!isHostProfileOwner) return;
         setStagedSetlist(prev => {
             const currentLibrary = prev?.personalCollectionLibrary || [];
-            if (!currentLibrary.some(c => c.address.toLowerCase() === addressToRemove.toLowerCase())) {
-                return prev;
-            }
             const newLibrary = currentLibrary.filter(c => c.address.toLowerCase() !== addressToRemove.toLowerCase());
-            const newSetlist = { ...prev, personalCollectionLibrary: newLibrary };
+            if (newLibrary.length === currentLibrary.length) return prev;
             setHasPendingChanges(true);
             addToast(`Collection removed from your library.`, "info");
-            return newSetlist;
+            return { ...prev, personalCollectionLibrary: newLibrary };
         });
-    }, [isHostProfileOwner, addToast]);
+    }, [isHostProfileOwner, setHasPendingChanges, addToast]);
 
     const preloadWorkspace = useCallback(async (workspaceName) => {
         const service = configServiceRef.current;
         if (!service || !stagedSetlist?.workspaces[workspaceName]) return;
-        if (preloadedWorkspacesRef.current.has(workspaceName) || preloadingInProgressRef.current.has(workspaceName)) {
-          return;
-        }
+        if (preloadedWorkspacesRef.current.has(workspaceName) || preloadingInProgressRef.current.has(workspaceName)) return;
+        
         try {
           preloadingInProgressRef.current.add(workspaceName);
-          if (import.meta.env.DEV) console.log(`[Preloader] Hover detected. Starting preload for workspace: "${workspaceName}"`);
           const workspaceInfo = stagedSetlist.workspaces[workspaceName];
           const workspaceData = await _loadWorkspaceFromCid(workspaceInfo.cid);
           if (workspaceData) {
             preloadedWorkspacesRef.current.set(workspaceName, workspaceData);
-            if (import.meta.env.DEV) console.log(`[Preloader] Cached workspace data for "${workspaceName}".`);
             const imageUrlsToPreload = new Set();
             Object.values(workspaceData.presets || {}).forEach(preset => {
               Object.values(preset.tokenAssignments || {}).forEach(assignment => {
@@ -638,23 +528,33 @@ export const WorkspaceProvider = ({ children }) => {
                 if (src) imageUrlsToPreload.add(src);
               });
             });
-            if (imageUrlsToPreload.size > 0) {
-              if (import.meta.env.DEV) console.log(`[Preloader] Preloading ${imageUrlsToPreload.size} images for "${workspaceName}".`);
-              preloadImages(Array.from(imageUrlsToPreload));
-            }
+            if (imageUrlsToPreload.size > 0) preloadImages(Array.from(imageUrlsToPreload));
           }
         } catch (error) {
-          if (import.meta.env.DEV) console.warn(`[Preloader] Failed to preload workspace "${workspaceName}":`, error);
+          // Silent catch for preload
         } finally {
           preloadingInProgressRef.current.delete(workspaceName);
         }
     }, [stagedSetlist, _loadWorkspaceFromCid]);
 
     const contextValue = useMemo(() => ({
-        isLoading, loadingMessage, isFullyLoaded, isInitiallyResolved, loadError, isSaving, saveError, saveSuccess, hasPendingChanges,
+        isLoading, loadingMessage, isFullyLoaded, isInitiallyResolved, loadError, isSaving, saveError, saveSuccess,
         configServiceRef, configServiceInstanceReady,
-        setlist, stagedSetlist, activeWorkspace, stagedActiveWorkspace, activeWorkspaceName, activeSceneName,
+        setlist, stagedSetlist, 
+        activeWorkspaceName,
+        
+        // --- Exposing SceneContext Values ---
+        activeSceneName,
+        setActiveSceneName,
+        stagedActiveWorkspace,
+        setStagedActiveWorkspace,
         fullSceneList,
+        hasPendingChanges,
+        setHasPendingChanges,
+        addNewSceneToStagedWorkspace,
+        deleteSceneFromStagedWorkspace,
+        setDefaultSceneInStagedWorkspace,
+        
         startLoadingProcess,
         isWorkspaceTransitioning,
         _executeLoadAfterFade,
@@ -665,9 +565,7 @@ export const WorkspaceProvider = ({ children }) => {
         deleteWorkspaceFromSet,
         renameWorkspaceInSet,
         setDefaultWorkspaceInSet,
-        addNewSceneToStagedWorkspace,
-        deleteSceneFromStagedWorkspace,
-        setDefaultSceneInStagedWorkspace,
+        
         updateGlobalMidiMap,
         updateLayerMidiMappings,
         updateGlobalEventReactions,
@@ -679,13 +577,23 @@ export const WorkspaceProvider = ({ children }) => {
         addCollectionToPersonalLibrary,
         removeCollectionFromPersonalLibrary,
         preloadWorkspace,
-        setHasPendingChanges,
-        setActiveSceneName,
     }), [
-        isLoading, loadingMessage, isFullyLoaded, isInitiallyResolved, loadError, isSaving, saveError, saveSuccess, hasPendingChanges,
+        isLoading, loadingMessage, isFullyLoaded, isInitiallyResolved, loadError, isSaving, saveError, saveSuccess,
         configServiceRef, configServiceInstanceReady,
-        setlist, stagedSetlist, activeWorkspace, stagedActiveWorkspace, activeWorkspaceName, activeSceneName,
+        setlist, stagedSetlist, 
+        activeWorkspaceName,
+        
+        activeSceneName,
+        setActiveSceneName,
+        stagedActiveWorkspace,
+        setStagedActiveWorkspace,
         fullSceneList,
+        hasPendingChanges,
+        setHasPendingChanges,
+        addNewSceneToStagedWorkspace,
+        deleteSceneFromStagedWorkspace,
+        setDefaultSceneInStagedWorkspace,
+
         startLoadingProcess,
         isWorkspaceTransitioning,
         _executeLoadAfterFade,
@@ -696,9 +604,6 @@ export const WorkspaceProvider = ({ children }) => {
         deleteWorkspaceFromSet,
         renameWorkspaceInSet,
         setDefaultWorkspaceInSet,
-        addNewSceneToStagedWorkspace,
-        deleteSceneFromStagedWorkspace,
-        setDefaultSceneInStagedWorkspace,
         updateGlobalMidiMap,
         updateLayerMidiMappings,
         updateGlobalEventReactions,
@@ -709,9 +614,7 @@ export const WorkspaceProvider = ({ children }) => {
         removeTokenFromPalette,
         addCollectionToPersonalLibrary,
         removeCollectionFromPersonalLibrary,
-        preloadWorkspace,
-        setHasPendingChanges,
-        setActiveSceneName,
+        preloadWorkspace
     ]);
 
     return (
@@ -721,14 +624,10 @@ export const WorkspaceProvider = ({ children }) => {
     );
 };
 
-WorkspaceProvider.propTypes = {
-    children: PropTypes.node.isRequired,
-};
+WorkspaceProvider.propTypes = { children: PropTypes.node.isRequired };
 
 export const useWorkspaceContext = () => {
     const context = useContext(WorkspaceContext);
-    if (context === undefined) {
-        throw new Error("useWorkspaceContext must be used within a WorkspaceProvider");
-    }
+    if (context === undefined) throw new Error("useWorkspaceContext must be used within a WorkspaceProvider");
     return context;
 };

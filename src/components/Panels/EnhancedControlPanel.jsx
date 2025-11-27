@@ -66,7 +66,6 @@ const EnhancedControlPanel = ({
     updateLayerConfig: onLayerConfigChange,
     managerInstancesRef,
     renderedCrossfaderValue,
-    setLiveConfig,
   } = useVisualEngineContext();
 
   const {
@@ -131,7 +130,6 @@ const EnhancedControlPanel = ({
       }
     }
     
-    // --- UPDATED LOGIC START ---
     const managers = managerInstancesRef.current?.current;
     const activeDeckIsA = renderedCrossfaderValue < 0.5;
     const activeDeckChar = activeDeckIsA ? 'A' : 'B';
@@ -168,7 +166,6 @@ const EnhancedControlPanel = ({
       console.warn("[EnhancedControlPanel] CanvasManagers not found, fallback to React state.");
       liveLayersConfig = JSON.parse(JSON.stringify(uiControlConfig.layers));
     }
-    // --- UPDATED LOGIC END ---
 
     const newSceneData = {
       name,
@@ -178,14 +175,14 @@ const EnhancedControlPanel = ({
     };
 
     addNewSceneToStagedWorkspace(name, newSceneData);
-    if (setLiveConfig) {
-      setLiveConfig(newSceneData);
-    }
+    
+    // Explicitly update the active scene name in the UI without re-triggering engine logic
+    setActiveSceneName(name);
 
     addToast(`Scene "${name}" created and staged.`, "success");
     setNewSceneName("");
     
-  }, [newSceneName, savedSceneList, uiControlConfig, addNewSceneToStagedWorkspace, addToast, managerInstancesRef, renderedCrossfaderValue, setActiveSceneName, setLiveConfig]);
+  }, [newSceneName, savedSceneList, uiControlConfig, addNewSceneToStagedWorkspace, addToast, managerInstancesRef, renderedCrossfaderValue, setActiveSceneName]);
 
   const handleDeleteScene = useCallback((nameToDelete) => {
     if (window.confirm(`Are you sure you want to delete the scene "${nameToDelete}"? This will be staged for the next save.`)) {

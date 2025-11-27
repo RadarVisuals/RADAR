@@ -38,3 +38,5 @@ node_modules
 
 # The *.local rule is still good for other potential local files
 *.local
+# Local Netlify folder
+.netlify

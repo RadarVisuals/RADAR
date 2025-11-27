@@ -9,6 +9,7 @@ import { RADAR_OFFICIAL_ADMIN_ADDRESS, IPFS_GATEWAY } from "../config/global-con
 import { hexToUtf8Safe } from "../services/ConfigurationService";
 
 const OFFICIAL_WHITELIST_KEY = keccak256(stringToBytes("RADAR.OfficialWhitelist"));
+const TOKEN_CACHE_DURATION_MS = 5 * 60 * 1000; // 5 Minutes
 
 const AssetContext = createContext();
 
@@ -21,6 +22,16 @@ export const AssetProvider = ({ children }) => {
   const [ownedTokenIdentifiers, setOwnedTokenIdentifiers] = useState({});
   const [isFetchingTokens, setIsFetchingTokens] = useState(false);
   const [tokenFetchProgress, setTokenFetchProgress] = useState({ loaded: 0, total: 0, loading: false });
+  
+  // --- NEW: Cache Timestamp ---
+  const [lastFetchTimestamp, setLastFetchTimestamp] = useState(0);
+
+  // Reset cache when the viewed profile changes
+  useEffect(() => {
+    setOwnedTokenIdentifiers({});
+    setLastFetchTimestamp(0);
+    setTokenFetchProgress({ loaded: 0, total: 0, loading: false });
+  }, [hostProfileAddress, visitorProfileAddress]);
 
   const refreshOfficialWhitelist = useCallback(async () => {
     const service = configServiceRef.current;
@@ -47,7 +58,14 @@ export const AssetProvider = ({ children }) => {
     }
   }, [configServiceInstanceReady, refreshOfficialWhitelist]);
 
-  const refreshOwnedTokens = useCallback(async (isSilent = false) => {
+  // --- UPDATED: Added 'force' parameter and caching logic ---
+  const refreshOwnedTokens = useCallback(async (force = false, isSilent = false) => {
+    // 1. Check Cache
+    if (!force && lastFetchTimestamp > 0 && (Date.now() - lastFetchTimestamp < TOKEN_CACHE_DURATION_MS)) {
+        if (import.meta.env.DEV) console.log("[AssetContext] Skipping token fetch (Cache Valid)");
+        return;
+    }
+
     const service = configServiceRef.current;
     const effectiveAddress = hostProfileAddress || visitorProfileAddress;
     
@@ -76,6 +94,7 @@ export const AssetProvider = ({ children }) => {
       const isAdminShowcase = hostProfileAddress?.toLowerCase() === RADAR_OFFICIAL_ADMIN_ADDRESS.toLowerCase();
       const newIdentifierMap = {};
 
+      // 2. Fetch Data
       for (const collection of allCollections) {
           const standard = await service.detectCollectionStandard(collection.address);
           let identifiers = [];
@@ -83,10 +102,8 @@ export const AssetProvider = ({ children }) => {
           if (standard === 'LSP8') {
             if (isAdminShowcase) {
               identifiers = await service.getAllLSP8TokenIdsForCollection(collection.address);
+              // Fallback for admin if getAll fails or returns empty
               if (identifiers.length === 0) {
-                if (import.meta.env.DEV) {
-                  console.log(`[AssetContext] Admin showcase for ${collection.name} returned 0 tokens. Falling back to owned tokens check.`);
-                }
                 identifiers = await service.getOwnedLSP8TokenIdsForCollection(effectiveAddress, collection.address);
               }
             } else {
@@ -107,6 +124,7 @@ export const AssetProvider = ({ children }) => {
       }
       
       setOwnedTokenIdentifiers(newIdentifierMap);
+      setLastFetchTimestamp(Date.now()); // 3. Update Timestamp
 
       if (!isSilent) {
         const totalIds = Object.values(newIdentifierMap).reduce((sum, ids) => sum + ids.length, 0);
@@ -119,7 +137,7 @@ export const AssetProvider = ({ children }) => {
       setIsFetchingTokens(false);
       setTokenFetchProgress(prev => ({ ...prev, loading: false }));
     }
-  }, [hostProfileAddress, visitorProfileAddress, isRadarProjectAdmin, officialWhitelist, addToast, configServiceRef, stagedSetlist]);
+  }, [hostProfileAddress, visitorProfileAddress, isRadarProjectAdmin, officialWhitelist, addToast, configServiceRef, stagedSetlist, lastFetchTimestamp]);
 
   const contextValue = useMemo(() => ({
     officialWhitelist,

@@ -32,13 +32,16 @@ const EventsPanel = ({
   const { addToast } = useToast();
   const { canSaveToHostProfile } = useUserSession();
   const {
-    stagedActiveWorkspace,
+    stagedSetlist, // --- UPDATED: Sourcing from stagedSetlist ---
     updateGlobalEventReactions,
     deleteGlobalEventReaction,
   } = useWorkspaceContext();
 
   const readOnly = !canSaveToHostProfile;
-  const reactions = useMemo(() => stagedActiveWorkspace?.globalEventReactions || {}, [stagedActiveWorkspace]);
+  
+  // --- UPDATED: Reading from global reactions ---
+  const reactions = useMemo(() => stagedSetlist?.globalEventReactions || {}, [stagedSetlist]);
+  
   const onSaveReaction = updateGlobalEventReactions;
   const onRemoveReaction = deleteGlobalEventReaction;
 

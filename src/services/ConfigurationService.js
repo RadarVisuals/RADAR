@@ -190,7 +190,7 @@ class ConfigurationService {
   }
 
   async loadWorkspace(profileAddress) {
-    const defaultSetlist = { defaultWorkspaceName: null, workspaces: {}, globalUserMidiMap: {}, personalCollectionLibrary: [], userPalettes: {} };
+    const defaultSetlist = { defaultWorkspaceName: null, workspaces: {}, globalUserMidiMap: {}, personalCollectionLibrary: [], userPalettes: {}, globalEventReactions: {} };
     if (!this.checkReadyForRead()) return defaultSetlist;
     const checksummedProfileAddr = getChecksumAddressSafe(profileAddress);
     if (!checksummedProfileAddr) return defaultSetlist;
@@ -248,8 +248,12 @@ class ConfigurationService {
     if (!setlistObject || typeof setlistObject !== 'object' || !('workspaces' in setlistObject)) {
       throw new Error("Invalid or malformed setlistObject provided.");
     }
-    const userAddress = this.walletClient.account.address;
-    if (userAddress?.toLowerCase() !== checksummedTargetAddr?.toLowerCase()) {
+    
+    // Robustly check owner address
+    const account = this.walletClient.account;
+    const userAddress = typeof account === 'string' ? account : account?.address;
+
+    if (typeof userAddress !== 'string' || userAddress.toLowerCase() !== checksummedTargetAddr.toLowerCase()) {
       throw new Error("Permission denied: Signer does not own the target profile.");
     }
 
@@ -277,8 +281,10 @@ class ConfigurationService {
 
       const newIpfsUri = `ipfs://${newIpfsCid}`;
       const valueHex = stringToHex(newIpfsUri);
+      
       if (import.meta.env.DEV) console.log(`${logPrefix} Setting RADAR.RootStoragePointer on-chain to new value...`);
       const result = await this.saveDataToKey(checksummedTargetAddr, RADAR_ROOT_STORAGE_POINTER_KEY, valueHex);
+      
       if (import.meta.env.DEV) console.log(`${logPrefix} On-chain update successful. TxHash: ${result.hash}`);
       
       if (oldCidToUnpin && oldCidToUnpin !== newIpfsCid) {
@@ -305,15 +311,33 @@ class ConfigurationService {
     if (!this.checkReadyForWrite()) throw new Error("Client not ready for writing.");
     const checksummedTargetAddr = getChecksumAddressSafe(targetAddress);
     if (!checksummedTargetAddr) throw new Error("Invalid target address format.");
-    const userAddress = this.walletClient.account.address;
-    if (userAddress?.toLowerCase() !== checksummedTargetAddr?.toLowerCase()) { throw new Error("Permission denied: Signer does not own the target profile."); }
+    
+    // Robustly get the account address string
+    const account = this.walletClient.account;
+    const userAddress = typeof account === 'string' ? account : account?.address;
+    
+    if (!userAddress || userAddress.toLowerCase() !== checksummedTargetAddr.toLowerCase()) { 
+        throw new Error("Permission denied: Signer does not own the target profile."); 
+    }
+    
     if (!key || typeof key !== "string" || !key.startsWith("0x") || key.length !== 66) { throw new Error("Data key must be a valid bytes32 hex string."); }
+    
     const finalValueHex = (valueHex === undefined || valueHex === null) ? "0x" : valueHex;
     if (typeof finalValueHex !== "string" || !finalValueHex.startsWith("0x")) { throw new Error("Value must be a valid hex string (0x...)."); }
+    
     try {
-        const hash = await this.walletClient.writeContract({ address: checksummedTargetAddr, abi: ERC725Y_ABI, functionName: "setData", args: [key, finalValueHex], account: this.walletClient.account });
+        if (import.meta.env.DEV) console.log(`[CS saveDataToKey] Requesting writeContract. Target: ${checksummedTargetAddr}, Key: ${key}, Account: ${userAddress}`);
+        
+        const hash = await this.walletClient.writeContract({ 
+            address: checksummedTargetAddr, 
+            abi: ERC725Y_ABI, 
+            functionName: "setData", 
+            args: [key, finalValueHex], 
+            account: userAddress // Pass address string explicitly to avoid object mismatches
+        });
         return { success: true, hash };
     } catch (writeError) {
+        if (import.meta.env.DEV) console.error(`[CS saveDataToKey] Write failed:`, writeError);
         const baseError = writeError.cause || writeError;
         const message = baseError?.shortMessage || writeError.message || "Unknown setData error";
         throw new Error(`Set data transaction failed: ${message}`);

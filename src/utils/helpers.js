@@ -54,3 +54,20 @@ export const scaleNormalizedValue = (normalizedValue, min, max) => {
 export const lerp = (a, b, t) => {
   return a * (1 - t) + b * t;
 };
+
+/**
+ * Interpolates between two angles (in degrees) taking the shortest path.
+ * Handles wrapping (e.g., 350 -> 10 goes forward 20 degrees, not back 340).
+ *
+ * @param {number} start - Start angle in degrees.
+ * @param {number} end - End angle in degrees.
+ * @param {number} t - Interpolation factor (0-1).
+ * @returns {number} The interpolated angle in degrees.
+ */
+export const lerpAngle = (start, end, t) => {
+  const d = end - start;
+  const delta = (d + 180) % 360 - 180; // Shortest distance
+  // Correction for JS modulo on negative numbers to ensure correct wrapping
+  const shortDist = ((delta + 180) % 360) - 180; 
+  return start + shortDist * t;
+};

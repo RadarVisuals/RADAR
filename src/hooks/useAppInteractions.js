@@ -22,11 +22,14 @@ export const useAppInteractions = (props) => {
     onPrevWorkspace,
   } = props;
 
-  const { hostProfileAddress } = useUserSession(); // <-- CORRECTED
+  const { hostProfileAddress } = useUserSession(); 
   const uiStateHook = useUIState('tab1');
   const { addNotification, unreadCount } = useNotificationContext();
-  const { stagedActiveWorkspace } = useWorkspaceContext();
-  const savedReactions = stagedActiveWorkspace?.globalEventReactions || {};
+  
+  // --- UPDATED: Use stagedSetlist for global reactions ---
+  const { stagedSetlist } = useWorkspaceContext();
+  const savedReactions = stagedSetlist?.globalEventReactions || {};
+  
   const { updateLayerConfig, updateTokenAssignment, handleCrossfaderChange } = useVisualEngineContext();
   const { processEffect, createDefaultEffect } = useVisualEffects(updateLayerConfig);
   
@@ -59,7 +62,7 @@ export const useAppInteractions = (props) => {
     }
   }, [isMountedRef, addNotification, savedReactions, processEffect, createDefaultEffect]);
 
-  useLsp1Events(hostProfileAddress, handleEventReceived); // <-- CORRECTED
+  useLsp1Events(hostProfileAddress, handleEventReceived);
 
   useEffect(() => {
     if (pendingActions && pendingActions.length > 0) {

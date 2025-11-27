@@ -1,19 +1,16 @@
 export const handler = async (event) => {
   // 1. SECURITY: Strict Origin Check
-  // This ensures only YOUR website can trigger this function.
   const origin = event.headers.origin || event.headers.Origin;
   const allowedOrigins = [
     'https://radar725.netlify.app',
     'https://www.radar725.netlify.app'
   ];
   
-  // Allow localhost for your own testing
   const isLocalhost = origin && (
     origin.includes('localhost') || 
     origin.includes('127.0.0.1')
   );
 
-  // If the request comes from a browser (has origin) and isn't on the list -> Block it.
   if (origin && !allowedOrigins.includes(origin) && !isLocalhost) {
      return { 
        statusCode: 403, 
@@ -29,14 +26,23 @@ export const handler = async (event) => {
     };
   }
 
-  // 3. Load the Secret Key (Server-Side Only)
+  // 3. Load the Secret Key
   const PINATA_JWT = process.env.PINATA_JWT;
 
+  // --- DEBUG LOGGING START ---
+  console.log("--- DEBUG: PINATA UPLOAD STARTED ---");
   if (!PINATA_JWT) {
-    console.error('CRITICAL: PINATA_JWT is missing in Netlify Environment Variables.');
+      console.error("DEBUG ERROR: PINATA_JWT is undefined/null");
+  } else {
+      // Print first 10 chars to verify it matches your NEW key, not the old one
+      console.log("DEBUG: PINATA_JWT loaded. Starts with:", PINATA_JWT.substring(0, 10) + "...");
+  }
+  // --- DEBUG LOGGING END ---
+
+  if (!PINATA_JWT) {
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'Server configuration error.' }),
+      body: JSON.stringify({ error: 'Server configuration error: PINATA_JWT missing.' }),
     };
   }
 
@@ -84,10 +90,11 @@ export const handler = async (event) => {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`Pinata API Error (${response.status}): ${errorText}`);
+      // Log the specific error from Pinata to your terminal
+      console.error(`DEBUG: Pinata API Failed. Status: ${response.status}. Response: ${errorText}`);
       return {
         statusCode: 502,
-        body: JSON.stringify({ error: 'Failed to pin to storage provider.' }),
+        body: JSON.stringify({ error: `Pinata Error: ${errorText}` }),
       };
     }
 

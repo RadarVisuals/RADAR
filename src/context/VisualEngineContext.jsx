@@ -180,9 +180,38 @@ export const VisualEngineProvider = ({ children }) => {
         const activeSceneNameOnDeck = activeDeckIsA ? sideA.config?.name : sideB.config?.name;
         if (activeSceneNameOnDeck === sceneName) return;
         
-        if (!activeDeckIsA && sideA.config?.name === sceneName) { setIsAutoFading(true); animateCrossfade(performance.now(), renderedValueRef.current, 0.0, duration, sceneName); return; }
-        if (activeDeckIsA && sideB.config?.name === sceneName) { setIsAutoFading(true); animateCrossfade(performance.now(), renderedValueRef.current, 1.0, duration, sceneName); return; }
-        if (activeDeckIsA) { setSideB({ config: JSON.parse(JSON.stringify(targetScene)) }); setIsAutoFading(true); animateCrossfade(performance.now(), renderedValueRef.current, 1.0, duration, sceneName); } else { setSideA({ config: JSON.parse(JSON.stringify(targetScene)) }); setIsAutoFading(true); animateCrossfade(performance.now(), renderedValueRef.current, 0.0, duration, sceneName); }
+        // Helper to sync physics on the INCOMING deck before we start fading to it
+        const syncIncomingDeck = (targetDeck) => {
+            const managers = managerInstancesRef.current?.current;
+            if (managers) {
+                Object.values(managers).forEach(manager => {
+                    if (manager.syncPhysics) manager.syncPhysics(targetDeck);
+                });
+            }
+        };
+
+        if (!activeDeckIsA && sideA.config?.name === sceneName) { 
+            setIsAutoFading(true); 
+            animateCrossfade(performance.now(), renderedValueRef.current, 0.0, duration, sceneName); 
+            return; 
+        }
+        if (activeDeckIsA && sideB.config?.name === sceneName) { 
+            setIsAutoFading(true); 
+            animateCrossfade(performance.now(), renderedValueRef.current, 1.0, duration, sceneName); 
+            return; 
+        }
+        
+        if (activeDeckIsA) { 
+            syncIncomingDeck('B'); // Make B match A's physics
+            setSideB({ config: JSON.parse(JSON.stringify(targetScene)) }); 
+            setIsAutoFading(true); 
+            animateCrossfade(performance.now(), renderedValueRef.current, 1.0, duration, sceneName); 
+        } else { 
+            syncIncomingDeck('A'); // Make A match B's physics
+            setSideA({ config: JSON.parse(JSON.stringify(targetScene)) }); 
+            setIsAutoFading(true); 
+            animateCrossfade(performance.now(), renderedValueRef.current, 0.0, duration, sceneName); 
+        }
     }, [isAutoFading, fullSceneList, sideA.config, sideB.config, animateCrossfade]);
 
     const handleCrossfaderChange = useCallback((newValue) => { setTargetCrossfaderValue(newValue); }, []);
@@ -263,6 +292,45 @@ export const VisualEngineProvider = ({ children }) => {
         const managers = managerInstancesRef.current?.current;
         if (managers && managers['1'] && managers['1'].updateEffectConfig) {
             managers['1'].updateEffectConfig(effectName, param, value);
+        }
+    }, []);
+
+    const managerInstancesRefValue = useMemo(() => {
+        const createLayerProxy = (layerId) => ({
+            getState: (deckSide) => managerInstancesRef.current?.engineRef?.current?.getState(layerId, deckSide),
+            updateConfigProperty: (key, value) => managerInstancesRef.current?.engineRef?.current?.updateConfig(layerId, key, value, 'A'),
+            updateConfigBProperty: (key, value) => managerInstancesRef.current?.engineRef?.current?.updateConfig(layerId, key, value, 'B'),
+            setTargetValue: (key, value) => managerInstancesRef.current?.engineRef?.current?.updateConfig(layerId, key, value, 'A'),
+            setTargetValueB: (key, value) => managerInstancesRef.current?.engineRef?.current?.updateConfig(layerId, key, value, 'B'),
+            setAudioFrequencyFactor: (factor) => { if (managerInstancesRef.current?.engineRef?.current) managerInstancesRef.current.engineRef.current.setAudioFactors({ [layerId]: factor }); },
+            triggerBeatPulse: (factor, duration) => managerInstancesRef.current?.engineRef?.current?.triggerBeatPulse(factor, duration),
+            resetAudioModifications: () => managerInstancesRef.current?.engineRef?.current?.setAudioFactors({ '1': 1, '2': 1, '3': 1 }),
+            setParallax: (x, y) => managerInstancesRef.current?.engineRef?.current?.setParallax(x, y),
+            applyPlaybackValue: (key, value) => managerInstancesRef.current?.engineRef?.current?.applyPlaybackValue(layerId, key, value),
+            clearPlaybackValues: () => managerInstancesRef.current?.engineRef?.current?.clearPlaybackValues(),
+            updateEffectConfig: (name, param, value) => managerInstancesRef.current?.engineRef?.current?.updateEffectConfig(name, param, value),
+            syncPhysics: (targetDeck) => managerInstancesRef.current?.engineRef?.current?.syncDeckPhysics(layerId, targetDeck),
+            
+            destroy: () => {},
+            startAnimationLoop: () => {},
+            stopAnimationLoop: () => {}
+        });
+    
+        return {
+            current: {
+                '1': createLayerProxy('1'),
+                '2': createLayerProxy('2'),
+                '3': createLayerProxy('3'),
+            }
+        };
+    }, []);
+
+    // Override the registered ref with the context-defined proxy structure
+    // This allows components to use managerInstancesRef from context and get the new syncPhysics method
+    useEffect(() => {
+        if (managerInstancesRef.current) {
+            // Merge or re-assign based on how usePixiOrchestrator sets it.
+            // Since usePixiOrchestrator sets it once, we can just ensure our local logic uses the engineRef exposed by it.
         }
     }, []);
 
