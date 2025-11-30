@@ -1,7 +1,6 @@
 // src/hooks/usePLockSequencer.js
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 
-const LERP_THRESHOLD = 1e-5;
 const TRANSITION_ANIMATION_DURATION = 1000; // ms for smooth stop animation
 const lerp = (start, end, t) => start * (1 - t) + end * t;
 
@@ -33,7 +32,6 @@ export const usePLockSequencer = ({ onValueUpdate, onAnimationEnd }) => {
 
   const stopAndClear = useCallback((stateToApplyOnEnd = null) => {
     if (onAnimationEndRef.current) {
-      // Apply the provided final state, or null to just clear playback values
       onAnimationEndRef.current(stateToApplyOnEnd);
     }
     setPLockState('idle');
@@ -46,7 +44,6 @@ export const usePLockSequencer = ({ onValueUpdate, onAnimationEnd }) => {
   }, []);
 
   const armSequencer = useCallback((snapshot) => {
-    // Clear previous animation playback state without snapping values
     stopAndClear(null);
     setPLockState('armed');
     initialStateSnapshotRef.current = snapshot;
@@ -89,7 +86,11 @@ export const usePLockSequencer = ({ onValueUpdate, onAnimationEnd }) => {
     loopDurationRef.current = SPEED_DURATIONS[pLockSpeed];
     prevProgressRef.current = 0;
     setPLockState('playing');
-    startTimeRef.current = performance.now();
+    
+    // --- FIX: Prevent re-triggering loop if already running ---
+    if (!startTimeRef.current) {
+        startTimeRef.current = performance.now();
+    }
   }, [stopAndClear, pLockSpeed]);
 
   const initiateStopAnimation = useCallback(() => {
@@ -108,8 +109,11 @@ export const usePLockSequencer = ({ onValueUpdate, onAnimationEnd }) => {
       targetValuesToRestore[layerId] = {};
       for (const paramName in currentAnimationData[layerId]) {
         const { initialValue, targetValue } = currentAnimationData[layerId][paramName];
-        targetValuesToRestore[layerId][paramName] = targetValue;
         
+        // --- FIX: Always restore to INITIAL value when stopping ---
+        targetValuesToRestore[layerId][paramName] = initialValue;
+        
+        // Calculate current value to interpolate FROM
         if (typeof initialValue === 'number' && typeof targetValue === 'number') {
             lastKnownValues[layerId][paramName] = loopElapsedTime < performanceDuration
               ? lerp(targetValue, initialValue, loopElapsedTime / performanceDuration)
@@ -161,13 +165,16 @@ export const usePLockSequencer = ({ onValueUpdate, onAnimationEnd }) => {
         }
 
         if (progress >= 1.0) {
-          // Stop and apply the final target values as the new resting state
           stopAndClear(transitionData.toValues);
           transitionDataRef.current = null;
         }
       } else if (currentState === 'playing') {
         continueLoop = true;
         const duration = loopDurationRef.current;
+        
+        // Safety for re-renders
+        if (!startTimeRef.current) startTimeRef.current = timestamp;
+        
         const startTime = startTimeRef.current;
         const loopElapsedTime = (timestamp - startTime) % duration;
         const currentProgress = loopElapsedTime / duration;
@@ -175,8 +182,6 @@ export const usePLockSequencer = ({ onValueUpdate, onAnimationEnd }) => {
         
         const performanceDuration = duration / 2;
         const isFirstHalf = loopElapsedTime < performanceDuration;
-        const justCrossedMidpoint = prevProgressRef.current < 0.5 && currentProgress >= 0.5;
-        const justStartedLoop = prevProgressRef.current > currentProgress;
 
         for (const layerId in animationDataRef.current) {
           const layerData = animationDataRef.current[layerId];
@@ -184,18 +189,14 @@ export const usePLockSequencer = ({ onValueUpdate, onAnimationEnd }) => {
             const { initialValue, targetValue } = layerData[paramName];
             
             if (typeof initialValue === 'number' && typeof targetValue === 'number') {
-              // INVERTED: Animate from target to initial, then back to target
+              // INVERTED: Animate Target -> Initial -> Target
               const value = isFirstHalf
                 ? lerp(targetValue, initialValue, loopElapsedTime / performanceDuration)
                 : lerp(initialValue, targetValue, (loopElapsedTime - performanceDuration) / performanceDuration);
               onValueUpdateRef.current(layerId, paramName, value);
             } else {
-              // INVERTED: Start at target, switch to initial at midpoint
-              if (justStartedLoop) {
-                onValueUpdateRef.current(layerId, paramName, targetValue);
-              } else if (justCrossedMidpoint) {
-                onValueUpdateRef.current(layerId, paramName, initialValue);
-              }
+              // Simple discrete toggle
+              onValueUpdateRef.current(layerId, paramName, isFirstHalf ? targetValue : initialValue);
             }
           }
         }

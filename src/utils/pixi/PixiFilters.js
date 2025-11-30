@@ -50,7 +50,7 @@ const volumetricFragment = `
         
         for(int i=0; i < SAMPLES ; i++) {
             textCoo -= deltaTextCoord;
-            vec4 sample = texture2D(uTexture, textCoo);
+            vec4 sample = texture(uTexture, textCoo);
             float brightness = dot(sample.rgb, vec3(0.2126, 0.7152, 0.0722));
             if(brightness < uThreshold) {
                 sample *= 0.05;
@@ -60,7 +60,7 @@ const volumetricFragment = `
             illuminationDecay *= uDecay;
         }
         
-        vec4 realColor = texture2D(uTexture, vTextureCoord);
+        vec4 realColor = texture(uTexture, vTextureCoord);
         finalColor = realColor + (color * uExposure);
     }
 `;
@@ -80,7 +80,6 @@ export class VolumetricLightFilter extends Filter {
                 }
             }
         });
-        // Padding removed to align UV center with screen center
     }
     get exposure() { return this.resources.volumetricUniforms.uniforms.uExposure; }
     set exposure(v) { this.resources.volumetricUniforms.uniforms.uExposure = v; }
@@ -151,7 +150,6 @@ export class LiquidFilter extends Filter {
                 }
             }
         });
-        // Padding removed to align UV center with screen center
     }
     get time() { return this.resources.liquidUniforms.uniforms.uTime; }
     set time(v) { this.resources.liquidUniforms.uniforms.uTime = v; }
@@ -192,7 +190,6 @@ export class WaveDistortFilter extends Filter {
                 }
             }
         });
-        // Padding removed to align UV center with screen center
     }
     get time() { return this.resources.waveUniforms.uniforms.uTime; }
     set time(v) { this.resources.waveUniforms.uniforms.uTime = v; }
@@ -241,7 +238,6 @@ export class KaleidoscopeFilter extends Filter {
                 kaleidoscopeUniforms: { sides: { value: 6.0, type: 'f32' }, angle: { value: 0.0, type: 'f32' }, uScreenSize: { value: { x: 1.0, y: 1.0 }, type: 'vec2<f32>' } }
             }
         });
-        // Kaleidoscope typically fills screen and doesn't need padding for stability
         this.padding = 0; 
     }
     get sides() { return this.resources.kaleidoscopeUniforms.uniforms.sides; }
@@ -250,4 +246,269 @@ export class KaleidoscopeFilter extends Filter {
     set angle(value) { this.resources.kaleidoscopeUniforms.uniforms.angle = value; }
     get screenSize() { return this.resources.kaleidoscopeUniforms.uniforms.uScreenSize; }
     set screenSize(value) { this.resources.kaleidoscopeUniforms.uniforms.uScreenSize = value; }
+}
+
+// --- ADVERSARIAL GLITCH ---
+const adversarialFragment = `
+    precision highp float;
+    in vec2 vTextureCoord;
+    out vec4 finalColor;
+    
+    uniform sampler2D uTexture;
+    uniform vec4 uInputSize; 
+    
+    uniform float uTime;
+    uniform float uIntensity;
+    uniform float uBands;
+    uniform float uShift;
+    uniform float uNoiseScale;
+    uniform float uChromatic;
+    uniform float uScanline;
+    uniform float uQNoise;
+    uniform float uSeed;
+
+    float hash11(float p) {
+        p = fract(p * 0.1031);
+        p *= p + 33.33;
+        p *= p + p;
+        return fract(p);
+    }
+
+    float hash21(vec2 p) {
+        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453 + uSeed);
+    }
+
+    float noise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        float a = hash21(i);
+        float b = hash21(i + vec2(1.0, 0.0));
+        float c = hash21(i + vec2(0.0, 1.0));
+        float d = hash21(i + vec2(1.0, 1.0));
+        vec2 u = f * f * (3.0 - 2.0 * f);
+        return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+    }
+
+    vec2 perturb(vec2 uv) {
+        vec2 p = uv * uNoiseScale + vec2(uSeed * 10.0, 0.0);
+        float n1 = noise(p);
+        float n2 = noise(p + vec2(7.5, 2.5));
+        float ridge = sin(uv.y * (50.0 + 100.0 * n1) + uTime * 0.7);
+        float angle = sin(uTime * 0.33 + n2 * 6.28318);
+        vec2 dir = vec2(cos(angle), sin(angle));
+        vec2 disp = dir * ridge * 0.002 * uIntensity;
+        float hf = sin(uv.x * 800.0 + n2 * 10.0) * 0.0008 * uIntensity;
+        return uv + disp + vec2(hf, -hf);
+    }
+
+    float bandMask(vec2 uv) {
+        float bands = max(1.0, uBands);
+        float y = uv.y * bands;
+        float fracY = fract(y);
+        float gate = step(0.5, hash11(floor(y) + uSeed * 100.0));
+        float jitter = noise(vec2(fracY * 10.0, uTime * 0.5));
+        return gate * jitter;
+    }
+
+    vec2 bandShift(vec2 uv) {
+        float m = bandMask(uv);
+        float shift = (m - 0.5) * 0.002 * uShift; 
+        return uv + vec2(shift, 0.0);
+    }
+
+    vec3 sampleChromatic(vec2 uv) {
+        vec2 cOff = vec2(0.001 * uChromatic, 0.0); 
+        float r = texture(uTexture, uv + cOff).r;
+        float g = texture(uTexture, uv).g;
+        float b = texture(uTexture, uv - cOff).b;
+        return vec3(r, g, b);
+    }
+
+    vec3 postProcess(vec2 uv, vec3 col) {
+        float scan = 0.5 + 0.5 * sin(uv.y * 500.0 * 3.14159);
+        col *= mix(1.0, 1.0 + uScanline * (scan - 0.5), uScanline);
+        
+        if(uQNoise > 0.0) {
+            vec3 q = floor(col * (256.0 - uQNoise) + noise(uv * 1024.0) * uQNoise) / (256.0 - uQNoise);
+            col = mix(col, q, uQNoise / 8.0);
+        }
+        return col;
+    }
+
+    void main() {
+        vec2 uv = vTextureCoord;
+        vec2 uvWarp = perturb(uv);
+        vec2 uvGlitch = bandShift(uvWarp);
+        vec3 col = sampleChromatic(uvGlitch);
+        float n = noise(uvGlitch * (uNoiseScale * 0.5 + 0.001 + uIntensity * 0.5));
+        col += (n - 0.5) * 0.02 * uIntensity;
+        col = postProcess(uvGlitch, col);
+        finalColor = vec4(col, 1.0);
+    }
+`;
+
+export class AdversarialGlitchFilter extends Filter {
+    constructor() {
+        super({
+            glProgram: GlProgram.from({ vertex: defaultFilterVertex, fragment: adversarialFragment, name: 'adversarial-glitch-filter' }),
+            resources: {
+                adversarialUniforms: {
+                    uTime: { value: 0.0, type: 'f32' },
+                    uIntensity: { value: 0.8, type: 'f32' },
+                    uBands: { value: 24.0, type: 'f32' },
+                    uShift: { value: 12.0, type: 'f32' },
+                    uNoiseScale: { value: 3.0, type: 'f32' },
+                    uChromatic: { value: 1.5, type: 'f32' },
+                    uScanline: { value: 0.35, type: 'f32' },
+                    uQNoise: { value: 2.0, type: 'f32' },
+                    uSeed: { value: 0.42, type: 'f32' }
+                }
+            }
+        });
+    }
+    
+    get time() { return this.resources.adversarialUniforms.uniforms.uTime; }
+    set time(v) { this.resources.adversarialUniforms.uniforms.uTime = v; }
+    
+    set intensity(v) { this.resources.adversarialUniforms.uniforms.uIntensity = v; }
+    set bands(v) { this.resources.adversarialUniforms.uniforms.uBands = v; }
+    set shift(v) { this.resources.adversarialUniforms.uniforms.uShift = v; }
+    set noiseScale(v) { this.resources.adversarialUniforms.uniforms.uNoiseScale = v; }
+    set chromatic(v) { this.resources.adversarialUniforms.uniforms.uChromatic = v; }
+    set scanline(v) { this.resources.adversarialUniforms.uniforms.uScanline = v; }
+    set qNoise(v) { this.resources.adversarialUniforms.uniforms.uQNoise = v; }
+    set seed(v) { this.resources.adversarialUniforms.uniforms.uSeed = v; }
+}
+
+// --- ADVANCED ASCII / TEXTMODE FILTER ---
+const asciiFragment = `
+    precision highp float;
+    in vec2 vTextureCoord;
+    out vec4 finalColor;
+
+    uniform sampler2D uTexture;
+    uniform vec4 uInputSize;
+    uniform float uSize;      
+    uniform float uInvert;    
+    uniform float uCharSet;   // 0: Shapes, 1: Data Bars, 2: Binary, 3: Dense
+    uniform float uColorMode; // 0: Color, 1: Green, 2: Amber, 3: Cyan, 4: B&W
+    uniform float uTime;      // For animations
+
+    float random(vec2 st) {
+        return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
+    }
+
+    // --- CHARACTER SETS ---
+
+    // Set 0: Abstract Geometric Shapes
+    float charSetShapes(int index, vec2 p) {
+        vec2 c = abs(p - 0.5);
+        if (index == 0) return 0.0;
+        if (index == 1) return step(length(p-0.5), 0.15); // Dot
+        if (index == 2) return step(max(c.x, c.y), 0.3) - step(max(c.x, c.y), 0.2); // Box Outline
+        if (index == 3) return step(min(c.x, c.y), 0.08); // Plus
+        if (index == 4) return step(abs(c.x - c.y), 0.08); // Cross
+        if (index >= 5) return 1.0; // Block
+        return 0.0;
+    }
+
+    // Set 1: Data Flow (Vertical Bars)
+    float charSetBars(float brightness, vec2 p) {
+        return step(p.y, brightness); // Height based on brightness
+    }
+
+    // Set 2: Binary / Crypto (0 or 1)
+    float charSetBinary(float brightness, vec2 p, vec2 id) {
+        if (brightness < 0.2) return 0.0;
+        float r = random(id + floor(uTime * 5.0)); // Random 0 or 1 change speed
+        if (r > 0.5) {
+            // Draw '1'
+            return step(abs(p.x - 0.5), 0.1) * step(abs(p.y - 0.5), 0.35); 
+        } else {
+            // Draw '0'
+            vec2 c = abs(p - 0.5);
+            return (step(max(c.x, c.y*0.7), 0.35) - step(max(c.x, c.y*0.7), 0.2));
+        }
+    }
+
+    // Set 3: Density / Halftone
+    float charSetDensity(float brightness, vec2 p) {
+        float r = length(p - 0.5) * 2.0;
+        return step(r, brightness * 1.2); 
+    }
+
+    // --- COLOR MODES ---
+    vec3 applyColorMode(vec3 src, float brightness) {
+        int mode = int(uColorMode);
+        if (mode == 0) return src; // Original
+        if (mode == 1) return vec3(0.0, brightness, 0.0); // Matrix Green
+        if (mode == 2) return vec3(1.0, 0.7, 0.0) * brightness; // Amber Terminal
+        if (mode == 3) return vec3(0.0, 1.0, 1.0) * brightness; // Cyan Cyber
+        if (mode == 4) return vec3(brightness); // B&W
+        return src;
+    }
+
+    void main() {
+        vec2 pixelSize = vec2(uSize) / uInputSize.xy;
+        vec2 gridID = floor(vTextureCoord / pixelSize);
+        vec2 gridUV = gridID * pixelSize + (pixelSize * 0.5);
+        
+        vec4 color = texture(uTexture, gridUV);
+        float brightness = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+        
+        vec2 cellCoord = fract(vTextureCoord / pixelSize);
+        float shape = 0.0;
+
+        int set = int(uCharSet);
+        if (set == 0) {
+            int charIndex = int(floor(brightness * 5.9));
+            shape = charSetShapes(charIndex, cellCoord);
+        } else if (set == 1) {
+            shape = charSetBars(brightness, cellCoord);
+        } else if (set == 2) {
+            shape = charSetBinary(brightness, cellCoord, gridID);
+        } else if (set == 3) {
+            shape = charSetDensity(brightness, cellCoord);
+        }
+
+        vec3 processedColor = applyColorMode(color.rgb, brightness);
+        
+        if (uInvert > 0.5) {
+            finalColor = vec4(processedColor * (1.0 - shape), 1.0); 
+        } else {
+            finalColor = vec4(processedColor * shape, 1.0); 
+        }
+        finalColor.a = 1.0;
+    }
+`;
+
+export class AsciiFilter extends Filter {
+    constructor() {
+        super({
+            glProgram: GlProgram.from({ vertex: defaultFilterVertex, fragment: asciiFragment, name: 'ascii-filter' }),
+            resources: {
+                asciiUniforms: {
+                    uSize: { value: 8.0, type: 'f32' },
+                    uInvert: { value: 0.0, type: 'f32' },
+                    uCharSet: { value: 0.0, type: 'f32' },
+                    uColorMode: { value: 0.0, type: 'f32' },
+                    uTime: { value: 0.0, type: 'f32' }
+                }
+            }
+        });
+    }
+    get size() { return this.resources.asciiUniforms.uniforms.uSize; }
+    set size(v) { this.resources.asciiUniforms.uniforms.uSize = v; }
+    
+    get invert() { return this.resources.asciiUniforms.uniforms.uInvert; }
+    set invert(v) { this.resources.asciiUniforms.uniforms.uInvert = v; }
+
+    get charSet() { return this.resources.asciiUniforms.uniforms.uCharSet; }
+    set charSet(v) { this.resources.asciiUniforms.uniforms.uCharSet = v; }
+
+    get colorMode() { return this.resources.asciiUniforms.uniforms.uColorMode; }
+    set colorMode(v) { this.resources.asciiUniforms.uniforms.uColorMode = v; }
+
+    get time() { return this.resources.asciiUniforms.uniforms.uTime; }
+    set time(v) { this.resources.asciiUniforms.uniforms.uTime = v; }
 }

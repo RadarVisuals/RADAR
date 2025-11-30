@@ -9,8 +9,8 @@ import {
     ShockwaveFilter, 
     GlitchFilter
 } from 'pixi-filters';
-import { VolumetricLightFilter, LiquidFilter, WaveDistortFilter, KaleidoscopeFilter } from './PixiFilters';
-import { lerp } from '../helpers'; // Assuming helpers exist here
+import { VolumetricLightFilter, LiquidFilter, WaveDistortFilter, KaleidoscopeFilter, AdversarialGlitchFilter, AsciiFilter } from './PixiFilters';
+import { lerp } from '../helpers';
 
 export class PixiEffectsManager {
     constructor() {
@@ -19,7 +19,9 @@ export class PixiEffectsManager {
             twist: null, zoomBlur: null,
             crt: null, kaleidoscope: null,
             volumetric: null, waveDistort: null, liquid: null,
-            shockwave: null, glitch: null
+            shockwave: null, glitch: null,
+            adversarial: null,
+            ascii: null 
         };
         this._activeOneShotEffects = [];
     }
@@ -39,21 +41,23 @@ export class PixiEffectsManager {
         this.filters.volumetric = new VolumetricLightFilter(); 
         this.filters.waveDistort = new WaveDistortFilter();
         this.filters.liquid = new LiquidFilter();
+        this.filters.adversarial = new AdversarialGlitchFilter();
+        this.filters.ascii = new AsciiFilter(); 
 
-        // EVENT REACTION FILTERS (Initialize disabled)
+        // EVENT REACTION FILTERS
         this.filters.shockwave = new ShockwaveFilter({
             center: { x: screen.width / 2, y: screen.height / 2 },
             speed: 500,
             amplitude: 30,
             wavelength: 160,
-            radius: -1 // Start hidden
+            radius: -1 
         });
         
         this.filters.glitch = new GlitchFilter({
             slices: 10,
             offset: 10,
             direction: 0,
-            fillMode: 2 // Loop
+            fillMode: 2 
         });
         this.filters.glitch.enabled = false;
 
@@ -69,6 +73,10 @@ export class PixiEffectsManager {
             this.filters.zoomBlur,
             this.filters.shockwave, 
             this.filters.glitch,    
+            this.filters.adversarial,
+            
+            this.filters.ascii, // Render ASCII AFTER distortions but BEFORE post-processing
+            
             this.filters.volumetric,
             this.filters.waveDistort,
             this.filters.rgb, 
@@ -103,6 +111,20 @@ export class PixiEffectsManager {
             if (param === 'y') filter.lightY = value;
         } else if (effectName === 'waveDistort') {
             if (param === 'intensity') filter.intensity = value;
+        } else if (effectName === 'ascii') { 
+            if (param === 'size') filter.size = value;
+            if (param === 'invert') filter.invert = value;
+            if (param === 'charSet') filter.charSet = value;
+            if (param === 'colorMode') filter.colorMode = value;
+        } else if (effectName === 'adversarial') {
+            if (param === 'intensity') filter.intensity = value;
+            if (param === 'bands') filter.bands = value;
+            if (param === 'shift') filter.shift = value;
+            if (param === 'noiseScale') filter.noiseScale = value;
+            if (param === 'chromatic') filter.chromatic = value;
+            if (param === 'scanline') filter.scanline = value;
+            if (param === 'qNoise') filter.qNoise = value;
+            if (param === 'seed') filter.seed = value;
         } else {
             if (param in filter) {
                 filter[param] = value;
@@ -165,6 +187,8 @@ export class PixiEffectsManager {
         }
         if (this.filters.liquid && this.filters.liquid.enabled) this.filters.liquid.time += filterDelta;
         if (this.filters.waveDistort && this.filters.waveDistort.enabled) this.filters.waveDistort.time += filterDelta;
+        if (this.filters.adversarial && this.filters.adversarial.enabled) this.filters.adversarial.time += filterDelta;
+        if (this.filters.ascii && this.filters.ascii.enabled) this.filters.ascii.time += filterDelta;
 
         // Resize helpers
         const logicalW = renderer.width / renderer.resolution;

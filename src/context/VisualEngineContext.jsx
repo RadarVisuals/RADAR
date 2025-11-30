@@ -34,8 +34,8 @@ export const VisualEngineProvider = ({ children }) => {
     const renderedValueRef = useRef(0.0);
     const [isAutoFading, setIsAutoFading] = useState(false);
     const [targetSceneName, setTargetSceneName] = useState(null);
-    
-    // --- Effects State ---
+    const [transitionMode, setTransitionMode] = useState('crossfade');
+
     const [effectsConfig, setEffectsConfig] = useState({
         bloom: { enabled: false, intensity: 1.0, blur: 8, threshold: 0.5 },
         rgb: { enabled: false, amount: 2 },
@@ -44,12 +44,12 @@ export const VisualEngineProvider = ({ children }) => {
         zoomBlur: { enabled: false, strength: 0.1, innerRadius: 50 },
         crt: { enabled: false, curvature: 1, lineWidth: 1, noise: 0.1 },
         kaleidoscope: { enabled: false, sides: 6, angle: 0 },
-        
-        // Premium Effects
         liquid: { enabled: false, intensity: 0.02, scale: 3.0, speed: 0.5 },
         volumetric: { enabled: false, exposure: 0.3, decay: 0.95, density: 0.8, weight: 0.4, threshold: 0.5, x: 0.5, y: 0.5 },
         waveDistort: { enabled: false, intensity: 0.5 },
-        oldFilm: { enabled: false, noise: 0.3, scratch: 0.1, vignetting: 0.3 }
+        oldFilm: { enabled: false, noise: 0.3, scratch: 0.1, vignetting: 0.3 },
+        adversarial: { enabled: false, intensity: 0.8, bands: 24, shift: 12, noiseScale: 3.0, chromatic: 1.5, scanline: 0.35, qNoise: 2.0, seed: 0.42 },
+        ascii: { enabled: false, size: 12, invert: 0, charSet: 0, colorMode: 0 } // UPDATED ASCII DEFAULTS
     });
 
     const faderAnimationRef = useRef();
@@ -67,6 +67,10 @@ export const VisualEngineProvider = ({ children }) => {
 
     const uiControlConfig = useMemo(() => renderedValueRef.current < 0.5 ? sideA.config : sideB.config, [renderedCrossfaderValue, sideA.config, sideB.config]);
 
+    const toggleTransitionMode = useCallback(() => {
+        setTransitionMode(prev => prev === 'crossfade' ? 'flythrough' : 'crossfade');
+    }, []);
+
     useEffect(() => {
         return () => {
             if (faderAnimationRef.current) cancelAnimationFrame(faderAnimationRef.current);
@@ -74,7 +78,6 @@ export const VisualEngineProvider = ({ children }) => {
         };
     }, []);
 
-    // Crossfader Animation Loop
     useEffect(() => {
         const animateFader = () => {
             const current = renderedValueRef.current;
@@ -125,7 +128,6 @@ export const VisualEngineProvider = ({ children }) => {
         }
     }, [setIsAutoFading, setTargetCrossfaderValue, setActiveSceneName]);
     
-    // Logic to handle scene loading, fallbacks, and deck assignments
     useEffect(() => {
         const initialLoadJustFinished = !prevIsFullyLoaded && isFullyLoaded;
         const transitionJustFinished = prevIsWorkspaceTransitioning && !isWorkspaceTransitioning;
@@ -176,11 +178,12 @@ export const VisualEngineProvider = ({ children }) => {
         setTargetSceneName(sceneName);
         const targetScene = fullSceneList.find(s => s.name === sceneName);
         if (!targetScene) return;
-        const activeDeckIsA = renderedValueRef.current < 0.5;
-        const activeSceneNameOnDeck = activeDeckIsA ? sideA.config?.name : sideB.config?.name;
-        if (activeSceneNameOnDeck === sceneName) return;
         
-        // Helper to sync physics on the INCOMING deck before we start fading to it
+        const activeDeckIsA = renderedValueRef.current < 0.5;
+        const currentConfig = activeDeckIsA ? sideA.config : sideB.config;
+        
+        if (currentConfig?.name === sceneName) return; 
+
         const syncIncomingDeck = (targetDeck) => {
             const managers = managerInstancesRef.current?.current;
             if (managers) {
@@ -190,29 +193,18 @@ export const VisualEngineProvider = ({ children }) => {
             }
         };
 
-        if (!activeDeckIsA && sideA.config?.name === sceneName) { 
-            setIsAutoFading(true); 
-            animateCrossfade(performance.now(), renderedValueRef.current, 0.0, duration, sceneName); 
-            return; 
-        }
-        if (activeDeckIsA && sideB.config?.name === sceneName) { 
-            setIsAutoFading(true); 
-            animateCrossfade(performance.now(), renderedValueRef.current, 1.0, duration, sceneName); 
-            return; 
-        }
-        
         if (activeDeckIsA) { 
-            syncIncomingDeck('B'); // Make B match A's physics
+            syncIncomingDeck('B'); 
             setSideB({ config: JSON.parse(JSON.stringify(targetScene)) }); 
             setIsAutoFading(true); 
             animateCrossfade(performance.now(), renderedValueRef.current, 1.0, duration, sceneName); 
         } else { 
-            syncIncomingDeck('A'); // Make A match B's physics
+            syncIncomingDeck('A'); 
             setSideA({ config: JSON.parse(JSON.stringify(targetScene)) }); 
             setIsAutoFading(true); 
             animateCrossfade(performance.now(), renderedValueRef.current, 0.0, duration, sceneName); 
         }
-    }, [isAutoFading, fullSceneList, sideA.config, sideB.config, animateCrossfade]);
+    }, [isAutoFading, fullSceneList, sideA, sideB, animateCrossfade, transitionMode]);
 
     const handleCrossfaderChange = useCallback((newValue) => { setTargetCrossfaderValue(newValue); }, []);
     const handleCrossfaderCommit = useCallback((finalValue) => { setTargetCrossfaderValue(finalValue); }, []);
@@ -222,12 +214,13 @@ export const VisualEngineProvider = ({ children }) => {
         if (!managers) return;
         const manager = managers[String(layerId)];
         if (!manager) return;
+        
         const activeDeck = renderedValueRef.current < 0.5 ? 'A' : 'B';
         
         if (isMidiUpdate && INTERPOLATED_MIDI_PARAMS.includes(key)) {
           if (activeDeck === 'A') manager.setTargetValue(key, value); else manager.setTargetValueB(key, value);
         } else {
-          if (activeDeck === 'A') manager.updateConfigProperty(key, value); else manager.updateConfigBProperty(key, value);
+          if (activeDeck === 'A') manager.snapProperty(key, value); else manager.snapPropertyB(key, value);
         }
 
         const stateSetter = activeDeck === 'A' ? setSideA : setSideB;
@@ -276,76 +269,30 @@ export const VisualEngineProvider = ({ children }) => {
         const cleanSceneData = fullSceneList.find(s => s.name === sceneName);
         if (!cleanSceneData) return;
         const activeDeckIsA = renderedValueRef.current < 0.5;
-        const stateSetter = activeDeckIsA ? setSideB : setSideA; // Set inactive
+        const stateSetter = activeDeckIsA ? setSideB : setSideA;
         stateSetter({ config: JSON.parse(JSON.stringify(cleanSceneData)) });
     }, [fullSceneList]);
 
     const updateEffectConfig = useCallback((effectName, param, value) => {
-        setEffectsConfig(prev => ({
-            ...prev,
-            [effectName]: {
-                ...prev[effectName],
-                [param]: value
-            }
-        }));
-
+        setEffectsConfig(prev => ({ ...prev, [effectName]: { ...prev[effectName], [param]: value } }));
         const managers = managerInstancesRef.current?.current;
         if (managers && managers['1'] && managers['1'].updateEffectConfig) {
             managers['1'].updateEffectConfig(effectName, param, value);
         }
     }, []);
 
-    const managerInstancesRefValue = useMemo(() => {
-        const createLayerProxy = (layerId) => ({
-            getState: (deckSide) => managerInstancesRef.current?.engineRef?.current?.getState(layerId, deckSide),
-            updateConfigProperty: (key, value) => managerInstancesRef.current?.engineRef?.current?.updateConfig(layerId, key, value, 'A'),
-            updateConfigBProperty: (key, value) => managerInstancesRef.current?.engineRef?.current?.updateConfig(layerId, key, value, 'B'),
-            setTargetValue: (key, value) => managerInstancesRef.current?.engineRef?.current?.updateConfig(layerId, key, value, 'A'),
-            setTargetValueB: (key, value) => managerInstancesRef.current?.engineRef?.current?.updateConfig(layerId, key, value, 'B'),
-            setAudioFrequencyFactor: (factor) => { if (managerInstancesRef.current?.engineRef?.current) managerInstancesRef.current.engineRef.current.setAudioFactors({ [layerId]: factor }); },
-            triggerBeatPulse: (factor, duration) => managerInstancesRef.current?.engineRef?.current?.triggerBeatPulse(factor, duration),
-            resetAudioModifications: () => managerInstancesRef.current?.engineRef?.current?.setAudioFactors({ '1': 1, '2': 1, '3': 1 }),
-            setParallax: (x, y) => managerInstancesRef.current?.engineRef?.current?.setParallax(x, y),
-            applyPlaybackValue: (key, value) => managerInstancesRef.current?.engineRef?.current?.applyPlaybackValue(layerId, key, value),
-            clearPlaybackValues: () => managerInstancesRef.current?.engineRef?.current?.clearPlaybackValues(),
-            updateEffectConfig: (name, param, value) => managerInstancesRef.current?.engineRef?.current?.updateEffectConfig(name, param, value),
-            syncPhysics: (targetDeck) => managerInstancesRef.current?.engineRef?.current?.syncDeckPhysics(layerId, targetDeck),
-            
-            destroy: () => {},
-            startAnimationLoop: () => {},
-            stopAnimationLoop: () => {}
-        });
-    
-        return {
-            current: {
-                '1': createLayerProxy('1'),
-                '2': createLayerProxy('2'),
-                '3': createLayerProxy('3'),
-            }
-        };
-    }, []);
-
-    // Override the registered ref with the context-defined proxy structure
-    // This allows components to use managerInstancesRef from context and get the new syncPhysics method
-    useEffect(() => {
-        if (managerInstancesRef.current) {
-            // Merge or re-assign based on how usePixiOrchestrator sets it.
-            // Since usePixiOrchestrator sets it once, we can just ensure our local logic uses the engineRef exposed by it.
-        }
-    }, []);
-
     const contextValue = useMemo(() => ({
         sideA, sideB, uiControlConfig, renderedCrossfaderValue, isAutoFading, targetSceneName,
-        effectsConfig,
+        effectsConfig, transitionMode,
         handleSceneSelect, handleCrossfaderChange, handleCrossfaderCommit,
-        updateLayerConfig, updateTokenAssignment, updateEffectConfig,
+        updateLayerConfig, updateTokenAssignment, updateEffectConfig, toggleTransitionMode,
         setLiveConfig, registerManagerInstancesRef, registerCanvasUpdateFns,
         managerInstancesRef, reloadSceneOntoInactiveDeck,
     }), [
         sideA, sideB, uiControlConfig, renderedCrossfaderValue, isAutoFading, targetSceneName,
-        effectsConfig,
+        effectsConfig, transitionMode,
         handleSceneSelect, handleCrossfaderChange, handleCrossfaderCommit, 
-        updateLayerConfig, updateTokenAssignment, updateEffectConfig,
+        updateLayerConfig, updateTokenAssignment, updateEffectConfig, toggleTransitionMode,
         setLiveConfig, registerManagerInstancesRef, registerCanvasUpdateFns, 
         managerInstancesRef, reloadSceneOntoInactiveDeck,
     ]);

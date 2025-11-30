@@ -91,7 +91,73 @@ const EffectsPanel = ({ onClose }) => {
         <Panel title="GLOBAL EFFECTS" onClose={onClose} className="panel-from-toolbar effects-panel">
             <div className="effects-content">
                 
-                <h4 className="config-section-title" style={{marginTop:0}}>Atmosphere & Flow (Premium)</h4>
+                <h4 className="config-section-title" style={{marginTop:0}}>Glitch & Chaos</h4>
+
+                <EffectControl 
+                    label="ADVERSARIAL GLITCH" 
+                    effectKey="adversarial"
+                    config={effectsConfig}
+                    onChange={updateEffectConfig}
+                    params={[
+                        { key: 'intensity', label: 'Power', min: 0, max: 2.0, step: 0.01, default: 0.8, decimals: 2 },
+                        { key: 'bands', label: 'Bands', min: 1, max: 64, step: 1, default: 24, decimals: 0 },
+                        { key: 'shift', label: 'Shift', min: 0, max: 50, step: 1, default: 12, decimals: 0 },
+                        { key: 'noiseScale', label: 'Noise', min: 0.1, max: 12, step: 0.1, default: 3.0, decimals: 1 },
+                        { key: 'chromatic', label: 'RGB Split', min: 0, max: 10, step: 0.1, default: 1.5, decimals: 1 },
+                        { key: 'scanline', label: 'Scanline', min: 0, max: 1, step: 0.01, default: 0.35, decimals: 2 },
+                        { key: 'qNoise', label: 'Crush', min: 0, max: 8, step: 0.1, default: 2.0, decimals: 1 },
+                        { key: 'seed', label: 'Seed', min: 0, max: 10, step: 0.01, default: 0.42, decimals: 2 }
+                    ]}
+                />
+
+                <h4 className="config-section-title">Retro & Terminal</h4>
+
+                <EffectControl 
+                    label="ASCII TERMINAL" 
+                    effectKey="ascii"
+                    config={effectsConfig}
+                    onChange={updateEffectConfig}
+                    params={[
+                        { key: 'size', label: 'Grid Size', min: 4, max: 32, step: 1, default: 12, decimals: 0 },
+                        { 
+                            key: 'charSet', 
+                            label: 'Style', 
+                            type: 'select',
+                            default: 0,
+                            options: [
+                                { value: 0, label: 'Shapes' },
+                                { value: 1, label: 'Data Flow' },
+                                { value: 2, label: 'Binary' },
+                                { value: 3, label: 'Density' }
+                            ]
+                        },
+                        { 
+                            key: 'colorMode', 
+                            label: 'Color', 
+                            type: 'select',
+                            default: 0,
+                            options: [
+                                { value: 0, label: 'Original' },
+                                { value: 1, label: 'Matrix' },
+                                { value: 2, label: 'Amber' },
+                                { value: 3, label: 'Cyber' },
+                                { value: 4, label: 'B&W' }
+                            ]
+                        },
+                        { 
+                            key: 'invert', 
+                            label: 'Mode', 
+                            type: 'select',
+                            default: 0,
+                            options: [
+                                { value: 0, label: 'Normal' },
+                                { value: 1, label: 'Inverted' }
+                            ]
+                        }
+                    ]}
+                />
+
+                <h4 className="config-section-title">Atmosphere & Flow (Premium)</h4>
 
                 <EffectControl 
                     label="LIQUID FLOW" 

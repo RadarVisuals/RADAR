@@ -3,7 +3,14 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import PixiEngine from '../utils/PixiEngine';
 import { resolveImageUrl } from '../utils/imageDecoder';
 
-export function usePixiOrchestrator({ canvasRef, sideA, sideB, crossfaderValue, isReady }) {
+export function usePixiOrchestrator({ 
+  canvasRef, 
+  sideA, 
+  sideB, 
+  crossfaderValue, 
+  isReady,
+  transitionMode // New Prop
+}) {
   const engineRef = useRef(null);
   const [isEngineReady, setIsEngineReady] = useState(false);
 
@@ -13,6 +20,9 @@ export function usePixiOrchestrator({ canvasRef, sideA, sideB, crossfaderValue, 
       engine.init().then(() => {
         engineRef.current = engine;
         setIsEngineReady(true);
+        // Sync initial mode
+        if (transitionMode) engine.setTransitionMode(transitionMode);
+        
         if (sideA?.config) syncDeckConfig(engine, sideA.config, 'A');
         if (sideB?.config) syncDeckConfig(engine, sideB.config, 'B');
       });
@@ -24,8 +34,14 @@ export function usePixiOrchestrator({ canvasRef, sideA, sideB, crossfaderValue, 
         setIsEngineReady(false);
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canvasRef]); 
+
+  // Watch for mode changes
+  useEffect(() => {
+      if (engineRef.current && isEngineReady) {
+          engineRef.current.setTransitionMode(transitionMode);
+      }
+  }, [transitionMode, isEngineReady]);
 
   const syncDeckConfig = (engine, configWrapper, side) => {
     if (!configWrapper) return;
@@ -48,8 +64,13 @@ export function usePixiOrchestrator({ canvasRef, sideA, sideB, crossfaderValue, 
   const managerInstancesRef = useMemo(() => {
     const createLayerProxy = (layerId) => ({
         getState: (deckSide) => engineRef.current?.getState(layerId, deckSide),
+        
         updateConfigProperty: (key, value) => engineRef.current?.updateConfig(layerId, key, value, 'A'),
         updateConfigBProperty: (key, value) => engineRef.current?.updateConfig(layerId, key, value, 'B'),
+        
+        snapProperty: (key, value) => engineRef.current?.snapConfig(layerId, { [key]: value }, 'A'),
+        snapPropertyB: (key, value) => engineRef.current?.snapConfig(layerId, { [key]: value }, 'B'),
+
         setTargetValue: (key, value) => engineRef.current?.updateConfig(layerId, key, value, 'A'),
         setTargetValueB: (key, value) => engineRef.current?.updateConfig(layerId, key, value, 'B'),
         setAudioFrequencyFactor: (factor) => { if (engineRef.current) engineRef.current.setAudioFactors({ [layerId]: factor }); },
@@ -59,8 +80,8 @@ export function usePixiOrchestrator({ canvasRef, sideA, sideB, crossfaderValue, 
         applyPlaybackValue: (key, value) => engineRef.current?.applyPlaybackValue(layerId, key, value),
         clearPlaybackValues: () => engineRef.current?.clearPlaybackValues(),
         
-        // --- NEW: Pass through Effect Updates ---
         updateEffectConfig: (name, param, value) => engineRef.current?.updateEffectConfig(name, param, value),
+        syncPhysics: (targetDeck) => engineRef.current?.syncDeckPhysics(layerId, targetDeck),
 
         destroy: () => {},
         startAnimationLoop: () => {},

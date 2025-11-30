@@ -31,6 +31,7 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     renderedCrossfaderValue,
     uiControlConfig,
     updateLayerConfig,
+    transitionMode, // Consume transition mode
   } = useVisualEngineContext();
 
   const { upInitializationError, upFetchStateError } = useUpProvider();
@@ -55,6 +56,7 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     sideB,
     crossfaderValue: renderedCrossfaderValue,
     isReady: isReadyForLifecycle,
+    transitionMode, // Pass transition mode to orchestrator
   });
 
   const sequencer = usePLockSequencer({

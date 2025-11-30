@@ -6,9 +6,6 @@ import { getDecodedImage } from '../imageDecoder';
 import { MAX_TOTAL_OFFSET, MIDI_INTERPOLATION_DURATION, BLEND_MODE_MAP } from './PixiConstants';
 
 // --- SCALE FIX ---
-// 0.5 reduces the base calculation by half. 
-// This makes 'Size: 2.5' behave more like 'Size: 1.25' relative to the screen,
-// restoring the "Kaleidoscope" look instead of the "Macro Zoom" look.
 const BASE_SCALE_MODIFIER = 0.5;
 
 class Quadrant {
@@ -16,14 +13,10 @@ class Quadrant {
     this.container = new Container();
     this.mask = new Graphics();
     this.sprite = new Sprite();
-    
-    // Center anchor so scaling/rotation happens from the middle of the sprite
     this.sprite.anchor.set(0.5);
-    
     this.container.mask = this.mask;
     this.container.addChild(this.mask);
     this.container.addChild(this.sprite);
-    
     container.addChild(this.container);
   }
 
@@ -42,24 +35,21 @@ export class PixiLayerDeck {
   constructor(layerId, deckId) {
     this.layerId = layerId;
     this.deckId = deckId;
-    
     this.container = new Container();
     
     this.quadrants = [
-      new Quadrant(this.container), // Top-Left
-      new Quadrant(this.container), // Top-Right
-      new Quadrant(this.container), // Bottom-Left
-      new Quadrant(this.container)  // Bottom-Right
+      new Quadrant(this.container), 
+      new Quadrant(this.container), 
+      new Quadrant(this.container), 
+      new Quadrant(this.container)  
     ];
     
     this.config = this.getDefaultConfig();
-    
     this.driftState = { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
     this.continuousAngle = 0;
     
     this.interpolators = {};
     this.playbackValues = {}; 
-    
     this.tokenId = null;
     this._loadingTokenId = null;
 
@@ -92,6 +82,8 @@ export class PixiLayerDeck {
         if (otherDeck.interpolators[key]) {
             this.interpolators[key].currentValue = otherDeck.interpolators[key].currentValue;
             this.interpolators[key].startValue = otherDeck.interpolators[key].currentValue;
+            this.interpolators[key].targetValue = otherDeck.interpolators[key].targetValue;
+            this.interpolators[key].isInterpolating = otherDeck.interpolators[key].isInterpolating;
         }
     });
   }
@@ -99,13 +91,11 @@ export class PixiLayerDeck {
   async setTexture(imageSrc, tokenId) {
     if (this.tokenId === tokenId) return;
     this._loadingTokenId = tokenId;
-    
     if (!imageSrc) {
         this.tokenId = tokenId;
         this.quadrants.forEach(q => q.setTexture(Texture.EMPTY));
         return;
     }
-
     try {
       const imageBitmap = await getDecodedImage(imageSrc);
       if (this._loadingTokenId === tokenId) {
@@ -153,7 +143,9 @@ export class PixiLayerDeck {
     const drift = getVal('drift');
     const driftSpeed = getVal('driftSpeed');
 
-    this.continuousAngle = (this.continuousAngle + (speed * direction * deltaTime * 600)) % 360;
+    // --- CRITICAL: Continuous accumulation (no modulo) ---
+    this.continuousAngle += (speed * direction * deltaTime * 600);
+    // ----------------------------------------------------
 
     if (drift > 0) {
         this.driftState.phase += deltaTime * driftSpeed * 1.0;
@@ -171,6 +163,7 @@ export class PixiLayerDeck {
   resolveRenderState() {
     const getVal = (prop) => this.playbackValues[prop] ?? this.interpolators[prop].getCurrentValue();
     const angle = getVal('angle');
+    // totalAngleDeg is purely local now, for state snapshotting if needed
     const totalAngleDeg = angle + this.continuousAngle;
     
     return {
@@ -185,7 +178,7 @@ export class PixiLayerDeck {
         direction: this.config.direction || 1,
         blendMode: this.config.blendMode, 
         enabled: this.config.enabled,
-        totalAngleRad: (totalAngleDeg * Math.PI) / 180,
+        totalAngleRad: (totalAngleDeg * Math.PI) / 180, 
         driftX: this.driftState.x, 
         driftY: this.driftState.y,
     };
@@ -209,58 +202,23 @@ export class PixiLayerDeck {
     const targetX = halfW + (state.xaxis / 10) + state.driftX + pX;
     const targetY = halfH + (state.yaxis / 10) + state.driftY + pY;
     
-    // Scale Logic
     const tex = this.quadrants[0].sprite.texture;
     let screenRelativeScale = 1.0;
     
     if (tex && tex.valid && tex.width > 1) {
-        // Calculate ratio to fit inside the quadrant
         const fitWidth = halfW / tex.width;
         const fitHeight = halfH / tex.height;
-        
-        // --- KEY FIX HERE ---
-        // Use Math.min ("Contain") instead of Math.max ("Cover")
-        // This ensures the image isn't pre-zoomed to fill the screen before the Size slider applies.
         screenRelativeScale = Math.min(fitWidth, fitHeight);
     }
     
-    // Apply dampener to align '2.5' slider value with legacy appearance
     const finalScale = Math.max(0.001, state.size * screenRelativeScale * beatFactor * BASE_SCALE_MODIFIER);
-    
     const finalAlpha = state.opacity * alphaMult;
     const blend = BLEND_MODE_MAP[state.blendMode] || 'normal';
 
-    // 1. Top-Left
-    this._updateQuadrant(this.quadrants[0], 
-        targetX, targetY, 
-        finalScale, finalScale, 
-        state.totalAngleRad, 
-        finalAlpha, blend
-    );
-
-    // 2. Top-Right (Mirror X)
-    this._updateQuadrant(this.quadrants[1], 
-        screenW - targetX, targetY, 
-        -finalScale, finalScale, 
-        -state.totalAngleRad, 
-        finalAlpha, blend
-    );
-
-    // 3. Bottom-Left (Mirror Y)
-    this._updateQuadrant(this.quadrants[2], 
-        targetX, screenH - targetY, 
-        finalScale, -finalScale, 
-        -state.totalAngleRad, 
-        finalAlpha, blend
-    );
-
-    // 4. Bottom-Right (Mirror Both)
-    this._updateQuadrant(this.quadrants[3], 
-        screenW - targetX, screenH - targetY, 
-        -finalScale, -finalScale, 
-        state.totalAngleRad, 
-        finalAlpha, blend
-    );
+    this._updateQuadrant(this.quadrants[0], targetX, targetY, finalScale, finalScale, state.totalAngleRad, finalAlpha, blend);
+    this._updateQuadrant(this.quadrants[1], screenW - targetX, targetY, -finalScale, finalScale, -state.totalAngleRad, finalAlpha, blend);
+    this._updateQuadrant(this.quadrants[2], targetX, screenH - targetY, finalScale, -finalScale, -state.totalAngleRad, finalAlpha, blend);
+    this._updateQuadrant(this.quadrants[3], screenW - targetX, screenH - targetY, -finalScale, -finalScale, state.totalAngleRad, finalAlpha, blend);
   }
 
   _updateQuadrant(quad, x, y, sx, sy, rot, alpha, blend) {
@@ -274,10 +232,8 @@ export class PixiLayerDeck {
   resize(renderer) {
     const w = renderer.screen.width;
     const h = renderer.screen.height;
-    
     const hw = Math.ceil(w / 2); 
     const hh = Math.ceil(h / 2);
-
     this.quadrants[0].updateMask(0, 0, hw, hh);
     this.quadrants[1].updateMask(hw, 0, w - hw, hh);
     this.quadrants[2].updateMask(0, hh, hw, h - hh);

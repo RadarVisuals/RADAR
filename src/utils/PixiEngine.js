@@ -24,6 +24,14 @@ export default class PixiEngine {
     this.isMappingActive = false;
     this.renderTexture = null;
     this.projectionMesh = null;
+
+    this.transitionMode = 'crossfade'; 
+    this.lastCrossfadeValue = 0.0;
+    
+    // --- FIX: Use a latched state for flythrough direction ---
+    // 0 = A->B (Forward), 1 = B->A (Backward)
+    // Only changes when hitting boundaries 0.0 or 1.0
+    this.flythroughSequence = 'A->B'; 
   }
 
   async init() {
@@ -31,8 +39,6 @@ export default class PixiEngine {
     
     await this.app.init({
       canvas: this.canvas,
-      // Change resizeTo from 'window' to parentElement.
-      // This ensures it respects the container size in iframe/fullscreen correctly.
       resizeTo: this.canvas.parentElement, 
       backgroundAlpha: 0,
       antialias: true,
@@ -68,6 +74,10 @@ export default class PixiEngine {
     
     this.isReady = true;
     if (import.meta.env.DEV) console.log("[PixiEngine] Initialized.");
+  }
+
+  setTransitionMode(mode) {
+    this.transitionMode = mode;
   }
 
   initMappingResources() {
@@ -108,7 +118,6 @@ export default class PixiEngine {
         this.renderTexture.resize(w, h);
     }
     
-    // --- FIX: Apply filterArea to mainLayerGroup, not just stage ---
     if (this.mainLayerGroup) {
         this.mainLayerGroup.filterArea = this.app.screen;
     }
@@ -131,24 +140,25 @@ export default class PixiEngine {
     const now = performance.now();
     const deltaTime = ticker.deltaTime / 60; 
 
-    // --- FIX START ---
-    // Ensure the filter area stays locked to the screen dimensions.
-    // This prevents the filter coordinate system from jumping around 
-    // as the underlying layers rotate and change their bounding box.
     if (this.app && this.app.screen && this.mainLayerGroup) {
         this.mainLayerGroup.filterArea = this.app.screen;
     }
-    // --- FIX END ---
 
     this.effectsManager.update(ticker, this.app.renderer);
+
+    // --- FIX: Latch Logic for Hyperdrift ---
+    // Instead of checking delta, we check boundaries to switch modes.
+    if (this.crossfadeValue >= 0.999) {
+        this.flythroughSequence = 'B->A'; // We are at B, next movement is back to A
+    } else if (this.crossfadeValue <= 0.001) {
+        this.flythroughSequence = 'A->B'; // We are at A, next movement is to B
+    }
+    
+    this.lastCrossfadeValue = this.crossfadeValue;
 
     let currentBeatFactor = this.beatPulseEndTime > now ? this.beatPulseFactor : 1.0;
     this.renderedParallaxOffset.x += (this.parallaxOffset.x - this.renderedParallaxOffset.x) * 0.05;
     this.renderedParallaxOffset.y += (this.parallaxOffset.y - this.renderedParallaxOffset.y) * 0.05;
-
-    const angle = this.crossfadeValue * 0.5 * Math.PI;
-    const opacityA = Math.cos(angle);
-    const opacityB = Math.sin(angle);
 
     Object.values(this.layers).forEach(layer => {
       const audioScale = this.audioFrequencyFactors[layer.deckA.layerId] || 1.0;
@@ -160,41 +170,116 @@ export default class PixiEngine {
       const stateA = layer.deckA.resolveRenderState();
       const stateB = layer.deckB.resolveRenderState();
       
-      const morphedState = {}; 
-      
-      for (let key in stateA) {
-          if (key === 'angle') {
-              morphedState[key] = lerpAngle(stateA[key], stateB[key], this.crossfadeValue);
-          } else if (key === 'totalAngleRad') {
-              continue; 
-          } else if (typeof stateA[key] === 'number' && typeof stateB[key] === 'number') {
-              morphedState[key] = lerp(stateA[key], stateB[key], this.crossfadeValue);
+      if (this.transitionMode === 'flythrough') {
+          // --- FLY THROUGH MODE (Bi-Directional Forward Zoom) ---
+          const t = this.crossfadeValue;
+          const MAX_ZOOM = 60.0;
+          
+          let fadeStartZoom = 3.0; 
+          let fadeEndZoom = 20.0; 
+          
+          if (layer.deckA.layerId === '1') { fadeStartZoom = 1.1; fadeEndZoom = 4.0; }
+          else if (layer.deckA.layerId === '2') { fadeStartZoom = 1.5; fadeEndZoom = 8.0; }
+          
+          const SIDEWAYS_FORCE = -25000; 
+          const VERTICAL_FORCE = -8000;  
+          
+          let scaleMultA, alphaMultA;
+          let scaleMultB, alphaMultB;
+
+          // LOGIC A->B: (Fader 0 -> 1)
+          // Deck A is Exiting (Zooms out), Deck B is Entering (Zooms from 0)
+          const applyForwardLogic = (progress) => {
+              const easeOut = Math.pow(progress, 4); 
+              
+              // Exiting Deck (A)
+              scaleMultA = 1.0 + (MAX_ZOOM - 1.0) * easeOut;
+              stateA.driftX += easeOut * SIDEWAYS_FORCE;
+              stateA.driftY += easeOut * VERTICAL_FORCE;
+              
+              if (scaleMultA > fadeStartZoom) {
+                  const fadeProg = (scaleMultA - fadeStartZoom) / (fadeEndZoom - fadeStartZoom);
+                  alphaMultA = Math.max(0, 1.0 - fadeProg);
+              } else {
+                  alphaMultA = 1.0;
+              }
+
+              // Entering Deck (B)
+              scaleMultB = progress; 
+              alphaMultB = Math.min(1.0, progress * 5.0); 
+
+              // Order: B Behind A
+              layer.container.setChildIndex(layer.deckB.container, 0); 
+              layer.container.setChildIndex(layer.deckA.container, 1);
+          };
+
+          // LOGIC B->A: (Fader 1 -> 0)
+          // Deck B is Exiting (Zooms out), Deck A is Entering (Zooms from 0)
+          const applyReverseLogic = (progress) => {
+              // progress here is (1-t), moving 0 -> 1 as fader moves 1 -> 0
+              const easeOut = Math.pow(progress, 4); 
+
+              // Exiting Deck (B)
+              scaleMultB = 1.0 + (MAX_ZOOM - 1.0) * easeOut;
+              stateB.driftX += easeOut * SIDEWAYS_FORCE;
+              stateB.driftY += easeOut * VERTICAL_FORCE;
+
+              if (scaleMultB > fadeStartZoom) {
+                  const fadeProg = (scaleMultB - fadeStartZoom) / (fadeEndZoom - fadeStartZoom);
+                  alphaMultB = Math.max(0, 1.0 - fadeProg);
+              } else {
+                  alphaMultB = 1.0;
+              }
+
+              // Entering Deck (A)
+              scaleMultA = progress;
+              alphaMultA = Math.min(1.0, progress * 5.0);
+
+              // Order: A Behind B
+              layer.container.setChildIndex(layer.deckA.container, 0);
+              layer.container.setChildIndex(layer.deckB.container, 1);
+          };
+
+          // Use Latched Sequence to determine logic
+          if (this.flythroughSequence === 'A->B') {
+              applyForwardLogic(t);
           } else {
-              morphedState[key] = this.crossfadeValue < 0.5 ? stateA[key] : stateB[key];
+              applyReverseLogic(1.0 - t);
           }
+
+          // Apply Scaling & State
+          stateA.size = stateA.size * scaleMultA;
+          stateB.size = stateB.size * scaleMultB;
+
+          layer.deckA.applyRenderState(stateA, alphaMultA, combinedBeatFactor, this.renderedParallaxOffset, this.parallaxFactors[layer.deckA.layerId], this.app.screen);
+          layer.deckB.applyRenderState(stateB, alphaMultB, combinedBeatFactor, this.renderedParallaxOffset, this.parallaxFactors[layer.deckB.layerId], this.app.screen);
+
+      } else {
+          // --- STANDARD CROSSFADE MODE ---
+          const angle = this.crossfadeValue * 0.5 * Math.PI;
+          const opacityA = Math.cos(angle);
+          const opacityB = Math.sin(angle);
+          
+          const morphedState = {}; 
+          for (let key in stateA) {
+              if (key === 'angle') {
+                  morphedState[key] = lerpAngle(stateA[key], stateB[key], this.crossfadeValue);
+              } else if (key === 'totalAngleRad') {
+                  continue; 
+              } else if (typeof stateA[key] === 'number' && typeof stateB[key] === 'number') {
+                  morphedState[key] = lerp(stateA[key], stateB[key], this.crossfadeValue);
+              } else {
+                  morphedState[key] = this.crossfadeValue < 0.5 ? stateA[key] : stateB[key];
+              }
+          }
+
+          const currentContinuous = lerp(layer.deckA.continuousAngle, layer.deckB.continuousAngle, this.crossfadeValue);
+          const totalAngleDeg = morphedState.angle + currentContinuous;
+          morphedState.totalAngleRad = (totalAngleDeg * Math.PI) / 180;
+
+          layer.deckA.applyRenderState(morphedState, opacityA, combinedBeatFactor, this.renderedParallaxOffset, this.parallaxFactors[layer.deckA.layerId], this.app.screen);
+          layer.deckB.applyRenderState(morphedState, opacityB, combinedBeatFactor, this.renderedParallaxOffset, this.parallaxFactors[layer.deckB.layerId], this.app.screen);
       }
-
-      const currentContinuous = layer.deckA.continuousAngle; 
-      const totalAngleDeg = morphedState.angle + currentContinuous;
-      morphedState.totalAngleRad = (totalAngleDeg * Math.PI) / 180;
-
-      layer.deckA.applyRenderState(
-          morphedState, 
-          opacityA, 
-          combinedBeatFactor, 
-          this.renderedParallaxOffset, 
-          this.parallaxFactors[layer.deckA.layerId], 
-          this.app.screen
-      );
-      
-      layer.deckB.applyRenderState(
-          morphedState, 
-          opacityB, 
-          combinedBeatFactor, 
-          this.renderedParallaxOffset, 
-          this.parallaxFactors[layer.deckB.layerId], 
-          this.app.screen
-      );
     });
 
     if (this.isMappingActive) {
@@ -247,6 +332,10 @@ export default class PixiEngine {
       if (!layer) return;
       const target = targetDeckSide === 'A' ? layer.deckA : layer.deckB;
       const source = targetDeckSide === 'A' ? layer.deckB : layer.deckA;
+      
+      const normalizedAngle = ((source.continuousAngle % 360) + 360) % 360;
+      source.continuousAngle = normalizedAngle;
+
       target.syncPhysicsFrom(source);
   }
 

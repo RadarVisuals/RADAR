@@ -1,6 +1,7 @@
 // src/components/Toolbars/TopRightControls.jsx
 import React from "react";
 import PropTypes from "prop-types";
+import { RocketLaunchIcon, ArrowsRightLeftIcon } from '@heroicons/react/24/outline';
 
 import "./ToolbarStyles/TopRightControls.css";
 import {
@@ -25,9 +26,12 @@ const TopRightControls = ({
   isUiVisible = true,
   isParallaxEnabled,
   onToggleParallax,
+  transitionMode,        // Prop for state
+  onToggleTransitionMode // Prop for toggle function
 }) => {
   return (
     <div className={`top-right-controls-container ${!isUiVisible ? "ui-hidden" : ""}`}>
+      
       {showEnhancedView && isUiVisible && (
         <button
           className="toolbar-icon"
@@ -58,6 +62,7 @@ const TopRightControls = ({
         </button>
       )}
 
+      {/* --- PARALLAX TOGGLE --- */}
       {isUiVisible && (
         <button
           className={`toolbar-icon ${isParallaxEnabled ? "active" : ""}`}
@@ -70,6 +75,23 @@ const TopRightControls = ({
             alt="Toggle Parallax"
             className="icon-image"
           />
+        </button>
+      )}
+
+      {/* --- TRANSITION MODE TOGGLE (Moved Next to Parallax) --- */}
+      {isUiVisible && onToggleTransitionMode && (
+        <button
+          className={`toolbar-icon transition-mode-btn ${transitionMode === 'flythrough' ? "active" : ""}`}
+          onClick={onToggleTransitionMode}
+          title={transitionMode === 'flythrough' ? "Hyperdrift Mode" : "Interpolate Mode"}
+          aria-label={transitionMode === 'flythrough' ? "Switch to Interpolate Mode" : "Switch to Hyperdrift Mode"}
+        >
+          {transitionMode === 'flythrough' ? (
+            /* Reduced padding to 3px makes the icon appear larger */
+            <RocketLaunchIcon className="icon-image" style={{ padding: '3px' }} />
+          ) : (
+            <ArrowsRightLeftIcon className="icon-image" style={{ padding: '3px' }} />
+          )}
         </button>
       )}
 
@@ -115,6 +137,8 @@ TopRightControls.propTypes = {
   isUiVisible: PropTypes.bool,
   isParallaxEnabled: PropTypes.bool,
   onToggleParallax: PropTypes.func,
+  transitionMode: PropTypes.string,
+  onToggleTransitionMode: PropTypes.func,
 };
 
 export default TopRightControls;

@@ -65,9 +65,8 @@ export const lerp = (a, b, t) => {
  * @returns {number} The interpolated angle in degrees.
  */
 export const lerpAngle = (start, end, t) => {
-  const d = end - start;
-  const delta = (d + 180) % 360 - 180; // Shortest distance
-  // Correction for JS modulo on negative numbers to ensure correct wrapping
-  const shortDist = ((delta + 180) % 360) - 180; 
-  return start + shortDist * t;
+  // Calculates the shortest distance between angles, handling 0-360 wrap
+  let da = (end - start) % 360;
+  let distance = (2 * da) % 360 - da;
+  return start + distance * t;
 };
