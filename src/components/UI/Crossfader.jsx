@@ -1,19 +1,43 @@
 // src/components/UI/Crossfader.jsx
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import './Crossfader.css';
 
 const Crossfader = ({ value, onInput, onChange, disabled = false }) => {
+  const inputRef = useRef(null);
+  const isDragging = useRef(false);
+
+  // 1. Listen for high-frequency updates from VisualEngineContext (Zero-Render)
+  useEffect(() => {
+    const handleUpdate = (e) => {
+      // Only update DOM if user isn't currently dragging the handle
+      if (!isDragging.current && inputRef.current) {
+        inputRef.current.value = e.detail;
+      }
+    };
+    window.addEventListener('radar-crossfader-update', handleUpdate);
+    return () => window.removeEventListener('radar-crossfader-update', handleUpdate);
+  }, []);
+
+  // 2. Sync with initial/low-frequency React prop updates (e.g. on load)
+  useEffect(() => {
+    if (!isDragging.current && inputRef.current) {
+      inputRef.current.value = value;
+    }
+  }, [value]);
+
   const handleOnInput = (e) => {
-    // onInput fires continuously while the user is dragging the slider.
+    isDragging.current = true;
     if (onInput) {
+      // Pass value directly to engine
       onInput(e.target.valueAsNumber);
     }
   };
 
   const handleOnChange = (e) => {
-    // onChange typically fires only when the user releases the mouse.
+    isDragging.current = false;
     if (onChange) {
+      // Commit final value
       onChange(e.target.valueAsNumber);
     }
   };
@@ -21,13 +45,15 @@ const Crossfader = ({ value, onInput, onChange, disabled = false }) => {
   return (
     <div className="crossfader-container">
       <input
+        ref={inputRef}
         type="range"
         min="0"
         max="1"
-        step="0.001" // A reasonable step for high fidelity without event flooding.
-        value={value}
-        onInput={handleOnInput}   // Use onInput for live, real-time updates.
-        onChange={handleOnChange} // Use onChange for the final, committed value.
+        step="0.001"
+        defaultValue={value} 
+        onInput={handleOnInput}
+        onChange={handleOnChange} 
+        onPointerUp={handleOnChange} 
         className="crossfader-slider"
         disabled={disabled}
       />
@@ -37,9 +63,9 @@ const Crossfader = ({ value, onInput, onChange, disabled = false }) => {
 
 Crossfader.propTypes = {
   value: PropTypes.number.isRequired,
-  onInput: PropTypes.func, // The new handler for real-time updates.
+  onInput: PropTypes.func,
   onChange: PropTypes.func,
   disabled: PropTypes.bool,
 };
 
-export default Crossfader;
+export default React.memo(Crossfader);

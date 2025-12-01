@@ -82,8 +82,17 @@ export default class PixiEngine {
     
     this.app.ticker.add((ticker) => this.update(ticker));
     
+    // Read initial state
+    const state = useEngineStore.getState();
+    this.crossfadeValue = state.renderedCrossfader;
+
     this.isReady = true;
     if (import.meta.env.DEV) console.log("[PixiEngine] Initialized.");
+  }
+
+  // --- NEW: Called directly by VisualEngineContext ref ---
+  setRenderedCrossfade(value) {
+    this.crossfadeValue = value;
   }
 
   setTransitionMode(mode) {
@@ -154,9 +163,11 @@ export default class PixiEngine {
     const now = performance.now();
     const deltaTime = ticker.deltaTime * 0.01666; // approx seconds
 
+    // REMOVED: Reading crossfader from store every frame. 
+    // Now updated via setRenderedCrossfade.
+    
     const state = useEngineStore.getState();
-    this.crossfadeValue = state.renderedCrossfader;
-    this.transitionMode = state.transitionMode;
+    this.transitionMode = state.transitionMode; // This changes rarely, safe to read.
 
     if (this.app && this.app.screen && this.mainLayerGroup) {
         this.mainLayerGroup.filterArea = this.app.screen;
@@ -184,11 +195,26 @@ export default class PixiEngine {
       const audioScale = this.audioFrequencyFactors[layer.deckA.layerId] || 1.0;
       const combinedBeatFactor = currentBeatFactor * audioScale;
 
-      layer.deckA.stepPhysics(deltaTime, now);
-      layer.deckB.stepPhysics(deltaTime, now);
+      // --- CULLING OPTIMIZATION ---
+      // Determine if a deck needs to be rendered based on crossfader opacity logic
+      let renderA = true;
+      let renderB = true;
 
-      const stateA = layer.deckA.resolveRenderState();
-      const stateB = layer.deckB.resolveRenderState();
+      // In Crossfade mode, opacity is cos/sin of angle.
+      // 0.001 tolerance is safe.
+      if (this.transitionMode === 'crossfade') {
+          // If crossfader is near 1.0, Deck A is invisible
+          if (this.crossfadeValue > 0.999) renderA = false;
+          // If crossfader is near 0.0, Deck B is invisible
+          if (this.crossfadeValue < 0.001) renderB = false;
+      }
+      // Flythrough mode handles visibility via Z-index mostly, but similar logic applies at extremes
+
+      if (renderA) layer.deckA.stepPhysics(deltaTime, now);
+      if (renderB) layer.deckB.stepPhysics(deltaTime, now);
+
+      const stateA = renderA ? layer.deckA.resolveRenderState() : null;
+      const stateB = renderB ? layer.deckB.resolveRenderState() : null;
       
       if (this.transitionMode === 'flythrough') {
           const t = this.crossfadeValue;
@@ -203,23 +229,37 @@ export default class PixiEngine {
           // Inline Forward Logic to avoid function call overhead
           if (this.flythroughSequence === 'A->B') {
               const easeOut = t * t * t * t; // Math.pow(t, 4) manual
-              scaleMultA = 1.0 + (59.0) * easeOut; // 60.0 - 1.0
-              stateA.driftX += easeOut * SIDEWAYS_FORCE;
-              stateA.driftY += easeOut * VERTICAL_FORCE;
               
-              const fadeStartZoom = layer.deckA.layerId === '1' ? 1.1 : (layer.deckA.layerId === '2' ? 1.5 : 3.0);
-              const fadeEndZoom = layer.deckA.layerId === '1' ? 4.0 : (layer.deckA.layerId === '2' ? 8.0 : 20.0);
+              if (renderA) {
+                  scaleMultA = 1.0 + (59.0) * easeOut; // 60.0 - 1.0
+                  stateA.driftX += easeOut * SIDEWAYS_FORCE;
+                  stateA.driftY += easeOut * VERTICAL_FORCE;
+                  
+                  const fadeStartZoom = layer.deckA.layerId === '1' ? 1.1 : (layer.deckA.layerId === '2' ? 1.5 : 3.0);
+                  const fadeEndZoom = layer.deckA.layerId === '1' ? 4.0 : (layer.deckA.layerId === '2' ? 8.0 : 20.0);
 
-              if (scaleMultA > fadeStartZoom) {
-                  const fadeProg = (scaleMultA - fadeStartZoom) / (fadeEndZoom - fadeStartZoom);
-                  alphaMultA = 1.0 - fadeProg;
-                  if (alphaMultA < 0) alphaMultA = 0;
+                  if (scaleMultA > fadeStartZoom) {
+                      const fadeProg = (scaleMultA - fadeStartZoom) / (fadeEndZoom - fadeStartZoom);
+                      alphaMultA = 1.0 - fadeProg;
+                      if (alphaMultA < 0) alphaMultA = 0;
+                  } else {
+                      alphaMultA = 1.0;
+                  }
+                  stateA.size = stateA.size * scaleMultA;
+                  layer.deckA.applyRenderState(stateA, alphaMultA, combinedBeatFactor, this.renderedParallaxOffset, this.parallaxFactors[layer.deckA.layerId], this.app.screen);
               } else {
-                  alphaMultA = 1.0;
+                  layer.deckA.container.visible = false;
               }
-              scaleMultB = t; 
-              alphaMultB = t * 5.0;
-              if (alphaMultB > 1.0) alphaMultB = 1.0;
+
+              if (renderB) {
+                  scaleMultB = t; 
+                  alphaMultB = t * 5.0;
+                  if (alphaMultB > 1.0) alphaMultB = 1.0;
+                  stateB.size = stateB.size * scaleMultB;
+                  layer.deckB.applyRenderState(stateB, alphaMultB, combinedBeatFactor, this.renderedParallaxOffset, this.parallaxFactors[layer.deckB.layerId], this.app.screen);
+              } else {
+                  layer.deckB.container.visible = false;
+              }
 
               layer.container.setChildIndex(layer.deckB.container, 0); 
               layer.container.setChildIndex(layer.deckA.container, 1);
@@ -227,33 +267,41 @@ export default class PixiEngine {
               // Inline Reverse Logic
               const rt = 1.0 - t;
               const easeOut = rt * rt * rt * rt;
-              scaleMultB = 1.0 + (59.0) * easeOut;
-              stateB.driftX += easeOut * SIDEWAYS_FORCE;
-              stateB.driftY += easeOut * VERTICAL_FORCE;
 
-              const fadeStartZoom = layer.deckA.layerId === '1' ? 1.1 : (layer.deckA.layerId === '2' ? 1.5 : 3.0);
-              const fadeEndZoom = layer.deckA.layerId === '1' ? 4.0 : (layer.deckA.layerId === '2' ? 8.0 : 20.0);
+              if (renderB) {
+                  scaleMultB = 1.0 + (59.0) * easeOut;
+                  stateB.driftX += easeOut * SIDEWAYS_FORCE;
+                  stateB.driftY += easeOut * VERTICAL_FORCE;
 
-              if (scaleMultB > fadeStartZoom) {
-                  const fadeProg = (scaleMultB - fadeStartZoom) / (fadeEndZoom - fadeStartZoom);
-                  alphaMultB = 1.0 - fadeProg;
-                  if (alphaMultB < 0) alphaMultB = 0;
+                  const fadeStartZoom = layer.deckA.layerId === '1' ? 1.1 : (layer.deckA.layerId === '2' ? 1.5 : 3.0);
+                  const fadeEndZoom = layer.deckA.layerId === '1' ? 4.0 : (layer.deckA.layerId === '2' ? 8.0 : 20.0);
+
+                  if (scaleMultB > fadeStartZoom) {
+                      const fadeProg = (scaleMultB - fadeStartZoom) / (fadeEndZoom - fadeStartZoom);
+                      alphaMultB = 1.0 - fadeProg;
+                      if (alphaMultB < 0) alphaMultB = 0;
+                  } else {
+                      alphaMultB = 1.0;
+                  }
+                  stateB.size = stateB.size * scaleMultB;
+                  layer.deckB.applyRenderState(stateB, alphaMultB, combinedBeatFactor, this.renderedParallaxOffset, this.parallaxFactors[layer.deckB.layerId], this.app.screen);
               } else {
-                  alphaMultB = 1.0;
+                  layer.deckB.container.visible = false;
               }
-              scaleMultA = rt;
-              alphaMultA = rt * 5.0;
-              if (alphaMultA > 1.0) alphaMultA = 1.0;
+
+              if (renderA) {
+                  scaleMultA = rt;
+                  alphaMultA = rt * 5.0;
+                  if (alphaMultA > 1.0) alphaMultA = 1.0;
+                  stateA.size = stateA.size * scaleMultA;
+                  layer.deckA.applyRenderState(stateA, alphaMultA, combinedBeatFactor, this.renderedParallaxOffset, this.parallaxFactors[layer.deckA.layerId], this.app.screen);
+              } else {
+                  layer.deckA.container.visible = false;
+              }
 
               layer.container.setChildIndex(layer.deckA.container, 0);
               layer.container.setChildIndex(layer.deckB.container, 1);
           }
-
-          stateA.size = stateA.size * scaleMultA;
-          stateB.size = stateB.size * scaleMultB;
-
-          layer.deckA.applyRenderState(stateA, alphaMultA, combinedBeatFactor, this.renderedParallaxOffset, this.parallaxFactors[layer.deckA.layerId], this.app.screen);
-          layer.deckB.applyRenderState(stateB, alphaMultB, combinedBeatFactor, this.renderedParallaxOffset, this.parallaxFactors[layer.deckB.layerId], this.app.screen);
 
       } else {
           // --- OPTIMIZED CROSSFADE (No object creation) ---
@@ -261,34 +309,50 @@ export default class PixiEngine {
           const opacityA = Math.cos(angle);
           const opacityB = Math.sin(angle);
           
-          // Reuse morphedState object
-          const ms = this._morphedState;
-          
-          // Manual morphing instead of loop
-          ms.speed = this.crossfadeValue < 0.5 ? stateA.speed : stateB.speed;
-          ms.size = lerp(stateA.size, stateB.size, this.crossfadeValue);
-          ms.opacity = lerp(stateA.opacity, stateB.opacity, this.crossfadeValue);
-          ms.drift = lerp(stateA.drift, stateB.drift, this.crossfadeValue);
-          ms.driftSpeed = lerp(stateA.driftSpeed, stateB.driftSpeed, this.crossfadeValue);
-          ms.xaxis = lerp(stateA.xaxis, stateB.xaxis, this.crossfadeValue);
-          ms.yaxis = lerp(stateA.yaxis, stateB.yaxis, this.crossfadeValue);
-          
-          ms.angle = lerpAngle(stateA.angle, stateB.angle, this.crossfadeValue);
-          
-          ms.direction = this.crossfadeValue < 0.5 ? stateA.direction : stateB.direction;
-          ms.blendMode = this.crossfadeValue < 0.5 ? stateA.blendMode : stateB.blendMode;
-          ms.enabled = this.crossfadeValue < 0.5 ? stateA.enabled : stateB.enabled;
-          
-          // Morph drift coordinates
-          ms.driftX = lerp(stateA.driftX, stateB.driftX, this.crossfadeValue);
-          ms.driftY = lerp(stateA.driftY, stateB.driftY, this.crossfadeValue);
+          if (renderA && renderB) {
+              // Morphing only makes sense if both are visible
+              // Reuse morphedState object
+              const ms = this._morphedState;
+              
+              // Manual morphing instead of loop
+              ms.speed = this.crossfadeValue < 0.5 ? stateA.speed : stateB.speed;
+              ms.size = lerp(stateA.size, stateB.size, this.crossfadeValue);
+              ms.opacity = lerp(stateA.opacity, stateB.opacity, this.crossfadeValue);
+              ms.drift = lerp(stateA.drift, stateB.drift, this.crossfadeValue);
+              ms.driftSpeed = lerp(stateA.driftSpeed, stateB.driftSpeed, this.crossfadeValue);
+              ms.xaxis = lerp(stateA.xaxis, stateB.xaxis, this.crossfadeValue);
+              ms.yaxis = lerp(stateA.yaxis, stateB.yaxis, this.crossfadeValue);
+              
+              ms.angle = lerpAngle(stateA.angle, stateB.angle, this.crossfadeValue);
+              
+              ms.direction = this.crossfadeValue < 0.5 ? stateA.direction : stateB.direction;
+              ms.blendMode = this.crossfadeValue < 0.5 ? stateA.blendMode : stateB.blendMode;
+              ms.enabled = this.crossfadeValue < 0.5 ? stateA.enabled : stateB.enabled;
+              
+              // Morph drift coordinates
+              ms.driftX = lerp(stateA.driftX, stateB.driftX, this.crossfadeValue);
+              ms.driftY = lerp(stateA.driftY, stateB.driftY, this.crossfadeValue);
 
-          const currentContinuous = lerp(layer.deckA.continuousAngle, layer.deckB.continuousAngle, this.crossfadeValue);
-          const totalAngleDeg = ms.angle + currentContinuous;
-          ms.totalAngleRad = (totalAngleDeg * 0.01745329251);
+              const currentContinuous = lerp(layer.deckA.continuousAngle, layer.deckB.continuousAngle, this.crossfadeValue);
+              const totalAngleDeg = ms.angle + currentContinuous;
+              ms.totalAngleRad = (totalAngleDeg * 0.01745329251);
 
-          layer.deckA.applyRenderState(ms, opacityA, combinedBeatFactor, this.renderedParallaxOffset, this.parallaxFactors[layer.deckA.layerId], this.app.screen);
-          layer.deckB.applyRenderState(ms, opacityB, combinedBeatFactor, this.renderedParallaxOffset, this.parallaxFactors[layer.deckB.layerId], this.app.screen);
+              layer.deckA.applyRenderState(ms, opacityA, combinedBeatFactor, this.renderedParallaxOffset, this.parallaxFactors[layer.deckA.layerId], this.app.screen);
+              layer.deckB.applyRenderState(ms, opacityB, combinedBeatFactor, this.renderedParallaxOffset, this.parallaxFactors[layer.deckB.layerId], this.app.screen);
+          } else {
+              // If only one is visible, just render that one fully (optimization)
+              if (renderA) {
+                  layer.deckA.applyRenderState(stateA, opacityA, combinedBeatFactor, this.renderedParallaxOffset, this.parallaxFactors[layer.deckA.layerId], this.app.screen);
+              } else {
+                  layer.deckA.container.visible = false;
+              }
+
+              if (renderB) {
+                  layer.deckB.applyRenderState(stateB, opacityB, combinedBeatFactor, this.renderedParallaxOffset, this.parallaxFactors[layer.deckB.layerId], this.app.screen);
+              } else {
+                  layer.deckB.container.visible = false;
+              }
+          }
       }
     }
 

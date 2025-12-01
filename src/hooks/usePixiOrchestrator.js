@@ -53,8 +53,6 @@ export function usePixiOrchestrator({
 
   // 3. Reactive Updates
   // We ONLY sync heavy config objects here. 
-  // Fast stuff (crossfader, audio) is read directly by engine from store.
-  
   useEffect(() => { 
       if (isEngineReady && engineRef.current && sideA?.config) {
           syncDeckConfig(engineRef.current, sideA.config, 'A'); 
@@ -66,9 +64,6 @@ export function usePixiOrchestrator({
           syncDeckConfig(engineRef.current, sideB.config, 'B'); 
       }
   }, [sideB, isEngineReady]);
-
-  // REMOVED: setCrossfade useEffect (This was causing the crash)
-  // REMOVED: setTransitionMode useEffect (Engine reads this from store loop)
 
   // 4. Expose API for React Components
   const managerInstancesRef = useMemo(() => {
@@ -106,6 +101,8 @@ export function usePixiOrchestrator({
             '1': createLayerProxy('1'),
             '2': createLayerProxy('2'),
             '3': createLayerProxy('3'),
+            // --- NEW: Direct Crossfade Update for Zero-Render Loop ---
+            updateCrossfade: (val) => engineRef.current?.setRenderedCrossfade(val)
         }
     };
   }, []);
