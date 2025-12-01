@@ -31,7 +31,8 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     renderedCrossfaderValue,
     uiControlConfig,
     updateLayerConfig,
-    transitionMode, // Consume transition mode
+    transitionMode, 
+    // isAutoFading, // Removed as unused
   } = useVisualEngineContext();
 
   const { upInitializationError, upFetchStateError } = useUpProvider();
@@ -56,12 +57,14 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     sideB,
     crossfaderValue: renderedCrossfaderValue,
     isReady: isReadyForLifecycle,
-    transitionMode, // Pass transition mode to orchestrator
+    transitionMode, 
   });
 
   const sequencer = usePLockSequencer({
     onValueUpdate: (layerId, paramName, value) => {
-      updateLayerConfig(String(layerId), paramName, value); 
+      // --- PERF FIX: Pass 'true' as 5th arg to skip React Store updates during animation loop ---
+      updateLayerConfig(String(layerId), paramName, value, false, true); 
+      
       if (orchestrator.isEngineReady && orchestrator.applyPlaybackValue) {
         orchestrator.applyPlaybackValue(String(layerId), paramName, value);
       }
@@ -112,6 +115,9 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     restartCanvasAnimations: orchestrator.restartCanvasAnimations,
     isFullyLoaded: isReadyForLifecycle,
   });
+
+  // --- REMOVED: Auto-stop sequencer logic ---
+  // The useEffect that forced sequencer.stop() on transitions has been deleted.
 
   useEffect(() => {
     internalResetLifecycleRef.current = renderLifecycleData.resetLifecycle;

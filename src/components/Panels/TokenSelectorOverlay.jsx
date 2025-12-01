@@ -11,10 +11,12 @@ import { useVisualEngineContext } from "../../context/VisualEngineContext";
 import { useUserSession } from "../../context/UserSessionContext";
 import TokenGrid from "./TokenGrid";
 import LazyLoadImage from "./LazyLoadImage";
+import { ArrowPathIcon } from "@heroicons/react/24/outline"; 
 import "./PanelStyles/TokenSelectorOverlay.css";
 
 const OPEN_CLOSE_ANIMATION_DURATION = 300;
-const PAGE_SIZE = 40;
+// Increased page size to help fill the screen and reduce "infinite scroll" bouncing
+const PAGE_SIZE = 24; 
 
 const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
   const [internalIsOpen, setInternalIsOpen] = useState(false);
@@ -42,25 +44,47 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
     ownedTokenIdentifiers,
     tokenFetchProgress,
     officialWhitelist = [],
-    refreshOwnedTokens, 
+    refreshOwnedTokens,
+    refreshOfficialWhitelist, 
   } = useAssetContext();
 
   const { updateTokenAssignment } = useVisualEngineContext();
-
-  const { visitorProfileAddress, isHostProfileOwner } = useUserSession();
+  const { isHostProfileOwner, visitorProfileAddress } = useUserSession();
 
   const isMountedRef = useRef(false);
-  const hasFetchedInitialIdentifiers = useRef(false);
   const overlayContentRef = useRef(null);
   const tokenDisplayAreaRef = useRef(null);
 
+  // --- REFRESH HANDLER ---
+  const handleManualRefresh = useCallback(() => {
+    refreshOfficialWhitelist();
+    refreshOwnedTokens(true); 
+  }, [refreshOfficialWhitelist, refreshOwnedTokens]);
+
+  const userLibrary = useMemo(() => stagedSetlist?.personalCollectionLibrary || [], [stagedSetlist]);
+
+  // --- UPDATED EFFECT: Prevent aggressive re-fetching ---
   useEffect(() => {
-    if (isOpen && !hasFetchedInitialIdentifiers.current) {
-      if (import.meta.env.DEV) console.log("[TokenSelectorOverlay] Opened for the first time, triggering token identifier fetch.");
-      refreshOwnedTokens();
-      hasFetchedInitialIdentifiers.current = true;
+    if (isOpen) {
+      if (!officialWhitelist || officialWhitelist.length === 0) {
+          refreshOfficialWhitelist();
+      }
+
+      // Check if data exists. If so, DO NOT FETCH automatically.
+      const hasData = Object.keys(ownedTokenIdentifiers).length > 0;
+      
+      if (!tokenFetchProgress.loading) {
+         if (!hasData) {
+             // Pass false to 'force' so caching logic applies
+             refreshOwnedTokens(false); 
+         } else {
+             if (import.meta.env.DEV) {
+                 console.log("[TokenSelector] Data exists, skipping auto-fetch to save RPC calls.");
+             }
+         }
+      }
     }
-  }, [isOpen, refreshOwnedTokens]);
+  }, [isOpen]); 
 
   const demoTokens = useMemo(() => {
     return Object.entries(demoAssetMap).map(([key, src]) => ({
@@ -69,50 +93,34 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
   }, []);
 
   const userPalettes = useMemo(() => stagedSetlist?.userPalettes || {}, [stagedSetlist]);
-  const userLibrary = useMemo(() => stagedSetlist?.personalCollectionLibrary || [], [stagedSetlist]);
 
   useEffect(() => {
-    if (!isOpen || !userPalettes || !configServiceRef.current) {
-        return;
-    }
-
+    if (!isOpen || !userPalettes || !configServiceRef.current) return;
     const allPaletteTokenIds = Object.values(userPalettes).flat();
-    if (allPaletteTokenIds.length === 0) {
-        return;
-    }
+    if (allPaletteTokenIds.length === 0) return;
 
     const fetchMissingPaletteTokens = async () => {
         const currentlyLoadedIds = new Set(Object.values(loadedTokens).flat().map(t => t.id));
-        
         const missingTokenIds = allPaletteTokenIds.filter(id => !currentlyLoadedIds.has(id));
+        if (missingTokenIds.length === 0) return;
 
-        if (missingTokenIds.length === 0) {
-            return;
-        }
-
-        if (import.meta.env.DEV) {
-            console.log(`[TokenSelector] Found ${missingTokenIds.length} palette tokens with missing metadata. Fetching...`);
-        }
-
-        const newTokens = await configServiceRef.current.getTokensMetadataByIds(missingTokenIds);
-
-        if (newTokens && newTokens.length > 0) {
-            setLoadedTokens(prev => {
-                const newLoadedTokens = { ...prev };
-                newTokens.forEach(token => {
-                    const { address } = token;
-                    if (!newLoadedTokens[address]) {
-                        newLoadedTokens[address] = [];
-                    }
-                    if (!newLoadedTokens[address].some(t => t.id === token.id)) {
-                        newLoadedTokens[address].push(token);
-                    }
+        try {
+            const newTokens = await configServiceRef.current.getTokensMetadataByIds(missingTokenIds);
+            if (newTokens && newTokens.length > 0) {
+                setLoadedTokens(prev => {
+                    const newLoadedTokens = { ...prev };
+                    newTokens.forEach(token => {
+                        const { address } = token;
+                        if (!newLoadedTokens[address]) newLoadedTokens[address] = [];
+                        if (!newLoadedTokens[address].some(t => t.id === token.id)) newLoadedTokens[address].push(token);
+                    });
+                    return newLoadedTokens;
                 });
-                return newLoadedTokens;
-            });
+            }
+        } catch (e) {
+            console.error("Error fetching missing palette tokens:", e);
         }
     };
-
     fetchMissingPaletteTokens();
   }, [isOpen, userPalettes, configServiceRef, loadedTokens]);
 
@@ -199,6 +207,7 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
                 setCollectionPages(prev => ({ ...prev, [collectionAddress]: currentPage + 1 }));
             }
 
+            // Logic fix: We only stop loading if we retrieved FEWER items than requested
             if (newTokens.length < PAGE_SIZE) {
                 setHasMoreToLoad(prev => ({ ...prev, [collectionAddress]: false }));
             }
@@ -277,7 +286,6 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
 
   const renderTokenItem = useCallback((token, { onAddToPalette, onRemoveFromPalette, paletteName } = {}) => {
     const tokenImageSrc = token.metadata?.image ?? '';
-    
     return (
       <div className={`token-item ${selectedTokens[selectedLayer] === tokenImageSrc ? "selected" : ""}`} onMouseDown={(e) => handleTokenMouseDown(token, e)} onMouseUp={handleMouseUp} title={token.metadata.name}>
         <div className="token-image-container">
@@ -303,8 +311,15 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
               <button className={`layer-button ${selectedLayer === 1 ? "active" : ""}`} onClick={() => setSelectedLayer(1)} title="Select Bottom Layer"><img src={bottomlayerIcon} alt="L1" className="layer-button-icon" /></button>
             </div>
           </div>
-          <button className="close-button" onClick={handleClose} aria-label="Close token selector">✕</button>
+          
+          <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
+            <button className="layer-button" onClick={handleManualRefresh} title="Reload Collections & Tokens">
+               <ArrowPathIcon className="layer-button-icon" style={{width:'20px', height:'20px', color: 'var(--color-primary)'}} />
+            </button>
+            <button className="close-button" onClick={handleClose} aria-label="Close token selector">✕</button>
+          </div>
         </div>
+        
         <div className="overlay-body">
           {tokenFetchProgress.loading && ( <div className="loading-progress-header"><div className="progress-text">Loading Asset Libraries... ({tokenFetchProgress.loaded} / {tokenFetchProgress.total})</div><div className="progress-bar-container"><div className="progress-bar-fill" style={{ width: `${tokenFetchProgress.total > 0 ? (tokenFetchProgress.loaded / tokenFetchProgress.total) * 100 : 0}%` }}></div></div></div> )}
           <div className="token-display-area" ref={tokenDisplayAreaRef}>
@@ -318,10 +333,21 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
               )}
               {Object.keys(userPalettes).length > 0 ? (Object.keys(userPalettes).map(paletteName => (<div key={paletteName} className="collection-group"><div className="collection-header"><button onClick={() => toggleSection(paletteName)} className="collection-toggle-button">{paletteName} ({paletteTokens[paletteName]?.length || 0})<span className={`chevron ${expandedSections[paletteName] ? 'expanded' : ''}`}>›</span></button>{isHostProfileOwner && (<button onClick={() => handleRemovePalette(paletteName)} className="delete-palette-btn" title={`Delete "${paletteName}" palette`}>🗑️</button>)}</div>{expandedSections[paletteName] && (<TokenGrid scrollContainerRef={tokenDisplayAreaRef} tokens={paletteTokens[paletteName] || []} renderTokenItem={(token) => renderTokenItem(token, { onRemoveFromPalette: handleRemoveTokenFromPalette, paletteName })} hasMore={false} onLoadMore={()=>{}} isLoading={false} />)}</div>))) : <p className="no-items-message">Create a palette to organize tokens.</p>}
             </div>
+            
             <div className="token-section">
-              <div className="token-section-header"><h3>My Collections</h3><div className="sort-controls"><label htmlFor="collection-sort">Sort by:</label><select id="collection-sort" value={collectionSort} onChange={(e) => setCollectionSort(e.target.value)} className="custom-select custom-select-sm"><option value="name">Name</option><option value="addedAt">Date Added</option></select></div></div>
-              {sortedCollectionLibrary.length > 0 ? (sortedCollectionLibrary.map(collection => (<div key={collection.address} className="collection-group"><button onClick={() => toggleSection(collection.address)} className="collection-header collection-toggle-button">{collection.name} ({(ownedTokenIdentifiers[collection.address]?.length || 0)})<span className={`chevron ${expandedSections[collection.address] ? 'expanded' : ''}`}>›</span></button>{expandedSections[collection.address] && (<TokenGrid scrollContainerRef={tokenDisplayAreaRef} tokens={loadedTokens[collection.address] || []} renderTokenItem={(token) => renderTokenItem(token, { onAddToPalette: handleAddToPaletteClick })} hasMore={hasMoreToLoad[collection.address] || false} onLoadMore={() => loadMoreTokens(collection.address)} isLoading={isLoadingMore[collection.address] || false} />)}</div>))) : <p className="no-items-message">{!visitorProfileAddress ? "Connect a profile to see your tokens." : "No collections found."}</p>}
+              <div className="token-section-header">
+                  <h3>My Collections</h3>
+                  <div className="sort-controls"><label htmlFor="collection-sort">Sort by:</label><select id="collection-sort" value={collectionSort} onChange={(e) => setCollectionSort(e.target.value)} className="custom-select custom-select-sm"><option value="name">Name</option><option value="addedAt">Date Added</option></select></div>
+              </div>
+              
+              {sortedCollectionLibrary.length > 0 ? (sortedCollectionLibrary.map(collection => (<div key={collection.address} className="collection-group"><button onClick={() => toggleSection(collection.address)} className="collection-header collection-toggle-button">{collection.name} ({(ownedTokenIdentifiers[collection.address]?.length || 0)})<span className={`chevron ${expandedSections[collection.address] ? 'expanded' : ''}`}>›</span></button>{expandedSections[collection.address] && (<TokenGrid scrollContainerRef={tokenDisplayAreaRef} tokens={loadedTokens[collection.address] || []} renderTokenItem={(token) => renderTokenItem(token, { onAddToPalette: handleAddToPaletteClick })} hasMore={hasMoreToLoad[collection.address] || false} onLoadMore={() => loadMoreTokens(collection.address)} isLoading={isLoadingMore[collection.address] || false} />)}</div>))) : 
+              <div style={{textAlign: 'center', padding: '20px', color: 'var(--color-text-muted)'}}>
+                  <p>{!visitorProfileAddress ? "Connect a profile to see your tokens." : "No collections found."}</p>
+                  <p style={{fontSize: '0.8em', marginTop: '5px'}}>If libraries failed to load, click the Refresh icon in the top right.</p>
+              </div>
+              }
             </div>
+            
             <div className="token-section">
               <div className="collection-group"><button onClick={() => toggleSection('demo')} className="collection-header collection-toggle-button">Demo Tokens ({demoTokens.length})<span className={`chevron ${expandedSections['demo'] ? 'expanded' : ''}`}>›</span></button>{expandedSections['demo'] && (<TokenGrid scrollContainerRef={tokenDisplayAreaRef} tokens={demoTokens} renderTokenItem={(token) => renderTokenItem(token, { onAddToPalette: handleAddToPaletteClick })} hasMore={false} onLoadMore={()=>{}} isLoading={false} />)}</div>
             </div>

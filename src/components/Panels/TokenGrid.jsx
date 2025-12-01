@@ -14,20 +14,19 @@ const TokenGrid = ({ tokens, renderTokenItem, hasMore, onLoadMore, isLoading, sc
 
   // This effect sets up the IntersectionObserver to watch the sentinel
   useEffect(() => {
-    // --- FIX: Don't run the observer if there's no scroll container yet ---
+    // Don't run if no more data, or refs are missing
     if (!hasMore || !sentinelRef.current || !scrollContainerRef?.current) return;
 
-    // --- FIX: We now provide the scrollable container as the 'root' for the observer ---
     const options = {
-      root: scrollContainerRef.current, // This tells the observer which scroll area to watch
-      rootMargin: '200px', // Start loading when the sentinel is 200px away
+      root: scrollContainerRef.current, 
+      rootMargin: '200px', // Pre-fetch when within 200px of bottom
       threshold: 0.01,
     };
 
     const observer = new IntersectionObserver(
       (entries) => {
-        // isIntersecting is true when the sentinel enters the view of the `root`
-        if (entries[0].isIntersecting && onLoadMoreRef.current) {
+        // Trigger load if sentinel is visible and we aren't currently loading
+        if (entries[0].isIntersecting && !isLoading && onLoadMoreRef.current) {
           onLoadMoreRef.current();
         }
       },
@@ -39,23 +38,39 @@ const TokenGrid = ({ tokens, renderTokenItem, hasMore, onLoadMore, isLoading, sc
 
     return () => {
       observer.unobserve(currentSentinel);
+      observer.disconnect();
     };
-    // --- FIX: Add scrollContainerRef to the dependency array ---
-  }, [hasMore, scrollContainerRef]);
+    
+    // --- FIX: Added tokens.length and isLoading to dependencies ---
+    // This ensures that if new tokens load but don't fill the screen,
+    // the observer resets, re-checks, and triggers the next page immediately.
+  }, [hasMore, scrollContainerRef, tokens.length, isLoading]);
 
   if (tokens.length === 0 && !hasMore && !isLoading) {
     return <p className="no-items-message">No tokens found in this collection.</p>;
   }
 
   return (
-    // --- NOTE: We no longer need the outer scrollable div here, as it's in the parent ---
     <div className="tokens-grid">
       {tokens.map((token) => (
         <React.Fragment key={token.id}>
           {renderTokenItem(token)}
         </React.Fragment>
       ))}
-      {hasMore && <div ref={sentinelRef} style={{ height: '1px', width: '100%' }} />}
+      
+      {/* Sentinel: The invisible line at the bottom we watch for */}
+      {hasMore && (
+        <div 
+            ref={sentinelRef} 
+            style={{ 
+                height: '20px', 
+                width: '100%', 
+                gridColumn: '1 / -1', 
+                pointerEvents: 'none' 
+            }} 
+        />
+      )}
+      
       {isLoading && (
         <div className="loading-message" style={{ gridColumn: '1 / -1' }}>
           <div className="spinner"></div>
@@ -71,7 +86,6 @@ TokenGrid.propTypes = {
   hasMore: PropTypes.bool.isRequired,
   onLoadMore: PropTypes.func.isRequired,
   isLoading: PropTypes.bool.isRequired,
-  // --- FIX: Add the new prop for the scroll container ref ---
   scrollContainerRef: PropTypes.object,
 };
 

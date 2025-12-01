@@ -4,11 +4,13 @@ import PropTypes from "prop-types";
 
 import Panel from "./Panel";
 import PLockController from './PLockController';
+import PerformanceSlider from "../UI/PerformanceSlider"; 
 
 import { useProfileSessionState } from "../../hooks/configSelectors";
 import { useMIDI } from "../../context/MIDIContext";
 import { useWorkspaceContext } from "../../context/WorkspaceContext";
 import { useVisualEngineContext } from "../../context/VisualEngineContext";
+import { useEngineStore } from "../../store/useEngineStore";
 import { useToast } from "../../context/ToastContext";
 import { BLEND_MODES } from "../../config/global-config";
 import { sliderParams } from "../../config/sliderParams";
@@ -48,6 +50,7 @@ const EnhancedControlPanel = ({
 }) => {
   const { isProfileOwner } = useProfileSessionState();
   const { addToast } = useToast();
+  
   const {
     stagedActiveWorkspace,
     fullSceneList: savedSceneList,
@@ -60,13 +63,14 @@ const EnhancedControlPanel = ({
   } = useWorkspaceContext();
 
   const {
-    uiControlConfig,
-    isAutoFading,
     handleSceneSelect: onSceneSelect,
     updateLayerConfig: onLayerConfigChange,
     managerInstancesRef,
     renderedCrossfaderValue,
+    uiControlConfig 
   } = useVisualEngineContext();
+
+  const isAutoFading = useEngineStore(state => state.isAutoFading);
 
   const {
     isConnected: midiConnected, midiLearning, learningLayer,
@@ -113,9 +117,16 @@ const EnhancedControlPanel = ({
   const activeLayerConfigs = uiControlConfig?.layers;
   const config = useMemo(() => activeLayerConfigs?.[activeLayer] || getDefaultLayerConfigTemplate(), [activeLayerConfigs, activeLayer]);
   
-  const handleSliderChange = useCallback((e) => {
-    const { name, value } = e.target;
-    onLayerConfigChange(activeLayer, name, parseFloat(value), false);
+  // --- PERFORMANCE OPTIMIZATION HANDLERS ---
+  
+  // 1. FAST: Updates visual engine immediately, skips React/Zustand store
+  const handleSliderInput = useCallback((name, value) => {
+    onLayerConfigChange(activeLayer, name, value, false, true); // skipStoreUpdate = true
+  }, [onLayerConfigChange, activeLayer]);
+
+  // 2. SLOW: Commits final value to Store on release
+  const handleSliderCommit = useCallback((name, value) => {
+    onLayerConfigChange(activeLayer, name, value, false, false); // skipStoreUpdate = false
   }, [onLayerConfigChange, activeLayer]);
 
   const handleCreateScene = useCallback(() => {
@@ -138,32 +149,21 @@ const EnhancedControlPanel = ({
     if (managers && Object.keys(managers).length > 0) {
       for (const layerId in managers) {
         const manager = managers[layerId];
-        
-        // Retrieve state via the new getter method on the proxy
         const currentState = manager.getState ? manager.getState(activeDeckChar) : null;
-        
-        if (!currentState) {
-            console.warn(`[EnhancedControlPanel] Could not retrieve state for layer ${layerId}. Skipping.`);
-            continue;
-        }
+        if (!currentState) continue;
         
         const liveConfig = JSON.parse(JSON.stringify(currentState.config));
-        
-        // IMPORTANT: Capture physics states (angle, drift) so the scene loads exactly as seen
         liveConfig.angle = (currentState.config.angle + currentState.continuousRotationAngle) % 360;
         liveConfig.driftState = JSON.parse(JSON.stringify(currentState.driftState));
         
-        // Merge any P-Locked values if present
         if (currentState.playbackValues) {
             for (const key in currentState.playbackValues) {
                 liveConfig[key] = currentState.playbackValues[key];
             }
         }
-        
         liveLayersConfig[layerId] = liveConfig;
       }
     } else {
-      console.warn("[EnhancedControlPanel] CanvasManagers not found, fallback to React state.");
       liveLayersConfig = JSON.parse(JSON.stringify(uiControlConfig.layers));
     }
 
@@ -175,8 +175,6 @@ const EnhancedControlPanel = ({
     };
 
     addNewSceneToStagedWorkspace(name, newSceneData);
-    
-    // Explicitly update the active scene name in the UI without re-triggering engine logic
     setActiveSceneName(name);
 
     addToast(`Scene "${name}" created and staged.`, "success");
@@ -257,7 +255,20 @@ const EnhancedControlPanel = ({
                     {midiConnected && isProfileOwner && (<button type="button" className={`midi-btn small-action-button ${isLearningThis ? "learning" : ""}`} onClick={() => handleEnterMIDILearnMode(prop)} disabled={!midiConnected || !!learningLayer || (midiLearning !== null && !isLearningThis)} title={`Map MIDI to ${label}`}> {isLearningThis ? "..." : "M"} </button>)}
                   </div>
                 </div>
-                <input type="range" name={prop} min={min} max={max} step={step} value={config[prop] ?? defaultValue} onChange={handleSliderChange} disabled={isLearningThis || isLocked} className="horizontal-slider" aria-label={label} />
+                
+                <PerformanceSlider 
+                    name={prop}
+                    layerId={activeLayer} // --- ADDED: Pass layerId for event filtering ---
+                    min={min}
+                    max={max}
+                    step={step}
+                    value={config[prop] ?? defaultValue}
+                    onChange={handleSliderInput}   // FAST Update
+                    onCommit={handleSliderCommit}  // SLOW Update
+                    disabled={isLearningThis || isLocked}
+                    className="horizontal-slider"
+                    ariaLabel={label}
+                />
               </div>
             );
         })}

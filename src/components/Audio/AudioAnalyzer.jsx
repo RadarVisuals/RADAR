@@ -1,20 +1,22 @@
 // src/components/Audio/AudioAnalyzer.jsx
 import React, { useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
+import { useEngineStore } from "../../store/useEngineStore"; // Use Store
 
 const DEFAULT_LAYER_VALUES = { size: 1.0 };
-const DEFAULT_SMOOTHING = 0.6;
 const FFT_SIZE = 2048;
 
 const AudioAnalyzer = ({
-  onAudioData,
-  isActive = false,
   layerConfigs: layerConfigsProp,
-  audioSettings: audioSettingsProp,
   configLoadNonce,
   managerInstancesRef,
 }) => {
-  const audioSettingsRef = useRef(audioSettingsProp);
+  // Read state from store
+  const isActive = useEngineStore((state) => state.isAudioActive);
+  const audioSettings = useEngineStore((state) => state.audioSettings);
+  const updateAnalyzerData = useEngineStore((state) => state.updateAnalyzerData);
+
+  const audioSettingsRef = useRef(audioSettings);
   const baseLayerValuesRef = useRef({
       '1': { size: DEFAULT_LAYER_VALUES.size },
       '2': { size: DEFAULT_LAYER_VALUES.size },
@@ -31,16 +33,16 @@ const AudioAnalyzer = ({
   const isCleanupScheduledRef = useRef(false);
 
   useEffect(() => {
-    audioSettingsRef.current = audioSettingsProp;
+    audioSettingsRef.current = audioSettings;
     if (analyserRef.current && audioContextRef.current && audioContextRef.current.state === "running") {
         try {
-            const smoothing = audioSettingsRef.current?.smoothingFactor ?? DEFAULT_SMOOTHING;
+            const smoothing = audioSettings.smoothingFactor ?? 0.6;
             analyserRef.current.smoothingTimeConstant = Math.max(0, Math.min(1, smoothing));
         } catch (e) {
             console.warn("[AudioAnalyzer] Error setting smoothing:", e);
         }
     }
-  }, [audioSettingsProp]);
+  }, [audioSettings]);
 
   useEffect(() => {
     if (layerConfigsProp && configLoadNonce !== capturedNonceRef.current) {
@@ -103,10 +105,10 @@ const AudioAnalyzer = ({
     const newFrequencyBands = { bass, mid, treble };
     applyAudioToLayers(newFrequencyBands, averageLevel);
 
-    if (onAudioData) {
-      onAudioData({ level: averageLevel, frequencyBands: newFrequencyBands, timestamp: Date.now() });
-    }
-  }, [onAudioData, applyAudioToLayers]);
+    // DIRECT UPDATE TO ZUSTAND
+    updateAnalyzerData({ level: averageLevel, frequencyBands: newFrequencyBands, timestamp: Date.now() });
+
+  }, [applyAudioToLayers, updateAnalyzerData]);
 
   const analyzeAudio = useCallback(() => {
     if (!analyserRef.current || !dataArrayRef.current || !isActive || !audioContextRef.current || audioContextRef.current.state !== 'running') {
@@ -133,7 +135,7 @@ const AudioAnalyzer = ({
         analyserRef.current = audioContextRef.current.createAnalyser();
       }
 
-      const initialSmoothing = audioSettingsRef.current?.smoothingFactor ?? DEFAULT_SMOOTHING;
+      const initialSmoothing = audioSettingsRef.current?.smoothingFactor ?? 0.6;
       analyserRef.current.fftSize = FFT_SIZE;
       analyserRef.current.smoothingTimeConstant = Math.max(0, Math.min(1, initialSmoothing));
       analyserRef.current.minDecibels = -90;
@@ -224,10 +226,7 @@ const AudioAnalyzer = ({
 };
 
 AudioAnalyzer.propTypes = {
-  onAudioData: PropTypes.func,
-  isActive: PropTypes.bool,
   layerConfigs: PropTypes.object,
-  audioSettings: PropTypes.object,
   configLoadNonce: PropTypes.number,
   managerInstancesRef: PropTypes.object.isRequired,
 };

@@ -1,12 +1,14 @@
 // src/components/Main/Mainview.jsx
 import React, { useRef, useEffect, useMemo, useState, useCallback } from "react";
 import PropTypes from "prop-types";
+import { useShallow } from 'zustand/react/shallow';
 
 import { useUpProvider } from "../../context/UpProvider.jsx";
 import { useCoreApplicationStateAndLifecycle } from '../../hooks/useCoreApplicationStateAndLifecycle';
 import { useAppInteractions } from '../../hooks/useAppInteractions';
 import { useWorkspaceContext } from "../../context/WorkspaceContext";
 import { useVisualEngineContext } from "../../context/VisualEngineContext";
+import { useEngineStore } from "../../store/useEngineStore";
 
 import ToastContainer from "../Notifications/ToastContainer";
 import UIOverlay from '../UI/UIOverlay';
@@ -59,6 +61,16 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     handleSceneSelect, 
   } = useVisualEngineContext();
   
+  // Safe Selector for Audio State
+  const audioState = useEngineStore(useShallow(state => ({
+      isAudioActive: state.isAudioActive,
+      audioSettings: state.audioSettings,
+      analyzerData: state.analyzerData,
+      setIsAudioActive: state.setIsAudioActive,
+      setAudioSettings: state.setAudioSettings,
+      handleAudioDataUpdate: state.updateAnalyzerData
+  })));
+  
   const rootRef = useRef(null);
   
   const [isParallaxEnabled, setIsParallaxEnabled] = useState(false);
@@ -96,13 +108,19 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   const {
     containerRef, 
     pixiCanvasRef,
-    managerInstancesRef, audioState,
-    renderState, loadingStatusMessage: renderLifecycleMessage, isStatusFadingOut, showStatusDisplay,
-    showRetryButton, isTransitioning,
+    managerInstancesRef, 
+    renderState, 
+    loadingStatusMessage: renderLifecycleMessage, 
+    isStatusFadingOut, 
+    showStatusDisplay,
+    showRetryButton, 
+    isTransitioning,
     handleManualRetry,
     managersReady,
     setCanvasLayerImage,
-    isContainerObservedVisible, isFullscreenActive, enterFullscreen,
+    isContainerObservedVisible, 
+    isFullscreenActive, 
+    enterFullscreen,
     isMountedRef,
     sequencer, 
   } = coreApp;
@@ -226,9 +244,13 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     onPreviewEffect: appInteractions.processEffect,
   }), [enterFullscreen, toggleParallax, appInteractions.processEffect]);
 
+  // UPDATED: loopProgress removed to prevent 60fps React re-renders
   const pLockProps = useMemo(() => ({
-    pLockState: sequencer.pLockState, loopProgress: sequencer.loopProgress, hasLockedParams: sequencer.hasLockedParams,
-    onTogglePLock: handleTogglePLock, pLockSpeed: sequencer.pLockSpeed, onSetPLockSpeed: sequencer.setPLockSpeed,
+    pLockState: sequencer.pLockState, 
+    hasLockedParams: sequencer.hasLockedParams,
+    onTogglePLock: handleTogglePLock, 
+    pLockSpeed: sequencer.pLockSpeed, 
+    onSetPLockSpeed: sequencer.setPLockSpeed,
     animationDataRef: sequencer.animationDataRef,
   }), [sequencer, handleTogglePLock]);
 
@@ -280,7 +302,7 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
             <AudioAnalyzerWrapper
               isAudioActive={audioState.isAudioActive}
               managersReady={managersReady}
-              handleAudioDataUpdate={audioState.handleAudioDataUpdate}
+              // handleAudioDataUpdate removed (internal)
               layerConfigs={uiControlConfig?.layers} 
               audioSettings={audioState.audioSettings}
               configLoadNonce={0}

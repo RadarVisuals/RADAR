@@ -1,14 +1,22 @@
+/* src/components/Panels/PanelStyles/PanelStyles.css */
 @import "../../../styles/variables.css";
 
 .panel {
-  /* --- FINAL UPDATE FOR CONSISTENT GLASSMORPHISM --- */
-  background: var(--color-glass-bg-dark);      /* Use the dark, semi-transparent overlay background */
-  border: 1px solid var(--color-border);           /* Use the softer, standard border color */
-  border-radius: var(--radius-xl);             /* Use the larger radius from overlays for a softer look */
-  backdrop-filter: blur(50px);                 /* Increase blur for a more pronounced glass effect */
-  -webkit-backdrop-filter: blur(50px);
-  box-shadow: var(--shadow-primary-lg);        /* Apply the signature blue glow from the overlays */
-  /* --- END FINAL UPDATE --- */
+  /* --- OPTIMIZED GLASSMORPHISM --- */
+  background: var(--color-glass-bg-dark);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  
+  /* REDUCED BLUR: 50px is too heavy for active rendering. 16px is sufficient. */
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  
+  box-shadow: var(--shadow-primary-lg);
+  
+  /* PERFORMANCE BOOST: Promotes this element to a GPU layer */
+  will-change: transform;
+  transform: translateZ(0); 
+  /* -------------------------------- */
   
   color: var(--color-text);
   overflow: hidden;
@@ -16,7 +24,6 @@
   display: flex;
   flex-direction: column;
   transition: none !important;
-  /* Removed the problematic 'border-top: !important' */
 }
 
 .panel-header {
@@ -24,11 +31,13 @@
   justify-content: space-between;
   align-items: center;
   padding: 10px 15px;
-  background: rgba(0, 243, 255, 0.05);
+  /* Use static color instead of inheriting blur for header to save resources */
+  background: rgba(0, 20, 30, 0.6); 
   border-bottom: 1px solid rgba(0, 243, 255, 0.15);
   border-top: none !important;
   box-shadow: none !important;
   position: relative;
+  flex-shrink: 0; /* Ensure header never shrinks */
 }
 
 .panel-header:before,
@@ -69,5 +78,22 @@
   padding: 15px;
   overflow-y: auto;
   flex: 1;
+  /* IMPORTANT: Ensures scrolling happens on a dedicated layer */
+  will-change: scroll-position;
   overscroll-behavior: contain;
+}
+
+/* Custom Scrollbar Styling to match theme */
+.panel-content::-webkit-scrollbar {
+  width: 6px;
+}
+.panel-content::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+.panel-content::-webkit-scrollbar-thumb {
+  background: var(--color-primary-a30);
+  border-radius: 3px;
+}
+.panel-content::-webkit-scrollbar-thumb:hover {
+  background: var(--color-primary-a50);
 }

@@ -1,7 +1,7 @@
 // src/hooks/usePLockSequencer.js
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 
-const TRANSITION_ANIMATION_DURATION = 1000; // ms for smooth stop animation
+const TRANSITION_ANIMATION_DURATION = 1000;
 const lerp = (start, end, t) => start * (1 - t) + end * t;
 
 const SPEED_DURATIONS = {
@@ -12,7 +12,7 @@ const SPEED_DURATIONS = {
 
 export const usePLockSequencer = ({ onValueUpdate, onAnimationEnd }) => {
   const [pLockState, setPLockState] = useState('idle');
-  const [loopProgress, setLoopProgress] = useState(0);
+  // REMOVED: const [loopProgress, setLoopProgress] = useState(0); 
   const [pLockSpeed, setPLockSpeed] = useState('medium');
 
   const stateRef = useRef(pLockState);
@@ -24,6 +24,7 @@ export const usePLockSequencer = ({ onValueUpdate, onAnimationEnd }) => {
   const onValueUpdateRef = useRef(onValueUpdate);
   const onAnimationEndRef = useRef(onAnimationEnd);
   const initialStateSnapshotRef = useRef(null);
+  
   const prevProgressRef = useRef(0);
 
   useEffect(() => { stateRef.current = pLockState; }, [pLockState]);
@@ -35,7 +36,12 @@ export const usePLockSequencer = ({ onValueUpdate, onAnimationEnd }) => {
       onAnimationEndRef.current(stateToApplyOnEnd);
     }
     setPLockState('idle');
-    setLoopProgress(0);
+    
+    // Dispatch 0 to reset UI immediately (Zero-Render logic)
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('plock-progress', { detail: 0 }));
+    }
+
     animationDataRef.current = {};
     initialStateSnapshotRef.current = null;
     transitionDataRef.current = null;
@@ -87,7 +93,6 @@ export const usePLockSequencer = ({ onValueUpdate, onAnimationEnd }) => {
     prevProgressRef.current = 0;
     setPLockState('playing');
     
-    // --- FIX: Prevent re-triggering loop if already running ---
     if (!startTimeRef.current) {
         startTimeRef.current = performance.now();
     }
@@ -109,11 +114,8 @@ export const usePLockSequencer = ({ onValueUpdate, onAnimationEnd }) => {
       targetValuesToRestore[layerId] = {};
       for (const paramName in currentAnimationData[layerId]) {
         const { initialValue, targetValue } = currentAnimationData[layerId][paramName];
-        
-        // --- FIX: Always restore to INITIAL value when stopping ---
         targetValuesToRestore[layerId][paramName] = initialValue;
         
-        // Calculate current value to interpolate FROM
         if (typeof initialValue === 'number' && typeof targetValue === 'number') {
             lastKnownValues[layerId][paramName] = loopElapsedTime < performanceDuration
               ? lerp(targetValue, initialValue, loopElapsedTime / performanceDuration)
@@ -138,6 +140,11 @@ export const usePLockSequencer = ({ onValueUpdate, onAnimationEnd }) => {
       initiateStopAnimation();
     }
   }, [armSequencer, initiatePlayback, initiateStopAnimation]);
+
+  // --- NEW: Exposed Stop Function ---
+  const stop = useCallback(() => {
+    stopAndClear(null);
+  }, [stopAndClear]);
 
   useEffect(() => {
     const animationLoop = (timestamp) => {
@@ -172,13 +179,14 @@ export const usePLockSequencer = ({ onValueUpdate, onAnimationEnd }) => {
         continueLoop = true;
         const duration = loopDurationRef.current;
         
-        // Safety for re-renders
         if (!startTimeRef.current) startTimeRef.current = timestamp;
         
         const startTime = startTimeRef.current;
         const loopElapsedTime = (timestamp - startTime) % duration;
         const currentProgress = loopElapsedTime / duration;
-        setLoopProgress(currentProgress);
+        
+        // Zero-Render Update
+        window.dispatchEvent(new CustomEvent('plock-progress', { detail: currentProgress }));
         
         const performanceDuration = duration / 2;
         const isFirstHalf = loopElapsedTime < performanceDuration;
@@ -189,13 +197,11 @@ export const usePLockSequencer = ({ onValueUpdate, onAnimationEnd }) => {
             const { initialValue, targetValue } = layerData[paramName];
             
             if (typeof initialValue === 'number' && typeof targetValue === 'number') {
-              // INVERTED: Animate Target -> Initial -> Target
               const value = isFirstHalf
                 ? lerp(targetValue, initialValue, loopElapsedTime / performanceDuration)
                 : lerp(initialValue, targetValue, (loopElapsedTime - performanceDuration) / performanceDuration);
               onValueUpdateRef.current(layerId, paramName, value);
             } else {
-              // Simple discrete toggle
               onValueUpdateRef.current(layerId, paramName, isFirstHalf ? targetValue : initialValue);
             }
           }
@@ -222,7 +228,8 @@ export const usePLockSequencer = ({ onValueUpdate, onAnimationEnd }) => {
   }, [pLockState]);
 
   return useMemo(() => ({
-    pLockState, loopProgress, hasLockedParams, toggle,
+    pLockState, 
+    hasLockedParams, toggle, stop, // Expose stop here
     animationDataRef, pLockSpeed, setPLockSpeed,
-  }), [pLockState, loopProgress, hasLockedParams, toggle, pLockSpeed]);
+  }), [pLockState, hasLockedParams, toggle, stop, pLockSpeed]);
 };
