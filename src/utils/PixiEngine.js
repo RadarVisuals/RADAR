@@ -44,12 +44,20 @@ export default class PixiEngine {
   async init() {
     if (this.isReady) return;
     
+    // --- PERFORMANCE FIX: Cap Max Resolution ---
+    // MacBooks default to devicePixelRatio of 2 or 3.
+    // Rendering full-screen 4k+ with Bloom filters kills FPS.
+    // Capping at 1.5 provides crisp text but saves 50%+ GPU load.
+    // For pure speed, set this to 1.
+    const maxRes = 1.5; 
+    const resolution = Math.min(window.devicePixelRatio || 1, maxRes);
+
     await this.app.init({
       canvas: this.canvas,
       resizeTo: this.canvas.parentElement, 
       backgroundAlpha: 0,
       antialias: true,
-      resolution: window.devicePixelRatio || 1,
+      resolution: resolution, // <--- UPDATED
       autoDensity: true,
       powerPreference: 'high-performance', 
       preference: 'webgl',
