@@ -101,8 +101,11 @@ export function usePixiOrchestrator({
             '1': createLayerProxy('1'),
             '2': createLayerProxy('2'),
             '3': createLayerProxy('3'),
-            // --- NEW: Direct Crossfade Update for Zero-Render Loop ---
-            updateCrossfade: (val) => engineRef.current?.setRenderedCrossfade(val)
+            // --- NEW: Direct Crossfade Update ---
+            updateCrossfade: (val) => engineRef.current?.setRenderedCrossfade(val),
+            // --- FIX: Expose Engine Instance via Getter ---
+            // This allows the Context to access .setDestructionMode() and .setAudioData()
+            get engine() { return engineRef.current; }
         }
     };
   }, []);
@@ -111,7 +114,6 @@ export function usePixiOrchestrator({
   const stopCanvasAnimations = useCallback(() => { if (engineRef.current) engineRef.current.app.ticker.stop(); }, []);
   
   const setCanvasLayerImage = useCallback(async (layerId, src, tokenId) => {
-    // We still use the prop here to determine which deck to load into
     const activeDeck = crossfaderValue < 0.5 ? 'A' : 'B';
     if (engineRef.current) await engineRef.current.setTexture(layerId, activeDeck, src, tokenId);
   }, [crossfaderValue]);

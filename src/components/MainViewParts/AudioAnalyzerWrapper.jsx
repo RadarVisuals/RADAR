@@ -1,13 +1,13 @@
+// src/components/MainViewParts/AudioAnalyzerWrapper.jsx
 import React from 'react';
 import PropTypes from 'prop-types';
 
-import AudioAnalyzer from '../Audio/AudioAnalyzer'; // Local component
+import AudioAnalyzer from '../Audio/AudioAnalyzer'; 
 
 const AudioAnalyzerWrapper = ({
   isAudioActive,
   managersReady,
-  handleAudioDataUpdate,
-  layerConfigs, // This can now be null initially
+  layerConfigs, 
   audioSettings,
   configLoadNonce,
   managerInstancesRef,
@@ -22,7 +22,7 @@ const AudioAnalyzerWrapper = ({
     <div className="hidden-audio-analyzer" aria-hidden="true">
       <AudioAnalyzer
         isActive={isAudioActive}
-        onAudioData={handleAudioDataUpdate}
+        // onAudioData removed as it's now handled via event dispatch
         layerConfigs={layerConfigs}
         audioSettings={audioSettings}
         configLoadNonce={configLoadNonce}
@@ -35,10 +35,7 @@ const AudioAnalyzerWrapper = ({
 AudioAnalyzerWrapper.propTypes = {
   isAudioActive: PropTypes.bool.isRequired,
   managersReady: PropTypes.bool.isRequired,
-  handleAudioDataUpdate: PropTypes.func.isRequired,
-  // --- THIS IS THE FIX: Changed from .isRequired to .object ---
   layerConfigs: PropTypes.object,
-  // -----------------------------------------------------------
   audioSettings: PropTypes.object.isRequired,
   configLoadNonce: PropTypes.number.isRequired,
   managerInstancesRef: PropTypes.object.isRequired,

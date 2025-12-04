@@ -20,6 +20,8 @@ import LibraryPanel from '../Panels/LibraryPanel';
 import EffectsPanel from '../Panels/EffectsPanel';
 import Crossfader from './Crossfader';
 import WorkspaceSelectorDots from './WorkspaceSelectorDots';
+import IndustrialPanel from '../Panels/IndustrialPanel'; // --- NEW IMPORT ---
+
 import { useWorkspaceContext } from '../../context/WorkspaceContext';
 import { useVisualEngineContext } from '../../context/VisualEngineContext';
 import { useNotificationContext } from '../../context/NotificationContext';
@@ -93,6 +95,9 @@ const ActivePanelRenderer = (props) => {
             return ( <PanelWrapper key="whitelist-panel" className={panelWrapperClassName}><LibraryPanel onClose={closePanel} /></PanelWrapper> );
         case "fx":
             return ( <PanelWrapper key="fx-panel" className={panelWrapperClassName}><EffectsPanel onClose={closePanel} /></PanelWrapper> );
+        // --- NEW: INDUSTRIAL PANEL ---
+        case "industrial":
+            return ( <PanelWrapper key="industrial-panel" className={panelWrapperClassName}><IndustrialPanel onClose={closePanel} /></PanelWrapper> );
         case "tokens":
             return ( <TokenSelectorOverlay key="token-selector-overlay" isOpen={activePanel === "tokens"} onClose={handleTokenSelectorClose} onTokenApplied={updateTokenAssignment} /> );
         default:
@@ -268,7 +273,6 @@ function UIOverlay({
                   isLoading={isAutoFading || isConfigLoading}
                 />
                 
-                {/* RESTORED CROSSFADER - No extra wrapper, clean look */}
                 <Crossfader
                   value={renderedCrossfaderValue}
                   onInput={handleCrossfaderChange}

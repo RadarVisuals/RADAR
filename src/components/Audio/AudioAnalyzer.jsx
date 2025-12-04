@@ -1,7 +1,7 @@
 // src/components/Audio/AudioAnalyzer.jsx
 import React, { useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
-import { useEngineStore } from "../../store/useEngineStore"; // Use Store
+import { useEngineStore } from "../../store/useEngineStore";
 
 const DEFAULT_LAYER_VALUES = { size: 1.0 };
 const FFT_SIZE = 2048;
@@ -11,10 +11,9 @@ const AudioAnalyzer = ({
   configLoadNonce,
   managerInstancesRef,
 }) => {
-  // Read state from store
+  // Read state from store (Only settings, NOT the high-frequency data updater)
   const isActive = useEngineStore((state) => state.isAudioActive);
   const audioSettings = useEngineStore((state) => state.audioSettings);
-  const updateAnalyzerData = useEngineStore((state) => state.updateAnalyzerData);
 
   const audioSettingsRef = useRef(audioSettings);
   const baseLayerValuesRef = useRef({
@@ -68,6 +67,7 @@ const AudioAnalyzer = ({
     const midFactor = 1 + (bands.mid * 1.0 * midIntensity);
     const trebleFactor = 1 + (bands.treble * 2.0 * trebleIntensity);
 
+    // Apply directly to PIXI managers (Zero-Render)
     if (managers['1']) managers['1'].setAudioFrequencyFactor(Math.max(0.1, bassFactor));
     if (managers['2']) managers['2'].setAudioFrequencyFactor(Math.max(0.1, midFactor));
     if (managers['3']) managers['3'].setAudioFrequencyFactor(Math.max(0.1, trebleFactor));
@@ -103,12 +103,20 @@ const AudioAnalyzer = ({
     const treble = Math.min(1, trebleCount > 0 ? (trebleSum / trebleCount / 255) : 0);
     
     const newFrequencyBands = { bass, mid, treble };
+    
+    // 1. Apply logic to Visuals
     applyAudioToLayers(newFrequencyBands, averageLevel);
 
-    // DIRECT UPDATE TO ZUSTAND
-    updateAnalyzerData({ level: averageLevel, frequencyBands: newFrequencyBands, timestamp: Date.now() });
+    // 2. PERFORMANCE FIX: Dispatch event for UI instead of updating Store
+    // This prevents React from re-rendering the whole tree 60 times a second
+    window.dispatchEvent(new CustomEvent('radar-audio-analysis', { 
+        detail: { 
+            level: averageLevel, 
+            frequencyBands: newFrequencyBands 
+        } 
+    }));
 
-  }, [applyAudioToLayers, updateAnalyzerData]);
+  }, [applyAudioToLayers]);
 
   const analyzeAudio = useCallback(() => {
     if (!analyserRef.current || !dataArrayRef.current || !isActive || !audioContextRef.current || audioContextRef.current.state !== 'running') {

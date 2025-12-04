@@ -10,7 +10,6 @@ const VisualEngineContext = createContext(null);
 const AUTO_FADE_DURATION_MS = 1000;
 const CROSSFADER_LERP_FACTOR = 0.2;
 
-// Helper Hook
 function usePrevious(value) {
   const ref = useRef();
   useEffect(() => {
@@ -20,7 +19,6 @@ function usePrevious(value) {
 }
 
 export const VisualEngineProvider = ({ children }) => {
-    // 1. Consume from Workspace Context
     const { 
         isWorkspaceTransitioning, isFullyLoaded, stagedActiveWorkspace, 
         fullSceneList, setActiveSceneName, setHasPendingChanges,
@@ -32,30 +30,49 @@ export const VisualEngineProvider = ({ children }) => {
     const prevActiveSceneName = usePrevious(activeSceneName);
     const prevFullSceneList = usePrevious(fullSceneList);
 
-    // 2. Logic Refs
     const faderAnimationRef = useRef();
     const autoFadeRef = useRef(null);
     const renderedValueRef = useRef(0.0);
     const managerInstancesRef = useRef(null);
     const canvasUpdateFnsRef = useRef({});
-  
+    
+    // --- NEW: Access Full Industrial Config ---
+    const industrialConfig = useEngineStore(state => state.industrialConfig);
+    
+    const engineRef = useRef(null); 
+
     const registerManagerInstancesRef = useCallback((ref) => { managerInstancesRef.current = ref; }, []);
     const registerCanvasUpdateFns = useCallback((fns) => { canvasUpdateFnsRef.current = fns; }, []);
 
-    // Helper to push updates without React re-renders
+    // --- NEW: SYNC INDUSTRIAL CONFIG ---
+    useEffect(() => {
+        if (managerInstancesRef.current?.current?.engine) {
+             // Pass the whole config object to the engine
+             managerInstancesRef.current.current.engine.setIndustrialConfig(industrialConfig);
+        }
+    }, [industrialConfig]);
+
+    useEffect(() => {
+        const handleAudioUpdate = (event) => {
+            if (managerInstancesRef.current?.current?.engine) {
+                managerInstancesRef.current.current.engine.setAudioData(event.detail);
+            }
+        };
+
+        window.addEventListener('radar-audio-analysis', handleAudioUpdate);
+        return () => window.removeEventListener('radar-audio-analysis', handleAudioUpdate);
+    }, []);
+
     const pushCrossfaderUpdate = useCallback((value) => {
         renderedValueRef.current = value;
-        // 1. Notify Pixi Directly
         if (managerInstancesRef.current?.current?.updateCrossfade) {
             managerInstancesRef.current.current.updateCrossfade(value);
         }
-        // 2. Notify UI Components (Crossfader) Directly
         if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('radar-crossfader-update', { detail: value }));
         }
     }, []);
 
-    // 3. Initialization & Sync Effect
     useEffect(() => {
         const initialLoadJustFinished = !prevIsFullyLoaded && isFullyLoaded;
         const transitionJustFinished = prevIsWorkspaceTransitioning && !isWorkspaceTransitioning;
@@ -63,7 +80,6 @@ export const VisualEngineProvider = ({ children }) => {
         const sceneListChanged = prevFullSceneList !== fullSceneList;
         const store = useEngineStore.getState();
 
-        // A. INITIAL LOAD / WORKSPACE SWITCH
         if (initialLoadJustFinished || transitionJustFinished) {
             if (!isLoading && (!fullSceneList || fullSceneList.length === 0)) {
                 const baseScene = { 
@@ -103,7 +119,6 @@ export const VisualEngineProvider = ({ children }) => {
                 }
             }
         } 
-        // B. SCENE CHANGE
         else if ((sceneNameChanged || sceneListChanged) && isFullyLoaded && !store.isAutoFading) {
             if (!activeSceneName || !fullSceneList || fullSceneList.length === 0) return;
             const newActiveSceneData = fullSceneList.find(scene => scene.name === activeSceneName);
@@ -139,7 +154,6 @@ export const VisualEngineProvider = ({ children }) => {
         prevFullSceneList, setActiveSceneName, isLoading, pushCrossfaderUpdate
     ]);
 
-    // 4. Animation Loop
     useEffect(() => {
         const animateFader = () => {
             const state = useEngineStore.getState();
@@ -155,8 +169,6 @@ export const VisualEngineProvider = ({ children }) => {
                     newRendered = target; 
                 }
                 
-                // === ZERO-RENDER UPDATE ===
-                // We do NOT call setRenderedCrossfader here anymore.
                 pushCrossfaderUpdate(newRendered);
 
                 const isSettled = Math.abs(target - newRendered) < 0.0001;
@@ -172,7 +184,6 @@ export const VisualEngineProvider = ({ children }) => {
                         if (sceneNameA && activeSceneName !== sceneNameA) setActiveSceneName(sceneNameA);
                     }
                     
-                    // Optional: Sync store once when settled for consistency
                     if (state.renderedCrossfader !== newRendered) {
                         state.setRenderedCrossfader(newRendered);
                     }
@@ -190,7 +201,6 @@ export const VisualEngineProvider = ({ children }) => {
         const progress = Math.min(elapsed / duration, 1);
         const newCrossfaderValue = startValue + (endValue - startValue) * progress;
         
-        // === ZERO-RENDER UPDATE ===
         pushCrossfaderUpdate(newCrossfaderValue);
         
         if (progress < 1) {
@@ -198,10 +208,9 @@ export const VisualEngineProvider = ({ children }) => {
         } else {
             const { setIsAutoFading, setCrossfader, setTargetSceneName, setRenderedCrossfader } = useEngineStore.getState();
             
-            // Finalize state
             setIsAutoFading(false);
             setCrossfader(endValue);
-            setRenderedCrossfader(endValue); // Sync store at end
+            setRenderedCrossfader(endValue);
             
             setActiveSceneName(targetSceneNameParam);
             setTargetSceneName(null);
@@ -246,11 +255,7 @@ export const VisualEngineProvider = ({ children }) => {
         }
     }, [fullSceneList, animateCrossfade]);
 
-    /**
-     * UPDATE LAYER CONFIG
-     */
     const updateLayerConfig = useCallback((layerId, key, value, isMidiUpdate = false, skipStoreUpdate = false) => {
-        // 1. UPDATE PIXI ENGINE (Fast, Direct)
         const managers = managerInstancesRef.current?.current;
         if (managers) {
             const manager = managers[String(layerId)];
@@ -269,7 +274,6 @@ export const VisualEngineProvider = ({ children }) => {
             }
         }
 
-        // 2. UPDATE REACT STORE (Slow, optional) OR DISPATCH EVENT (Fast)
         if (!skipStoreUpdate) {
             const currentState = useEngineStore.getState();
             const activeDeck = renderedValueRef.current < 0.5 ? 'A' : 'B';
@@ -284,7 +288,6 @@ export const VisualEngineProvider = ({ children }) => {
             }
             setHasPendingChanges(true);
         } else {
-            // Dispatch Event for UI sync without React Render
             if (typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent('radar-param-update', { 
                     detail: { layerId: String(layerId), param: key, value: value } 
@@ -330,7 +333,6 @@ export const VisualEngineProvider = ({ children }) => {
         useEngineStore.getState().setDeckConfig(activeDeck === 'A' ? 'B' : 'A', JSON.parse(JSON.stringify(scene)));
     }, [fullSceneList]);
 
-    // --- MEMOIZE THE CONTEXT VALUE ---
     const contextValue = useMemo(() => ({
         handleSceneSelect,
         updateLayerConfig,
@@ -340,11 +342,9 @@ export const VisualEngineProvider = ({ children }) => {
         managerInstancesRef,
         setLiveConfig,
         reloadSceneOntoInactiveDeck,
-        // Expose manual crossfader handler for the UI slider
         handleCrossfaderChange: (val) => {
             const state = useEngineStore.getState();
             state.setCrossfader(val);
-            // Immediately update visual for responsiveness
             pushCrossfaderUpdate(val);
         }
     }), [
@@ -370,16 +370,15 @@ export const useVisualEngineContext = () => {
     const context = useContext(VisualEngineContext);
     if (context === undefined) throw new Error("useVisualEngineContext must be used within a VisualEngineProvider");
     
-    // We limit what we expose from the store to avoid re-renders. 
-    // renderedCrossfader is NO LONGER SELECTED to prevent root re-renders.
     const storeState = useEngineStore(useShallow(state => ({
         sideA: state.sideA,
         sideB: state.sideB,
-        // renderedCrossfader: state.renderedCrossfader, // <--- REMOVED
         isAutoFading: state.isAutoFading,
         targetSceneName: state.targetSceneName,
         effectsConfig: state.effectsConfig,
         transitionMode: state.transitionMode,
+        // --- Added industrial config ---
+        industrialConfig: state.industrialConfig
     })));
     
     const storeActions = useEngineStore.getState();
@@ -396,20 +395,16 @@ export const useVisualEngineContext = () => {
         ...context,
         sideA: storeState.sideA,
         sideB: storeState.sideB,
-        // We use a getter for the current value if needed, or 0.0 default
         renderedCrossfaderValue: storeActions.renderedCrossfader || 0.0, 
         
-        // This calculates the UI config based on the STORE's crossfader, which is fine
-        // because the UI config only flips when crossfader passes 0.5.
-        // For the *animation*, Pixi uses the ref value.
         uiControlConfig: (storeActions.renderedCrossfader < 0.5) ? storeState.sideA.config : storeState.sideB.config,
         
         isAutoFading: storeState.isAutoFading,
         targetSceneName: storeState.targetSceneName,
         effectsConfig: storeState.effectsConfig,
         transitionMode: storeState.transitionMode,
+        industrialConfig: storeState.industrialConfig,
         
-        // Use the context-exposed handler which updates the ref + dispatch + store
         handleCrossfaderChange: context.handleCrossfaderChange, 
         handleCrossfaderCommit: storeActions.setCrossfader,
         

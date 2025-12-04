@@ -9,20 +9,45 @@ const DEFAULT_AUDIO_SETTINGS = {
   smoothingFactor: 0.6,
 };
 
+// --- UPDATED: AGGRESSIVE DEFAULTS ---
+const DEFAULT_INDUSTRIAL_MAPPING = {
+    // VISUAL DESTRUCTION
+    rgbStrength: { source: 'bass', amount: 1.2, enabled: true },
+    zoomStrength: { source: 'bass', amount: 0.7, enabled: true },
+    glitchIntensity: { source: 'treble', amount: 1.0, enabled: true },
+    
+    // CRT COMPONENTS
+    crtNoise: { source: 'mid', amount: 0.5, enabled: true },
+    crtGeometry: { source: 'bass', amount: 0.0, enabled: true }, // Default 0.0 amount = CLEAN
+    
+    // "VIDEO NASTY" EFFECTS
+    binaryThreshold: { source: 'level', amount: 0.0, enabled: false }, 
+    invertStrobe: { source: 'treble', amount: 0.8, enabled: true },
+    
+    // SCENE SHREDDER
+    crossfaderShred: { source: 'bass', amount: 0.0, enabled: false },
+};
+
 export const useEngineStore = create(
   subscribeWithSelector((set, get) => ({
-    // =========================================
-    // 1. VISUAL ENGINE SLICE
-    // =========================================
-    crossfader: 0.0, // Target value
-    renderedCrossfader: 0.0, // Interpolated value used by renderer
+    // ... (Standard Visual Engine Slice) ...
+    crossfader: 0.0,
+    renderedCrossfader: 0.0,
     sideA: { config: null },
     sideB: { config: null },
     isAutoFading: false,
-    transitionMode: 'crossfade', // 'crossfade' | 'flythrough'
+    transitionMode: 'crossfade',
     targetSceneName: null,
     
-    // Global Effects Config
+    // INDUSTRIAL CONFIG
+    industrialConfig: {
+        enabled: false,
+        chaos: 0.0,
+        masterDrive: 1.0, // Master Wet/Dry control
+        mappings: DEFAULT_INDUSTRIAL_MAPPING
+    },
+
+    // Global Effects (Legacy/Standard)
     effectsConfig: {
         bloom: { enabled: false, intensity: 1.0, blur: 8, threshold: 0.5 },
         rgb: { enabled: false, amount: 2 },
@@ -39,12 +64,34 @@ export const useEngineStore = create(
         ascii: { enabled: false, size: 12, invert: 0, charSet: 0, colorMode: 0 }
     },
 
-    // Visual Actions
+    // Actions
     setCrossfader: (value) => set({ crossfader: Math.max(0, Math.min(1, value)) }),
     setRenderedCrossfader: (value) => set({ renderedCrossfader: value }),
     setIsAutoFading: (isFading) => set({ isAutoFading: isFading }),
     setTransitionMode: (mode) => set({ transitionMode: mode }),
     setTargetSceneName: (name) => set({ targetSceneName: name }),
+    
+    setIndustrialEnabled: (enabled) => set((state) => ({ 
+        industrialConfig: { ...state.industrialConfig, enabled } 
+    })),
+    
+    setIndustrialChaos: (value) => set((state) => ({ 
+        industrialConfig: { ...state.industrialConfig, chaos: value } 
+    })),
+
+    setIndustrialMasterDrive: (value) => set((state) => ({ 
+        industrialConfig: { ...state.industrialConfig, masterDrive: value } 
+    })),
+
+    updateIndustrialMapping: (target, updates) => set((state) => ({
+        industrialConfig: {
+            ...state.industrialConfig,
+            mappings: {
+                ...state.industrialConfig.mappings,
+                [target]: { ...state.industrialConfig.mappings[target], ...updates }
+            }
+        }
+    })),
     
     setDeckConfig: (side, config) => set((state) => ({ 
       [side === 'A' ? 'sideA' : 'sideB']: { config } 
@@ -60,15 +107,11 @@ export const useEngineStore = create(
         }
     })),
 
-    // =========================================
-    // 2. AUDIO SLICE
-    // =========================================
+    // Audio Slice
     isAudioActive: false,
     audioSettings: DEFAULT_AUDIO_SETTINGS,
     analyzerData: { level: 0, frequencyBands: { bass: 0, mid: 0, treble: 0 } },
 
-    // Audio Actions
-    // FIXED: Now supports functional updates like setIsAudioActive(prev => !prev)
     setIsAudioActive: (input) => set((state) => ({ 
         isAudioActive: typeof input === 'function' ? input(state.isAudioActive) : input 
     })),
@@ -81,42 +124,32 @@ export const useEngineStore = create(
     
     updateAnalyzerData: (data) => set({ analyzerData: data }),
 
-    // =========================================
-    // 3. MIDI SLICE
-    // =========================================
+    // MIDI Slice (unchanged)
     midiAccess: null,
     midiInputs: [],
     isConnected: false,
     isConnecting: false,
     midiError: null,
-    
-    midiLearning: null, // { type: 'param'|'global', param, layer, control }
-    learningLayer: null, // number | null
+    midiLearning: null, 
+    learningLayer: null, 
     selectedChannel: 0,
-    
     showMidiMonitor: false,
     midiMonitorData: [],
-    
-    // Queue for MIDI actions that React needs to handle (e.g., scene changes)
     pendingActions: [], 
 
-    // MIDI Actions
     setMidiAccess: (access) => set({ midiAccess: access }),
     setMidiInputs: (inputs) => set({ midiInputs: inputs }),
     setMidiConnectionStatus: (isConnected, isConnecting, error = null) => 
         set({ isConnected, isConnecting, midiError: error }),
-    
     setMidiLearning: (learningState) => set({ midiLearning: learningState }),
     setLearningLayer: (layer) => set({ learningLayer: layer }),
     setSelectedChannel: (channel) => set({ selectedChannel: channel }),
     setShowMidiMonitor: (show) => set({ showMidiMonitor: show }),
-    
     addMidiMonitorData: (entry) => set((state) => {
         const updated = [...state.midiMonitorData, entry];
         return { midiMonitorData: updated.length > 50 ? updated.slice(-50) : updated };
     }),
     clearMidiMonitorData: () => set({ midiMonitorData: [] }),
-
     queueMidiAction: (action) => set((state) => ({
         pendingActions: [...state.pendingActions, action]
     })),
