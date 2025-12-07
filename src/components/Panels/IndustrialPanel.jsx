@@ -5,6 +5,7 @@ import Panel from './Panel';
 import { useEngineStore } from '../../store/useEngineStore';
 import { useShallow } from 'zustand/react/shallow';
 import { FireIcon, BoltIcon, SignalIcon, AdjustmentsHorizontalIcon } from '@heroicons/react/24/solid';
+import SignalBus from '../../utils/SignalBus';
 import './PanelStyles/IndustrialPanel.css';
 
 const TARGET_LABELS = {
@@ -32,9 +33,9 @@ const SOURCE_LABELS = {
 const SignalDot = ({ source }) => {
     const ref = useRef(null);
     useEffect(() => {
-        const handleAudio = (e) => {
+        const handleAudio = (data) => {
             if (!ref.current) return;
-            const { level, frequencyBands } = e.detail;
+            const { level, frequencyBands } = data;
             let val = 0;
             if (source === 'level') val = level;
             else val = frequencyBands[source] || 0;
@@ -42,8 +43,10 @@ const SignalDot = ({ source }) => {
             ref.current.style.opacity = 0.3 + (val * 0.7);
             ref.current.style.boxShadow = `0 0 ${val * 8}px var(--color-primary)`;
         };
-        window.addEventListener('radar-audio-analysis', handleAudio);
-        return () => window.removeEventListener('radar-audio-analysis', handleAudio);
+        
+        // SIGNAL BUS LISTENER
+        const unsubscribe = SignalBus.on('audio:analysis', handleAudio);
+        return () => unsubscribe();
     }, [source]);
 
     return (

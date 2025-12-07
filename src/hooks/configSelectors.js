@@ -1,106 +1,147 @@
 // src/hooks/configSelectors.js
 import { useMemo } from 'react';
+import { useShallow } from 'zustand/react/shallow';
+import { useProjectStore } from '../store/useProjectStore';
+import { useWalletStore } from '../store/useWalletStore';
+import { useVisualEngineContext } from '../context/VisualEngineContext';
+import { useUpProvider } from '../context/UpProvider';
 
-import { useUserSession } from '../context/UserSessionContext.jsx';
-import { useWorkspaceContext } from '../context/WorkspaceContext.jsx';
-import { useVisualEngineContext } from '../context/VisualEngineContext.jsx';
-import { useUpProvider } from '../context/UpProvider.jsx';
-import { useSceneContext } from '../context/SceneContext.jsx'; // --- NEW IMPORT ---
+// --- Session Selectors ---
+export const useProfileSessionState = () => {
+  return useWalletStore(useShallow(state => ({
+    hostProfileAddress: state.hostProfileAddress,
+    currentProfileAddress: state.hostProfileAddress,
+    loggedInUserUPAddress: state.loggedInUserUPAddress,
+    isProfileOwner: state.isHostProfileOwner,
+    isHostProfileOwner: state.isHostProfileOwner,
+    isVisitor: !state.isHostProfileOwner,
+    isRadarProjectAdmin: state.isRadarProjectAdmin,
+    isParentAdmin: state.isRadarProjectAdmin,
+    canSave: state.isHostProfileOwner && !state.isPreviewMode,
+    canSaveToHostProfile: state.isHostProfileOwner && !state.isPreviewMode,
+    canInteract: !!state.hostProfileAddress && !state.isPreviewMode,
+    isPreviewMode: state.isPreviewMode,
+    togglePreviewMode: state.togglePreviewMode,
+  })));
+};
 
+// --- Visual Layer State ---
 export const useVisualLayerState = () => {
   const visualEngineCtx = useVisualEngineContext();
-  return useMemo(() => ({
+  return {
     layerConfigs: visualEngineCtx.uiControlConfig?.layers,
     tokenAssignments: visualEngineCtx.uiControlConfig?.tokenAssignments,
     updateLayerConfig: visualEngineCtx.updateLayerConfig,
     updateTokenAssignment: visualEngineCtx.updateTokenAssignment,
-  }), [visualEngineCtx.uiControlConfig, visualEngineCtx.updateLayerConfig, visualEngineCtx.updateTokenAssignment]);
-};
-
-/**
- * Merges Workspace and Scene contexts to provide a unified API for 
- * components like SetsPanel or EnhancedSavePanel.
- */
-export const useSetManagementState = () => {
-  const workspaceCtx = useWorkspaceContext();
-  const sceneCtx = useSceneContext();
-  
-  return {
-      ...workspaceCtx,
-      ...sceneCtx, // Overwrite any potential duplicates with Scene-level specifics
   };
 };
 
-export const useInteractionSettingsState = () => {
-  const workspaceCtx = useWorkspaceContext();
-  return useMemo(() => ({
-    savedReactions: workspaceCtx.stagedSetlist?.globalEventReactions || {},
-    midiMap: workspaceCtx.stagedSetlist?.globalUserMidiMap || {},
-    updateSavedReaction: workspaceCtx.updateGlobalEventReactions,
-    deleteSavedReaction: workspaceCtx.deleteGlobalEventReaction,
-    updateMidiMap: workspaceCtx.updateGlobalMidiMap,
-  }), [
-    workspaceCtx.stagedSetlist, 
-    workspaceCtx.updateGlobalEventReactions,
-    workspaceCtx.deleteGlobalEventReaction,
-    workspaceCtx.updateGlobalMidiMap,
-  ]);
-};
-
-export const useProfileSessionState = () => {
-  const sessionCtx = useUserSession();
-
-  return useMemo(() => {
-    const {
-      hostProfileAddress,
-      loggedInUserUPAddress,
-      isHostProfileOwner,
-      isRadarProjectAdmin,
-      isPreviewMode,
-      canSaveToHostProfile,
-      togglePreviewMode,
-    } = sessionCtx;
-
-    const canInteract = !!hostProfileAddress && !isPreviewMode;
+// --- Set Management (PERFORMANCE FIX: Explicit Selection) ---
+export const useSetManagementState = () => {
+  // 1. Select only specific fields/actions from the Store
+  const projectData = useProjectStore(useShallow(s => ({
+    // Data
+    stagedWorkspace: s.stagedWorkspace,
+    activeWorkspaceName: s.activeWorkspaceName,
+    isLoading: s.isLoading,
+    isSaving: s.isSaving,
+    hasPendingChanges: s.hasPendingChanges,
+    stagedSetlist: s.stagedSetlist,
+    activeSceneName: s.activeSceneName,
+    configService: s.configService,
     
-    return {
-      currentProfileAddress: hostProfileAddress, 
-      loggedInUserUPAddress: loggedInUserUPAddress,
-      isProfileOwner: isHostProfileOwner,
-      isVisitor: !isHostProfileOwner,
-      canSave: canSaveToHostProfile, 
-      canInteract,
-      isPreviewMode: isPreviewMode,
-      togglePreviewMode: togglePreviewMode,
-      isParentAdmin: isRadarProjectAdmin,
-    };
-  }, [sessionCtx]);
+    // Actions (Workspace)
+    loadWorkspace: s.loadWorkspace,
+    createNewWorkspace: s.createNewWorkspace,
+    deleteWorkspaceFromSet: s.deleteWorkspaceFromSet,
+    renameWorkspaceInSet: s.renameWorkspaceInSet,
+    setDefaultWorkspaceInSet: s.setDefaultWorkspaceInSet,
+    saveChanges: s.saveChanges,
+    duplicateActiveWorkspace: s.duplicateActiveWorkspace,
+    preloadWorkspace: s.preloadWorkspace,
+    
+    // Actions (Scene)
+    addScene: s.addScene,
+    deleteScene: s.deleteScene,
+    setDefaultScene: s.setDefaultScene,
+    
+    // Actions (Library)
+    addCollectionToLibrary: s.addCollectionToLibrary,
+    removeCollectionFromLibrary: s.removeCollectionFromLibrary,
+  })));
+
+  const session = useProfileSessionState();
+  
+  // 2. Memoize derived list
+  const fullSceneList = useMemo(() => {
+    const presets = projectData.stagedWorkspace?.presets || {};
+    return Object.values(presets).sort((a, b) => 
+      a.name.localeCompare(b.name, undefined, { numeric: true })
+    );
+  }, [projectData.stagedWorkspace]);
+
+  return {
+    ...projectData,
+    
+    // Aliases for compatibility
+    stagedActiveWorkspace: projectData.stagedWorkspace,
+    addNewSceneToStagedWorkspace: projectData.addScene,
+    deleteSceneFromStagedWorkspace: projectData.deleteScene,
+    setDefaultSceneInStagedWorkspace: projectData.setDefaultScene,
+    addCollectionToPersonalLibrary: projectData.addCollectionToLibrary,
+    removeCollectionFromPersonalLibrary: projectData.removeCollectionFromLibrary,
+
+    fullSceneList,
+    
+    // Session Mix-ins
+    canSaveToHostProfile: session.canSaveToHostProfile,
+    hostProfileAddress: session.hostProfileAddress,
+    isHostProfileOwner: session.isHostProfileOwner,
+  };
 };
 
+// --- Interaction Settings ---
+export const useInteractionSettingsState = () => {
+  // These selectors are already quite specific, but let's wrap them just in case
+  const { stagedSetlist, updateGlobalEventReactions, deleteGlobalEventReaction, updateGlobalMidiMap } = useProjectStore(useShallow(s => ({
+      stagedSetlist: s.stagedSetlist,
+      updateGlobalEventReactions: s.updateGlobalEventReactions,
+      deleteGlobalEventReaction: s.deleteGlobalEventReaction,
+      updateGlobalMidiMap: s.updateGlobalMidiMap
+  })));
+
+  return {
+    savedReactions: stagedSetlist?.globalEventReactions || {},
+    midiMap: stagedSetlist?.globalUserMidiMap || {},
+    updateSavedReaction: updateGlobalEventReactions,
+    deleteSavedReaction: deleteGlobalEventReaction,
+    updateMidiMap: updateGlobalMidiMap,
+  };
+};
+
+// --- Pending Changes ---
 export const usePendingChangesState = () => {
-  const sceneCtx = useSceneContext(); // --- UPDATED: Sourced from SceneContext ---
-  return useMemo(() => ({
-    hasPendingChanges: sceneCtx.hasPendingChanges,
-    setHasPendingChanges: sceneCtx.setHasPendingChanges,
-  }), [sceneCtx.hasPendingChanges, sceneCtx.setHasPendingChanges]);
+  return useProjectStore(useShallow(s => ({
+    hasPendingChanges: s.hasPendingChanges,
+    setHasPendingChanges: (val) => useProjectStore.setState({ hasPendingChanges: val }),
+  })));
 };
 
+// --- Config/Loading Status ---
 export const useConfigStatusState = () => {
-  const workspaceCtx = useWorkspaceContext();
-  const upCtx = useUpProvider(); 
+  const projectState = useProjectStore(useShallow(s => ({
+    isLoading: s.isLoading,
+    isInitiallyResolved: !!s.setlist,
+    configServiceInstanceReady: s.isConfigReady,
+    loadError: s.error,
+  })));
+  
+  const { initializationError, fetchStateError } = useUpProvider();
 
-  return useMemo(() => ({
-    isLoading: workspaceCtx.isLoading,
-    isInitiallyResolved: workspaceCtx.isInitiallyResolved,
-    configServiceInstanceReady: workspaceCtx.configServiceInstanceReady,
+  return {
+    ...projectState,
     sceneLoadNonce: 0,
-    configServiceRef: workspaceCtx.configServiceRef,
-    loadError: workspaceCtx.loadError,
-    upInitializationError: upCtx.initializationError, 
-    upFetchStateError: upCtx.fetchStateError,       
-  }), [
-    workspaceCtx.isLoading, workspaceCtx.isInitiallyResolved, workspaceCtx.loadError,
-    workspaceCtx.configServiceInstanceReady, workspaceCtx.configServiceRef,
-    upCtx.initializationError, upCtx.fetchStateError, 
-  ]);
+    upInitializationError: initializationError,
+    upFetchStateError: fetchStateError,
+  };
 };

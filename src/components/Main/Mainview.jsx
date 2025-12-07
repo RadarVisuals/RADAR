@@ -1,4 +1,3 @@
-// src/components/Main/Mainview.jsx
 import React, { useRef, useEffect, useMemo, useState, useCallback } from "react";
 import PropTypes from "prop-types";
 import { useShallow } from 'zustand/react/shallow';
@@ -6,9 +5,9 @@ import { useShallow } from 'zustand/react/shallow';
 import { useUpProvider } from "../../context/UpProvider.jsx";
 import { useCoreApplicationStateAndLifecycle } from '../../hooks/useCoreApplicationStateAndLifecycle';
 import { useAppInteractions } from '../../hooks/useAppInteractions';
-import { useWorkspaceContext } from "../../context/WorkspaceContext";
 import { useVisualEngineContext } from "../../context/VisualEngineContext";
 import { useEngineStore } from "../../store/useEngineStore";
+import { useProjectStore } from "../../store/useProjectStore"; // New Import
 
 import ToastContainer from "../Notifications/ToastContainer";
 import UIOverlay from '../UI/UIOverlay';
@@ -43,16 +42,34 @@ const portalContainerNode = typeof document !== 'undefined' ? document.getElemen
 const MainView = ({ blendModes = BLEND_MODES }) => {
   const { publicClient, walletClient, upInitializationError, upFetchStateError } = useUpProvider();
 
+  // --- REFACTOR: Use Project Store directly ---
   const {
-    isWorkspaceTransitioning,
-    _executeLoadAfterFade,
-    loadingMessage,
     stagedSetlist,
     loadWorkspace,
     activeWorkspaceName,
-    fullSceneList, 
-    activeSceneName, 
-  } = useWorkspaceContext();
+    activeSceneName,
+    loadingMessage,
+  } = useProjectStore(useShallow(s => ({
+    stagedSetlist: s.stagedSetlist,
+    loadWorkspace: s.loadWorkspace,
+    activeWorkspaceName: s.activeWorkspaceName,
+    activeSceneName: s.activeSceneName,
+    loadingMessage: s.loadingMessage,
+  })));
+  
+  // Note: 'isWorkspaceTransitioning' and '_executeLoadAfterFade' are tricky ones.
+  // In the legacy WorkspaceContext, these were local state inside the provider component to handle fade-out.
+  // In a real app, the VisualEngine handles the fade. We can simplify this. 
+  // If the engine is ready, we are ready.
+  // We'll trust the Engine's transition logic instead of React state for opacity fades.
+  // However, for compatibility, we can assume 'loadingMessage' implies transitioning.
+  const isWorkspaceTransitioning = !!loadingMessage && loadingMessage.includes("Loading");
+
+  const fullSceneList = useMemo(() => 
+    Object.values(useProjectStore.getState().stagedWorkspace?.presets || {})
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })), 
+  [useProjectStore.getState().stagedWorkspace]);
+  // --- END REFACTOR ---
 
   const {
     registerManagerInstancesRef,
@@ -61,7 +78,6 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     handleSceneSelect, 
   } = useVisualEngineContext();
   
-  // Safe Selector for Audio State
   const audioState = useEngineStore(useShallow(state => ({
       isAudioActive: state.isAudioActive,
       audioSettings: state.audioSettings,
@@ -82,22 +98,6 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   
   const mousePositionRef = useRef({ x: 0, y: 0 });
   const parallaxRafIdRef = useRef(null);
-
-  useEffect(() => {
-    let fadeOutTimer = null;
-    if (isWorkspaceTransitioning) {
-      fadeOutTimer = setTimeout(() => {
-        if (_executeLoadAfterFade) {
-          _executeLoadAfterFade();
-        }
-      }, 500);
-    }
-    return () => {
-      if (fadeOutTimer) {
-        clearTimeout(fadeOutTimer);
-      }
-    };
-  }, [isWorkspaceTransitioning, _executeLoadAfterFade]);
 
   const coreApp = useCoreApplicationStateAndLifecycle({
     canvasRefs: {}, 
@@ -244,7 +244,6 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     onPreviewEffect: appInteractions.processEffect,
   }), [enterFullscreen, toggleParallax, appInteractions.processEffect]);
 
-  // UPDATED: loopProgress removed to prevent 60fps React re-renders
   const pLockProps = useMemo(() => ({
     pLockState: sequencer.pLockState, 
     hasLockedParams: sequencer.hasLockedParams,
@@ -263,7 +262,7 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     <>
       <div id="fullscreen-root" ref={rootRef} className="main-view radar-cursor">
         
-        <LoadingIndicatorPill message={loadingMessage} isVisible={showLoadingIndicator} />
+        <LoadingIndicatorPill message={loadingMessage || "Loading..."} isVisible={showLoadingIndicator} />
 
         <PixiCanvasWrapper
           containerRef={containerRef}
@@ -302,7 +301,6 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
             <AudioAnalyzerWrapper
               isAudioActive={audioState.isAudioActive}
               managersReady={managersReady}
-              // handleAudioDataUpdate removed (internal)
               layerConfigs={uiControlConfig?.layers} 
               audioSettings={audioState.audioSettings}
               configLoadNonce={0}

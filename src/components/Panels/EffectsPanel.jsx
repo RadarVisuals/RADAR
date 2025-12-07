@@ -91,7 +91,24 @@ const EffectsPanel = ({ onClose }) => {
         <Panel title="GLOBAL EFFECTS" onClose={onClose} className="panel-from-toolbar effects-panel">
             <div className="effects-content">
                 
-                <h4 className="config-section-title" style={{marginTop:0}}>Glitch & Chaos</h4>
+                {/* --- NEW FEEDBACK SECTION --- */}
+                <h4 className="config-section-title" style={{marginTop:0, color: 'var(--color-accent)'}}>Video Feedback</h4>
+                
+                <EffectControl 
+                    label="INFINITY TRAILS" 
+                    effectKey="feedback"
+                    config={effectsConfig}
+                    onChange={updateEffectConfig}
+                    params={[
+                        { key: 'amount', label: 'Decay', min: 0.5, max: 0.99, step: 0.01, default: 0.9, decimals: 2 },
+                        { key: 'scale', label: 'Zoom', min: 0.9, max: 1.1, step: 0.001, default: 1.01, decimals: 3 },
+                        { key: 'rotation', label: 'Spin', min: -1.0, max: 1.0, step: 0.01, default: 0.0, decimals: 2 },
+                        { key: 'xOffset', label: 'Drift X', min: -10, max: 10, step: 0.1, default: 0, decimals: 1 },
+                        { key: 'yOffset', label: 'Drift Y', min: -10, max: 10, step: 0.1, default: 0, decimals: 1 },
+                    ]}
+                />
+                
+                <h4 className="config-section-title">Glitch & Chaos</h4>
 
                 <EffectControl 
                     label="ADVERSARIAL GLITCH" 

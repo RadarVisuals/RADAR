@@ -1,7 +1,6 @@
-// src/context/MIDIContext.jsx
 import React, { createContext, useContext, useEffect, useCallback, useRef, useMemo } from 'react';
 import PropTypes from 'prop-types';
-import { useWorkspaceContext } from './WorkspaceContext';
+import { useProjectStore } from '../store/useProjectStore'; // Changed
 import { useEngineStore } from '../store/useEngineStore';
 
 const MIDI_CONNECT_TIMEOUT_MS = 10000;
@@ -28,10 +27,15 @@ const getMidiMessageType = (status) => {
 };
 
 export function MIDIProvider({ children }) {
-  const { stagedSetlist, updateGlobalMidiMap, updateLayerMidiMappings } = useWorkspaceContext();
-  
-  // NOTE: We do NOT destructure state here to avoid Provider re-renders on high-freq MIDI data.
-  // We use getState() inside callbacks.
+  // --- REFACTOR: Use Store Selectors ---
+  const stagedSetlist = useProjectStore(s => s.stagedSetlist);
+  const updateGlobalMidiMap = useProjectStore(s => s.updateGlobalMidiMap);
+  const updateLayerMidiMappings = (layerId, mapping) => {
+     const currentMap = useProjectStore.getState().stagedSetlist.globalUserMidiMap || {};
+     const newLayerSelects = { ...(currentMap.layerSelects || {}), [layerId]: mapping };
+     updateGlobalMidiMap({ ...currentMap, layerSelects: newLayerSelects });
+  };
+  // --- END REFACTOR ---
   
   const activeMidiMap = useMemo(() => stagedSetlist?.globalUserMidiMap || {}, [stagedSetlist]);
   const layerMappings = useMemo(() => activeMidiMap?.layerSelects || {}, [activeMidiMap]);
@@ -200,7 +204,7 @@ export function MIDIProvider({ children }) {
         }
     }
 
-  }, [updateGlobalMidiMap, updateLayerMidiMappings]);
+  }, [updateGlobalMidiMap]); // updateLayerMidiMappings is defined inline inside
 
   const connectMIDI = useCallback(async () => {
       if (connectionInProgressRef.current) return;

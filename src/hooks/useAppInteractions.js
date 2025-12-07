@@ -4,10 +4,10 @@ import { useUIState } from './useUIState';
 import { useVisualEffects } from './useVisualEffects';
 import { useLsp1Events } from './useLsp1Events';
 import { useMIDI } from '../context/MIDIContext';
-import { useUserSession } from '../context/UserSessionContext';
+// REFACTORED: Import selector instead of Context
+import { useProfileSessionState, useInteractionSettingsState } from './configSelectors';
 import { useVisualEngineContext } from '../context/VisualEngineContext';
 import { useNotificationContext } from '../context/NotificationContext';
-import { useWorkspaceContext } from '../context/WorkspaceContext';
 import { sliderParams } from '../config/sliderParams';
 import { scaleNormalizedValue } from "../utils/helpers";
 
@@ -22,13 +22,14 @@ export const useAppInteractions = (props) => {
     onPrevWorkspace,
   } = props;
 
-  const { hostProfileAddress } = useUserSession(); 
+  // REFACTORED: Use the new hook
+  const { hostProfileAddress } = useProfileSessionState(); 
+  
   const uiStateHook = useUIState('tab1');
   const { addNotification, unreadCount } = useNotificationContext();
   
-  // --- UPDATED: Use stagedSetlist for global reactions ---
-  const { stagedSetlist } = useWorkspaceContext();
-  const savedReactions = stagedSetlist?.globalEventReactions || {};
+  // REFACTORED: Use the interaction selector
+  const { savedReactions } = useInteractionSettingsState();
   
   const { updateLayerConfig, updateTokenAssignment, handleCrossfaderChange } = useVisualEngineContext();
   const { processEffect, createDefaultEffect } = useVisualEffects(updateLayerConfig);

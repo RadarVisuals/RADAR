@@ -5,7 +5,6 @@ import { sliderParams } from '../../config/sliderParams';
 import { getDecodedImage } from '../imageDecoder';
 import { MAX_TOTAL_OFFSET, MIDI_INTERPOLATION_DURATION, BLEND_MODE_MAP } from './PixiConstants';
 
-// --- SCALE FIX ---
 const BASE_SCALE_MODIFIER = 0.5;
 
 class Quadrant {
@@ -53,8 +52,6 @@ export class PixiLayerDeck {
     this.tokenId = null;
     this._loadingTokenId = null;
 
-    // --- MEMORY OPTIMIZATION: Object Pooling ---
-    // We allocate this ONCE. We never create a new object during the render loop.
     this._reusableRenderState = {
         speed: 0, size: 1, opacity: 1, drift: 0, driftSpeed: 0,
         xaxis: 0, yaxis: 0, angle: 0, direction: 1,
@@ -91,7 +88,6 @@ export class PixiLayerDeck {
     
     Object.keys(this.interpolators).forEach(key => {
         if (otherDeck.interpolators[key]) {
-            // Primitive copy only
             this.interpolators[key].currentValue = otherDeck.interpolators[key].currentValue;
             this.interpolators[key].startValue = otherDeck.interpolators[key].currentValue;
             this.interpolators[key].targetValue = otherDeck.interpolators[key].targetValue;
@@ -127,7 +123,6 @@ export class PixiLayerDeck {
     }
   }
 
-  // Optimized method for direct property updates (no object allocation)
   setProperty(key, value) {
     this.config[key] = value; 
     if (this.interpolators[key]) {
@@ -136,7 +131,6 @@ export class PixiLayerDeck {
   }
 
   snapConfig(fullConfig) {
-    // We iterate manually to avoid creating a new object with spread {...}
     for (const key in fullConfig) {
         this.config[key] = fullConfig[key];
         if (this.interpolators[key]) {
@@ -146,7 +140,6 @@ export class PixiLayerDeck {
   }
 
   getState() {
-    // Only used for saving/snapshots, so allocation here is fine
     return { 
         config: {...this.config}, 
         driftState: {...this.driftState}, 
@@ -156,13 +149,9 @@ export class PixiLayerDeck {
   }
 
   stepPhysics(deltaTime, now) {
-    // Avoid Object.values allocation
     for (const key in this.interpolators) {
         this.interpolators[key].update(now);
     }
-    
-    // Inline access helper to avoid closure allocation
-    // getVal(prop) => this.playbackValues[prop] ?? this.interpolators[prop].getCurrentValue();
     
     const getVal = (k) => (this.playbackValues[k] !== undefined ? this.playbackValues[k] : this.interpolators[k].currentValue);
     
@@ -175,11 +164,9 @@ export class PixiLayerDeck {
 
     if (drift > 0) {
         this.driftState.phase += deltaTime * driftSpeed * 1.0;
-        // Optimized math
         const xVal = Math.sin(this.driftState.phase) * drift * 1.5;
-        const yVal = Math.cos(this.driftState.phase * 0.7 + 0.785398) * drift * 1.5; // 0.785398 = PI/4
+        const yVal = Math.cos(this.driftState.phase * 0.7 + 0.785398) * drift * 1.5; 
         
-        // Clamp without creating new Math objects
         this.driftState.x = xVal < -MAX_TOTAL_OFFSET ? -MAX_TOTAL_OFFSET : (xVal > MAX_TOTAL_OFFSET ? MAX_TOTAL_OFFSET : xVal);
         this.driftState.y = yVal < -MAX_TOTAL_OFFSET ? -MAX_TOTAL_OFFSET : (yVal > MAX_TOTAL_OFFSET ? MAX_TOTAL_OFFSET : yVal);
     } else {
@@ -189,7 +176,6 @@ export class PixiLayerDeck {
   }
 
   resolveRenderState() {
-    // --- ZERO ALLOCATION: Reuse the existing object ---
     const s = this._reusableRenderState;
     const getVal = (k) => (this.playbackValues[k] !== undefined ? this.playbackValues[k] : this.interpolators[k].currentValue);
 
@@ -209,9 +195,8 @@ export class PixiLayerDeck {
     s.driftX = this.driftState.x;
     s.driftY = this.driftState.y;
     
-    // Pre-calculate radians here
     const totalAngleDeg = angle + this.continuousAngle;
-    s.totalAngleRad = (totalAngleDeg * 0.01745329251); // PI / 180 constant
+    s.totalAngleRad = (totalAngleDeg * 0.01745329251); 
 
     return s;
   }
@@ -234,7 +219,6 @@ export class PixiLayerDeck {
     const targetX = halfW + (state.xaxis * 0.1) + state.driftX + pX;
     const targetY = halfH + (state.yaxis * 0.1) + state.driftY + pY;
     
-    // Access sprite texture directly
     const tex = this.quadrants[0].sprite.texture;
     let screenRelativeScale = 1.0;
     
@@ -251,7 +235,6 @@ export class PixiLayerDeck {
     const blend = BLEND_MODE_MAP[state.blendMode] || 'normal';
     const rad = state.totalAngleRad;
 
-    // Unroll the loop manually for performance
     this._updateQuadrant(this.quadrants[0], targetX, targetY, finalScale, finalScale, rad, finalAlpha, blend);
     this._updateQuadrant(this.quadrants[1], screenW - targetX, targetY, -finalScale, finalScale, -rad, finalAlpha, blend);
     this._updateQuadrant(this.quadrants[2], targetX, screenH - targetY, finalScale, -finalScale, -rad, finalAlpha, blend);
@@ -259,7 +242,6 @@ export class PixiLayerDeck {
   }
 
   _updateQuadrant(quad, x, y, sx, sy, rot, alpha, blend) {
-    // Direct property access is slightly faster than .set()
     quad.sprite.position.x = x;
     quad.sprite.position.y = y;
     quad.sprite.scale.x = sx;
@@ -267,7 +249,6 @@ export class PixiLayerDeck {
     quad.sprite.rotation = rot;
     quad.sprite.alpha = alpha;
     
-    // Only update blendMode if it changed (avoids PIXI internal state thrashing)
     if (quad.container.blendMode !== blend) {
         quad.container.blendMode = blend;
     }
@@ -276,7 +257,6 @@ export class PixiLayerDeck {
   resize(renderer) {
     const w = renderer.screen.width;
     const h = renderer.screen.height;
-    // Use bitwise floor for speed
     const hw = (w * 0.5) | 0; 
     const hh = (h * 0.5) | 0;
     

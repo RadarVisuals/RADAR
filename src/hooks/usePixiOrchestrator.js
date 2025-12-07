@@ -17,14 +17,25 @@ export function usePixiOrchestrator({
   // 1. Initialization
   useEffect(() => {
     if (canvasRef.current && !engineRef.current) {
+      console.log("[Orchestrator] Creating new PixiEngine instance...");
       const engine = new PixiEngine(canvasRef.current);
       engine.init().then(() => {
         engineRef.current = engine;
         setIsEngineReady(true);
+        console.log("[Orchestrator] Engine ready. Performing initial sync.");
         
         // Initial Sync
-        if (sideA?.config) syncDeckConfig(engine, sideA.config, 'A');
-        if (sideB?.config) syncDeckConfig(engine, sideB.config, 'B');
+        if (sideA?.config) {
+            console.log("[Orchestrator] Syncing Initial Side A");
+            syncDeckConfig(engine, sideA.config, 'A');
+        } else {
+            console.warn("[Orchestrator] Initial Side A config is missing/null.");
+        }
+
+        if (sideB?.config) {
+            console.log("[Orchestrator] Syncing Initial Side B");
+            syncDeckConfig(engine, sideB.config, 'B');
+        }
       });
     }
     return () => {
@@ -40,19 +51,23 @@ export function usePixiOrchestrator({
   const syncDeckConfig = (engine, configWrapper, side) => {
     if (!configWrapper) return;
     const { layers, tokenAssignments } = configWrapper;
+    // console.log(`[Orchestrator] Syncing Deck ${side}`, { layers, tokenAssignments });
+    
     ['1', '2', '3'].forEach(layerId => {
         if (layers && layers[layerId]) engine.snapConfig(layerId, layers[layerId], side);
         if (tokenAssignments && tokenAssignments[layerId]) {
             const token = tokenAssignments[layerId];
             const src = resolveImageUrl(token);
             const id = typeof token === 'object' ? token.id : token;
-            engine.setTexture(layerId, side, src, id);
+            if (src) {
+                // console.log(`[Orchestrator] Setting Texture for ${side}-L${layerId}: ${id}`);
+                engine.setTexture(layerId, side, src, id);
+            }
         }
     });
   };
 
   // 3. Reactive Updates
-  // We ONLY sync heavy config objects here. 
   useEffect(() => { 
       if (isEngineReady && engineRef.current && sideA?.config) {
           syncDeckConfig(engineRef.current, sideA.config, 'A'); 
@@ -101,10 +116,7 @@ export function usePixiOrchestrator({
             '1': createLayerProxy('1'),
             '2': createLayerProxy('2'),
             '3': createLayerProxy('3'),
-            // --- NEW: Direct Crossfade Update ---
             updateCrossfade: (val) => engineRef.current?.setRenderedCrossfade(val),
-            // --- FIX: Expose Engine Instance via Getter ---
-            // This allows the Context to access .setDestructionMode() and .setAudioData()
             get engine() { return engineRef.current; }
         }
     };

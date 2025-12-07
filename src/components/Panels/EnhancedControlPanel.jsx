@@ -6,9 +6,9 @@ import Panel from "./Panel";
 import PLockController from './PLockController';
 import PerformanceSlider from "../UI/PerformanceSlider"; 
 
-import { useProfileSessionState } from "../../hooks/configSelectors";
+// REFACTORED: Use selectors
+import { useProfileSessionState, useSetManagementState } from "../../hooks/configSelectors";
 import { useMIDI } from "../../context/MIDIContext";
-import { useWorkspaceContext } from "../../context/WorkspaceContext";
 import { useVisualEngineContext } from "../../context/VisualEngineContext";
 import { useEngineStore } from "../../store/useEngineStore";
 import { useToast } from "../../context/ToastContext";
@@ -48,6 +48,7 @@ const EnhancedControlPanel = ({
   crossfadeDurationMs,
   onSetCrossfadeDuration,
 }) => {
+  // REFACTORED: Hooks
   const { isProfileOwner } = useProfileSessionState();
   const { addToast } = useToast();
   
@@ -60,7 +61,7 @@ const EnhancedControlPanel = ({
     setDefaultSceneInStagedWorkspace,
     isSaving,
     setActiveSceneName,
-  } = useWorkspaceContext();
+  } = useSetManagementState(); // Uses consolidated selector
 
   const {
     handleSceneSelect: onSceneSelect,

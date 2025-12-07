@@ -5,8 +5,8 @@ import PropTypes from "prop-types";
 import Panel from "./Panel";
 import { EVENT_TYPE_MAP } from "../../config/global-config";
 import { useToast } from "../../context/ToastContext";
-import { useWorkspaceContext } from "../../context/WorkspaceContext";
-import { useUserSession } from "../../context/UserSessionContext";
+// REFACTORED: Import from selectors
+import { useInteractionSettingsState, useProfileSessionState } from "../../hooks/configSelectors";
 
 import "./PanelStyles/Eventspanel.css";
 
@@ -30,20 +30,19 @@ const EventsPanel = ({
   onPreviewEffect,
 }) => {
   const { addToast } = useToast();
-  const { canSaveToHostProfile } = useUserSession();
+  // REFACTORED: Use selectors
+  const { canSaveToHostProfile } = useProfileSessionState();
   const {
-    stagedSetlist, // --- UPDATED: Sourcing from stagedSetlist ---
-    updateGlobalEventReactions,
-    deleteGlobalEventReaction,
-  } = useWorkspaceContext();
+    savedReactions, // Formerly accessed via stagedSetlist
+    updateSavedReaction,
+    deleteSavedReaction,
+  } = useInteractionSettingsState();
 
   const readOnly = !canSaveToHostProfile;
+  const reactions = useMemo(() => savedReactions || {}, [savedReactions]);
   
-  // --- UPDATED: Reading from global reactions ---
-  const reactions = useMemo(() => stagedSetlist?.globalEventReactions || {}, [stagedSetlist]);
-  
-  const onSaveReaction = updateGlobalEventReactions;
-  const onRemoveReaction = deleteGlobalEventReaction;
+  const onSaveReaction = updateSavedReaction;
+  const onRemoveReaction = deleteSavedReaction;
 
   const allEventOptions = useMemo(() => generateEventOptions(), []);
 

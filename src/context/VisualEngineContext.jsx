@@ -1,10 +1,11 @@
 // src/context/VisualEngineContext.jsx
 import React, { createContext, useContext, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { useWorkspaceContext } from './WorkspaceContext';
+import { useProjectStore } from '../store/useProjectStore';
 import { lerp } from '../utils/helpers';
 import { useEngineStore } from '../store/useEngineStore';
 import fallbackConfig from '../config/fallback-config.js';
+import SignalBus from '../utils/SignalBus';
 
 const VisualEngineContext = createContext(null);
 const AUTO_FADE_DURATION_MS = 1000;
@@ -20,10 +21,29 @@ function usePrevious(value) {
 
 export const VisualEngineProvider = ({ children }) => {
     const { 
-        isWorkspaceTransitioning, isFullyLoaded, stagedActiveWorkspace, 
-        fullSceneList, setActiveSceneName, setHasPendingChanges,
-        activeSceneName, isLoading,
-    } = useWorkspaceContext();
+        stagedWorkspace: stagedActiveWorkspace, 
+        activeSceneName, 
+        isLoading,
+        isConfigReady,
+        activeWorkspaceName
+    } = useProjectStore(useShallow(s => ({
+        stagedWorkspace: s.stagedWorkspace,
+        activeSceneName: s.activeSceneName,
+        isLoading: s.isLoading,
+        isConfigReady: s.isConfigReady,
+        activeWorkspaceName: s.activeWorkspaceName
+    })));
+
+    const setActiveSceneName = useProjectStore(s => s.setActiveSceneName);
+    const setHasPendingChanges = (val) => useProjectStore.setState({ hasPendingChanges: val });
+    
+    const isFullyLoaded = !isLoading && !!activeWorkspaceName;
+    const fullSceneList = useMemo(() => 
+        Object.values(stagedActiveWorkspace?.presets || {})
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })), 
+    [stagedActiveWorkspace]);
+    
+    const isWorkspaceTransitioning = false; 
 
     const prevIsFullyLoaded = usePrevious(isFullyLoaded);
     const prevIsWorkspaceTransitioning = usePrevious(isWorkspaceTransitioning);
@@ -36,51 +56,36 @@ export const VisualEngineProvider = ({ children }) => {
     const managerInstancesRef = useRef(null);
     const canvasUpdateFnsRef = useRef({});
     
-    // --- NEW: Access Full Industrial Config ---
     const industrialConfig = useEngineStore(state => state.industrialConfig);
-    
     const engineRef = useRef(null); 
 
     const registerManagerInstancesRef = useCallback((ref) => { managerInstancesRef.current = ref; }, []);
     const registerCanvasUpdateFns = useCallback((fns) => { canvasUpdateFnsRef.current = fns; }, []);
 
-    // --- NEW: SYNC INDUSTRIAL CONFIG ---
     useEffect(() => {
         if (managerInstancesRef.current?.current?.engine) {
-             // Pass the whole config object to the engine
              managerInstancesRef.current.current.engine.setIndustrialConfig(industrialConfig);
         }
     }, [industrialConfig]);
 
-    useEffect(() => {
-        const handleAudioUpdate = (event) => {
-            if (managerInstancesRef.current?.current?.engine) {
-                managerInstancesRef.current.current.engine.setAudioData(event.detail);
-            }
-        };
-
-        window.addEventListener('radar-audio-analysis', handleAudioUpdate);
-        return () => window.removeEventListener('radar-audio-analysis', handleAudioUpdate);
-    }, []);
-
     const pushCrossfaderUpdate = useCallback((value) => {
         renderedValueRef.current = value;
-        if (managerInstancesRef.current?.current?.updateCrossfade) {
-            managerInstancesRef.current.current.updateCrossfade(value);
-        }
-        if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('radar-crossfader-update', { detail: value }));
-        }
+        SignalBus.emit('crossfader:update', value);
     }, []);
 
+    // --- FIX: ROBUST INITIALIZATION ---
     useEffect(() => {
         const initialLoadJustFinished = !prevIsFullyLoaded && isFullyLoaded;
         const transitionJustFinished = prevIsWorkspaceTransitioning && !isWorkspaceTransitioning;
         const sceneNameChanged = activeSceneName !== prevActiveSceneName;
         const sceneListChanged = prevFullSceneList !== fullSceneList;
+        
         const store = useEngineStore.getState();
+        // Check if store is empty despite being loaded (edge case fix)
+        const isStoreEmpty = !store.sideA.config && !store.sideB.config;
 
-        if (initialLoadJustFinished || transitionJustFinished) {
+        if (initialLoadJustFinished || transitionJustFinished || (isFullyLoaded && isStoreEmpty)) {
+            // Case 1: No scenes found -> Fallback
             if (!isLoading && (!fullSceneList || fullSceneList.length === 0)) {
                 const baseScene = { 
                     name: "Fallback", 
@@ -97,10 +102,12 @@ export const VisualEngineProvider = ({ children }) => {
                 return;
             }
 
+            // Case 2: Scenes exist -> Load Default
             if (!isLoading && fullSceneList && fullSceneList.length > 0) {
                 const initialSceneName = stagedActiveWorkspace.defaultPresetName || fullSceneList[0]?.name;
                 let startIndex = fullSceneList.findIndex(p => p.name === initialSceneName);
                 if (startIndex === -1) startIndex = 0;
+                
                 const nextIndex = fullSceneList.length > 1 ? (startIndex + 1) % fullSceneList.length : startIndex;
                 
                 const startSceneConfig = JSON.parse(JSON.stringify(fullSceneList[startIndex]));
@@ -119,6 +126,7 @@ export const VisualEngineProvider = ({ children }) => {
                 }
             }
         } 
+        // Case 3: Scene Switched via UI
         else if ((sceneNameChanged || sceneListChanged) && isFullyLoaded && !store.isAutoFading) {
             if (!activeSceneName || !fullSceneList || fullSceneList.length === 0) return;
             const newActiveSceneData = fullSceneList.find(scene => scene.name === activeSceneName);
@@ -261,7 +269,6 @@ export const VisualEngineProvider = ({ children }) => {
             const manager = managers[String(layerId)];
             if (manager) {
                 const activeDeck = renderedValueRef.current < 0.5 ? 'A' : 'B';
-                
                 if (isMidiUpdate && ['xaxis', 'yaxis', 'angle', 'speed', 'size', 'opacity', 'drift', 'driftSpeed'].includes(key)) {
                   if (activeDeck === 'A') manager.setTargetValue(key, value); else manager.setTargetValueB(key, value);
                 } else {
@@ -288,11 +295,7 @@ export const VisualEngineProvider = ({ children }) => {
             }
             setHasPendingChanges(true);
         } else {
-            if (typeof window !== 'undefined') {
-                window.dispatchEvent(new CustomEvent('radar-param-update', { 
-                    detail: { layerId: String(layerId), param: key, value: value } 
-                }));
-            }
+            SignalBus.emit('param:update', { layerId: String(layerId), param: key, value: value });
         }
     }, [setHasPendingChanges]);
 
@@ -377,7 +380,6 @@ export const useVisualEngineContext = () => {
         targetSceneName: state.targetSceneName,
         effectsConfig: state.effectsConfig,
         transitionMode: state.transitionMode,
-        // --- Added industrial config ---
         industrialConfig: state.industrialConfig
     })));
     
@@ -396,18 +398,14 @@ export const useVisualEngineContext = () => {
         sideA: storeState.sideA,
         sideB: storeState.sideB,
         renderedCrossfaderValue: storeActions.renderedCrossfader || 0.0, 
-        
         uiControlConfig: (storeActions.renderedCrossfader < 0.5) ? storeState.sideA.config : storeState.sideB.config,
-        
         isAutoFading: storeState.isAutoFading,
         targetSceneName: storeState.targetSceneName,
         effectsConfig: storeState.effectsConfig,
         transitionMode: storeState.transitionMode,
         industrialConfig: storeState.industrialConfig,
-        
         handleCrossfaderChange: context.handleCrossfaderChange, 
         handleCrossfaderCommit: storeActions.setCrossfader,
-        
         updateEffectConfig: updateEffectConfigWrapper, 
         toggleTransitionMode: () => storeActions.setTransitionMode(storeState.transitionMode === 'crossfade' ? 'flythrough' : 'crossfade'),
     };

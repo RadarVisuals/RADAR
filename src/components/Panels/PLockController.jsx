@@ -1,31 +1,30 @@
 // src/components/Panels/PLockController.jsx
 import React, { useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
+import SignalBus from '../../utils/SignalBus';
 import './PanelStyles/PLockController.css';
 
 const PLockController = ({
   pLockState = 'idle',
-  // REMOVED: loopProgress prop
   hasLockedParams = false,
   pLockSpeed = 'medium',
   onSetPLockSpeed,
   onTogglePLock,
 }) => {
-  // NEW: Ref to directly manipulate the DOM bar
+  // Ref to directly manipulate the DOM bar
   const progressBarRef = useRef(null);
 
-  // NEW: Listen for the high-frequency progress event
+  // SIGNAL BUS LISTENER for high-frequency progress
   useEffect(() => {
-    const handleProgress = (e) => {
+    const handleProgress = (progressValue) => {
         if (progressBarRef.current) {
             // Apply scale directly to transform
-            progressBarRef.current.style.transform = `scaleX(${e.detail})`;
+            progressBarRef.current.style.transform = `scaleX(${progressValue})`;
         }
     };
     
-    // Subscribe
-    window.addEventListener('plock-progress', handleProgress);
-    return () => window.removeEventListener('plock-progress', handleProgress);
+    const unsubscribe = SignalBus.on('sequencer:progress', handleProgress);
+    return () => unsubscribe();
   }, []);
 
   // Handle static states (reset/full) via effect when React state changes
@@ -80,11 +79,10 @@ const PLockController = ({
         <div className="plock-progress-bar-container">
           {(pLockState === 'playing' || pLockState === 'armed' || pLockState === 'stopping') && (
             <div
-              ref={progressBarRef} // Added REF
+              ref={progressBarRef}
               className="plock-progress-bar"
               style={{
-                // transform is now handled by JS logic above
-                transform: pLockState === 'armed' ? 'scaleX(1)' : undefined, // Initial render safety
+                transform: pLockState === 'armed' ? 'scaleX(1)' : undefined, 
                 backgroundColor: getProgressBarColor(),
                 animation: pLockState === 'armed' ? 'plock-pulse-bar 1.5s infinite' : 'none',
                 transition: 'background-color 0.2s ease',
@@ -99,7 +97,6 @@ const PLockController = ({
 
 PLockController.propTypes = {
   pLockState: PropTypes.oneOf(['idle', 'armed', 'playing', 'stopping']),
-  // loopProgress: PropTypes.number, // Removed
   hasLockedParams: PropTypes.bool,
   pLockSpeed: PropTypes.string,
   onSetPLockSpeed: PropTypes.func,

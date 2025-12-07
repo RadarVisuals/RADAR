@@ -3,14 +3,15 @@ import React, { useState } from "react";
 import PropTypes from "prop-types";
 
 import Panel from "./Panel";
-import { useWorkspaceContext } from "../../context/WorkspaceContext";
-import { useUserSession } from "../../context/UserSessionContext";
+// REFACTORED: Import from selectors instead of Context
+import { useSetManagementState } from "../../hooks/configSelectors";
 
 import "./PanelStyles/SetsPanel.css";
 
 const SetsPanel = ({ onClose }) => {
-  const { canSaveToHostProfile } = useUserSession();
+  // REFACTORED: Destructure consolidated state from the selector hook
   const {
+    canSaveToHostProfile, // From Session
     stagedSetlist,
     activeWorkspaceName,
     loadWorkspace,
@@ -20,8 +21,8 @@ const SetsPanel = ({ onClose }) => {
     setDefaultWorkspaceInSet,
     isLoading,
     isSaving,
-    preloadWorkspace, 
-  } = useWorkspaceContext();
+    preloadWorkspace,
+  } = useSetManagementState();
 
   const [editingName, setEditingName] = useState(null);
   const [newName, setNewName] = useState("");

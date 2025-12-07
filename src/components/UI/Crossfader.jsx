@@ -1,6 +1,7 @@
 // src/components/UI/Crossfader.jsx
 import React, { useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
+import SignalBus from '../../utils/SignalBus';
 import './Crossfader.css';
 
 const Crossfader = ({ value, onInput, onChange, disabled = false }) => {
@@ -9,14 +10,16 @@ const Crossfader = ({ value, onInput, onChange, disabled = false }) => {
 
   // 1. Listen for high-frequency updates from VisualEngineContext (Zero-Render)
   useEffect(() => {
-    const handleUpdate = (e) => {
+    // SIGNAL BUS LISTENER
+    const handleUpdate = (val) => {
       // Only update DOM if user isn't currently dragging the handle
       if (!isDragging.current && inputRef.current) {
-        inputRef.current.value = e.detail;
+        inputRef.current.value = val;
       }
     };
-    window.addEventListener('radar-crossfader-update', handleUpdate);
-    return () => window.removeEventListener('radar-crossfader-update', handleUpdate);
+    
+    const unsubscribe = SignalBus.on('crossfader:update', handleUpdate);
+    return () => unsubscribe();
   }, []);
 
   // 2. Sync with initial/low-frequency React prop updates (e.g. on load)

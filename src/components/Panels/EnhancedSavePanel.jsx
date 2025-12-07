@@ -3,8 +3,7 @@ import React, { useCallback } from "react";
 import PropTypes from "prop-types";
 
 import Panel from "./Panel";
-import { useWorkspaceContext } from "../../context/WorkspaceContext";
-import { useUserSession } from "../../context/UserSessionContext";
+import { useSetManagementState } from "../../hooks/configSelectors";
 
 import "./PanelStyles/EnhancedSavePanel.css";
 
@@ -15,17 +14,18 @@ const formatAddress = (address) => {
 };
 
 const EnhancedSavePanel = ({ onClose }) => {
-  const { hostProfileAddress, isHostProfileOwner, canSaveToHostProfile } = useUserSession();
   const {
+    hostProfileAddress,
+    isHostProfileOwner,
+    canSaveToHostProfile,
     activeWorkspaceName,
     saveChanges,
     duplicateActiveWorkspace,
     isLoading: isWorkspaceLoading,
     isSaving,
     hasPendingChanges,
-  } = useWorkspaceContext();
+  } = useSetManagementState();
   
-  // If the current user is a visitor, display a read-only message and nothing else.
   if (!isHostProfileOwner) {
     return (
       <Panel title="VIEWING MODE" onClose={onClose} className="panel-from-toolbar enhanced-save-panel">
@@ -42,7 +42,6 @@ const EnhancedSavePanel = ({ onClose }) => {
     );
   }
 
-  // The remainder of the component is for the profile owner.
   const canSave = canSaveToHostProfile;
   const isFirstSave = !activeWorkspaceName;
 
@@ -51,29 +50,49 @@ const EnhancedSavePanel = ({ onClose }) => {
     const newName = window.prompt("Enter a name for the duplicated workspace:");
     if (newName && newName.trim()) {
       const result = await duplicateActiveWorkspace(newName.trim());
-      if (result.success) {
-        onClose();
+      // AUDIT FIX: Do not close panel. User must click "Save" to persist the new copy.
+      if (result && result.success) {
+         // Optional: Add toast here via store if not already added
       }
     }
-  }, [canSave, isSaving, duplicateActiveWorkspace, onClose]);
+  }, [canSave, isSaving, duplicateActiveWorkspace]);
 
   const handleSaveChanges = useCallback(async () => {
     if (!canSave || isSaving) return;
+    
     if (isFirstSave) {
       const newName = window.prompt("Enter a name for your first workspace:");
       if (newName && newName.trim()) {
         const result = await duplicateActiveWorkspace(newName.trim());
-        if (result.success) {
-          onClose();
+        // For first save, we might want to keep it open or close it. 
+        // Logic consistency: keep it open to be safe, or close if you prefer.
+        // Let's stick to the audit advice: User needs to confirm persistence.
+        if (result && result.success) {
+           // We do NOT close here either, forcing them to click "Update" 
+           // might be confusing for "First Save".
+           // However, duplicateActiveWorkspace puts us in a "Dirty" state.
+           // To actually SAVE to chain, we need saveChanges.
+           
+           // Actually, for "First Save", the user flow is:
+           // 1. Click "Save Workspace..."
+           // 2. Enter Name
+           // 3. We rename the memory workspace
+           // 4. We immediately trigger the chain save?
+           
+           // Let's trigger the save immediately for the First Save flow:
+           await saveChanges(hostProfileAddress);
+           onClose();
         }
       }
       return;
     }
-    const result = await saveChanges();
-    if (result.success) {
+
+    const result = await saveChanges(hostProfileAddress);
+    
+    if (result && result.success) {
       onClose();
     }
-  }, [canSave, isSaving, saveChanges, onClose, isFirstSave, duplicateActiveWorkspace]);
+  }, [canSave, isSaving, saveChanges, onClose, isFirstSave, duplicateActiveWorkspace, hostProfileAddress]);
 
   const getPanelTitle = () => {
     if (!hostProfileAddress) return "CONNECT PROFILE";

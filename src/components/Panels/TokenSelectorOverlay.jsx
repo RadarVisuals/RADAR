@@ -5,17 +5,16 @@ import { toplayerIcon, middlelayerIcon, bottomlayerIcon } from "../../assets";
 import { demoAssetMap } from "../../assets/DemoLayers/initLayers";
 import { manageOverlayDimmingEffect } from "../../utils/performanceHelpers";
 import { globalAnimationFlags } from "../../utils/globalAnimationFlags";
-import { useWorkspaceContext } from "../../context/WorkspaceContext";
 import { useAssetContext } from "../../context/AssetContext";
 import { useVisualEngineContext } from "../../context/VisualEngineContext";
-import { useUserSession } from "../../context/UserSessionContext";
+// REFACTORED: Import selectors
+import { useProfileSessionState, useSetManagementState } from "../../hooks/configSelectors";
 import TokenGrid from "./TokenGrid";
 import LazyLoadImage from "./LazyLoadImage";
 import { ArrowPathIcon } from "@heroicons/react/24/outline"; 
 import "./PanelStyles/TokenSelectorOverlay.css";
 
 const OPEN_CLOSE_ANIMATION_DURATION = 300;
-// Increased page size to help fill the screen and reduce "infinite scroll" bouncing
 const PAGE_SIZE = 24; 
 
 const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
@@ -34,11 +33,12 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
   const [isLoadingMore, setIsLoadingMore] = useState({});
   const [hasMoreToLoad, setHasMoreToLoad] = useState({});
 
+  // --- FIX: Use useSetManagementState instead of useWorkspaceContext ---
   const {
     stagedSetlist,
     addPalette, removePalette, addTokenToPalette, removeTokenFromPalette,
-    configServiceRef,
-  } = useWorkspaceContext();
+    configService, // Note: configService is available directly here now
+  } = useSetManagementState();
 
   const {
     ownedTokenIdentifiers,
@@ -49,7 +49,7 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
   } = useAssetContext();
 
   const { updateTokenAssignment } = useVisualEngineContext();
-  const { isHostProfileOwner, visitorProfileAddress } = useUserSession();
+  const { isHostProfileOwner, hostProfileAddress } = useProfileSessionState();
 
   const isMountedRef = useRef(false);
   const overlayContentRef = useRef(null);
@@ -63,24 +63,17 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
 
   const userLibrary = useMemo(() => stagedSetlist?.personalCollectionLibrary || [], [stagedSetlist]);
 
-  // --- UPDATED EFFECT: Prevent aggressive re-fetching ---
   useEffect(() => {
     if (isOpen) {
       if (!officialWhitelist || officialWhitelist.length === 0) {
           refreshOfficialWhitelist();
       }
 
-      // Check if data exists. If so, DO NOT FETCH automatically.
       const hasData = Object.keys(ownedTokenIdentifiers).length > 0;
       
       if (!tokenFetchProgress.loading) {
          if (!hasData) {
-             // Pass false to 'force' so caching logic applies
              refreshOwnedTokens(false); 
-         } else {
-             if (import.meta.env.DEV) {
-                 console.log("[TokenSelector] Data exists, skipping auto-fetch to save RPC calls.");
-             }
          }
       }
     }
@@ -95,7 +88,7 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
   const userPalettes = useMemo(() => stagedSetlist?.userPalettes || {}, [stagedSetlist]);
 
   useEffect(() => {
-    if (!isOpen || !userPalettes || !configServiceRef.current) return;
+    if (!isOpen || !userPalettes || !configService) return;
     const allPaletteTokenIds = Object.values(userPalettes).flat();
     if (allPaletteTokenIds.length === 0) return;
 
@@ -105,7 +98,7 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
         if (missingTokenIds.length === 0) return;
 
         try {
-            const newTokens = await configServiceRef.current.getTokensMetadataByIds(missingTokenIds);
+            const newTokens = await configService.getTokensMetadataByIds(missingTokenIds);
             if (newTokens && newTokens.length > 0) {
                 setLoadedTokens(prev => {
                     const newLoadedTokens = { ...prev };
@@ -122,7 +115,7 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
         }
     };
     fetchMissingPaletteTokens();
-  }, [isOpen, userPalettes, configServiceRef, loadedTokens]);
+  }, [isOpen, userPalettes, configService, loadedTokens]);
 
   const combinedCollectionLibrary = useMemo(() => {
     const collectionMap = new Map();
@@ -182,7 +175,7 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
   }, [ownedTokenIdentifiers, loadedTokens]);
 
   const loadMoreTokens = useCallback(async (collectionAddress) => {
-    if (isLoadingMore[collectionAddress] || !hasMoreToLoad[collectionAddress] || !configServiceRef.current) {
+    if (isLoadingMore[collectionAddress] || !hasMoreToLoad[collectionAddress] || !configService) {
         return;
     }
 
@@ -191,7 +184,7 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
     const identifiers = ownedTokenIdentifiers[collectionAddress] || [];
 
     try {
-        const newTokens = await configServiceRef.current.getTokensMetadataForPage(
+        const newTokens = await configService.getTokensMetadataForPage(
             collectionAddress,
             identifiers,
             currentPage,
@@ -207,7 +200,6 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
                 setCollectionPages(prev => ({ ...prev, [collectionAddress]: currentPage + 1 }));
             }
 
-            // Logic fix: We only stop loading if we retrieved FEWER items than requested
             if (newTokens.length < PAGE_SIZE) {
                 setHasMoreToLoad(prev => ({ ...prev, [collectionAddress]: false }));
             }
@@ -219,7 +211,7 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
             setIsLoadingMore(prev => ({ ...prev, [collectionAddress]: false }));
         }
     }
-  }, [isLoadingMore, hasMoreToLoad, collectionPages, ownedTokenIdentifiers, configServiceRef]);
+  }, [isLoadingMore, hasMoreToLoad, collectionPages, ownedTokenIdentifiers, configService]);
 
   const toggleSection = (sectionId) => {
     const isExpanding = !expandedSections[sectionId];
@@ -342,7 +334,7 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
               
               {sortedCollectionLibrary.length > 0 ? (sortedCollectionLibrary.map(collection => (<div key={collection.address} className="collection-group"><button onClick={() => toggleSection(collection.address)} className="collection-header collection-toggle-button">{collection.name} ({(ownedTokenIdentifiers[collection.address]?.length || 0)})<span className={`chevron ${expandedSections[collection.address] ? 'expanded' : ''}`}>›</span></button>{expandedSections[collection.address] && (<TokenGrid scrollContainerRef={tokenDisplayAreaRef} tokens={loadedTokens[collection.address] || []} renderTokenItem={(token) => renderTokenItem(token, { onAddToPalette: handleAddToPaletteClick })} hasMore={hasMoreToLoad[collection.address] || false} onLoadMore={() => loadMoreTokens(collection.address)} isLoading={isLoadingMore[collection.address] || false} />)}</div>))) : 
               <div style={{textAlign: 'center', padding: '20px', color: 'var(--color-text-muted)'}}>
-                  <p>{!visitorProfileAddress ? "Connect a profile to see your tokens." : "No collections found."}</p>
+                  <p>{!hostProfileAddress ? "Connect a profile to see your tokens." : "No collections found."}</p>
                   <p style={{fontSize: '0.8em', marginTop: '5px'}}>If libraries failed to load, click the Refresh icon in the top right.</p>
               </div>
               }

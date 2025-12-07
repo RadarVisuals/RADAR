@@ -1,5 +1,6 @@
 // src/hooks/usePLockSequencer.js
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import SignalBus from '../utils/SignalBus'; // Import SignalBus
 
 const TRANSITION_ANIMATION_DURATION = 1000;
 const lerp = (start, end, t) => start * (1 - t) + end * t;
@@ -12,7 +13,6 @@ const SPEED_DURATIONS = {
 
 export const usePLockSequencer = ({ onValueUpdate, onAnimationEnd }) => {
   const [pLockState, setPLockState] = useState('idle');
-  // REMOVED: const [loopProgress, setLoopProgress] = useState(0); 
   const [pLockSpeed, setPLockSpeed] = useState('medium');
 
   const stateRef = useRef(pLockState);
@@ -37,10 +37,9 @@ export const usePLockSequencer = ({ onValueUpdate, onAnimationEnd }) => {
     }
     setPLockState('idle');
     
-    // Dispatch 0 to reset UI immediately (Zero-Render logic)
-    if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('plock-progress', { detail: 0 }));
-    }
+    // --- SIGNAL BUS UPDATE ---
+    // Reset UI Bar to 0
+    SignalBus.emit('sequencer:progress', 0);
 
     animationDataRef.current = {};
     initialStateSnapshotRef.current = null;
@@ -141,7 +140,6 @@ export const usePLockSequencer = ({ onValueUpdate, onAnimationEnd }) => {
     }
   }, [armSequencer, initiatePlayback, initiateStopAnimation]);
 
-  // --- NEW: Exposed Stop Function ---
   const stop = useCallback(() => {
     stopAndClear(null);
   }, [stopAndClear]);
@@ -185,8 +183,8 @@ export const usePLockSequencer = ({ onValueUpdate, onAnimationEnd }) => {
         const loopElapsedTime = (timestamp - startTime) % duration;
         const currentProgress = loopElapsedTime / duration;
         
-        // Zero-Render Update
-        window.dispatchEvent(new CustomEvent('plock-progress', { detail: currentProgress }));
+        // --- SIGNAL BUS UPDATE ---
+        SignalBus.emit('sequencer:progress', currentProgress);
         
         const performanceDuration = duration / 2;
         const isFirstHalf = loopElapsedTime < performanceDuration;
@@ -229,7 +227,7 @@ export const usePLockSequencer = ({ onValueUpdate, onAnimationEnd }) => {
 
   return useMemo(() => ({
     pLockState, 
-    hasLockedParams, toggle, stop, // Expose stop here
+    hasLockedParams, toggle, stop, 
     animationDataRef, pLockSpeed, setPLockSpeed,
   }), [pLockState, hasLockedParams, toggle, stop, pLockSpeed]);
 };

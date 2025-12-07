@@ -1,20 +1,18 @@
 // src/components/UI/PerformanceSlider.jsx
 import React, { useEffect, useRef, useCallback } from 'react';
 import PropTypes from 'prop-types';
+import SignalBus from '../../utils/SignalBus';
 
 /**
  * PerformanceSlider (Zero-Render Edition)
  * 
- * This component bypasses React state updates entirely during user interaction.
- * It treats the input as "uncontrolled" during the drag operation, relying
- * on the browser's native UI thread for 60fps handle movement.
- * 
- * It also listens to a custom window event to update itself during external 
- * high-frequency animations (like P-Lock sequencer) without re-rendering.
+ * Bypasses React state updates entirely during user interaction.
+ * Treats input as "uncontrolled" during drag.
+ * Listens to SignalBus for high-frequency external updates (P-Lock).
  */
 const PerformanceSlider = ({ 
   name,
-  layerId, // NEW: Needed for event filtering
+  layerId, 
   value, 
   min, 
   max, 
@@ -35,10 +33,10 @@ const PerformanceSlider = ({
     }
   }, [value]);
 
-  // Sync with high-frequency Event updates (P-Lock, MIDI)
+  // Sync with high-frequency Event updates (P-Lock, MIDI) via SIGNAL BUS
   useEffect(() => {
-    const handleParamUpdate = (e) => {
-      const { layerId: targetLayer, param, value: newValue } = e.detail;
+    const handleParamUpdate = (data) => {
+      const { layerId: targetLayer, param, value: newValue } = data;
       // Update only if this event targets this specific slider instance
       if (targetLayer === String(layerId) && param === name) {
          if (!isDragging.current && inputRef.current) {
@@ -47,8 +45,8 @@ const PerformanceSlider = ({
       }
     };
     
-    window.addEventListener('radar-param-update', handleParamUpdate);
-    return () => window.removeEventListener('radar-param-update', handleParamUpdate);
+    const unsubscribe = SignalBus.on('param:update', handleParamUpdate);
+    return () => unsubscribe();
   }, [layerId, name]);
 
   const handleInput = useCallback((e) => {
@@ -92,7 +90,7 @@ const PerformanceSlider = ({
 
 PerformanceSlider.propTypes = {
   name: PropTypes.string.isRequired,
-  layerId: PropTypes.string.isRequired, // Ensure this is passed
+  layerId: PropTypes.string.isRequired, 
   value: PropTypes.number,
   min: PropTypes.number.isRequired,
   max: PropTypes.number.isRequired,

@@ -2,7 +2,8 @@
 import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import './WorkspaceSelectorDots.css';
-import { useWorkspaceContext } from '../../context/WorkspaceContext';
+// REFACTORED: Use selector
+import { useSetManagementState } from '../../hooks/configSelectors';
 
 const WorkspaceSelectorDots = ({
   workspaces = [],
@@ -10,9 +11,9 @@ const WorkspaceSelectorDots = ({
   onSelectWorkspace,
   isLoading,
 }) => {
-  const { preloadWorkspace } = useWorkspaceContext();
+  // REFACTORED: Get preload function from new hook
+  const { preloadWorkspace } = useSetManagementState();
 
-  // --- FIX: Call all hooks unconditionally at the top level ---
   const sortedWorkspaces = useMemo(() => workspaces, [workspaces]);
 
   if (workspaces.length <= 1) {

@@ -6,10 +6,10 @@ import { useCanvasContainer } from './useCanvasContainer';
 import { useAudioVisualizer } from './useAudioVisualizer';
 import { useAnimationLifecycleManager } from './useAnimationLifecycleManager';
 import { usePLockSequencer } from './usePLockSequencer';
-import { useWorkspaceContext } from '../context/WorkspaceContext';
 import { useVisualEngineContext } from '../context/VisualEngineContext';
 import { useUpProvider } from '../context/UpProvider';
-import { useUserSession } from '../context/UserSessionContext';
+import { useProjectStore } from '../store/useProjectStore'; // New Import
+import { useWalletStore } from '../store/useWalletStore'; // New Import
 
 export const useCoreApplicationStateAndLifecycle = (props) => {
   const {
@@ -17,13 +17,12 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     animatingPanel,
   } = props;
 
-  const {
-    isInitiallyResolved,
-    loadError,
-    activeWorkspaceName,
-    isFullyLoaded,
-    isLoading,
-  } = useWorkspaceContext();
+  // --- REFACTOR: Use Store ---
+  const isInitiallyResolved = useProjectStore(s => !!s.setlist);
+  const loadError = useProjectStore(s => s.error);
+  const isFullyLoaded = useProjectStore(s => !s.isLoading && !!s.activeWorkspaceName);
+  const isLoading = useProjectStore(s => s.isLoading);
+  // --- END REFACTOR ---
 
   const {
     sideA,
@@ -32,11 +31,13 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     uiControlConfig,
     updateLayerConfig,
     transitionMode, 
-    // isAutoFading, // Removed as unused
   } = useVisualEngineContext();
 
   const { upInitializationError, upFetchStateError } = useUpProvider();
-  const { hostProfileAddress: currentProfileAddress } = useUserSession();
+  
+  // --- REFACTOR: Use Store ---
+  const currentProfileAddress = useWalletStore(s => s.hostProfileAddress);
+  // --- END REFACTOR ---
 
   const isMountedRef = useRef(false);
   const internalResetLifecycleRef = useRef(null);
@@ -62,7 +63,6 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
 
   const sequencer = usePLockSequencer({
     onValueUpdate: (layerId, paramName, value) => {
-      // --- PERF FIX: Pass 'true' as 5th arg to skip React Store updates during animation loop ---
       updateLayerConfig(String(layerId), paramName, value, false, true); 
       
       if (orchestrator.isEngineReady && orchestrator.applyPlaybackValue) {
@@ -115,9 +115,6 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     restartCanvasAnimations: orchestrator.restartCanvasAnimations,
     isFullyLoaded: isReadyForLifecycle,
   });
-
-  // --- REMOVED: Auto-stop sequencer logic ---
-  // The useEffect that forced sequencer.stop() on transitions has been deleted.
 
   useEffect(() => {
     internalResetLifecycleRef.current = renderLifecycleData.resetLifecycle;

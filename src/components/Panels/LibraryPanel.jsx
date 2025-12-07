@@ -2,14 +2,15 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import PropTypes from "prop-types";
 import Panel from "./Panel";
-import { useUserSession } from "../../context/UserSessionContext";
-import { useWorkspaceContext } from "../../context/WorkspaceContext";
 import { useAssetContext } from "../../context/AssetContext";
 import { useToast } from "../../context/ToastContext";
-import { isAddress, stringToHex } from "viem";
+import { isAddress, stringToHex, keccak256, stringToBytes } from "viem";
 import { uploadJsonToPinata } from "../../services/PinataService";
 import { RADAR_OFFICIAL_ADMIN_ADDRESS } from "../../config/global-config";
-import { keccak256, stringToBytes } from "viem";
+
+// REFACTORED: Use selectors
+import { useSetManagementState, useProfileSessionState } from "../../hooks/configSelectors";
+
 import "./PanelStyles/LibraryPanel.css";
 
 const OFFICIAL_WHITELIST_KEY = keccak256(stringToBytes("RADAR.OfficialWhitelist"));
@@ -70,13 +71,15 @@ CollectionCard.propTypes = {
 };
 
 const LibraryPanel = ({ onClose }) => {
-  const { isRadarProjectAdmin, isHostProfileOwner } = useUserSession();
+  // REFACTORED: Use selectors
+  const { isRadarProjectAdmin, isHostProfileOwner } = useProfileSessionState();
   const {
     stagedSetlist,
     addCollectionToPersonalLibrary,
     removeCollectionFromPersonalLibrary,
-    configServiceRef,
-  } = useWorkspaceContext();
+    configService, // REFACTORED: Access service directly
+  } = useSetManagementState();
+  
   const { officialWhitelist, refreshOfficialWhitelist } = useAssetContext();
   const { addToast } = useToast();
   
@@ -176,7 +179,7 @@ const LibraryPanel = ({ onClose }) => {
     setIsSavingAdmin(true);
     addToast("Saving official whitelist...", "info");
     try {
-        const service = configServiceRef.current;
+        const service = configService; // REFACTORED: Use direct instance
         if (!service || !service.checkReadyForWrite()) throw new Error("Configuration Service is not ready for writing.");
         const newCid = await uploadJsonToPinata(stagedAdminWhitelist, 'RADAR_OfficialWhitelist');
         const newIpfsUri = `ipfs://${newCid}`;

@@ -20,12 +20,11 @@ import LibraryPanel from '../Panels/LibraryPanel';
 import EffectsPanel from '../Panels/EffectsPanel';
 import Crossfader from './Crossfader';
 import WorkspaceSelectorDots from './WorkspaceSelectorDots';
-import IndustrialPanel from '../Panels/IndustrialPanel'; // --- NEW IMPORT ---
+import IndustrialPanel from '../Panels/IndustrialPanel';
 
-import { useWorkspaceContext } from '../../context/WorkspaceContext';
+import { useSetManagementState, useProfileSessionState } from '../../hooks/configSelectors';
 import { useVisualEngineContext } from '../../context/VisualEngineContext';
 import { useNotificationContext } from '../../context/NotificationContext';
-import { useUserSession } from '../../context/UserSessionContext';
 
 import { useToast } from '../../context/ToastContext';
 import { ForwardIcon as SequencerIcon } from '@heroicons/react/24/outline';
@@ -95,7 +94,6 @@ const ActivePanelRenderer = (props) => {
             return ( <PanelWrapper key="whitelist-panel" className={panelWrapperClassName}><LibraryPanel onClose={closePanel} /></PanelWrapper> );
         case "fx":
             return ( <PanelWrapper key="fx-panel" className={panelWrapperClassName}><EffectsPanel onClose={closePanel} /></PanelWrapper> );
-        // --- NEW: INDUSTRIAL PANEL ---
         case "industrial":
             return ( <PanelWrapper key="industrial-panel" className={panelWrapperClassName}><IndustrialPanel onClose={closePanel} /></PanelWrapper> );
         case "tokens":
@@ -136,12 +134,26 @@ function UIOverlay({
   onSetCrossfadeDuration,
 }) {
   const { addToast } = useToast();
-  const { stagedSetlist, loadWorkspace, activeWorkspaceName: currentWorkspaceName, isLoading: isConfigLoading, activeSceneName, fullSceneList: savedSceneList } = useWorkspaceContext();
+  
+  const { 
+    stagedSetlist, 
+    loadWorkspace, 
+    activeWorkspaceName: currentWorkspaceName, 
+    isLoading: isConfigLoading, 
+    activeSceneName, 
+    fullSceneList: savedSceneList 
+  } = useSetManagementState();
   
   const { renderedCrossfaderValue, isAutoFading, handleSceneSelect, handleCrossfaderChange, handleCrossfaderCommit, transitionMode, toggleTransitionMode } = useVisualEngineContext();
   
   const { unreadCount } = useNotificationContext();
-  const { isRadarProjectAdmin, hostProfileAddress: currentProfileAddress, isHostProfileOwner } = useUserSession();
+  
+  const { 
+    isRadarProjectAdmin, 
+    hostProfileAddress: currentProfileAddress, 
+    isHostProfileOwner 
+  } = useProfileSessionState();
+
   const { isUiVisible, activePanel, toggleSidePanel, toggleInfoOverlay, toggleUiVisibility } = uiState;
   const { isAudioActive } = audioState;
   
@@ -190,11 +202,15 @@ function UIOverlay({
     return () => { if (sequencerTimeoutRef.current) clearTimeout(sequencerTimeoutRef.current); };
   }, [isSequencerActive, isAutoFading, sequencerIntervalMs, runNextSequenceStep]);
 
+  // --- FIX: Moved side effects outside the state setter ---
   const handleToggleSequencer = () => {
     if (isConfigLoading || !currentProfileAddress) return;
-    setIsSequencerActive(prev => {
-      const isActivating = !prev;
-      if (isActivating) {
+    
+    // Calculate new state first
+    const willActivate = !isSequencerActive;
+    setIsSequencerActive(willActivate);
+
+    if (willActivate) {
         addToast(`Sequencer started.`, 'info', 3000);
         const currentList = savedSceneList;
         if (currentList && currentList.length > 0) {
@@ -203,12 +219,10 @@ function UIOverlay({
         } else {
           nextSceneIndexRef.current = 0;
         }
-      } else {
+    } else {
         addToast('Sequencer stopped.', 'info', 2000);
         if (sequencerTimeoutRef.current) clearTimeout(sequencerTimeoutRef.current);
-      }
-      return isActivating;
-    });
+    }
   };
 
   const shouldShowUI = useMemo(() => isReady, [isReady]);

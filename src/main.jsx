@@ -2,9 +2,6 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import { UpProvider } from "./context/UpProvider.jsx";
-import { UserSessionProvider } from "./context/UserSessionContext.jsx";
-import { WorkspaceProvider } from "./context/WorkspaceContext.jsx";
-import { SceneProvider } from "./context/SceneContext.jsx";
 import { AssetProvider } from "./context/AssetContext.jsx";
 import { VisualEngineProvider } from "./context/VisualEngineContext.jsx";
 import { MIDIProvider } from "./context/MIDIContext.jsx";
@@ -27,23 +24,21 @@ if (!inIframe) {
   initializeHostUPConnector();
 }
 
+// Notice: We removed UserSessionProvider, WorkspaceProvider, SceneProvider.
+// Their state is now managed globally by Zustand stores.
+// AssetProvider, MIDIProvider, VisualEngineProvider remain as they hold local refs/logic
+// that are still being refactored or are tied to the render tree.
+
 const AppTree = (
   <ErrorBoundary>
     <UpProvider>
-      <UserSessionProvider>
-        {/* SWAPPED: WorkspaceProvider must now wrap SceneProvider */}
-        <WorkspaceProvider>
-          <SceneProvider>
-            <AssetProvider>
-              <MIDIProvider>
-                <VisualEngineProvider>
-                  <App />
-                </VisualEngineProvider>
-              </MIDIProvider>
-            </AssetProvider>
-          </SceneProvider>
-        </WorkspaceProvider>
-      </UserSessionProvider>
+      <AssetProvider>
+        <MIDIProvider>
+          <VisualEngineProvider>
+            <App />
+          </VisualEngineProvider>
+        </MIDIProvider>
+      </AssetProvider>
     </UpProvider>
   </ErrorBoundary>
 );

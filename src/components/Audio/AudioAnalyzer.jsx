@@ -2,6 +2,7 @@
 import React, { useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { useEngineStore } from "../../store/useEngineStore";
+import SignalBus from "../../utils/SignalBus";
 
 const DEFAULT_LAYER_VALUES = { size: 1.0 };
 const FFT_SIZE = 2048;
@@ -107,14 +108,11 @@ const AudioAnalyzer = ({
     // 1. Apply logic to Visuals
     applyAudioToLayers(newFrequencyBands, averageLevel);
 
-    // 2. PERFORMANCE FIX: Dispatch event for UI instead of updating Store
-    // This prevents React from re-rendering the whole tree 60 times a second
-    window.dispatchEvent(new CustomEvent('radar-audio-analysis', { 
-        detail: { 
-            level: averageLevel, 
-            frequencyBands: newFrequencyBands 
-        } 
-    }));
+    // 2. SIGNAL BUS UPDATE (Replaces window.dispatchEvent)
+    SignalBus.emit('audio:analysis', { 
+        level: averageLevel, 
+        frequencyBands: newFrequencyBands 
+    });
 
   }, [applyAudioToLayers]);
 

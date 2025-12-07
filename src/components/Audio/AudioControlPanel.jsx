@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import PropTypes from "prop-types";
 import { useEngineStore } from "../../store/useEngineStore"; 
+import SignalBus from "../../utils/SignalBus";
 
 import Panel from "../Panels/Panel";
 import "./AudioStyles/AudioControlPanel.css";
@@ -19,9 +20,8 @@ const AudioControlPanel = React.memo(({
 }) => {
   const [audioDevices, setAudioDevices] = useState([]);
   
-  // Get destruction state
-  const isDestructionMode = useEngineStore((state) => state.isDestructionMode);
-  const setDestructionMode = useEngineStore((state) => state.setDestructionMode);
+  const isDestructionMode = useEngineStore((state) => state.industrialConfig.enabled);
+  const setIndustrialEnabled = useEngineStore((state) => state.setIndustrialEnabled);
   
   const levelRef = useRef(null);
   const bassRef = useRef(null);
@@ -51,8 +51,9 @@ const AudioControlPanel = React.memo(({
   useEffect(() => {
     if (!isAudioActive) return;
 
-    const handleAudioUpdate = (event) => {
-        const { level, frequencyBands } = event.detail;
+    // SIGNAL BUS LISTENER
+    const handleAudioUpdate = (data) => {
+        const { level, frequencyBands } = data;
         
         if (levelRef.current) {
             const displayLevel = Math.min(100, level * DISPLAY_LEVEL_AMPLIFICATION * 100);
@@ -70,10 +71,8 @@ const AudioControlPanel = React.memo(({
         }
     };
 
-    window.addEventListener('radar-audio-analysis', handleAudioUpdate);
-    return () => {
-        window.removeEventListener('radar-audio-analysis', handleAudioUpdate);
-    };
+    const unsubscribe = SignalBus.on('audio:analysis', handleAudioUpdate);
+    return () => unsubscribe();
   }, [isAudioActive]);
 
   const toggleAnalyzer = useCallback(() => {
@@ -176,7 +175,6 @@ const AudioControlPanel = React.memo(({
                </button>
             </div>
 
-            {/* --- NEW: INDUSTRIAL DESTRUCTION MODE SECTION --- */}
             <div className="section-box" style={{ borderColor: 'var(--color-error)', background: 'rgba(255, 0, 0, 0.05)' }}>
                 <h4 className="config-section-title" style={{ color: 'var(--color-error)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{fontSize: '1.2em'}}>⚠️</span> INDUSTRIAL MODE
@@ -190,7 +188,7 @@ const AudioControlPanel = React.memo(({
                             <input 
                                 type="checkbox" 
                                 checked={isDestructionMode} 
-                                onChange={(e) => setDestructionMode(e.target.checked)} 
+                                onChange={(e) => setIndustrialEnabled(e.target.checked)} 
                             />
                             <span className="toggle-slider" style={{ 
                                 backgroundColor: isDestructionMode ? 'var(--color-error-a30)' : '',
@@ -203,7 +201,6 @@ const AudioControlPanel = React.memo(({
                     </div>
                 </div>
             </div>
-            {/* --- END NEW SECTION --- */}
 
             <div className="audio-settings-section section-box">
               <h4 className="config-section-title">Audio Reactivity Settings</h4>
@@ -275,9 +272,7 @@ AudioControlPanel.defaultProps = {
     trebleIntensity: 1.0,
     smoothingFactor: DEFAULT_SMOOTHING,
   },
-  setAudioSettings: () => {
-    if (import.meta.env.DEV) console.warn("setAudioSettings called on default AudioControlPanel prop");
-  },
+  setAudioSettings: () => {},
 };
 
 export default AudioControlPanel;

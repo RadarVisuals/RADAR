@@ -1,14 +1,14 @@
-// src/App.jsx
 import React, { useEffect, useState, useCallback } from "react";
 import MainView from "./components/Main/Mainview";
 import StartVeil from "./components/UI/StartVeil";
-import { useWorkspaceContext } from "./context/WorkspaceContext"; // Import the hook
+import { useProjectLifecycle } from "./hooks/useProjectLifecycle"; // Use new hook
 
 function App() {
   const [hasUserInitiated, setHasUserInitiated] = useState(false);
   
-  // Get the context function to manually trigger the load
-  const { startLoadingProcess } = useWorkspaceContext();
+  // This hook handles the side effects of loading data when profiles connect.
+  // It replaces the logic previously hidden inside WorkspaceContext.
+  useProjectLifecycle();
 
   useEffect(() => {
     const staticLoader = document.querySelector('.static-loader');
@@ -19,11 +19,7 @@ function App() {
 
   const handleStart = useCallback(() => {
     setHasUserInitiated(true);
-    // When the user clicks "Enter", we explicitly tell the AppProvider to begin loading.
-    if (startLoadingProcess) {
-      startLoadingProcess();
-    }
-  }, [startLoadingProcess]);
+  }, []);
 
   return (
     <div className="app">

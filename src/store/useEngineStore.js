@@ -9,22 +9,14 @@ const DEFAULT_AUDIO_SETTINGS = {
   smoothingFactor: 0.6,
 };
 
-// --- UPDATED: AGGRESSIVE DEFAULTS ---
 const DEFAULT_INDUSTRIAL_MAPPING = {
-    // VISUAL DESTRUCTION
     rgbStrength: { source: 'bass', amount: 1.2, enabled: true },
     zoomStrength: { source: 'bass', amount: 0.7, enabled: true },
     glitchIntensity: { source: 'treble', amount: 1.0, enabled: true },
-    
-    // CRT COMPONENTS
     crtNoise: { source: 'mid', amount: 0.5, enabled: true },
-    crtGeometry: { source: 'bass', amount: 0.0, enabled: true }, // Default 0.0 amount = CLEAN
-    
-    // "VIDEO NASTY" EFFECTS
+    crtGeometry: { source: 'bass', amount: 0.0, enabled: true },
     binaryThreshold: { source: 'level', amount: 0.0, enabled: false }, 
     invertStrobe: { source: 'treble', amount: 0.8, enabled: true },
-    
-    // SCENE SHREDDER
     crossfaderShred: { source: 'bass', amount: 0.0, enabled: false },
 };
 
@@ -43,12 +35,22 @@ export const useEngineStore = create(
     industrialConfig: {
         enabled: false,
         chaos: 0.0,
-        masterDrive: 1.0, // Master Wet/Dry control
+        masterDrive: 1.0,
         mappings: DEFAULT_INDUSTRIAL_MAPPING
     },
 
-    // Global Effects (Legacy/Standard)
+    // Global Effects
     effectsConfig: {
+        // --- NEW: FEEDBACK CONFIG ---
+        feedback: { 
+            enabled: false, 
+            amount: 0.9,    // Decay (Opacity of previous frame)
+            scale: 1.02,    // Zoom speed (Creates the tunnel)
+            rotation: 0.0,  // Spin speed (Creates the spiral)
+            xOffset: 0,     // Drift X
+            yOffset: 0      // Drift Y
+        },
+        // ---------------------------
         bloom: { enabled: false, intensity: 1.0, blur: 8, threshold: 0.5 },
         rgb: { enabled: false, amount: 2 },
         pixelate: { enabled: false, size: 10 },
@@ -124,7 +126,7 @@ export const useEngineStore = create(
     
     updateAnalyzerData: (data) => set({ analyzerData: data }),
 
-    // MIDI Slice (unchanged)
+    // MIDI Slice
     midiAccess: null,
     midiInputs: [],
     isConnected: false,
