@@ -7,7 +7,7 @@ import { useMIDI } from '../context/MIDIContext';
 // REFACTORED: Import selector instead of Context
 import { useProfileSessionState, useInteractionSettingsState } from './configSelectors';
 import { useVisualEngineContext } from '../context/VisualEngineContext';
-import { useNotificationContext } from '../context/NotificationContext';
+import { useNotificationContext } from './useNotificationContext'; // UPDATED IMPORT
 import { sliderParams } from '../config/sliderParams';
 import { scaleNormalizedValue } from "../utils/helpers";
 

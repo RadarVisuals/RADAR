@@ -14,7 +14,7 @@ import {
   setsIcon,
   fxIcon,
 } from "../../assets";
-import { useNotificationContext } from "../../context/NotificationContext";
+import { useNotificationContext } from "../../hooks/useNotificationContext"; // UPDATED IMPORT
 
 const VerticalToolbar = ({
   activePanel,
@@ -77,7 +77,6 @@ const VerticalToolbar = ({
         <img src={wavezIcon} alt="Audio" className="icon-image" />
       </button>
 
-      {/* --- NEW INDUSTRIAL BUTTON --- */}
       <button 
         className={`vertical-toolbar-icon ${activePanel === "industrial" ? "active" : ""}`} 
         onClick={() => handleIconClick("industrial")} 

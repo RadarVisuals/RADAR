@@ -1,5 +1,5 @@
 // src/hooks/useAsyncErrorHandler.js
-import { useToast } from '../context/ToastContext';
+import { useToast } from './useToast'; // UPDATED IMPORT
 import { useCallback } from 'react';
 
 export const useAsyncErrorHandler = () => {

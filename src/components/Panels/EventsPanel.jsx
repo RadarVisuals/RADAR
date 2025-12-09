@@ -4,7 +4,7 @@ import PropTypes from "prop-types";
 
 import Panel from "./Panel";
 import { EVENT_TYPE_MAP } from "../../config/global-config";
-import { useToast } from "../../context/ToastContext";
+import { useToast } from "../../hooks/useToast"; // UPDATED IMPORT
 // REFACTORED: Import from selectors
 import { useInteractionSettingsState, useProfileSessionState } from "../../hooks/configSelectors";
 

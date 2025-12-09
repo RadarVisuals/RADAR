@@ -5,7 +5,7 @@ import { toplayerIcon, middlelayerIcon, bottomlayerIcon } from "../../assets";
 import { demoAssetMap } from "../../assets/DemoLayers/initLayers";
 import { manageOverlayDimmingEffect } from "../../utils/performanceHelpers";
 import { globalAnimationFlags } from "../../utils/globalAnimationFlags";
-import { useAssetContext } from "../../context/AssetContext";
+import { useAssetContext } from "../../hooks/useAssetContext"; // UPDATED IMPORT
 import { useVisualEngineContext } from "../../context/VisualEngineContext";
 // REFACTORED: Import selectors
 import { useProfileSessionState, useSetManagementState } from "../../hooks/configSelectors";
@@ -33,11 +33,10 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
   const [isLoadingMore, setIsLoadingMore] = useState({});
   const [hasMoreToLoad, setHasMoreToLoad] = useState({});
 
-  // --- FIX: Use useSetManagementState instead of useWorkspaceContext ---
   const {
     stagedSetlist,
     addPalette, removePalette, addTokenToPalette, removeTokenFromPalette,
-    configService, // Note: configService is available directly here now
+    configService, 
   } = useSetManagementState();
 
   const {

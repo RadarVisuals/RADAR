@@ -1,10 +1,11 @@
-// src/store/useProjectStore.js
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import ConfigurationService from '../services/ConfigurationService';
+import ConfigurationService, { hexToUtf8Safe } from '../services/ConfigurationService'; // Import hexToUtf8Safe
 import { uploadJsonToPinata } from '../services/PinataService';
 import { resolveImageUrl, preloadImages } from '../utils/imageDecoder';
 import fallbackConfig from '../config/fallback-config';
+import { RADAR_OFFICIAL_ADMIN_ADDRESS, IPFS_GATEWAY } from "../config/global-config";
+import { keccak256, stringToBytes } from "viem";
 
 // Initial Empty States
 const EMPTY_SETLIST = {
@@ -20,6 +21,9 @@ const EMPTY_WORKSPACE = {
   presets: {},
   defaultPresetName: null
 };
+
+const OFFICIAL_WHITELIST_KEY = keccak256(stringToBytes("RADAR.OfficialWhitelist"));
+const TOKEN_CACHE_DURATION_MS = 5 * 60 * 1000;
 
 export const useProjectStore = create(devtools((set, get) => ({
   // =========================================
@@ -42,16 +46,20 @@ export const useProjectStore = create(devtools((set, get) => ({
   error: null,      
   saveError: null,  
   
-  // Data
+  // Data - Configuration
   setlist: EMPTY_SETLIST, 
   stagedSetlist: EMPTY_SETLIST, 
-  
   activeWorkspaceName: null,
   stagedWorkspace: EMPTY_WORKSPACE, 
-  
   activeSceneName: null, 
-  
   workspaceCache: new Map(),
+
+  // Data - Assets (Moved from AssetContext)
+  officialWhitelist: [],
+  ownedTokenIdentifiers: {},
+  isFetchingTokens: false,
+  tokenFetchProgress: { loaded: 0, total: 0, loading: false },
+  lastTokenFetchTimestamp: 0,
 
   // =========================================
   // 2. INITIALIZATION ACTIONS
@@ -61,6 +69,11 @@ export const useProjectStore = create(devtools((set, get) => ({
     const service = new ConfigurationService(provider, walletClient, publicClient);
     const isReady = service.checkReadyForRead();
     set({ configService: service, isConfigReady: isReady });
+    
+    // Auto-fetch whitelist when service is ready
+    if(isReady) {
+        get().refreshOfficialWhitelist();
+    }
   },
 
   resetProject: () => {
@@ -72,12 +85,131 @@ export const useProjectStore = create(devtools((set, get) => ({
       activeSceneName: null,
       hasPendingChanges: false,
       error: null,
-      saveError: null
+      saveError: null,
+      // Reset Asset State
+      ownedTokenIdentifiers: {},
+      lastTokenFetchTimestamp: 0,
+      tokenFetchProgress: { loaded: 0, total: 0, loading: false }
     });
   },
 
   // =========================================
-  // 3. ASYNC LOADING ACTIONS
+  // 3. ASSET ACTIONS (NEW)
+  // =========================================
+
+  refreshOfficialWhitelist: async () => {
+    const { configService } = get();
+    if (!configService || !configService.checkReadyForRead()) return;
+
+    try {
+        const pointerHex = await configService.loadDataFromKey(RADAR_OFFICIAL_ADMIN_ADDRESS, OFFICIAL_WHITELIST_KEY);
+        if (!pointerHex || pointerHex === '0x') { set({ officialWhitelist: [] }); return; }
+        
+        const ipfsUri = hexToUtf8Safe(pointerHex);
+        if (!ipfsUri || !ipfsUri.startsWith('ipfs://')) { set({ officialWhitelist: [] }); return; }
+        
+        const cid = ipfsUri.substring(7);
+        const response = await fetch(`${IPFS_GATEWAY}${cid}`);
+        
+        if (!response.ok) throw new Error(`Failed to fetch whitelist from IPFS: ${response.statusText}`);
+        
+        const list = await response.json();
+        set({ officialWhitelist: Array.isArray(list) ? list : [] });
+    } catch (error) {
+        console.error("Error fetching official collection whitelist:", error);
+        set({ officialWhitelist: [] });
+    }
+  },
+
+  refreshOwnedTokens: async (hostProfileAddress, force = false, isSilent = false) => {
+    const state = get();
+    const { configService, officialWhitelist, stagedSetlist, lastTokenFetchTimestamp, isFetchingTokens } = state;
+    
+    if (!configService || !configService.checkReadyForRead()) return;
+    if (isFetchingTokens) return; // Prevent duplicate calls
+
+    const userLibrary = stagedSetlist?.personalCollectionLibrary || [];
+    
+    // Combine collections
+    const combinedCollectionsMap = new Map();
+    officialWhitelist.forEach(c => {
+        if (c && c.address) combinedCollectionsMap.set(c.address.toLowerCase(), { ...c, _isOfficial: true });
+    });
+    userLibrary.forEach(c => {
+        if (c && c.address && !combinedCollectionsMap.has(c.address.toLowerCase())) {
+            combinedCollectionsMap.set(c.address.toLowerCase(), { ...c, _isOfficial: false });
+        }
+    });
+    const allCollections = Array.from(combinedCollectionsMap.values());
+
+    // Cache check
+    // Note: We don't have prevCollectionCount ref here easily, so we rely on timestamp and force flag
+    // We could store prevCollectionCount in state if strictly needed, but timestamp is usually enough
+    if (!force && lastTokenFetchTimestamp > 0 && (Date.now() - lastTokenFetchTimestamp < TOKEN_CACHE_DURATION_MS)) {
+        return;
+    }
+
+    if (!hostProfileAddress || allCollections.length === 0) {
+      set({ ownedTokenIdentifiers: {} });
+      return;
+    }
+
+    set({ 
+        isFetchingTokens: true, 
+        tokenFetchProgress: { loaded: 0, total: allCollections.length, loading: true } 
+    });
+
+    try {
+      const isAdminShowcase = hostProfileAddress?.toLowerCase() === RADAR_OFFICIAL_ADMIN_ADDRESS.toLowerCase();
+      let newIdentifierMap = {};
+
+      if (isAdminShowcase) {
+        // Admin showcase logic (load everything)
+        for (const collection of allCollections) {
+            const standard = await configService.detectCollectionStandard(collection.address);
+            let identifiers = [];
+            
+            if (standard === 'LSP8') {
+                if (collection._isOfficial) {
+                    identifiers = await configService.getAllLSP8TokenIdsForCollection(collection.address);
+                    if (identifiers.length === 0) {
+                        identifiers = await configService.getOwnedLSP8TokenIdsForCollection(hostProfileAddress, collection.address);
+                    }
+                } else {
+                    identifiers = await configService.getOwnedLSP8TokenIdsForCollection(hostProfileAddress, collection.address);
+                }
+            } else if (standard === 'LSP7') {
+                const balance = await configService.getLSP7Balance(hostProfileAddress, collection.address);
+                if (balance > 0) identifiers.push('LSP7_TOKEN');
+            }
+            
+            if (identifiers.length > 0) newIdentifierMap[collection.address] = identifiers;
+            
+            // Update progress
+            set(s => ({ tokenFetchProgress: { ...s.tokenFetchProgress, loaded: s.tokenFetchProgress.loaded + 1 } }));
+        }
+      } else {
+        // Standard user logic (batch fetch)
+        newIdentifierMap = await configService.getBatchCollectionData(hostProfileAddress, allCollections);
+      }
+      
+      set({ 
+          ownedTokenIdentifiers: newIdentifierMap,
+          lastTokenFetchTimestamp: Date.now()
+      });
+
+    } catch (error) {
+      console.error("Failed to refresh owned token identifiers:", error);
+    } finally {
+      set({ 
+          isFetchingTokens: false,
+          tokenFetchProgress: { ...get().tokenFetchProgress, loading: false }
+      });
+    }
+  },
+
+  // =========================================
+  // 4. ASYNC LOADING ACTIONS (EXISTING)
   // =========================================
 
   loadSetlist: async (profileAddress, visitorContext = null) => {
@@ -110,6 +242,9 @@ export const useProjectStore = create(devtools((set, get) => ({
         isLoading: false,
         loadingMessage: ""
       });
+
+      // Trigger Token Refresh when setlist loads (library might have changed)
+      get().refreshOwnedTokens(profileAddress); 
 
       const defaultName = loadedSetlist.defaultWorkspaceName || Object.keys(loadedSetlist.workspaces)[0];
       if (defaultName) {
@@ -180,10 +315,9 @@ export const useProjectStore = create(devtools((set, get) => ({
     }
   },
 
-  // =========================================
-  // 4. SCENE MANAGEMENT ACTIONS
-  // =========================================
-
+  // ... (Keep other actions: Scene Management, Global Metadata, Workspace CRUD) ...
+  // Paste Section 4, 5, 6 from the previous useProjectStore.js here unchanged
+  
   setActiveSceneName: (name) => set({ activeSceneName: name }),
 
   addScene: (sceneName, sceneData) => set((state) => {
@@ -216,10 +350,6 @@ export const useProjectStore = create(devtools((set, get) => ({
     const newWorkspace = { ...state.stagedWorkspace, defaultPresetName: sceneName };
     return { stagedWorkspace: newWorkspace, hasPendingChanges: true };
   }),
-
-  // =========================================
-  // 5. GLOBAL METADATA ACTIONS
-  // =========================================
 
   updateGlobalMidiMap: (newMap) => set((state) => ({
     stagedSetlist: { ...state.stagedSetlist, globalUserMidiMap: newMap },
@@ -290,10 +420,6 @@ export const useProjectStore = create(devtools((set, get) => ({
     };
   }),
 
-  // =========================================
-  // 6. WORKSPACE CRUD & SAVING
-  // =========================================
-
   createNewWorkspace: async (name) => {
     const state = get();
     if (state.stagedSetlist.workspaces[name]) throw new Error("Workspace name exists");
@@ -357,7 +483,6 @@ export const useProjectStore = create(devtools((set, get) => ({
     hasPendingChanges: true
   })),
 
-  // --- NEW: DUPLICATE WORKSPACE ACTION ---
   duplicateActiveWorkspace: async (newName) => {
     const state = get();
     if (state.stagedSetlist.workspaces[newName]) {
@@ -367,58 +492,13 @@ export const useProjectStore = create(devtools((set, get) => ({
 
     set({ activeWorkspaceName: newName, hasPendingChanges: true });
     
-    // We immediately trigger a save to persist this new name/state to IPFS+Chain
-    // This assumes the user (via EnhancedSavePanel) calls this knowing it triggers a save.
-    // However, if we just want to stage it in memory:
-    
-    // For "Save As" flow, we typically want to persist immediately.
-    // We reuse the existing saveChanges logic, but since saveChanges uses activeWorkspaceName,
-    // we set that first.
-    
-    // BUT saveChanges requires the target address.
-    // The component calls this, then often expects the result.
-    // To keep it simple: we just set the name here. The SavePanel will call saveChanges(address) next?
-    // No, SavePanel calls this expecting it to do the work.
-    
-    // Let's modify saveChanges to handle the activeWorkspaceName update internally?
-    // No, cleaner is to have duplicate act as a setup, then we save.
-    
-    // Actually, looking at the previous logic in EnhancedSavePanel:
-    // It calls duplicateActiveWorkspace(newName).
-    
-    // Implementation:
-    // 1. Update activeWorkspaceName to newName.
-    // 2. Add entry to stagedSetlist (placeholder).
-    // 3. We rely on the user clicking "Save" again? 
-    //    The user prompt implies immediate action.
-    
-    // Let's try to reuse saveChanges internally if possible, but we need the address.
-    // Since we don't have the address here easily (it's in the component),
-    // let's return success and let the component call saveChanges.
-    
-    // WAIT! EnhancedSavePanel logic was: 
-    // const result = await duplicateActiveWorkspace(newName.trim());
-    // if (result.success) onClose();
-    
-    // This implies duplicateActiveWorkspace MUST save.
-    // But it doesn't have the address.
-    
-    // BETTER FIX: duplicateActiveWorkspace just renames the active session in memory.
-    // Then the component calls saveChanges. 
-    // BUT the component code I gave you just calls duplicateActiveWorkspace.
-    
-    // OK, let's make duplicateActiveWorkspace do the heavy lifting of registering the new workspace in memory.
-    // We will trick the system by adding it to the setlist without a CID yet.
-    
     const newSetlist = JSON.parse(JSON.stringify(state.stagedSetlist));
-    newSetlist.workspaces[newName] = { cid: null, lastModified: Date.now() }; // No CID yet
+    newSetlist.workspaces[newName] = { cid: null, lastModified: Date.now() }; 
     
-    // Clone the cache data
     if (state.workspaceCache.has(state.activeWorkspaceName)) {
         const data = JSON.parse(JSON.stringify(state.workspaceCache.get(state.activeWorkspaceName)));
         state.workspaceCache.set(newName, data);
     } else {
-        // Fallback: use stagedWorkspace
         state.workspaceCache.set(newName, JSON.parse(JSON.stringify(state.stagedWorkspace)));
     }
 
@@ -428,32 +508,13 @@ export const useProjectStore = create(devtools((set, get) => ({
         hasPendingChanges: true 
     });
     
-    // Now we need to actually save to chain to make it real. 
-    // Since we don't have the address here, we return a specific flag.
-    // Or we assume the user will click "Update Current Workspace" next?
-    // The UI flow for "Duplicate" usually implies "Save As and Switch".
-    
-    // To fix the "Missing Argument" error fully:
-    // We will leave the saving to the user interaction in the Save Panel 
-    // OR we require the address to be passed to this function too.
-    
-    // I will update this function to accept the address as a second argument, 
-    // but since I already gave you the SavePanel code without it, 
-    // I'll make this function just perform the in-memory switch.
-    // The user will then see "Unsaved Changes" and can click "Update Workspace".
-    
-    // However, to satisfy the `if (result.success) onClose()` in the panel, 
-    // we return success. This leaves the UI in a "dirty" state (Unsaved changes), 
-    // which is actually safer than auto-saving without the address.
-    
     return { success: true };
   },
 
-  // THE BIG SAVE
   saveChanges: async (targetProfileAddress) => {
     const state = get();
     if (!state.configService) return { success: false, error: "Service not ready" };
-    if (!targetProfileAddress) return { success: false, error: "Target address missing" }; // Safety check
+    if (!targetProfileAddress) return { success: false, error: "Target address missing" }; 
 
     set({ isSaving: true, saveError: null });
 

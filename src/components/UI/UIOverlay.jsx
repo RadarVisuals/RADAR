@@ -24,9 +24,9 @@ import IndustrialPanel from '../Panels/IndustrialPanel';
 
 import { useSetManagementState, useProfileSessionState } from '../../hooks/configSelectors';
 import { useVisualEngineContext } from '../../context/VisualEngineContext';
-import { useNotificationContext } from '../../context/NotificationContext';
+import { useNotificationContext } from '../../hooks/useNotificationContext'; // UPDATED IMPORT
 
-import { useToast } from '../../context/ToastContext';
+import { useToast } from '../../hooks/useToast'; // UPDATED IMPORT
 import { ForwardIcon as SequencerIcon } from '@heroicons/react/24/outline';
 import './UIOverlay.css';
 
@@ -202,11 +202,9 @@ function UIOverlay({
     return () => { if (sequencerTimeoutRef.current) clearTimeout(sequencerTimeoutRef.current); };
   }, [isSequencerActive, isAutoFading, sequencerIntervalMs, runNextSequenceStep]);
 
-  // --- FIX: Moved side effects outside the state setter ---
   const handleToggleSequencer = () => {
     if (isConfigLoading || !currentProfileAddress) return;
     
-    // Calculate new state first
     const willActivate = !isSequencerActive;
     setIsSequencerActive(willActivate);
 

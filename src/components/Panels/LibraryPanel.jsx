@@ -2,8 +2,8 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import PropTypes from "prop-types";
 import Panel from "./Panel";
-import { useAssetContext } from "../../context/AssetContext";
-import { useToast } from "../../context/ToastContext";
+import { useAssetContext } from "../../hooks/useAssetContext"; // UPDATED IMPORT
+import { useToast } from "../../hooks/useToast"; // UPDATED IMPORT
 import { isAddress, stringToHex, keccak256, stringToBytes } from "viem";
 import { uploadJsonToPinata } from "../../services/PinataService";
 import { RADAR_OFFICIAL_ADMIN_ADDRESS } from "../../config/global-config";
@@ -77,7 +77,7 @@ const LibraryPanel = ({ onClose }) => {
     stagedSetlist,
     addCollectionToPersonalLibrary,
     removeCollectionFromPersonalLibrary,
-    configService, // REFACTORED: Access service directly
+    configService, 
   } = useSetManagementState();
   
   const { officialWhitelist, refreshOfficialWhitelist } = useAssetContext();
@@ -179,7 +179,7 @@ const LibraryPanel = ({ onClose }) => {
     setIsSavingAdmin(true);
     addToast("Saving official whitelist...", "info");
     try {
-        const service = configService; // REFACTORED: Use direct instance
+        const service = configService; 
         if (!service || !service.checkReadyForWrite()) throw new Error("Configuration Service is not ready for writing.");
         const newCid = await uploadJsonToPinata(stagedAdminWhitelist, 'RADAR_OfficialWhitelist');
         const newIpfsUri = `ipfs://${newCid}`;

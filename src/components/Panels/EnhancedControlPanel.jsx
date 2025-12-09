@@ -11,7 +11,7 @@ import { useProfileSessionState, useSetManagementState } from "../../hooks/confi
 import { useMIDI } from "../../context/MIDIContext";
 import { useVisualEngineContext } from "../../context/VisualEngineContext";
 import { useEngineStore } from "../../store/useEngineStore";
-import { useToast } from "../../context/ToastContext";
+import { useToast } from "../../hooks/useToast"; // UPDATED IMPORT
 import { BLEND_MODES } from "../../config/global-config";
 import { sliderParams } from "../../config/sliderParams";
 
