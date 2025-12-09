@@ -2,8 +2,68 @@
 
 import { demoAssetMap } from '../assets/DemoLayers/initLayers';
 
-// In-memory cache for GPU-ready ImageBitmap objects
-const decodedImageCache = new Map();
+/**
+ * LRU Cache Configuration
+ * 60 items is a safe balance. Assuming roughly 1024x1024 textures (~4MB each),
+ * this caps usage at approx ~240MB of VRAM for cached assets.
+ */
+const MAX_CACHE_SIZE = 60;
+
+/**
+ * Custom LRU Cache implementation for ImageBitmaps.
+ * Ensures we call .close() on evicted items to free GPU memory.
+ */
+class ImageBitmapCache {
+  constructor(limit) {
+    this.limit = limit;
+    this.map = new Map(); // Maps URL -> ImageBitmap
+  }
+
+  get(key) {
+    if (!this.map.has(key)) return undefined;
+    
+    // Refresh item: remove and re-insert at the end (newest)
+    const val = this.map.get(key);
+    this.map.delete(key);
+    this.map.set(key, val);
+    return val;
+  }
+
+  set(key, val) {
+    // If it exists, update it and move to end
+    if (this.map.has(key)) {
+      this.map.delete(key);
+    } 
+    // If cache is full, evict the oldest (first item in Map)
+    else if (this.map.size >= this.limit) {
+      const oldestKey = this.map.keys().next().value;
+      this.evict(oldestKey);
+    }
+    
+    this.map.set(key, val);
+  }
+
+  has(key) {
+    return this.map.has(key);
+  }
+
+  evict(key) {
+    const val = this.map.get(key);
+    if (val) {
+      // CRITICAL: Release GPU memory immediately
+      if (typeof val.close === 'function') {
+        val.close();
+      }
+      this.map.delete(key);
+      if (import.meta.env.DEV) {
+        console.log(`[ImageDecoder] Evicted & Closed texture: ${key.slice(-20)}`);
+      }
+    }
+  }
+}
+
+// Singleton Cache Instance
+const decodedImageCache = new ImageBitmapCache(MAX_CACHE_SIZE);
 
 /**
  * Resolves a token assignment into a fetchable image URL.
@@ -27,6 +87,7 @@ export const resolveImageUrl = (assignment) => {
  * @returns {Promise<ImageBitmap>} A promise that resolves with the GPU-ready ImageBitmap object.
  */
 export const getDecodedImage = (src) => {
+  // Check LRU Cache first
   if (decodedImageCache.has(src)) {
     return Promise.resolve(decodedImageCache.get(src));
   }
@@ -43,7 +104,7 @@ export const getDecodedImage = (src) => {
     img.onload = async () => {
       try {
         const imageBitmap = await createImageBitmap(img);
-        decodedImageCache.set(src, imageBitmap);
+        decodedImageCache.set(src, imageBitmap); // Store in LRU
         resolve(imageBitmap);
       } catch (bitmapError) {
         console.error(`[ImageDecoder] Failed to create ImageBitmap for: ${src}`, bitmapError);

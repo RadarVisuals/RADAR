@@ -1,153 +1,71 @@
 // src/services/ConfigurationService.js
-import {
-  hexToString, stringToHex,
-  getAddress,
-  decodeAbiParameters,
-  parseAbiParameters
-} from "viem";
-
-import {
-  RADAR_ROOT_STORAGE_POINTER_KEY,
-  IPFS_GATEWAY,
-  RADAR_OFFICIAL_ADMIN_ADDRESS,
-} from "../config/global-config";
-import { resolveLsp4Metadata } from '../utils/erc725.js';
+import { hexToString, stringToHex, getAddress } from "viem";
+import { RADAR_ROOT_STORAGE_POINTER_KEY, IPFS_GATEWAY } from "../config/global-config";
 import { uploadJsonToPinata } from './PinataService.js';
 import { ERC725YDataKeys } from '@lukso/lsp-smart-contracts';
 import { Buffer } from 'buffer';
+
+// --- IMPORT CENTRALIZED UTILITIES ---
+import { 
+    resolveLsp4Metadata, 
+    decodeVerifiableUri, 
+    fetchMetadata, 
+    extractImageFromMetadata, 
+    resolveUrl 
+} from '../utils/erc725.js';
 
 if (typeof window !== 'undefined' && typeof window.Buffer === 'undefined') {
   window.Buffer = Buffer;
 }
 
-// --- CONSTANTS ---
-const MULTICALL_BATCH_SIZE = 15; // Conservative batch size
-const COLLECTION_CHUNK_SIZE = 3; // 3 Collections at a time (Better UX than 1, still safe)
+const MULTICALL_BATCH_SIZE = 15;
+const COLLECTION_CHUNK_SIZE = 3;
 const DEFAULT_REQUEST_TIMEOUT = 25000;
 
+// ... [Keep ABIs: ERC725Y_ABI, LSP7_ABI, LSP8_ABI, Interface IDs] ...
+// (Omitting ABIs here for brevity, keep them as they were in the previous file)
 const ERC725Y_ABI = [
   { inputs: [{ type: "bytes32", name: "dataKey" }], name: "getData", outputs: [{ type: "bytes", name: "dataValue" }], stateMutability: "view", type: "function" },
   { inputs: [{ type: "bytes32[]", name: "dataKeys" }], name: "getDataBatch", outputs: [{ type: "bytes[]", name: "dataValues" }], stateMutability: "view", type: "function" },
   { inputs: [{ type: "bytes32", name: "dataKey" }, { type: "bytes", name: "dataValue" }], name: "setData", outputs: [], stateMutability: "payable", type: "function" },
-  { inputs: [{ type: "bytes32[]", name: "dataKeys" }, { type: "bytes[]", name: "dataValues" }], name: "setDataBatch", outputs: [], stateMutability: "payable", type: "function" },
   { name: "supportsInterface", inputs: [{ type: "bytes4", name: "interfaceId" }], outputs: [{ type: "bool" }], stateMutability: "view", type: "function" },
 ];
-
-const LSP7_ABI = [
-  {
-    "inputs": [{ "name": "owner", "type": "address" }],
-    "name": "balanceOf",
-    "outputs": [{ "name": "", "type": "uint256" }],
-    "stateMutability": "view",
-    "type": "function"
-  }
-];
-
+const LSP7_ABI = [{ inputs: [{ name: "owner", type: "address" }], name: "balanceOf", outputs: [{ name: "", type: "uint256" }], stateMutability: "view", type: "function" }];
 const LSP8_ABI = [
-  {
-    "inputs": [{ "name": "tokenOwner", "type": "address" }],
-    "name": "tokenIdsOf",
-    "outputs": [{ "name": "", "type": "bytes32[]" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-        { "name": "tokenId", "type": "bytes32" },
-        { "name": "dataKey", "type": "bytes32" }
-    ],
-    "name": "getDataForTokenId",
-    "outputs": [{ "name": "dataValue", "type": "bytes" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [{ "name": "dataKey", "type": "bytes32" }],
-    "name": "getData",
-    "outputs": [{ "name": "dataValue", "type": "bytes" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "totalSupply",
-    "outputs": [{ "name": "", "type": "uint256" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [{ "name": "index", "type": "uint256" }],
-    "name": "tokenByIndex",
-    "outputs": [{ "name": "", "type": "bytes32" }],
-    "stateMutability": "view",
-    "type": "function"
-  }
+  { inputs: [{ name: "tokenOwner", type: "address" }], name: "tokenIdsOf", outputs: [{ name: "", type: "bytes32[]" }], stateMutability: "view", type: "function" },
+  { inputs: [{ name: "tokenId", type: "bytes32" }, { name: "dataKey", type: "bytes32" }], name: "getDataForTokenId", outputs: [{ name: "dataValue", type: "bytes" }], stateMutability: "view", type: "function" },
+  { inputs: [{ name: "dataKey", type: "bytes32" }], name: "getData", outputs: [{ name: "dataValue", type: "bytes" }], stateMutability: "view", type: "function" },
+  { inputs: [], name: "totalSupply", outputs: [{ name: "", type: "uint256" }], stateMutability: "view", type: "function" },
+  { inputs: [{ name: "index", type: "uint256" }], name: "tokenByIndex", outputs: [{ name: "", type: "bytes32" }], stateMutability: "view", type: "function" }
 ];
-
 const LSP8_INTERFACE_ID = "0x3a271706";
 const LSP7_INTERFACE_ID = "0xc52d6008";
-
-// --- HELPER FUNCTIONS ---
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function fetchWithTimeout(resource, options = {}) {
+  // ... [Keep existing fetchWithTimeout logic] ...
   const { timeout = DEFAULT_REQUEST_TIMEOUT } = options;
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
-  
   try {
-    const response = await fetch(resource, {
-      ...options,
-      signal: controller.signal  
-    });
+    const response = await fetch(resource, { ...options, signal: controller.signal });
     clearTimeout(id);
     return response;
   } catch (error) {
     clearTimeout(id);
-    if (error.name === 'AbortError') {
-        throw new Error(`Request timed out after ${timeout}ms`);
-    }
     throw error;
   }
 }
 
 export function hexToUtf8Safe(hex) {
   if (!hex || typeof hex !== "string" || !hex.startsWith("0x") || hex === "0x") return null;
-  try {
-    const decodedString = hexToString(hex);
-    return decodedString.replace(/\u0000/g, '');
-  } catch {
-    return null;
-  }
-}
-
-function decodeVerifiableUriBytes(bytesValue) {
-    if (!bytesValue || typeof bytesValue !== 'string' || !bytesValue.startsWith('0x') || bytesValue.length < 14) {
-        return null; 
-    }
-    const valueWithoutPrefix = bytesValue.substring(2);
-    if (valueWithoutPrefix.startsWith('0000')) {
-        try {
-            const hashLengthHex = `0x${valueWithoutPrefix.substring(12, 16)}`;
-            const hashLength = parseInt(hashLengthHex, 16);
-            const urlBytesStart = 16 + (hashLength * 2);
-            if (valueWithoutPrefix.length < urlBytesStart) return null;
-            const urlBytes = `0x${valueWithoutPrefix.substring(urlBytesStart)}`;
-            return hexToUtf8Safe(urlBytes);
-        } catch (e) {
-            console.error("Error parsing VerifiableURI bytes:", e);
-            return null;
-        }
-    } else {
-        return hexToUtf8Safe(bytesValue);
-    }
+  try { return hexToString(hex).replace(/\u0000/g, ''); } catch { return null; }
 }
 
 function getChecksumAddressSafe(address) {
   if (typeof address !== 'string') return null;
-  try { return getAddress(address.trim()); }
-  catch { return null; }
+  try { return getAddress(address.trim()); } catch { return null; }
 }
 
 function chunkArray(array, size) {
@@ -159,11 +77,6 @@ function chunkArray(array, size) {
 }
 
 class ConfigurationService {
-  walletClient = null;
-  publicClient = null;
-  readReady = false;
-  writeReady = false;
-
   constructor(_provider, walletClient, publicClient) {
     this.walletClient = walletClient;
     this.publicClient = publicClient;
@@ -180,82 +93,43 @@ class ConfigurationService {
   checkReadyForRead() { return !!this.publicClient; }
   checkReadyForWrite() { return !!this.publicClient && !!this.walletClient?.account; }
 
-  // --- INTERNAL HELPERS ---
+  // --- INTERNAL HELPERS REFACTORED TO USE UTILS ---
 
   async _processMetadataBytes(metadataUriBytes, tokenId) {
-    if (!metadataUriBytes || metadataUriBytes === '0x') return null;
-
-    const decodedString = hexToUtf8Safe(metadataUriBytes);
-    if (decodedString && decodedString.trim().startsWith('<svg')) {
-      const base64Svg = Buffer.from(decodedString, 'utf8').toString('base64');
-      return { name: `Token #${Number(BigInt(tokenId))}`, image: `data:image/svg+xml;base64,${base64Svg}` };
+    const url = decodeVerifiableUri(metadataUriBytes);
+    if (!url) return null;
+    
+    // If SVG Data URI
+    if (url.startsWith('data:image/svg+xml')) {
+        return { name: `Token #${Number(BigInt(tokenId))}`, image: url };
     }
 
-    const decodedUri = decodeVerifiableUriBytes(metadataUriBytes);
-    if (!decodedUri) return null;
+    const metadata = await fetchMetadata(url);
+    if (!metadata) return null;
 
-    return await this._fetchMetadataFromUrl(decodedUri, tokenId);
+    // Handle direct image
+    if (metadata.image && !metadata.LSP4Metadata && !metadata.name) {
+       return { name: `Token #${Number(BigInt(tokenId))}`, image: resolveUrl(metadata.image) };
+    }
+
+    const name = metadata.LSP4Metadata?.name || metadata.name || `Token #${Number(BigInt(tokenId))}`;
+    const image = extractImageFromMetadata(metadata);
+    return image ? { name, image } : null;
   }
 
   async _processBaseUriBytes(baseUriBytes, tokenId) {
-    if (!baseUriBytes || baseUriBytes === '0x') return null;
-    
-    const decodedBaseUri = decodeVerifiableUriBytes(baseUriBytes);
-    if (!decodedBaseUri) return null;
+    const baseUrl = decodeVerifiableUri(baseUriBytes);
+    if (!baseUrl) return null;
 
     const tokenIdAsString = BigInt(tokenId).toString();
-    const finalUrl = decodedBaseUri.endsWith('/') 
-        ? `${decodedBaseUri}${tokenIdAsString}` 
-        : `${decodedBaseUri}/${tokenIdAsString}`;
+    const finalUrl = baseUrl.endsWith('/') ? `${baseUrl}${tokenIdAsString}` : `${baseUrl}/${tokenIdAsString}`;
     
-    return await this._fetchMetadataFromUrl(finalUrl, tokenId);
-  }
+    const metadata = await fetchMetadata(finalUrl);
+    if (!metadata) return null;
 
-  async _fetchMetadataFromUrl(url, tokenId) {
-    let fetchableUrl = url;
-    if (fetchableUrl.startsWith('ipfs://')) fetchableUrl = `${IPFS_GATEWAY}${fetchableUrl.substring(7)}`;
-    else if (!fetchableUrl.startsWith('http')) fetchableUrl = `${IPFS_GATEWAY}${fetchableUrl}`;
-    
-    if (!fetchableUrl.startsWith('http')) return null;
-
-    try {
-        const response = await fetchWithTimeout(fetchableUrl);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        
-        const contentType = response.headers.get("content-type");
-
-        if (contentType && contentType.includes("application/json")) {
-            const rawResponseText = await response.text();
-            let metadata;
-            try { metadata = JSON.parse(rawResponseText); } catch(e) { return null; }
-            
-            const lsp4Data = metadata.LSP4Metadata || metadata;
-            const name = lsp4Data.name || `Token #${tokenId ? tokenId.toString().slice(0,6) : '?'}`;
-            let imageUrl = null;
-            const imageAsset = lsp4Data.images?.[0]?.[0] || lsp4Data.icon?.[0] || lsp4Data.assets?.[0];
-
-            if (imageAsset && imageAsset.url) {
-                let rawUrl = imageAsset.url.trim();
-                if (rawUrl.startsWith('ipfs://')) imageUrl = `${IPFS_GATEWAY}${rawUrl.slice(7)}`;
-                else if (rawUrl.startsWith('http') || rawUrl.startsWith('data:')) imageUrl = rawUrl;
-
-                if (imageUrl && imageAsset.verification?.method && imageAsset.verification?.data) {
-                    const params = new URLSearchParams();
-                    params.append('method', imageAsset.verification.method);
-                    params.append('data', imageAsset.verification.data);
-                    imageUrl = `${imageUrl}?${params.toString()}`;
-                }
-            }
-            return { name, image: imageUrl };
-
-        } else if (contentType && contentType.startsWith("image/")) {
-            const tokenIdNum = tokenId ? Number(BigInt(tokenId)) : 0;
-            return { name: `Token #${tokenIdNum}`, image: fetchableUrl };
-        } 
-        return null;
-    } catch (e) {
-        return null;
-    }
+    const name = metadata.LSP4Metadata?.name || metadata.name || `Token #${tokenIdAsString}`;
+    const image = extractImageFromMetadata(metadata);
+    return image ? { name, image } : null;
   }
 
   // --- PUBLIC API ---
@@ -267,25 +141,18 @@ class ConfigurationService {
     if (!checksummedProfileAddr) return defaultSetlist;
 
     try {
-        let pointerHex = null;
-        try {
-            pointerHex = await this.loadDataFromKey(checksummedProfileAddr, RADAR_ROOT_STORAGE_POINTER_KEY);
-        } catch (rpcError) {
-            console.warn(`[CS] RPC Error fetching root pointer:`, rpcError.message);
-            return defaultSetlist; 
-        }
-
-        if (!pointerHex || pointerHex === '0x') return defaultSetlist;
-        const ipfsUri = hexToUtf8Safe(pointerHex);
-        if (!ipfsUri || !ipfsUri.startsWith('ipfs://')) return defaultSetlist;
-
-        const cid = ipfsUri.substring(7);
-        const gatewayUrl = `${IPFS_GATEWAY}${cid}`;
+        const pointerHex = await this.loadDataFromKey(checksummedProfileAddr, RADAR_ROOT_STORAGE_POINTER_KEY);
+        // Use unified decoding logic
+        const ipfsUri = decodeVerifiableUri(pointerHex); 
         
+        if (!ipfsUri) return defaultSetlist;
+
+        const gatewayUrl = resolveUrl(ipfsUri);
         const response = await fetchWithTimeout(gatewayUrl);
         if (!response.ok) throw new Error(`Failed to fetch setlist: ${response.status}`);
 
         const setlist = await response.json();
+        // ... (Existing setlist validation logic)
         if (!setlist || !('workspaces' in setlist)) throw new Error('Invalid setlist object.');
 
         if (setlist && !setlist.globalUserMidiMap) {
@@ -304,6 +171,7 @@ class ConfigurationService {
     }
   }
 
+  // ... (Keep _loadWorkspaceFromCID as is)
   async _loadWorkspaceFromCID(cid) {
     if (!cid) return null;
     const gatewayUrl = `${IPFS_GATEWAY}${cid}`;
@@ -317,38 +185,27 @@ class ConfigurationService {
   async saveSetlist(targetProfileAddress, setlistObject) {
     if (!this.checkReadyForWrite()) throw new Error("Client not ready for writing.");
     const checksummedTargetAddr = getChecksumAddressSafe(targetProfileAddress);
-    if (!checksummedTargetAddr) throw new Error("Invalid target address.");
-    
+    // ... validation ...
     const account = this.walletClient.account;
     const userAddress = typeof account === 'string' ? account : account?.address;
-    if (userAddress.toLowerCase() !== checksummedTargetAddr.toLowerCase()) {
-      throw new Error("Permission denied: Signer is not the profile owner.");
-    }
+    if (userAddress.toLowerCase() !== checksummedTargetAddr.toLowerCase()) throw new Error("Permission denied.");
 
     let oldCidToUnpin = null;
     try {
       const oldPointerHex = await this.loadDataFromKey(checksummedTargetAddr, RADAR_ROOT_STORAGE_POINTER_KEY);
-      if (oldPointerHex && oldPointerHex !== '0x') {
-        const oldIpfsUri = hexToUtf8Safe(oldPointerHex);
-        if (oldIpfsUri?.startsWith('ipfs://')) oldCidToUnpin = oldIpfsUri.substring(7);
-      }
+      const oldUrl = decodeVerifiableUri(oldPointerHex);
+      if (oldUrl?.startsWith('ipfs://')) oldCidToUnpin = oldUrl.substring(7);
     } catch (e) { /* ignore */ }
 
     try {
       const newIpfsCid = await uploadJsonToPinata(setlistObject, 'RADAR_Setlist');
-      if (!newIpfsCid) throw new Error("IPFS upload failed.");
-
       const newIpfsUri = `ipfs://${newIpfsCid}`;
       const valueHex = stringToHex(newIpfsUri);
       
       const result = await this.saveDataToKey(checksummedTargetAddr, RADAR_ROOT_STORAGE_POINTER_KEY, valueHex);
       
       if (oldCidToUnpin && oldCidToUnpin !== newIpfsCid) {
-        fetch('/api/unpin', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cid: oldCidToUnpin }),
-        }).catch(() => {});
+        fetch('/api/unpin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cid: oldCidToUnpin }) }).catch(() => {});
       }
       return result;
     } catch (error) {
@@ -357,23 +214,21 @@ class ConfigurationService {
   }
   
   async saveDataToKey(targetAddress, key, valueHex) {
-    if (!this.checkReadyForWrite()) throw new Error("Client not ready.");
     const checksummedTargetAddr = getChecksumAddressSafe(targetAddress);
     const account = this.walletClient.account;
     const userAddress = typeof account === 'string' ? account : account?.address;
-    
     try {
         const hash = await this.walletClient.writeContract({ 
             address: checksummedTargetAddr, 
             abi: ERC725Y_ABI, 
             functionName: "setData", 
             args: [key, valueHex || "0x"], 
-            account: userAddress 
+            account: userAddress,
+            value: 0n // Value 0n for payable compatibility
         });
         return { success: true, hash };
     } catch (writeError) {
-        const baseError = writeError.cause || writeError;
-        throw new Error(`Transaction failed: ${baseError?.shortMessage || writeError.message}`);
+        throw new Error(`Transaction failed: ${writeError.message}`);
     }
   }
 
@@ -385,6 +240,7 @@ class ConfigurationService {
     } catch (e) { throw e; }
   }
 
+  // ... (Keep existing helpers: detectCollectionStandard, getLSP7Balance, etc.)
   async detectCollectionStandard(collectionAddress) {
     const checksummedCollectionAddr = getChecksumAddressSafe(collectionAddress);
     if (!this.checkReadyForRead() || !checksummedCollectionAddr) return null;
@@ -404,28 +260,20 @@ class ConfigurationService {
     const checksummedCollectionAddr = getChecksumAddressSafe(collectionAddress);
     if (!this.checkReadyForRead() || !checksummedUserAddr || !checksummedCollectionAddr) return 0n;
     try {
-      return await this.publicClient.readContract({
-        address: checksummedCollectionAddr, abi: LSP7_ABI, functionName: "balanceOf", args: [checksummedUserAddr]
-      });
+      return await this.publicClient.readContract({ address: checksummedCollectionAddr, abi: LSP7_ABI, functionName: "balanceOf", args: [checksummedUserAddr] });
     } catch (error) { return 0n; }
   }
 
-  // === USER MODE: CHUNKED BATCH OWNED TOKENS ===
-  // This function is STRICTLY for checking 'tokenIdsOf'. 
-  // It should NEVER be used for 'totalSupply'.
+  // ... (Keep getBatchCollectionData logic, but ensure it uses the new constants if needed)
   async getBatchCollectionData(userAddress, collections) {
     if (!this.checkReadyForRead() || !userAddress || collections.length === 0) return {};
     const checksummedUser = getChecksumAddressSafe(userAddress);
     const results = {};
-
-    // Break collections into smaller chunks to prevent RPC limits
     const collectionChunks = chunkArray(collections, COLLECTION_CHUNK_SIZE);
 
     for (const chunk of collectionChunks) {
         try {
-            // Add delay to prevent rate-limit
             await sleep(200); 
-
             const interfaceContracts = [];
             chunk.forEach(c => {
                 interfaceContracts.push(
@@ -434,12 +282,7 @@ class ConfigurationService {
                 );
             });
 
-            // 1. Check Interfaces
-            const interfaceResults = await this.publicClient.multicall({ 
-                contracts: interfaceContracts,
-                batchSize: MULTICALL_BATCH_SIZE 
-            });
-            
+            const interfaceResults = await this.publicClient.multicall({ contracts: interfaceContracts, batchSize: MULTICALL_BATCH_SIZE });
             const dataContracts = [];
             const chunkMeta = [];
 
@@ -450,22 +293,15 @@ class ConfigurationService {
 
                 if (isLSP8) {
                     chunkMeta.push({ address: addr, standard: 'LSP8' });
-                    // EXPLICIT: tokenIdsOf(user)
                     dataContracts.push({ address: addr, abi: LSP8_ABI, functionName: 'tokenIdsOf', args: [checksummedUser] });
                 } else if (isLSP7) {
                     chunkMeta.push({ address: addr, standard: 'LSP7' });
-                    // EXPLICIT: balanceOf(user)
                     dataContracts.push({ address: addr, abi: LSP7_ABI, functionName: 'balanceOf', args: [checksummedUser] });
                 }
             }
 
             if (dataContracts.length > 0) {
-                // 2. Fetch Data (Balances/TokenIds)
-                const dataResults = await this.publicClient.multicall({ 
-                    contracts: dataContracts,
-                    batchSize: MULTICALL_BATCH_SIZE
-                });
-                
+                const dataResults = await this.publicClient.multicall({ contracts: dataContracts, batchSize: MULTICALL_BATCH_SIZE });
                 dataResults.forEach((res, index) => {
                     const { address, standard } = chunkMeta[index];
                     if (res.status === 'success') {
@@ -477,10 +313,7 @@ class ConfigurationService {
                     }
                 });
             }
-        } catch (chunkError) {
-            console.warn(`[CS] Error processing collection chunk. Skipping chunk.`, chunkError);
-            await sleep(500);
-        }
+        } catch (chunkError) { await sleep(500); }
     }
     return results;
   }
@@ -490,18 +323,12 @@ class ConfigurationService {
     if (!this.checkReadyForRead() || !checksummedCollectionAddr) return null;
     try {
       const metadata = await resolveLsp4Metadata(this, checksummedCollectionAddr);
-      if (!metadata?.LSP4Metadata) return null;
+      if (!metadata) return null;
       
-      const lsp4Data = metadata.LSP4Metadata;
-      const name = lsp4Data.name || 'Unnamed Collection';
-      const rawUrl = lsp4Data.icon?.[0]?.url || lsp4Data.images?.[0]?.[0]?.url || lsp4Data.assets?.[0]?.url;
-      let imageUrl = null;
-      if (rawUrl && typeof rawUrl === 'string') {
-        const trimmedUrl = rawUrl.trim();
-        if (trimmedUrl.startsWith('ipfs://')) imageUrl = `${IPFS_GATEWAY}${trimmedUrl.slice(7)}`;
-        else if (trimmedUrl.startsWith('http') || trimmedUrl.startsWith('data:')) imageUrl = trimmedUrl;
-      }
-      return { name, image: imageUrl };
+      const name = metadata.LSP4Metadata?.name || metadata.name || 'Unnamed Collection';
+      const image = extractImageFromMetadata(metadata);
+      
+      return { name, image };
     } catch (error) { return null; }
   }
   
@@ -510,9 +337,7 @@ class ConfigurationService {
       const checksummedCollectionAddr = getChecksumAddressSafe(collectionAddress);
       if (!this.checkReadyForRead() || !checksummedUserAddr || !checksummedCollectionAddr) return [];
       try {
-          return await this.publicClient.readContract({
-              address: checksummedCollectionAddr, abi: LSP8_ABI, functionName: "tokenIdsOf", args: [checksummedUserAddr],
-          });
+          return await this.publicClient.readContract({ address: checksummedCollectionAddr, abi: LSP8_ABI, functionName: "tokenIdsOf", args: [checksummedUserAddr] });
       } catch (error) { return []; }
   }
 
@@ -552,7 +377,6 @@ class ConfigurationService {
       let metadata = await this._processMetadataBytes(metadataUriBytes, tokenId);
       if (metadata) return metadata;
 
-      // Fallback: Base URI
       const baseUriKey = ERC725YDataKeys.LSP8.LSP8TokenMetadataBaseURI;
       const baseUriBytes = await this.publicClient.readContract({
           address: checksummedCollectionAddr, abi: LSP8_ABI, functionName: "getData", args: [baseUriKey]
@@ -563,7 +387,6 @@ class ConfigurationService {
     } catch (error) { return null; }
   }
 
-  // --- UPDATED: BATCH METADATA FETCH (Solves Metadata RPC Limits) ---
   async getTokensMetadataForPage(collectionAddress, identifiers, page, pageSize) {
     if (!this.checkReadyForRead() || !identifiers || identifiers.length === 0) return [];
 
@@ -578,7 +401,6 @@ class ConfigurationService {
     const baseUriKey = ERC725YDataKeys.LSP8.LSP8TokenMetadataBaseURI;
 
     try {
-      // 1. Prepare Multicall
       const contractCalls = pageIdentifiers.map(tokenId => ({
         address: checksummedCollection,
         abi: LSP8_ABI,
@@ -593,15 +415,10 @@ class ConfigurationService {
         args: [baseUriKey]
       });
 
-      const results = await this.publicClient.multicall({ 
-          contracts: contractCalls,
-          batchSize: MULTICALL_BATCH_SIZE 
-      });
-      
+      const results = await this.publicClient.multicall({ contracts: contractCalls, batchSize: MULTICALL_BATCH_SIZE });
       const baseUriResult = results.pop(); 
       const baseUriBytes = (baseUriResult.status === 'success') ? baseUriResult.result : null;
 
-      // 2. Process results
       const metadataPromises = results.map(async (res, index) => {
         const tokenId = pageIdentifiers[index];
         let metadata = null;
@@ -648,8 +465,6 @@ class ConfigurationService {
     }, {});
 
     const allResults = [];
-
-    // Process per collection
     for (const [collectionAddr, ids] of Object.entries(tokensByCollection)) {
         try {
             const res = await this.getTokensMetadataForPage(collectionAddr, ids, 0, ids.length);

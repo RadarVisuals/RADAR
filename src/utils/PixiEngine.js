@@ -6,7 +6,7 @@ import { useEngineStore } from '../store/useEngineStore';
 import { AudioReactor } from './pixi/systems/AudioReactor';
 import { FeedbackSystem } from './pixi/systems/FeedbackSystem';
 import { LayerManager } from './pixi/systems/LayerManager';
-import { CrossfaderSystem } from './pixi/systems/CrossfaderSystem';
+import { CrossfaderSystem } from './pixi/systems/CrossfaderSystem.js';
 
 export default class PixiEngine {
   constructor(canvasElement) {
