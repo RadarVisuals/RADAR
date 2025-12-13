@@ -1,5 +1,5 @@
 // src/components/UI/UIOverlay.jsx
-import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
 
 import TopRightControls from '../Toolbars/TopRightControls';
@@ -24,9 +24,9 @@ import IndustrialPanel from '../Panels/IndustrialPanel';
 
 import { useSetManagementState, useProfileSessionState } from '../../hooks/configSelectors';
 import { useVisualEngineContext } from '../../context/VisualEngineContext';
-import { useNotificationContext } from '../../hooks/useNotificationContext'; // UPDATED IMPORT
+import { useNotificationContext } from '../../hooks/useNotificationContext';
 
-import { useToast } from '../../hooks/useToast'; // UPDATED IMPORT
+import { useToast } from '../../hooks/useToast';
 import { ForwardIcon as SequencerIcon } from '@heroicons/react/24/outline';
 import './UIOverlay.css';
 
@@ -35,8 +35,6 @@ const MemoizedVerticalToolbar = React.memo(VerticalToolbar);
 const MemoizedGlobalMIDIStatus = React.memo(GlobalMIDIStatus);
 const MemoizedAudioStatusIcon = React.memo(AudioStatusIcon);
 const MemoizedSceneSelectorBar = React.memo(SceneSelectorBar);
-
-const DEFAULT_SEQUENCER_INTERVAL = 0;
 
 const GeneralConnectPill = () => {
     return (
@@ -157,71 +155,17 @@ function UIOverlay({
   const { isUiVisible, activePanel, toggleSidePanel, toggleInfoOverlay, toggleUiVisibility } = uiState;
   const { isAudioActive } = audioState;
   
-  const { onEnhancedView, onToggleParallax, onPreviewEffect } = actions;
-  const [isSequencerActive, setIsSequencerActive] = useState(false);
-  const sequencerTimeoutRef = useRef(null);
-  const nextSceneIndexRef = useRef(0);
-  const isMountedRef = useRef(false);
-
-  const [sequencerIntervalMs, setSequencerIntervalMs] = useState(DEFAULT_SEQUENCER_INTERVAL);
+  // Destructure Sequencer Props directly from actions
+  const { 
+      onEnhancedView, onToggleParallax, onPreviewEffect,
+      toggleSequencer, isSequencerActive, sequencerIntervalMs, setSequencerInterval
+  } = actions;
 
   const workspaceList = useMemo(() => {
     if (!stagedSetlist?.workspaces) return [];
     return Object.keys(stagedSetlist.workspaces)
       .map(name => ({ name }));
   }, [stagedSetlist]);
-
-  useEffect(() => { isMountedRef.current = true; return () => { isMountedRef.current = false; } }, []);
-  
-  const handleSceneSelectRef = useRef(handleSceneSelect);
-  const savedSceneListRef = useRef(savedSceneList);
-  useEffect(() => {
-    handleSceneSelectRef.current = handleSceneSelect;
-    savedSceneListRef.current = savedSceneList;
-  }, [handleSceneSelect, savedSceneList]);
-
-  const runNextSequenceStep = useCallback(() => {
-    const currentList = savedSceneListRef.current;
-    if (!currentList || currentList.length === 0) {
-        setIsSequencerActive(false);
-        return;
-    }
-    const nextIndex = nextSceneIndexRef.current % currentList.length;
-    const nextScene = currentList[nextIndex];
-    if (nextScene?.name && handleSceneSelectRef.current) {
-        handleSceneSelectRef.current(nextScene.name, crossfadeDurationMs);
-    }
-    nextSceneIndexRef.current = nextIndex + 1;
-  }, [crossfadeDurationMs]);
-
-  useEffect(() => {
-    if (sequencerTimeoutRef.current) clearTimeout(sequencerTimeoutRef.current);
-    if (isSequencerActive && !isAutoFading) {
-        sequencerTimeoutRef.current = setTimeout(runNextSequenceStep, sequencerIntervalMs);
-    }
-    return () => { if (sequencerTimeoutRef.current) clearTimeout(sequencerTimeoutRef.current); };
-  }, [isSequencerActive, isAutoFading, sequencerIntervalMs, runNextSequenceStep]);
-
-  const handleToggleSequencer = () => {
-    if (isConfigLoading || !currentProfileAddress) return;
-    
-    const willActivate = !isSequencerActive;
-    setIsSequencerActive(willActivate);
-
-    if (willActivate) {
-        addToast(`Sequencer started.`, 'info', 3000);
-        const currentList = savedSceneList;
-        if (currentList && currentList.length > 0) {
-          const currentIndex = currentList.findIndex(p => p.name === activeSceneName);
-          nextSceneIndexRef.current = (currentIndex === -1 ? 0 : currentIndex + 1);
-        } else {
-          nextSceneIndexRef.current = 0;
-        }
-    } else {
-        addToast('Sequencer stopped.', 'info', 2000);
-        if (sequencerTimeoutRef.current) clearTimeout(sequencerTimeoutRef.current);
-    }
-  };
 
   const shouldShowUI = useMemo(() => isReady, [isReady]);
   const showSceneBar = useMemo(() => shouldShowUI && isUiVisible && !activePanel && !!currentProfileAddress, [shouldShowUI, isUiVisible, activePanel, currentProfileAddress]);
@@ -255,7 +199,7 @@ function UIOverlay({
           pLockProps={pLockProps}
           onPreviewEffect={onPreviewEffect}
           sequencerIntervalMs={sequencerIntervalMs}
-          onSetSequencerInterval={setSequencerIntervalMs}
+          onSetSequencerInterval={setSequencerInterval}
           crossfadeDurationMs={crossfadeDurationMs}
           onSetCrossfadeDuration={onSetCrossfadeDuration}
       />}
@@ -266,7 +210,8 @@ function UIOverlay({
               <MemoizedGlobalMIDIStatus />
               <button
                 className={`toolbar-icon sequencer-toggle-button ${isSequencerActive ? "active" : ""}`}
-                onClick={handleToggleSequencer} title={isSequencerActive ? `Stop Scene Sequencer` : `Start Scene Sequencer`}
+                onClick={toggleSequencer} 
+                title={isSequencerActive ? `Stop Scene Sequencer` : `Start Scene Sequencer`}
                 aria-label={isSequencerActive ? "Stop Scene Sequencer" : "Start Scene Sequencer"} disabled={isConfigLoading || !currentProfileAddress}
               >
                 <SequencerIcon className="icon-image" />

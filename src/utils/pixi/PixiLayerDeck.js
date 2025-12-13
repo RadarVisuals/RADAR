@@ -86,6 +86,9 @@ export class PixiLayerDeck {
     this.driftState.y = otherDeck.driftState.y;
     this.driftState.phase = otherDeck.driftState.phase;
     
+    // Sync P-Locks so incoming deck inherits overrides immediately
+    this.playbackValues = { ...otherDeck.playbackValues };
+    
     Object.keys(this.interpolators).forEach(key => {
         if (otherDeck.interpolators[key]) {
             this.interpolators[key].currentValue = otherDeck.interpolators[key].currentValue;
@@ -153,10 +156,11 @@ export class PixiLayerDeck {
         this.interpolators[key].update(now);
     }
     
-    const getVal = (k) => (this.playbackValues[k] !== undefined ? this.playbackValues[k] : this.interpolators[k].currentValue);
+    // --- KEY: Use playbackValues for Speed/Direction if present ---
+    const getVal = (k) => (this.playbackValues[k] !== undefined ? this.playbackValues[k] : (this.interpolators[k] ? this.interpolators[k].currentValue : this.config[k]));
     
     const speed = getVal('speed');
-    const direction = this.config.direction || 1;
+    const direction = getVal('direction') ?? 1; // P-Lockable Direction
     const drift = getVal('drift');
     const driftSpeed = getVal('driftSpeed');
 
@@ -177,7 +181,12 @@ export class PixiLayerDeck {
 
   resolveRenderState() {
     const s = this._reusableRenderState;
-    const getVal = (k) => (this.playbackValues[k] !== undefined ? this.playbackValues[k] : this.interpolators[k].currentValue);
+    // Helper to check playbackValues first, then interpolator, then config
+    const getVal = (k) => {
+        if (this.playbackValues[k] !== undefined) return this.playbackValues[k];
+        if (this.interpolators[k]) return this.interpolators[k].currentValue;
+        return this.config[k];
+    };
 
     const angle = getVal('angle');
     
@@ -189,9 +198,13 @@ export class PixiLayerDeck {
     s.xaxis = getVal('xaxis');
     s.yaxis = getVal('yaxis');
     s.angle = angle;
-    s.direction = this.config.direction || 1;
-    s.blendMode = this.config.blendMode;
-    s.enabled = this.config.enabled;
+    
+    // --- FIX: Respect P-Locks for categorical props ---
+    s.direction = getVal('direction') ?? 1;
+    s.blendMode = getVal('blendMode');
+    s.enabled = getVal('enabled');
+    // ------------------------------------------------
+
     s.driftX = this.driftState.x;
     s.driftY = this.driftState.y;
     

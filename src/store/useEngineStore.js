@@ -20,6 +20,9 @@ const DEFAULT_INDUSTRIAL_MAPPING = {
     crossfaderShred: { source: 'bass', amount: 0.0, enabled: false },
 };
 
+// --- NEW CONSTANT ---
+const DEFAULT_SEQUENCER_INTERVAL = 2000; // 2 seconds default
+
 export const useEngineStore = create(
   subscribeWithSelector((set, get) => ({
     // ... (Standard Visual Engine Slice) ...
@@ -31,6 +34,26 @@ export const useEngineStore = create(
     transitionMode: 'crossfade',
     targetSceneName: null,
     
+    // --- NEW: SEQUENCER SLICE ---
+    sequencerState: {
+        active: false,
+        intervalMs: DEFAULT_SEQUENCER_INTERVAL,
+        nextIndex: 0,
+    },
+
+    setSequencerActive: (isActive) => set((state) => ({
+        sequencerState: { ...state.sequencerState, active: isActive }
+    })),
+
+    setSequencerInterval: (ms) => set((state) => ({
+        sequencerState: { ...state.sequencerState, intervalMs: Math.max(100, ms) } // Min 100ms safety
+    })),
+
+    setSequencerNextIndex: (index) => set((state) => ({
+        sequencerState: { ...state.sequencerState, nextIndex: index }
+    })),
+    // ----------------------------
+    
     // INDUSTRIAL CONFIG
     industrialConfig: {
         enabled: false,
@@ -41,7 +64,6 @@ export const useEngineStore = create(
 
     // Global Effects
     effectsConfig: {
-        // --- NEW: FEEDBACK CONFIG ---
         feedback: { 
             enabled: false, 
             amount: 0.9,    // Decay (Opacity of previous frame)
@@ -50,7 +72,6 @@ export const useEngineStore = create(
             xOffset: 0,     // Drift X
             yOffset: 0      // Drift Y
         },
-        // ---------------------------
         bloom: { enabled: false, intensity: 1.0, blur: 8, threshold: 0.5 },
         rgb: { enabled: false, amount: 2 },
         pixelate: { enabled: false, size: 10 },

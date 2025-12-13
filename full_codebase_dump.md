@@ -3506,7 +3506,8 @@ import { useCoreApplicationStateAndLifecycle } from '../../hooks/useCoreApplicat
 import { useAppInteractions } from '../../hooks/useAppInteractions';
 import { useVisualEngineContext } from "../../context/VisualEngineContext";
 import { useEngineStore } from "../../store/useEngineStore";
-import { useProjectStore } from "../../store/useProjectStore"; // New Import
+import { useProjectStore } from "../../store/useProjectStore";
+import { useSceneSequencer } from "../../hooks/useSceneSequencer"; // NEW IMPORT
 
 import ToastContainer from "../Notifications/ToastContainer";
 import UIOverlay from '../UI/UIOverlay';
@@ -3541,7 +3542,6 @@ const portalContainerNode = typeof document !== 'undefined' ? document.getElemen
 const MainView = ({ blendModes = BLEND_MODES }) => {
   const { publicClient, walletClient, upInitializationError, upFetchStateError } = useUpProvider();
 
-  // --- REFACTOR: Use Project Store directly ---
   const {
     stagedSetlist,
     loadWorkspace,
@@ -3556,19 +3556,12 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     loadingMessage: s.loadingMessage,
   })));
   
-  // Note: 'isWorkspaceTransitioning' and '_executeLoadAfterFade' are tricky ones.
-  // In the legacy WorkspaceContext, these were local state inside the provider component to handle fade-out.
-  // In a real app, the VisualEngine handles the fade. We can simplify this. 
-  // If the engine is ready, we are ready.
-  // We'll trust the Engine's transition logic instead of React state for opacity fades.
-  // However, for compatibility, we can assume 'loadingMessage' implies transitioning.
   const isWorkspaceTransitioning = !!loadingMessage && loadingMessage.includes("Loading");
 
   const fullSceneList = useMemo(() => 
     Object.values(useProjectStore.getState().stagedWorkspace?.presets || {})
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })), 
   [useProjectStore.getState().stagedWorkspace]);
-  // --- END REFACTOR ---
 
   const {
     registerManagerInstancesRef,
@@ -3591,6 +3584,15 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   const [isParallaxEnabled, setIsParallaxEnabled] = useState(false);
   const toggleParallax = useCallback(() => setIsParallaxEnabled(prev => !prev), []);
   const [crossfadeDurationMs, setCrossfadeDurationMs] = useState(DEFAULT_CROSSFADE_DURATION);
+
+  // --- USE NEW SEQUENCER HOOK ---
+  const { 
+      isSequencerActive, 
+      toggleSequencer, 
+      sequencerIntervalMs, 
+      setSequencerInterval 
+  } = useSceneSequencer(crossfadeDurationMs);
+  // ------------------------------
 
   const [localAnimatingPanel, setLocalAnimatingPanel] = useState(null);
   const [localIsBenignOverlayActive, setLocalIsBenignOverlayActive] = useState(false);
@@ -3737,11 +3739,19 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   
   const showFpsCounter = useMemo(() => renderState === 'rendered' && isContainerObservedVisible, [renderState, isContainerObservedVisible]);
 
+  // Update actions to include sequencer logic from hook
   const actionsForUIOverlay = useMemo(() => ({
     onEnhancedView: enterFullscreen,
     onToggleParallax: toggleParallax,
     onPreviewEffect: appInteractions.processEffect,
-  }), [enterFullscreen, toggleParallax, appInteractions.processEffect]);
+    toggleSequencer,
+    setSequencerInterval,
+    isSequencerActive,
+    sequencerIntervalMs
+  }), [
+    enterFullscreen, toggleParallax, appInteractions.processEffect,
+    toggleSequencer, setSequencerInterval, isSequencerActive, sequencerIntervalMs
+  ]);
 
   const pLockProps = useMemo(() => ({
     pLockState: sequencer.pLockState, 
@@ -5733,7 +5743,7 @@ import { useProfileSessionState, useSetManagementState } from "../../hooks/confi
 import { useMIDI } from "../../context/MIDIContext";
 import { useVisualEngineContext } from "../../context/VisualEngineContext";
 import { useEngineStore } from "../../store/useEngineStore";
-import { useToast } from "../../context/ToastContext";
+import { useToast } from "../../hooks/useToast"; // UPDATED IMPORT
 import { BLEND_MODES } from "../../config/global-config";
 import { sliderParams } from "../../config/sliderParams";
 
@@ -6314,7 +6324,7 @@ import PropTypes from "prop-types";
 
 import Panel from "./Panel";
 import { EVENT_TYPE_MAP } from "../../config/global-config";
-import { useToast } from "../../context/ToastContext";
+import { useToast } from "../../hooks/useToast"; // UPDATED IMPORT
 // REFACTORED: Import from selectors
 import { useInteractionSettingsState, useProfileSessionState } from "../../hooks/configSelectors";
 
@@ -7274,8 +7284,8 @@ export default LazyLoadImage;
 import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import PropTypes from "prop-types";
 import Panel from "./Panel";
-import { useAssetContext } from "../../context/AssetContext";
-import { useToast } from "../../context/ToastContext";
+import { useAssetContext } from "../../hooks/useAssetContext"; // UPDATED IMPORT
+import { useToast } from "../../hooks/useToast"; // UPDATED IMPORT
 import { isAddress, stringToHex, keccak256, stringToBytes } from "viem";
 import { uploadJsonToPinata } from "../../services/PinataService";
 import { RADAR_OFFICIAL_ADMIN_ADDRESS } from "../../config/global-config";
@@ -7349,7 +7359,7 @@ const LibraryPanel = ({ onClose }) => {
     stagedSetlist,
     addCollectionToPersonalLibrary,
     removeCollectionFromPersonalLibrary,
-    configService, // REFACTORED: Access service directly
+    configService, 
   } = useSetManagementState();
   
   const { officialWhitelist, refreshOfficialWhitelist } = useAssetContext();
@@ -7451,7 +7461,7 @@ const LibraryPanel = ({ onClose }) => {
     setIsSavingAdmin(true);
     addToast("Saving official whitelist...", "info");
     try {
-        const service = configService; // REFACTORED: Use direct instance
+        const service = configService; 
         if (!service || !service.checkReadyForWrite()) throw new Error("Configuration Service is not ready for writing.");
         const newCid = await uploadJsonToPinata(stagedAdminWhitelist, 'RADAR_OfficialWhitelist');
         const newIpfsUri = `ipfs://${newCid}`;
@@ -11342,7 +11352,7 @@ import { toplayerIcon, middlelayerIcon, bottomlayerIcon } from "../../assets";
 import { demoAssetMap } from "../../assets/DemoLayers/initLayers";
 import { manageOverlayDimmingEffect } from "../../utils/performanceHelpers";
 import { globalAnimationFlags } from "../../utils/globalAnimationFlags";
-import { useAssetContext } from "../../context/AssetContext";
+import { useAssetContext } from "../../hooks/useAssetContext"; // UPDATED IMPORT
 import { useVisualEngineContext } from "../../context/VisualEngineContext";
 // REFACTORED: Import selectors
 import { useProfileSessionState, useSetManagementState } from "../../hooks/configSelectors";
@@ -11370,11 +11380,10 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
   const [isLoadingMore, setIsLoadingMore] = useState({});
   const [hasMoreToLoad, setHasMoreToLoad] = useState({});
 
-  // --- FIX: Use useSetManagementState instead of useWorkspaceContext ---
   const {
     stagedSetlist,
     addPalette, removePalette, addTokenToPalette, removeTokenFromPalette,
-    configService, // Note: configService is available directly here now
+    configService, 
   } = useSetManagementState();
 
   const {
@@ -12085,7 +12094,7 @@ import {
   setsIcon,
   fxIcon,
 } from "../../assets";
-import { useNotificationContext } from "../../context/NotificationContext";
+import { useNotificationContext } from "../../hooks/useNotificationContext"; // UPDATED IMPORT
 
 const VerticalToolbar = ({
   activePanel,
@@ -12148,7 +12157,6 @@ const VerticalToolbar = ({
         <img src={wavezIcon} alt="Audio" className="icon-image" />
       </button>
 
-      {/* --- NEW INDUSTRIAL BUTTON --- */}
       <button 
         className={`vertical-toolbar-icon ${activePanel === "industrial" ? "active" : ""}`} 
         onClick={() => handleIconClick("industrial")} 
@@ -13087,7 +13095,7 @@ export default StartVeil;
 ### `src\components\UI\UIOverlay.jsx`
 ```jsx
 // src/components/UI/UIOverlay.jsx
-import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
 
 import TopRightControls from '../Toolbars/TopRightControls';
@@ -13112,9 +13120,9 @@ import IndustrialPanel from '../Panels/IndustrialPanel';
 
 import { useSetManagementState, useProfileSessionState } from '../../hooks/configSelectors';
 import { useVisualEngineContext } from '../../context/VisualEngineContext';
-import { useNotificationContext } from '../../context/NotificationContext';
+import { useNotificationContext } from '../../hooks/useNotificationContext';
 
-import { useToast } from '../../context/ToastContext';
+import { useToast } from '../../hooks/useToast';
 import { ForwardIcon as SequencerIcon } from '@heroicons/react/24/outline';
 import './UIOverlay.css';
 
@@ -13123,8 +13131,6 @@ const MemoizedVerticalToolbar = React.memo(VerticalToolbar);
 const MemoizedGlobalMIDIStatus = React.memo(GlobalMIDIStatus);
 const MemoizedAudioStatusIcon = React.memo(AudioStatusIcon);
 const MemoizedSceneSelectorBar = React.memo(SceneSelectorBar);
-
-const DEFAULT_SEQUENCER_INTERVAL = 0;
 
 const GeneralConnectPill = () => {
     return (
@@ -13245,73 +13251,17 @@ function UIOverlay({
   const { isUiVisible, activePanel, toggleSidePanel, toggleInfoOverlay, toggleUiVisibility } = uiState;
   const { isAudioActive } = audioState;
   
-  const { onEnhancedView, onToggleParallax, onPreviewEffect } = actions;
-  const [isSequencerActive, setIsSequencerActive] = useState(false);
-  const sequencerTimeoutRef = useRef(null);
-  const nextSceneIndexRef = useRef(0);
-  const isMountedRef = useRef(false);
-
-  const [sequencerIntervalMs, setSequencerIntervalMs] = useState(DEFAULT_SEQUENCER_INTERVAL);
+  // Destructure Sequencer Props directly from actions
+  const { 
+      onEnhancedView, onToggleParallax, onPreviewEffect,
+      toggleSequencer, isSequencerActive, sequencerIntervalMs, setSequencerInterval
+  } = actions;
 
   const workspaceList = useMemo(() => {
     if (!stagedSetlist?.workspaces) return [];
     return Object.keys(stagedSetlist.workspaces)
       .map(name => ({ name }));
   }, [stagedSetlist]);
-
-  useEffect(() => { isMountedRef.current = true; return () => { isMountedRef.current = false; } }, []);
-  
-  const handleSceneSelectRef = useRef(handleSceneSelect);
-  const savedSceneListRef = useRef(savedSceneList);
-  useEffect(() => {
-    handleSceneSelectRef.current = handleSceneSelect;
-    savedSceneListRef.current = savedSceneList;
-  }, [handleSceneSelect, savedSceneList]);
-
-  const runNextSequenceStep = useCallback(() => {
-    const currentList = savedSceneListRef.current;
-    if (!currentList || currentList.length === 0) {
-        setIsSequencerActive(false);
-        return;
-    }
-    const nextIndex = nextSceneIndexRef.current % currentList.length;
-    const nextScene = currentList[nextIndex];
-    if (nextScene?.name && handleSceneSelectRef.current) {
-        handleSceneSelectRef.current(nextScene.name, crossfadeDurationMs);
-    }
-    nextSceneIndexRef.current = nextIndex + 1;
-  }, [crossfadeDurationMs]);
-
-  useEffect(() => {
-    if (sequencerTimeoutRef.current) clearTimeout(sequencerTimeoutRef.current);
-    if (isSequencerActive && !isAutoFading) {
-        sequencerTimeoutRef.current = setTimeout(runNextSequenceStep, sequencerIntervalMs);
-    }
-    return () => { if (sequencerTimeoutRef.current) clearTimeout(sequencerTimeoutRef.current); };
-  }, [isSequencerActive, isAutoFading, sequencerIntervalMs, runNextSequenceStep]);
-
-  // --- FIX: Moved side effects outside the state setter ---
-  const handleToggleSequencer = () => {
-    if (isConfigLoading || !currentProfileAddress) return;
-    
-    // Calculate new state first
-    const willActivate = !isSequencerActive;
-    setIsSequencerActive(willActivate);
-
-    if (willActivate) {
-        addToast(`Sequencer started.`, 'info', 3000);
-        const currentList = savedSceneList;
-        if (currentList && currentList.length > 0) {
-          const currentIndex = currentList.findIndex(p => p.name === activeSceneName);
-          nextSceneIndexRef.current = (currentIndex === -1 ? 0 : currentIndex + 1);
-        } else {
-          nextSceneIndexRef.current = 0;
-        }
-    } else {
-        addToast('Sequencer stopped.', 'info', 2000);
-        if (sequencerTimeoutRef.current) clearTimeout(sequencerTimeoutRef.current);
-    }
-  };
 
   const shouldShowUI = useMemo(() => isReady, [isReady]);
   const showSceneBar = useMemo(() => shouldShowUI && isUiVisible && !activePanel && !!currentProfileAddress, [shouldShowUI, isUiVisible, activePanel, currentProfileAddress]);
@@ -13345,7 +13295,7 @@ function UIOverlay({
           pLockProps={pLockProps}
           onPreviewEffect={onPreviewEffect}
           sequencerIntervalMs={sequencerIntervalMs}
-          onSetSequencerInterval={setSequencerIntervalMs}
+          onSetSequencerInterval={setSequencerInterval}
           crossfadeDurationMs={crossfadeDurationMs}
           onSetCrossfadeDuration={onSetCrossfadeDuration}
       />}
@@ -13356,7 +13306,8 @@ function UIOverlay({
               <MemoizedGlobalMIDIStatus />
               <button
                 className={`toolbar-icon sequencer-toggle-button ${isSequencerActive ? "active" : ""}`}
-                onClick={handleToggleSequencer} title={isSequencerActive ? `Stop Scene Sequencer` : `Start Scene Sequencer`}
+                onClick={toggleSequencer} 
+                title={isSequencerActive ? `Stop Scene Sequencer` : `Start Scene Sequencer`}
                 aria-label={isSequencerActive ? "Stop Scene Sequencer" : "Start Scene Sequencer"} disabled={isConfigLoading || !currentProfileAddress}
               >
                 <SequencerIcon className="icon-image" />
@@ -13771,200 +13722,6 @@ export const NO_PING_SELECTORS = ['.ui-container', '.status-display', '.fps-coun
 ```
 
 ---
-### `src\context\AssetContext.jsx`
-```jsx
-// src/context/AssetContext.jsx
-import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import PropTypes from 'prop-types';
-import { keccak256, stringToBytes } from "viem";
-import { useProjectStore } from '../store/useProjectStore';
-import { useWalletStore } from '../store/useWalletStore';
-import { useToast } from './ToastContext';
-import { RADAR_OFFICIAL_ADMIN_ADDRESS, IPFS_GATEWAY } from "../config/global-config";
-import { hexToUtf8Safe } from "../services/ConfigurationService";
-
-const OFFICIAL_WHITELIST_KEY = keccak256(stringToBytes("RADAR.OfficialWhitelist"));
-const TOKEN_CACHE_DURATION_MS = 5 * 60 * 1000;
-
-const AssetContext = createContext();
-
-export const AssetProvider = ({ children }) => {
-  const configService = useProjectStore(s => s.configService);
-  const configServiceInstanceReady = useProjectStore(s => s.isConfigReady);
-  const stagedSetlist = useProjectStore(s => s.stagedSetlist);
-  
-  const hostProfileAddress = useWalletStore(s => s.hostProfileAddress);
-  const visitorProfileAddress = useWalletStore(s => s.hostProfileAddress); 
-  const isRadarProjectAdmin = useWalletStore(s => s.isRadarProjectAdmin);
-  
-  const { addToast } = useToast();
-
-  const [officialWhitelist, setOfficialWhitelist] = useState([]);
-  const [ownedTokenIdentifiers, setOwnedTokenIdentifiers] = useState({});
-  const [isFetchingTokens, setIsFetchingTokens] = useState(false);
-  const [tokenFetchProgress, setTokenFetchProgress] = useState({ loaded: 0, total: 0, loading: false });
-  
-  const [lastFetchTimestamp, setLastFetchTimestamp] = useState(0);
-  const prevCollectionCountRef = useRef(0);
-  
-  // --- FIX: Ref to track loading state synchronously for Strict Mode ---
-  const isFetchingTokensRef = useRef(false);
-
-  useEffect(() => {
-    setOwnedTokenIdentifiers({});
-    setLastFetchTimestamp(0);
-    setTokenFetchProgress({ loaded: 0, total: 0, loading: false });
-    prevCollectionCountRef.current = 0;
-    isFetchingTokensRef.current = false;
-  }, [hostProfileAddress]);
-
-  const refreshOfficialWhitelist = useCallback(async () => {
-    const service = useProjectStore.getState().configService;
-    if (!service || !service.checkReadyForRead()) return;
-
-    try {
-        const pointerHex = await service.loadDataFromKey(RADAR_OFFICIAL_ADMIN_ADDRESS, OFFICIAL_WHITELIST_KEY);
-        if (!pointerHex || pointerHex === '0x') { setOfficialWhitelist([]); return; }
-        
-        const ipfsUri = hexToUtf8Safe(pointerHex);
-        if (!ipfsUri || !ipfsUri.startsWith('ipfs://')) { setOfficialWhitelist([]); return; }
-        
-        const cid = ipfsUri.substring(7);
-        const response = await fetch(`${IPFS_GATEWAY}${cid}`);
-        
-        if (!response.ok) throw new Error(`Failed to fetch whitelist from IPFS: ${response.statusText}`);
-        
-        const list = await response.json();
-        setOfficialWhitelist(Array.isArray(list) ? list : []);
-    } catch (error) {
-        console.error("Error fetching official collection whitelist:", error);
-        setOfficialWhitelist([]);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (configServiceInstanceReady) {
-      refreshOfficialWhitelist();
-    }
-  }, [configServiceInstanceReady, refreshOfficialWhitelist]);
-
-  const refreshOwnedTokens = useCallback(async (force = false, isSilent = false) => {
-    const service = useProjectStore.getState().configService;
-    if (!service || !service.checkReadyForRead()) return;
-
-    // --- FIX: Block duplicate calls immediately ---
-    if (isFetchingTokensRef.current) return;
-
-    const effectiveAddress = hostProfileAddress;
-    
-    const userLibrary = useProjectStore.getState().stagedSetlist?.personalCollectionLibrary || [];
-    const combinedCollectionsMap = new Map();
-    
-    officialWhitelist.forEach(c => {
-        if (c && c.address) {
-            combinedCollectionsMap.set(c.address.toLowerCase(), { ...c, _isOfficial: true });
-        }
-    });
-    
-    userLibrary.forEach(c => {
-        if (c && c.address && !combinedCollectionsMap.has(c.address.toLowerCase())) {
-            combinedCollectionsMap.set(c.address.toLowerCase(), { ...c, _isOfficial: false });
-        }
-    });
-    const allCollections = Array.from(combinedCollectionsMap.values());
-
-    const collectionCountChanged = allCollections.length !== prevCollectionCountRef.current;
-    if (!force && !collectionCountChanged && lastFetchTimestamp > 0 && (Date.now() - lastFetchTimestamp < TOKEN_CACHE_DURATION_MS)) {
-        return;
-    }
-
-    if (!effectiveAddress || allCollections.length === 0) {
-      setOwnedTokenIdentifiers({});
-      return;
-    }
-
-    // --- Set lock ---
-    isFetchingTokensRef.current = true;
-    setIsFetchingTokens(true);
-    setTokenFetchProgress({ loaded: 0, total: allCollections.length, loading: true });
-    
-    if (!isSilent && (force || collectionCountChanged)) {
-       addToast("Syncing library...", "info", 1500);
-    }
-
-    try {
-      const isAdminShowcase = hostProfileAddress?.toLowerCase() === RADAR_OFFICIAL_ADMIN_ADDRESS.toLowerCase();
-      let newIdentifierMap = {};
-
-      if (isAdminShowcase) {
-        for (const collection of allCollections) {
-            const standard = await service.detectCollectionStandard(collection.address);
-            let identifiers = [];
-            
-            if (standard === 'LSP8') {
-                if (collection._isOfficial) {
-                    identifiers = await service.getAllLSP8TokenIdsForCollection(collection.address);
-                    if (identifiers.length === 0) {
-                        identifiers = await service.getOwnedLSP8TokenIdsForCollection(effectiveAddress, collection.address);
-                    }
-                } else {
-                    identifiers = await service.getOwnedLSP8TokenIdsForCollection(effectiveAddress, collection.address);
-                }
-            } else if (standard === 'LSP7') {
-                const balance = await service.getLSP7Balance(effectiveAddress, collection.address);
-                if (balance > 0) identifiers.push('LSP7_TOKEN');
-            }
-            
-            if (identifiers.length > 0) newIdentifierMap[collection.address] = identifiers;
-            setTokenFetchProgress(prev => ({ ...prev, loaded: prev.loaded + 1 }));
-        }
-      } else {
-        newIdentifierMap = await service.getBatchCollectionData(effectiveAddress, allCollections);
-      }
-      
-      setOwnedTokenIdentifiers(newIdentifierMap);
-      setLastFetchTimestamp(Date.now());
-      prevCollectionCountRef.current = allCollections.length;
-
-      if (!isSilent && (force || collectionCountChanged)) {
-        const totalIds = Object.values(newIdentifierMap).reduce((sum, ids) => sum + ids.length, 0);
-        addToast(`Library sync complete: ${totalIds} assets.`, "success", 2000);
-      }
-    } catch (error) {
-      console.error("Failed to refresh owned token identifiers:", error);
-    } finally {
-      // --- Release lock ---
-      isFetchingTokensRef.current = false;
-      setIsFetchingTokens(false);
-      setTokenFetchProgress(prev => ({ ...prev, loading: false }));
-    }
-  }, [hostProfileAddress, officialWhitelist, addToast, lastFetchTimestamp]);
-
-  const contextValue = useMemo(() => ({
-    officialWhitelist,
-    refreshOfficialWhitelist,
-    ownedTokenIdentifiers,
-    isFetchingTokens,
-    tokenFetchProgress,
-    refreshOwnedTokens,
-  }), [officialWhitelist, refreshOfficialWhitelist, ownedTokenIdentifiers, isFetchingTokens, tokenFetchProgress, refreshOwnedTokens]);
-
-  return (
-    <AssetContext.Provider value={contextValue}>
-      {children}
-    </AssetContext.Provider>
-  );
-};
-
-AssetProvider.propTypes = { children: PropTypes.node.isRequired };
-export const useAssetContext = () => {
-  const context = useContext(AssetContext);
-  if (context === undefined) throw new Error("useAssetContext must be used within an AssetProvider");
-  return context;
-};
-```
-
----
 ### `src\context\MIDIContext.jsx`
 ```jsx
 import React, { createContext, useContext, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -14273,51 +14030,6 @@ export const useMIDI = () => {
     const store = useEngineStore();
     return { ...context, ...store };
 };
-```
-
----
-### `src\context\NotificationContext.jsx`
-```jsx
-import { useUIStore } from '../store/useUIStore';
-
-// Adapter to maintain API compatibility
-export const useNotificationContext = () => {
-  const notifications = useUIStore((state) => state.notifications);
-  const addNotification = useUIStore((state) => state.addNotification);
-  const onMarkNotificationRead = useUIStore((state) => state.markNotificationRead);
-  const onClearAllNotifications = useUIStore((state) => state.clearAllNotifications);
-  
-  // Calculate unread count efficiently
-  const unreadCount = notifications.filter(n => !n.read).length;
-
-  return {
-    notifications,
-    addNotification,
-    onMarkNotificationRead,
-    onClearAllNotifications,
-    unreadCount,
-  };
-};
-
-export const NotificationProvider = ({ children }) => children;
-```
-
----
-### `src\context\ToastContext.jsx`
-```jsx
-import { useUIStore } from '../store/useUIStore';
-
-// Adapter to maintain API compatibility
-export const useToast = () => {
-  const addToast = useUIStore((state) => state.addToast);
-  const removeToast = useUIStore((state) => state.removeToast);
-  const toasts = useUIStore((state) => state.toasts);
-
-  return { addToast, removeToast, toasts };
-};
-
-// Fake Provider to keep main.jsx happy until we clean it
-export const ToastProvider = ({ children }) => children;
 ```
 
 ---
@@ -15652,7 +15364,7 @@ import { useMIDI } from '../context/MIDIContext';
 // REFACTORED: Import selector instead of Context
 import { useProfileSessionState, useInteractionSettingsState } from './configSelectors';
 import { useVisualEngineContext } from '../context/VisualEngineContext';
-import { useNotificationContext } from '../context/NotificationContext';
+import { useNotificationContext } from './useNotificationContext'; // UPDATED IMPORT
 import { sliderParams } from '../config/sliderParams';
 import { scaleNormalizedValue } from "../utils/helpers";
 
@@ -15803,10 +15515,59 @@ export const useAppInteractions = (props) => {
 ```
 
 ---
+### `src\hooks\useAssetContext.js`
+```js
+import { useProjectStore } from '../store/useProjectStore';
+import { useWalletStore } from '../store/useWalletStore';
+import { useCallback } from 'react';
+import { useShallow } from 'zustand/react/shallow';
+
+/**
+ * Adapter hook to replace the old AssetContext.
+ * Connects components to the Asset slice of useProjectStore.
+ */
+export const useAssetContext = () => {
+  const {
+    officialWhitelist,
+    ownedTokenIdentifiers,
+    isFetchingTokens,
+    tokenFetchProgress,
+    refreshOfficialWhitelist,
+    refreshOwnedTokens: storeRefreshOwnedTokens
+  } = useProjectStore(useShallow(state => ({
+    officialWhitelist: state.officialWhitelist,
+    ownedTokenIdentifiers: state.ownedTokenIdentifiers,
+    isFetchingTokens: state.isFetchingTokens,
+    tokenFetchProgress: state.tokenFetchProgress,
+    refreshOfficialWhitelist: state.refreshOfficialWhitelist,
+    refreshOwnedTokens: state.refreshOwnedTokens
+  })));
+
+  const hostProfileAddress = useWalletStore(s => s.hostProfileAddress);
+
+  // Wrap the store action to automatically inject the host address
+  const refreshOwnedTokens = useCallback((force = false, isSilent = false) => {
+    if (hostProfileAddress) {
+      storeRefreshOwnedTokens(hostProfileAddress, force, isSilent);
+    }
+  }, [hostProfileAddress, storeRefreshOwnedTokens]);
+
+  return {
+    officialWhitelist,
+    ownedTokenIdentifiers,
+    isFetchingTokens,
+    tokenFetchProgress,
+    refreshOfficialWhitelist,
+    refreshOwnedTokens
+  };
+};
+```
+
+---
 ### `src\hooks\useAsyncErrorHandler.js`
 ```js
 // src/hooks/useAsyncErrorHandler.js
-import { useToast } from '../context/ToastContext';
+import { useToast } from './useToast'; // UPDATED IMPORT
 import { useCallback } from 'react';
 
 export const useAsyncErrorHandler = () => {
@@ -16415,6 +16176,32 @@ export function useLsp1Events(profileAddress, onEventReceived) {
     };
   }, [profileAddress]); // Only re-run when the profileAddress changes
 }
+```
+
+---
+### `src\hooks\useNotificationContext.js`
+```js
+import { useUIStore } from '../store/useUIStore';
+
+export const useNotificationContext = () => {
+  const notifications = useUIStore((state) => state.notifications);
+  const addNotification = useUIStore((state) => state.addNotification);
+  const markNotificationRead = useUIStore((state) => state.markNotificationRead);
+  const clearAllNotifications = useUIStore((state) => state.clearAllNotifications);
+  
+  // Calculate unread count efficiently
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  return {
+    notifications,
+    addNotification,
+    onMarkNotificationRead: markNotificationRead, // Aliased to match old API if needed
+    onClearAllNotifications: clearAllNotifications, // Aliased to match old API
+    markNotificationRead,
+    clearAllNotifications,
+    unreadCount,
+  };
+};
 ```
 
 ---
@@ -17565,6 +17352,106 @@ export function useRenderLifecycle(options) {
 ```
 
 ---
+### `src\hooks\useSceneSequencer.js`
+```js
+// src/hooks/useSceneSequencer.js
+import { useEffect, useRef, useCallback } from 'react';
+import { useEngineStore } from '../store/useEngineStore';
+import { useSetManagementState } from './configSelectors';
+import { useVisualEngineContext } from '../context/VisualEngineContext';
+import { useToast } from './useToast';
+
+export const useSceneSequencer = (crossfadeDurationMs) => {
+    const { addToast } = useToast();
+    
+    // 1. Get State from Stores
+    const active = useEngineStore(s => s.sequencerState.active);
+    const intervalMs = useEngineStore(s => s.sequencerState.intervalMs);
+    const nextIndex = useEngineStore(s => s.sequencerState.nextIndex);
+    
+    const setSequencerActive = useEngineStore(s => s.setSequencerActive);
+    const setNextIndex = useEngineStore(s => s.setSequencerNextIndex);
+    
+    const { fullSceneList, activeSceneName } = useSetManagementState();
+    const { handleSceneSelect, isAutoFading } = useVisualEngineContext();
+
+    const timeoutRef = useRef(null);
+
+    // 2. The Logic to Advance Scene
+    const advanceScene = useCallback(() => {
+        if (!fullSceneList || fullSceneList.length === 0) {
+            setSequencerActive(false);
+            return;
+        }
+
+        // Calculate next scene based on stored index
+        // We use the stored index to ensure stability if the list changes
+        const actualIndex = nextIndex % fullSceneList.length;
+        const nextScene = fullSceneList[actualIndex];
+
+        if (nextScene?.name) {
+            // Trigger the visual engine
+            handleSceneSelect(nextScene.name, crossfadeDurationMs);
+            
+            // Advance index for next time
+            setNextIndex(actualIndex + 1);
+        }
+    }, [fullSceneList, nextIndex, crossfadeDurationMs, handleSceneSelect, setNextIndex, setSequencerActive]);
+
+    // 3. The Timer Loop
+    useEffect(() => {
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+
+        if (active && !isAutoFading) {
+            timeoutRef.current = setTimeout(advanceScene, intervalMs);
+        }
+
+        return () => {
+            if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        };
+    }, [active, isAutoFading, intervalMs, advanceScene]);
+
+    // 4. Toggle Action (To be used by UI buttons)
+    const toggleSequencer = useCallback(() => {
+        const willActivate = !active;
+        setSequencerActive(willActivate);
+
+        if (willActivate) {
+            addToast(`Sequencer started (${(intervalMs/1000).toFixed(1)}s).`, 'info', 2000);
+            
+            // Sync index to current scene so we don't jump randomly
+            if (fullSceneList && fullSceneList.length > 0) {
+                const currentIndex = fullSceneList.findIndex(p => p.name === activeSceneName);
+                setNextIndex(currentIndex === -1 ? 0 : currentIndex + 1);
+            }
+        } else {
+            addToast('Sequencer stopped.', 'info', 2000);
+        }
+    }, [active, intervalMs, fullSceneList, activeSceneName, setSequencerActive, setNextIndex, addToast]);
+
+    return {
+        isSequencerActive: active,
+        sequencerIntervalMs: intervalMs,
+        toggleSequencer,
+        setSequencerInterval: useEngineStore.getState().setSequencerInterval // Direct action
+    };
+};
+```
+
+---
+### `src\hooks\useToast.js`
+```js
+import { useUIStore } from '../store/useUIStore';
+
+export const useToast = () => {
+  const addToast = useUIStore((state) => state.addToast);
+  const removeToast = useUIStore((state) => state.removeToast);
+  // We generally don't need 'toasts' array in components consuming this, just the actions
+  return { addToast, removeToast };
+};
+```
+
+---
 ### `src\hooks\useUIState.js`
 ```js
 import { useUIStore } from '../store/useUIStore';
@@ -17840,7 +17727,6 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import { UpProvider } from "./context/UpProvider.jsx";
-import { AssetProvider } from "./context/AssetContext.jsx";
 import { VisualEngineProvider } from "./context/VisualEngineContext.jsx";
 import { MIDIProvider } from "./context/MIDIContext.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
@@ -17862,21 +17748,14 @@ if (!inIframe) {
   initializeHostUPConnector();
 }
 
-// Notice: We removed UserSessionProvider, WorkspaceProvider, SceneProvider.
-// Their state is now managed globally by Zustand stores.
-// AssetProvider, MIDIProvider, VisualEngineProvider remain as they hold local refs/logic
-// that are still being refactored or are tied to the render tree.
-
 const AppTree = (
   <ErrorBoundary>
     <UpProvider>
-      <AssetProvider>
-        <MIDIProvider>
-          <VisualEngineProvider>
-            <App />
-          </VisualEngineProvider>
-        </MIDIProvider>
-      </AssetProvider>
+      <MIDIProvider>
+        <VisualEngineProvider>
+          <App />
+        </VisualEngineProvider>
+      </MIDIProvider>
     </UpProvider>
   </ErrorBoundary>
 );
@@ -19220,6 +19099,9 @@ const DEFAULT_INDUSTRIAL_MAPPING = {
     crossfaderShred: { source: 'bass', amount: 0.0, enabled: false },
 };
 
+// --- NEW CONSTANT ---
+const DEFAULT_SEQUENCER_INTERVAL = 2000; // 2 seconds default
+
 export const useEngineStore = create(
   subscribeWithSelector((set, get) => ({
     // ... (Standard Visual Engine Slice) ...
@@ -19231,6 +19113,26 @@ export const useEngineStore = create(
     transitionMode: 'crossfade',
     targetSceneName: null,
     
+    // --- NEW: SEQUENCER SLICE ---
+    sequencerState: {
+        active: false,
+        intervalMs: DEFAULT_SEQUENCER_INTERVAL,
+        nextIndex: 0,
+    },
+
+    setSequencerActive: (isActive) => set((state) => ({
+        sequencerState: { ...state.sequencerState, active: isActive }
+    })),
+
+    setSequencerInterval: (ms) => set((state) => ({
+        sequencerState: { ...state.sequencerState, intervalMs: Math.max(100, ms) } // Min 100ms safety
+    })),
+
+    setSequencerNextIndex: (index) => set((state) => ({
+        sequencerState: { ...state.sequencerState, nextIndex: index }
+    })),
+    // ----------------------------
+    
     // INDUSTRIAL CONFIG
     industrialConfig: {
         enabled: false,
@@ -19241,7 +19143,6 @@ export const useEngineStore = create(
 
     // Global Effects
     effectsConfig: {
-        // --- NEW: FEEDBACK CONFIG ---
         feedback: { 
             enabled: false, 
             amount: 0.9,    // Decay (Opacity of previous frame)
@@ -19250,7 +19151,6 @@ export const useEngineStore = create(
             xOffset: 0,     // Drift X
             yOffset: 0      // Drift Y
         },
-        // ---------------------------
         bloom: { enabled: false, intensity: 1.0, blur: 8, threshold: 0.5 },
         rgb: { enabled: false, amount: 2 },
         pixelate: { enabled: false, size: 10 },
@@ -19363,13 +19263,14 @@ export const useEngineStore = create(
 ---
 ### `src\store\useProjectStore.js`
 ```js
-// src/store/useProjectStore.js
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import ConfigurationService from '../services/ConfigurationService';
+import ConfigurationService, { hexToUtf8Safe } from '../services/ConfigurationService'; // Import hexToUtf8Safe
 import { uploadJsonToPinata } from '../services/PinataService';
 import { resolveImageUrl, preloadImages } from '../utils/imageDecoder';
 import fallbackConfig from '../config/fallback-config';
+import { RADAR_OFFICIAL_ADMIN_ADDRESS, IPFS_GATEWAY } from "../config/global-config";
+import { keccak256, stringToBytes } from "viem";
 
 // Initial Empty States
 const EMPTY_SETLIST = {
@@ -19385,6 +19286,9 @@ const EMPTY_WORKSPACE = {
   presets: {},
   defaultPresetName: null
 };
+
+const OFFICIAL_WHITELIST_KEY = keccak256(stringToBytes("RADAR.OfficialWhitelist"));
+const TOKEN_CACHE_DURATION_MS = 5 * 60 * 1000;
 
 export const useProjectStore = create(devtools((set, get) => ({
   // =========================================
@@ -19407,16 +19311,20 @@ export const useProjectStore = create(devtools((set, get) => ({
   error: null,      
   saveError: null,  
   
-  // Data
+  // Data - Configuration
   setlist: EMPTY_SETLIST, 
   stagedSetlist: EMPTY_SETLIST, 
-  
   activeWorkspaceName: null,
   stagedWorkspace: EMPTY_WORKSPACE, 
-  
   activeSceneName: null, 
-  
   workspaceCache: new Map(),
+
+  // Data - Assets (Moved from AssetContext)
+  officialWhitelist: [],
+  ownedTokenIdentifiers: {},
+  isFetchingTokens: false,
+  tokenFetchProgress: { loaded: 0, total: 0, loading: false },
+  lastTokenFetchTimestamp: 0,
 
   // =========================================
   // 2. INITIALIZATION ACTIONS
@@ -19426,6 +19334,11 @@ export const useProjectStore = create(devtools((set, get) => ({
     const service = new ConfigurationService(provider, walletClient, publicClient);
     const isReady = service.checkReadyForRead();
     set({ configService: service, isConfigReady: isReady });
+    
+    // Auto-fetch whitelist when service is ready
+    if(isReady) {
+        get().refreshOfficialWhitelist();
+    }
   },
 
   resetProject: () => {
@@ -19437,12 +19350,131 @@ export const useProjectStore = create(devtools((set, get) => ({
       activeSceneName: null,
       hasPendingChanges: false,
       error: null,
-      saveError: null
+      saveError: null,
+      // Reset Asset State
+      ownedTokenIdentifiers: {},
+      lastTokenFetchTimestamp: 0,
+      tokenFetchProgress: { loaded: 0, total: 0, loading: false }
     });
   },
 
   // =========================================
-  // 3. ASYNC LOADING ACTIONS
+  // 3. ASSET ACTIONS (NEW)
+  // =========================================
+
+  refreshOfficialWhitelist: async () => {
+    const { configService } = get();
+    if (!configService || !configService.checkReadyForRead()) return;
+
+    try {
+        const pointerHex = await configService.loadDataFromKey(RADAR_OFFICIAL_ADMIN_ADDRESS, OFFICIAL_WHITELIST_KEY);
+        if (!pointerHex || pointerHex === '0x') { set({ officialWhitelist: [] }); return; }
+        
+        const ipfsUri = hexToUtf8Safe(pointerHex);
+        if (!ipfsUri || !ipfsUri.startsWith('ipfs://')) { set({ officialWhitelist: [] }); return; }
+        
+        const cid = ipfsUri.substring(7);
+        const response = await fetch(`${IPFS_GATEWAY}${cid}`);
+        
+        if (!response.ok) throw new Error(`Failed to fetch whitelist from IPFS: ${response.statusText}`);
+        
+        const list = await response.json();
+        set({ officialWhitelist: Array.isArray(list) ? list : [] });
+    } catch (error) {
+        console.error("Error fetching official collection whitelist:", error);
+        set({ officialWhitelist: [] });
+    }
+  },
+
+  refreshOwnedTokens: async (hostProfileAddress, force = false, isSilent = false) => {
+    const state = get();
+    const { configService, officialWhitelist, stagedSetlist, lastTokenFetchTimestamp, isFetchingTokens } = state;
+    
+    if (!configService || !configService.checkReadyForRead()) return;
+    if (isFetchingTokens) return; // Prevent duplicate calls
+
+    const userLibrary = stagedSetlist?.personalCollectionLibrary || [];
+    
+    // Combine collections
+    const combinedCollectionsMap = new Map();
+    officialWhitelist.forEach(c => {
+        if (c && c.address) combinedCollectionsMap.set(c.address.toLowerCase(), { ...c, _isOfficial: true });
+    });
+    userLibrary.forEach(c => {
+        if (c && c.address && !combinedCollectionsMap.has(c.address.toLowerCase())) {
+            combinedCollectionsMap.set(c.address.toLowerCase(), { ...c, _isOfficial: false });
+        }
+    });
+    const allCollections = Array.from(combinedCollectionsMap.values());
+
+    // Cache check
+    // Note: We don't have prevCollectionCount ref here easily, so we rely on timestamp and force flag
+    // We could store prevCollectionCount in state if strictly needed, but timestamp is usually enough
+    if (!force && lastTokenFetchTimestamp > 0 && (Date.now() - lastTokenFetchTimestamp < TOKEN_CACHE_DURATION_MS)) {
+        return;
+    }
+
+    if (!hostProfileAddress || allCollections.length === 0) {
+      set({ ownedTokenIdentifiers: {} });
+      return;
+    }
+
+    set({ 
+        isFetchingTokens: true, 
+        tokenFetchProgress: { loaded: 0, total: allCollections.length, loading: true } 
+    });
+
+    try {
+      const isAdminShowcase = hostProfileAddress?.toLowerCase() === RADAR_OFFICIAL_ADMIN_ADDRESS.toLowerCase();
+      let newIdentifierMap = {};
+
+      if (isAdminShowcase) {
+        // Admin showcase logic (load everything)
+        for (const collection of allCollections) {
+            const standard = await configService.detectCollectionStandard(collection.address);
+            let identifiers = [];
+            
+            if (standard === 'LSP8') {
+                if (collection._isOfficial) {
+                    identifiers = await configService.getAllLSP8TokenIdsForCollection(collection.address);
+                    if (identifiers.length === 0) {
+                        identifiers = await configService.getOwnedLSP8TokenIdsForCollection(hostProfileAddress, collection.address);
+                    }
+                } else {
+                    identifiers = await configService.getOwnedLSP8TokenIdsForCollection(hostProfileAddress, collection.address);
+                }
+            } else if (standard === 'LSP7') {
+                const balance = await configService.getLSP7Balance(hostProfileAddress, collection.address);
+                if (balance > 0) identifiers.push('LSP7_TOKEN');
+            }
+            
+            if (identifiers.length > 0) newIdentifierMap[collection.address] = identifiers;
+            
+            // Update progress
+            set(s => ({ tokenFetchProgress: { ...s.tokenFetchProgress, loaded: s.tokenFetchProgress.loaded + 1 } }));
+        }
+      } else {
+        // Standard user logic (batch fetch)
+        newIdentifierMap = await configService.getBatchCollectionData(hostProfileAddress, allCollections);
+      }
+      
+      set({ 
+          ownedTokenIdentifiers: newIdentifierMap,
+          lastTokenFetchTimestamp: Date.now()
+      });
+
+    } catch (error) {
+      console.error("Failed to refresh owned token identifiers:", error);
+    } finally {
+      set({ 
+          isFetchingTokens: false,
+          tokenFetchProgress: { ...get().tokenFetchProgress, loading: false }
+      });
+    }
+  },
+
+  // =========================================
+  // 4. ASYNC LOADING ACTIONS (EXISTING)
   // =========================================
 
   loadSetlist: async (profileAddress, visitorContext = null) => {
@@ -19475,6 +19507,9 @@ export const useProjectStore = create(devtools((set, get) => ({
         isLoading: false,
         loadingMessage: ""
       });
+
+      // Trigger Token Refresh when setlist loads (library might have changed)
+      get().refreshOwnedTokens(profileAddress); 
 
       const defaultName = loadedSetlist.defaultWorkspaceName || Object.keys(loadedSetlist.workspaces)[0];
       if (defaultName) {
@@ -19545,10 +19580,9 @@ export const useProjectStore = create(devtools((set, get) => ({
     }
   },
 
-  // =========================================
-  // 4. SCENE MANAGEMENT ACTIONS
-  // =========================================
-
+  // ... (Keep other actions: Scene Management, Global Metadata, Workspace CRUD) ...
+  // Paste Section 4, 5, 6 from the previous useProjectStore.js here unchanged
+  
   setActiveSceneName: (name) => set({ activeSceneName: name }),
 
   addScene: (sceneName, sceneData) => set((state) => {
@@ -19581,10 +19615,6 @@ export const useProjectStore = create(devtools((set, get) => ({
     const newWorkspace = { ...state.stagedWorkspace, defaultPresetName: sceneName };
     return { stagedWorkspace: newWorkspace, hasPendingChanges: true };
   }),
-
-  // =========================================
-  // 5. GLOBAL METADATA ACTIONS
-  // =========================================
 
   updateGlobalMidiMap: (newMap) => set((state) => ({
     stagedSetlist: { ...state.stagedSetlist, globalUserMidiMap: newMap },
@@ -19655,10 +19685,6 @@ export const useProjectStore = create(devtools((set, get) => ({
     };
   }),
 
-  // =========================================
-  // 6. WORKSPACE CRUD & SAVING
-  // =========================================
-
   createNewWorkspace: async (name) => {
     const state = get();
     if (state.stagedSetlist.workspaces[name]) throw new Error("Workspace name exists");
@@ -19722,7 +19748,6 @@ export const useProjectStore = create(devtools((set, get) => ({
     hasPendingChanges: true
   })),
 
-  // --- NEW: DUPLICATE WORKSPACE ACTION ---
   duplicateActiveWorkspace: async (newName) => {
     const state = get();
     if (state.stagedSetlist.workspaces[newName]) {
@@ -19732,58 +19757,13 @@ export const useProjectStore = create(devtools((set, get) => ({
 
     set({ activeWorkspaceName: newName, hasPendingChanges: true });
     
-    // We immediately trigger a save to persist this new name/state to IPFS+Chain
-    // This assumes the user (via EnhancedSavePanel) calls this knowing it triggers a save.
-    // However, if we just want to stage it in memory:
-    
-    // For "Save As" flow, we typically want to persist immediately.
-    // We reuse the existing saveChanges logic, but since saveChanges uses activeWorkspaceName,
-    // we set that first.
-    
-    // BUT saveChanges requires the target address.
-    // The component calls this, then often expects the result.
-    // To keep it simple: we just set the name here. The SavePanel will call saveChanges(address) next?
-    // No, SavePanel calls this expecting it to do the work.
-    
-    // Let's modify saveChanges to handle the activeWorkspaceName update internally?
-    // No, cleaner is to have duplicate act as a setup, then we save.
-    
-    // Actually, looking at the previous logic in EnhancedSavePanel:
-    // It calls duplicateActiveWorkspace(newName).
-    
-    // Implementation:
-    // 1. Update activeWorkspaceName to newName.
-    // 2. Add entry to stagedSetlist (placeholder).
-    // 3. We rely on the user clicking "Save" again? 
-    //    The user prompt implies immediate action.
-    
-    // Let's try to reuse saveChanges internally if possible, but we need the address.
-    // Since we don't have the address here easily (it's in the component),
-    // let's return success and let the component call saveChanges.
-    
-    // WAIT! EnhancedSavePanel logic was: 
-    // const result = await duplicateActiveWorkspace(newName.trim());
-    // if (result.success) onClose();
-    
-    // This implies duplicateActiveWorkspace MUST save.
-    // But it doesn't have the address.
-    
-    // BETTER FIX: duplicateActiveWorkspace just renames the active session in memory.
-    // Then the component calls saveChanges. 
-    // BUT the component code I gave you just calls duplicateActiveWorkspace.
-    
-    // OK, let's make duplicateActiveWorkspace do the heavy lifting of registering the new workspace in memory.
-    // We will trick the system by adding it to the setlist without a CID yet.
-    
     const newSetlist = JSON.parse(JSON.stringify(state.stagedSetlist));
-    newSetlist.workspaces[newName] = { cid: null, lastModified: Date.now() }; // No CID yet
+    newSetlist.workspaces[newName] = { cid: null, lastModified: Date.now() }; 
     
-    // Clone the cache data
     if (state.workspaceCache.has(state.activeWorkspaceName)) {
         const data = JSON.parse(JSON.stringify(state.workspaceCache.get(state.activeWorkspaceName)));
         state.workspaceCache.set(newName, data);
     } else {
-        // Fallback: use stagedWorkspace
         state.workspaceCache.set(newName, JSON.parse(JSON.stringify(state.stagedWorkspace)));
     }
 
@@ -19793,32 +19773,13 @@ export const useProjectStore = create(devtools((set, get) => ({
         hasPendingChanges: true 
     });
     
-    // Now we need to actually save to chain to make it real. 
-    // Since we don't have the address here, we return a specific flag.
-    // Or we assume the user will click "Update Current Workspace" next?
-    // The UI flow for "Duplicate" usually implies "Save As and Switch".
-    
-    // To fix the "Missing Argument" error fully:
-    // We will leave the saving to the user interaction in the Save Panel 
-    // OR we require the address to be passed to this function too.
-    
-    // I will update this function to accept the address as a second argument, 
-    // but since I already gave you the SavePanel code without it, 
-    // I'll make this function just perform the in-memory switch.
-    // The user will then see "Unsaved Changes" and can click "Update Workspace".
-    
-    // However, to satisfy the `if (result.success) onClose()` in the panel, 
-    // we return success. This leaves the UI in a "dirty" state (Unsaved changes), 
-    // which is actually safer than auto-saving without the address.
-    
     return { success: true };
   },
 
-  // THE BIG SAVE
   saveChanges: async (targetProfileAddress) => {
     const state = get();
     if (!state.configService) return { success: false, error: "Service not ready" };
-    if (!targetProfileAddress) return { success: false, error: "Target address missing" }; // Safety check
+    if (!targetProfileAddress) return { success: false, error: "Target address missing" }; 
 
     set({ isSaving: true, saveError: null });
 
@@ -23151,6 +23112,9 @@ export class PixiLayerDeck {
     this.driftState.y = otherDeck.driftState.y;
     this.driftState.phase = otherDeck.driftState.phase;
     
+    // Sync P-Locks so incoming deck inherits overrides immediately
+    this.playbackValues = { ...otherDeck.playbackValues };
+    
     Object.keys(this.interpolators).forEach(key => {
         if (otherDeck.interpolators[key]) {
             this.interpolators[key].currentValue = otherDeck.interpolators[key].currentValue;
@@ -23218,10 +23182,11 @@ export class PixiLayerDeck {
         this.interpolators[key].update(now);
     }
     
-    const getVal = (k) => (this.playbackValues[k] !== undefined ? this.playbackValues[k] : this.interpolators[k].currentValue);
+    // --- KEY: Use playbackValues for Speed/Direction if present ---
+    const getVal = (k) => (this.playbackValues[k] !== undefined ? this.playbackValues[k] : (this.interpolators[k] ? this.interpolators[k].currentValue : this.config[k]));
     
     const speed = getVal('speed');
-    const direction = this.config.direction || 1;
+    const direction = getVal('direction') ?? 1; // P-Lockable Direction
     const drift = getVal('drift');
     const driftSpeed = getVal('driftSpeed');
 
@@ -23242,7 +23207,12 @@ export class PixiLayerDeck {
 
   resolveRenderState() {
     const s = this._reusableRenderState;
-    const getVal = (k) => (this.playbackValues[k] !== undefined ? this.playbackValues[k] : this.interpolators[k].currentValue);
+    // Helper to check playbackValues first, then interpolator, then config
+    const getVal = (k) => {
+        if (this.playbackValues[k] !== undefined) return this.playbackValues[k];
+        if (this.interpolators[k]) return this.interpolators[k].currentValue;
+        return this.config[k];
+    };
 
     const angle = getVal('angle');
     
@@ -23254,9 +23224,13 @@ export class PixiLayerDeck {
     s.xaxis = getVal('xaxis');
     s.yaxis = getVal('yaxis');
     s.angle = angle;
-    s.direction = this.config.direction || 1;
-    s.blendMode = this.config.blendMode;
-    s.enabled = this.config.enabled;
+    
+    // --- FIX: Respect P-Locks for categorical props ---
+    s.direction = getVal('direction') ?? 1;
+    s.blendMode = getVal('blendMode');
+    s.enabled = getVal('enabled');
+    // ------------------------------------------------
+
     s.driftX = this.driftState.x;
     s.driftY = this.driftState.y;
     
@@ -23486,7 +23460,6 @@ export class CrossfaderSystem {
             const stateB = renderB ? layerObj.deckB.resolveRenderState() : null;
 
             // Apply Transition
-            // Note: We pass effectiveCrossfade here, not this.crossfadeValue
             if (this.transitionMode === 'flythrough') {
                 this._applyFlythrough(layerObj, stateA, stateB, renderA, renderB, combinedBeatFactor, screen, effectiveCrossfade);
             } else {
@@ -23495,7 +23468,6 @@ export class CrossfaderSystem {
         }
     }
 
-    // Updated Helper Methods to accept 't' (effectiveCrossfade)
     _applyFlythrough(layerObj, stateA, stateB, renderA, renderB, beatFactor, screen, t) {
         const SIDEWAYS_FORCE = -25000;
         const VERTICAL_FORCE = -8000;
@@ -23572,13 +23544,17 @@ export class CrossfaderSystem {
     }
 
     _applyCrossfade(layerObj, stateA, stateB, renderA, renderB, beatFactor, screen, t) {
+        // Opacity crossfade curve (Sin/Cos for smoother blend than linear)
         const angle = t * 1.570796;
         const opacityA = Math.cos(angle);
         const opacityB = Math.sin(angle);
 
         if (renderA && renderB) {
             const ms = this._morphedState;
-            ms.speed = t < 0.5 ? stateA.speed : stateB.speed;
+            
+            // --- Spatial Morphing ---
+            // We interpolate position/size/angle so the layers overlap perfectly during fade.
+            ms.speed = lerp(stateA.speed, stateB.speed, t); 
             ms.size = lerp(stateA.size, stateB.size, t);
             ms.opacity = lerp(stateA.opacity, stateB.opacity, t);
             ms.drift = lerp(stateA.drift, stateB.drift, t);
@@ -23586,17 +23562,29 @@ export class CrossfaderSystem {
             ms.xaxis = lerp(stateA.xaxis, stateB.xaxis, t);
             ms.yaxis = lerp(stateA.yaxis, stateB.yaxis, t);
             ms.angle = lerpAngle(stateA.angle, stateB.angle, t);
-            ms.direction = t < 0.5 ? stateA.direction : stateB.direction;
-            ms.blendMode = t < 0.5 ? stateA.blendMode : stateB.blendMode;
-            ms.enabled = t < 0.5 ? stateA.enabled : stateB.enabled;
             ms.driftX = lerp(stateA.driftX, stateB.driftX, t);
             ms.driftY = lerp(stateA.driftY, stateB.driftY, t);
             
+            // Sync rotation physics
             const currentContinuous = lerp(layerObj.deckA.continuousAngle, layerObj.deckB.continuousAngle, t);
             ms.totalAngleRad = (ms.angle + currentContinuous) * 0.01745329251;
 
+            // --- FIXED: APPLY CATEGORICAL PROPERTIES INDIVIDUALLY ---
+            // Previously, we did `ms.blendMode = t < 0.5 ? A : B` and sent `ms` to BOTH.
+            // This caused Deck A to suddenly swap blend modes at 50%.
+            // Now, we override the blendMode/enabled on the morphed state object 
+            // JUST before sending it to the respective deck.
+
+            // Render Deck A
+            ms.blendMode = stateA.blendMode;
+            ms.enabled = stateA.enabled;
             layerObj.deckA.applyRenderState(ms, opacityA, beatFactor, this.renderedParallaxOffset, this.parallaxFactors[layerObj.id], screen);
+
+            // Render Deck B
+            ms.blendMode = stateB.blendMode;
+            ms.enabled = stateB.enabled;
             layerObj.deckB.applyRenderState(ms, opacityB, beatFactor, this.renderedParallaxOffset, this.parallaxFactors[layerObj.id], screen);
+
         } else {
             if (renderA) layerObj.deckA.applyRenderState(stateA, opacityA, beatFactor, this.renderedParallaxOffset, this.parallaxFactors[layerObj.id], screen);
             else layerObj.deckA.container.visible = false;
@@ -23788,6 +23776,7 @@ export class LayerManager {
 ---
 ### `src\utils\PixiEngine.js`
 ```js
+// src/utils/PixiEngine.js
 import { Application, RenderTexture, Mesh, PlaneGeometry } from 'pixi.js';
 import { PixiEffectsManager } from './pixi/PixiEffectsManager';
 import { useEngineStore } from '../store/useEngineStore'; 
@@ -24028,8 +24017,9 @@ export default class PixiEngine {
       const deckSource = this.layerManager?.getDeck(layerId, targetDeckSide === 'A' ? 'B' : 'A');
       
       if (deckTarget && deckSource) {
-          const normalizedAngle = ((deckSource.continuousAngle % 360) + 360) % 360;
-          deckSource.continuousAngle = normalizedAngle;
+          // --- FIX: NO NORMALIZATION ---
+          // Just copy the raw value. This prevents the large-value interpolation spin.
+          deckTarget.continuousAngle = deckSource.continuousAngle;
           deckTarget.syncPhysicsFrom(deckSource);
       }
   }

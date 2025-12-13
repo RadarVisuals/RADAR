@@ -1,3 +1,4 @@
+// src/utils/PixiEngine.js
 import { Application, RenderTexture, Mesh, PlaneGeometry } from 'pixi.js';
 import { PixiEffectsManager } from './pixi/PixiEffectsManager';
 import { useEngineStore } from '../store/useEngineStore'; 
@@ -238,8 +239,9 @@ export default class PixiEngine {
       const deckSource = this.layerManager?.getDeck(layerId, targetDeckSide === 'A' ? 'B' : 'A');
       
       if (deckTarget && deckSource) {
-          const normalizedAngle = ((deckSource.continuousAngle % 360) + 360) % 360;
-          deckSource.continuousAngle = normalizedAngle;
+          // --- FIX: NO NORMALIZATION ---
+          // Just copy the raw value. This prevents the large-value interpolation spin.
+          deckTarget.continuousAngle = deckSource.continuousAngle;
           deckTarget.syncPhysicsFrom(deckSource);
       }
   }

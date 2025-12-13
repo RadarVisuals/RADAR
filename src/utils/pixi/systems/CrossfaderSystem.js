@@ -97,7 +97,6 @@ export class CrossfaderSystem {
             const stateB = renderB ? layerObj.deckB.resolveRenderState() : null;
 
             // Apply Transition
-            // Note: We pass effectiveCrossfade here, not this.crossfadeValue
             if (this.transitionMode === 'flythrough') {
                 this._applyFlythrough(layerObj, stateA, stateB, renderA, renderB, combinedBeatFactor, screen, effectiveCrossfade);
             } else {
@@ -106,7 +105,6 @@ export class CrossfaderSystem {
         }
     }
 
-    // Updated Helper Methods to accept 't' (effectiveCrossfade)
     _applyFlythrough(layerObj, stateA, stateB, renderA, renderB, beatFactor, screen, t) {
         const SIDEWAYS_FORCE = -25000;
         const VERTICAL_FORCE = -8000;
@@ -183,13 +181,17 @@ export class CrossfaderSystem {
     }
 
     _applyCrossfade(layerObj, stateA, stateB, renderA, renderB, beatFactor, screen, t) {
+        // Opacity crossfade curve (Sin/Cos for smoother blend than linear)
         const angle = t * 1.570796;
         const opacityA = Math.cos(angle);
         const opacityB = Math.sin(angle);
 
         if (renderA && renderB) {
             const ms = this._morphedState;
-            ms.speed = t < 0.5 ? stateA.speed : stateB.speed;
+            
+            // --- Spatial Morphing ---
+            // We interpolate position/size/angle so the layers overlap perfectly during fade.
+            ms.speed = lerp(stateA.speed, stateB.speed, t); 
             ms.size = lerp(stateA.size, stateB.size, t);
             ms.opacity = lerp(stateA.opacity, stateB.opacity, t);
             ms.drift = lerp(stateA.drift, stateB.drift, t);
@@ -197,17 +199,29 @@ export class CrossfaderSystem {
             ms.xaxis = lerp(stateA.xaxis, stateB.xaxis, t);
             ms.yaxis = lerp(stateA.yaxis, stateB.yaxis, t);
             ms.angle = lerpAngle(stateA.angle, stateB.angle, t);
-            ms.direction = t < 0.5 ? stateA.direction : stateB.direction;
-            ms.blendMode = t < 0.5 ? stateA.blendMode : stateB.blendMode;
-            ms.enabled = t < 0.5 ? stateA.enabled : stateB.enabled;
             ms.driftX = lerp(stateA.driftX, stateB.driftX, t);
             ms.driftY = lerp(stateA.driftY, stateB.driftY, t);
             
+            // Sync rotation physics
             const currentContinuous = lerp(layerObj.deckA.continuousAngle, layerObj.deckB.continuousAngle, t);
             ms.totalAngleRad = (ms.angle + currentContinuous) * 0.01745329251;
 
+            // --- FIXED: APPLY CATEGORICAL PROPERTIES INDIVIDUALLY ---
+            // Previously, we did `ms.blendMode = t < 0.5 ? A : B` and sent `ms` to BOTH.
+            // This caused Deck A to suddenly swap blend modes at 50%.
+            // Now, we override the blendMode/enabled on the morphed state object 
+            // JUST before sending it to the respective deck.
+
+            // Render Deck A
+            ms.blendMode = stateA.blendMode;
+            ms.enabled = stateA.enabled;
             layerObj.deckA.applyRenderState(ms, opacityA, beatFactor, this.renderedParallaxOffset, this.parallaxFactors[layerObj.id], screen);
+
+            // Render Deck B
+            ms.blendMode = stateB.blendMode;
+            ms.enabled = stateB.enabled;
             layerObj.deckB.applyRenderState(ms, opacityB, beatFactor, this.renderedParallaxOffset, this.parallaxFactors[layerObj.id], screen);
+
         } else {
             if (renderA) layerObj.deckA.applyRenderState(stateA, opacityA, beatFactor, this.renderedParallaxOffset, this.parallaxFactors[layerObj.id], screen);
             else layerObj.deckA.container.visible = false;

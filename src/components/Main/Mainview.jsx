@@ -7,7 +7,8 @@ import { useCoreApplicationStateAndLifecycle } from '../../hooks/useCoreApplicat
 import { useAppInteractions } from '../../hooks/useAppInteractions';
 import { useVisualEngineContext } from "../../context/VisualEngineContext";
 import { useEngineStore } from "../../store/useEngineStore";
-import { useProjectStore } from "../../store/useProjectStore"; // New Import
+import { useProjectStore } from "../../store/useProjectStore";
+import { useSceneSequencer } from "../../hooks/useSceneSequencer"; // NEW IMPORT
 
 import ToastContainer from "../Notifications/ToastContainer";
 import UIOverlay from '../UI/UIOverlay';
@@ -42,7 +43,6 @@ const portalContainerNode = typeof document !== 'undefined' ? document.getElemen
 const MainView = ({ blendModes = BLEND_MODES }) => {
   const { publicClient, walletClient, upInitializationError, upFetchStateError } = useUpProvider();
 
-  // --- REFACTOR: Use Project Store directly ---
   const {
     stagedSetlist,
     loadWorkspace,
@@ -57,19 +57,12 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     loadingMessage: s.loadingMessage,
   })));
   
-  // Note: 'isWorkspaceTransitioning' and '_executeLoadAfterFade' are tricky ones.
-  // In the legacy WorkspaceContext, these were local state inside the provider component to handle fade-out.
-  // In a real app, the VisualEngine handles the fade. We can simplify this. 
-  // If the engine is ready, we are ready.
-  // We'll trust the Engine's transition logic instead of React state for opacity fades.
-  // However, for compatibility, we can assume 'loadingMessage' implies transitioning.
   const isWorkspaceTransitioning = !!loadingMessage && loadingMessage.includes("Loading");
 
   const fullSceneList = useMemo(() => 
     Object.values(useProjectStore.getState().stagedWorkspace?.presets || {})
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })), 
   [useProjectStore.getState().stagedWorkspace]);
-  // --- END REFACTOR ---
 
   const {
     registerManagerInstancesRef,
@@ -92,6 +85,15 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   const [isParallaxEnabled, setIsParallaxEnabled] = useState(false);
   const toggleParallax = useCallback(() => setIsParallaxEnabled(prev => !prev), []);
   const [crossfadeDurationMs, setCrossfadeDurationMs] = useState(DEFAULT_CROSSFADE_DURATION);
+
+  // --- USE NEW SEQUENCER HOOK ---
+  const { 
+      isSequencerActive, 
+      toggleSequencer, 
+      sequencerIntervalMs, 
+      setSequencerInterval 
+  } = useSceneSequencer(crossfadeDurationMs);
+  // ------------------------------
 
   const [localAnimatingPanel, setLocalAnimatingPanel] = useState(null);
   const [localIsBenignOverlayActive, setLocalIsBenignOverlayActive] = useState(false);
@@ -238,11 +240,19 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   
   const showFpsCounter = useMemo(() => renderState === 'rendered' && isContainerObservedVisible, [renderState, isContainerObservedVisible]);
 
+  // Update actions to include sequencer logic from hook
   const actionsForUIOverlay = useMemo(() => ({
     onEnhancedView: enterFullscreen,
     onToggleParallax: toggleParallax,
     onPreviewEffect: appInteractions.processEffect,
-  }), [enterFullscreen, toggleParallax, appInteractions.processEffect]);
+    toggleSequencer,
+    setSequencerInterval,
+    isSequencerActive,
+    sequencerIntervalMs
+  }), [
+    enterFullscreen, toggleParallax, appInteractions.processEffect,
+    toggleSequencer, setSequencerInterval, isSequencerActive, sequencerIntervalMs
+  ]);
 
   const pLockProps = useMemo(() => ({
     pLockState: sequencer.pLockState, 
