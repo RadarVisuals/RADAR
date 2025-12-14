@@ -4,6 +4,7 @@ import { PixiEffectsManager } from './pixi/PixiEffectsManager';
 import { useEngineStore } from '../store/useEngineStore'; 
 import SignalBus from '../utils/SignalBus';
 
+// Import Sub-Systems
 import { AudioReactor } from './pixi/systems/AudioReactor';
 import { FeedbackSystem } from './pixi/systems/FeedbackSystem';
 import { LayerManager } from './pixi/systems/LayerManager';
@@ -93,7 +94,7 @@ export default class PixiEngine {
     this.effectsManager.applyValues(initialParams);
 
     this.isReady = true;
-    console.log("[PixiEngine] ✅ Init Complete. Modulation Engine Active & Synced.");
+    console.log("[PixiEngine] ✅ Init Complete.");
   }
 
   initMappingResources() {
@@ -105,6 +106,15 @@ export default class PixiEngine {
 
   setMappingMode(isActive) {
     this.isMappingActive = isActive;
+    const mainGroup = this.layerManager.mainLayerGroup;
+    
+    if (isActive) {
+        this.app.stage.removeChild(mainGroup);
+        this.app.stage.addChild(this.projectionMesh);
+    } else {
+        this.app.stage.removeChild(this.projectionMesh);
+        this.app.stage.addChild(mainGroup);
+    }
   }
 
   handleResize() {
@@ -165,7 +175,7 @@ export default class PixiEngine {
       }
   }
 
-  // --- UPDATED MAIN LOOP ---
+  // --- MAIN LOOP ---
 
   update(ticker) {
     if (this._isDestroyed) return;
@@ -193,10 +203,10 @@ export default class PixiEngine {
         this.crossfaderSystem.crossfadeValue = Math.max(0, Math.min(1, finalParams['global.crossfader']));
     }
 
-    // 3. APPLY TO FILTERS
+    // 3. APPLY EFFECTS
     this.effectsManager.applyValues(finalParams);
     
-    // 4. FEEDBACK CONFIG
+    // 4. FEEDBACK CONFIG & VISIBILITY
     let isFeedbackOn = false;
     if (this.feedbackSystem) {
         if (finalParams['feedback.enabled'] !== undefined) { 
@@ -209,56 +219,42 @@ export default class PixiEngine {
             }
         });
         isFeedbackOn = this.feedbackSystem.config.enabled;
-    }
 
-    // --- STAGE GRAPH MANAGEMENT ---
-    // If Feedback is ON, remove mainLayerGroup from stage to stop automatic rendering.
-    // If Feedback is OFF, add it back to stage so it renders normally.
-    if (this.layerManager) {
-        const mainGroup = this.layerManager.mainLayerGroup;
-        this.layerManager.mainLayerGroup.filters = this.effectsManager.getFilterList();
-
-        if (isFeedbackOn) {
-            if (mainGroup.parent) {
-                mainGroup.parent.removeChild(mainGroup);
-            }
-            // Ensure it's marked visible so manual rendering in FeedbackSystem works
-            mainGroup.visible = true; 
-            mainGroup.renderable = true;
-        } else if (!this.isMappingActive) {
-            // Standard Mode: Ensure it's on stage
-            if (!mainGroup.parent) {
-                this.app.stage.addChildAt(mainGroup, 0); // Put at bottom
-            }
-            mainGroup.visible = true;
-            mainGroup.renderable = true;
+        // --- MANAGE VISIBILITY ---
+        if (this.layerManager) {
+            const mainGroup = this.layerManager.mainLayerGroup;
+            // When feedback is ON, we disable automatic rendering (renderable = false)
+            // But we keep it on stage so updateTransform works.
+            mainGroup.renderable = !isFeedbackOn;
         }
     }
+    
+    if (this.layerManager) {
+        this.layerManager.mainLayerGroup.filters = this.effectsManager.getFilterList();
+    }
 
+    // 5. PHYSICS
     this.effectsManager.update(ticker, this.app.renderer);
     this.crossfaderSystem.update(deltaTime, now, this.app.screen);
 
     // 6. RENDER PIPELINE
-    if (isFeedbackOn) {
-        // Render mainLayerGroup (detached) into feedback loop
+    if (this.feedbackSystem.config.enabled) {
+        // Render mainLayerGroup (detached/hidden) into feedback loop
         this.feedbackSystem.render(this.layerManager.mainLayerGroup);
     } 
     
     // MAPPING MODE
     if (this.isMappingActive && this.projectionMesh) {
-        // Determine source: Feedback Output or Main Group
-        const source = isFeedbackOn ? this.feedbackSystem.outputSprite : this.layerManager.mainLayerGroup;
+        const source = this.feedbackSystem.config.enabled ? this.feedbackSystem.outputSprite : this.layerManager.mainLayerGroup;
+        const wasRenderable = source.renderable;
+        source.renderable = true; // Force renderable for texture render
         
-        // Ensure source is detached from stage to avoid double render, 
-        // unless it's already detached (which mainGroup is if feedback ON)
-        const wasParent = source.parent;
-        if (wasParent) wasParent.removeChild(source);
-        
-        // Manual Render to texture
+        // Safety update
+        if (source.updateTransform) source.updateTransform();
+
         this.app.renderer.render({ container: source, target: this.renderTexture });
         
-        // Restore parent if needed (e.g. if mapping toggles off)
-        if (wasParent) wasParent.addChild(source);
+        source.renderable = wasRenderable;
     }
   }
 

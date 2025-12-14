@@ -7,10 +7,11 @@ export class FeedbackSystem {
         this.app = app;
         this.config = { enabled: false, amount: 0.9, scale: 1.01, rotation: 0, xOffset: 0, yOffset: 0 };
         
-        this.rt1 = null; 
-        this.rt2 = null; 
-        this.feedbackSprite = null; 
-        this.outputSprite = null; 
+        // Resources
+        this.rt1 = null; // Buffer A
+        this.rt2 = null; // Buffer B
+        this.feedbackSprite = null; // History
+        this.outputSprite = null;   // Output
         
         this.init();
     }
@@ -21,6 +22,7 @@ export class FeedbackSystem {
         const { width, height } = this.app.screen;
         const res = this.app.renderer.resolution;
 
+        // Use 'linear' scaleMode for smooth trails
         const rtOptions = { 
             width, 
             height, 
@@ -32,34 +34,36 @@ export class FeedbackSystem {
         this.rt1 = RenderTexture.create(rtOptions);
         this.rt2 = RenderTexture.create(rtOptions);
 
+        // Feedback Sprite (The "History")
         this.feedbackSprite = new Sprite(this.rt1);
         this.feedbackSprite.anchor.set(0.5);
-        // NOTE: feedbackSprite is NOT added to stage. It exists only for off-screen rendering.
-
-        this.outputSprite = new Sprite(this.rt2);
-        this.outputSprite.visible = false;
+        this.feedbackSprite.position.set(width / 2, height / 2);
         
-        // Only the output sprite is added to the stage to display the final result
+        // FIX: Add to stage so transforms update automatically, preventing the crash.
+        // Set renderable=false so it doesn't draw to the main screen, only to our buffer.
+        this.feedbackSprite.renderable = false;
+        this.app.stage.addChild(this.feedbackSprite);
+
+        // Output Sprite (The Result displayed on screen)
+        this.outputSprite = new Sprite(this.rt2);
+        this.outputSprite.visible = false; // Visibility controlled by config
+        
         this.app.stage.addChild(this.outputSprite);
     }
 
     resize(width, height) {
         if (this.rt1) this.rt1.resize(width, height);
         if (this.rt2) this.rt2.resize(width, height);
-        // Center the sprite relative to the new dimensions
         if (this.feedbackSprite) this.feedbackSprite.position.set(width / 2, height / 2);
     }
 
     updateConfig(param, value) {
         if (param === null) {
+            // Full sync from store
             const state = useEngineStore.getState();
-            const vals = state.baseValues || {};
-            if (vals['feedback.enabled'] !== undefined) this.config.enabled = vals['feedback.enabled'] > 0.5;
-            if (vals['feedback.amount'] !== undefined) this.config.amount = vals['feedback.amount'];
-            if (vals['feedback.scale'] !== undefined) this.config.scale = vals['feedback.scale'];
-            if (vals['feedback.rotation'] !== undefined) this.config.rotation = vals['feedback.rotation'];
-            if (vals['feedback.xOffset'] !== undefined) this.config.xOffset = vals['feedback.xOffset'];
-            if (vals['feedback.yOffset'] !== undefined) this.config.yOffset = vals['feedback.yOffset'];
+            if (state.effectsConfig?.feedback) {
+                this.config = { ...state.effectsConfig.feedback };
+            }
         } else {
             this.config[param] = value;
         }
@@ -75,56 +79,68 @@ export class FeedbackSystem {
         if (this.feedbackSprite.destroyed || this.outputSprite.destroyed) return;
 
         try {
-            // Apply Config to the off-screen sprite
+            // Apply Config
             this.feedbackSprite.scale.set(this.config.scale);
             this.feedbackSprite.rotation = this.config.rotation;
             this.feedbackSprite.alpha = this.config.amount;
             
-            // Center it (in case screen size changed)
+            // Center the feedback sprite
             const screenW = this.app.screen.width;
             const screenH = this.app.screen.height;
-            const targetX = (screenW / 2) + (this.config.xOffset || 0);
-            const targetY = (screenH / 2) + (this.config.yOffset || 0);
-            this.feedbackSprite.position.set(targetX, targetY);
+            this.feedbackSprite.position.set(
+                (screenW / 2) + this.config.xOffset, 
+                (screenH / 2) + this.config.yOffset
+            );
 
-            // 1. Draw PREVIOUS FRAME (the feedback sprite) into Buffer B (rt2)
-            // Since feedbackSprite is detached, render() acts as if it's the root.
-            // Pixi handles the transforms relative to the texture automatically.
+            // --- 1. Render HISTORY (feedbackSprite) into Buffer B (rt2) ---
+            
+            // Temporarily enable renderable so the renderer processes it
+            this.feedbackSprite.renderable = true;
+            
             this.app.renderer.render({
                 container: this.feedbackSprite,
                 target: this.rt2,
-                clear: true // Clear buffer before drawing
+                clear: true // Clear buffer before drawing history
             });
+            
+            this.feedbackSprite.renderable = false; // Hide again
 
-            // 2. Draw NEW CONTENT (Source Container) ON TOP into Buffer B (rt2)
-            // Source Container (mainLayerGroup) should be DETACHED from stage by PixiEngine
-            // when feedback is enabled.
+            // --- 2. Render NEW CONTENT (sourceContainer) into Buffer B (rt2) ---
             
-            // Ensure source is visible for the render pass
-            const wasVisible = sourceContainer.visible;
-            sourceContainer.visible = true; 
+            // sourceContainer is 'renderable = false' in PixiEngine (to hide from main screen)
+            // We temporarily enable it for this manual render pass.
+            const wasRenderable = sourceContainer.renderable;
+            sourceContainer.renderable = true; 
             
+            // Force transform update. Safe now because it is attached to stage (in PixiEngine).
+            // This ensures geometry is generated before the draw call.
+            if (sourceContainer.updateTransform) {
+                sourceContainer.updateTransform();
+            }
+
             this.app.renderer.render({
                 container: sourceContainer,
                 target: this.rt2,
-                clear: false // Do NOT clear, draw over the feedback trail
+                clear: false // Draw ON TOP of history
             });
             
-            sourceContainer.visible = wasVisible; 
+            sourceContainer.renderable = wasRenderable; // Restore state
 
-            // 3. Swap Buffers (Ping-Pong)
+            // --- 3. Swap Buffers ---
             const temp = this.rt1;
             this.rt1 = this.rt2;
             this.rt2 = temp;
 
-            // 4. Update Textures for next frame
-            this.feedbackSprite.texture = this.rt1; // History for next loop
-            this.outputSprite.texture = this.rt1;   // Visible output
+            // --- 4. Update Display Textures ---
+            this.feedbackSprite.texture = this.rt1; // History for next frame
+            this.outputSprite.texture = this.rt1;   // Result on screen
 
         } catch (e) {
             console.warn('[FeedbackSystem] Render error:', e);
             this.config.enabled = false; 
             if (this.outputSprite) this.outputSprite.visible = false;
+            // Emergency restore to prevent source disappearing forever
+            if (sourceContainer) sourceContainer.renderable = true;
         }
     }
 
