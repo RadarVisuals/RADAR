@@ -272,7 +272,7 @@ module.exports = require('./netlify/functions/unpin.js')
 			"longitude": 3.6092,
 			"postalCode": "9700"
 		},
-		"timestamp": 1765292416149
+		"timestamp": 1765708231114
 	}
 }
 ```
@@ -1517,7 +1517,7 @@ describe('AudioAnalyzer', () => {
 // src/components/Audio/AudioControlPanel.jsx
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import PropTypes from "prop-types";
-import { useEngineStore } from "../../store/useEngineStore"; 
+// Removed useEngineStore import as it was only used for the legacy industrial config
 import SignalBus from "../../utils/SignalBus";
 
 import Panel from "../Panels/Panel";
@@ -1536,8 +1536,7 @@ const AudioControlPanel = React.memo(({
 }) => {
   const [audioDevices, setAudioDevices] = useState([]);
   
-  const isDestructionMode = useEngineStore((state) => state.industrialConfig.enabled);
-  const setIndustrialEnabled = useEngineStore((state) => state.setIndustrialEnabled);
+  // --- REMOVED LEGACY INDUSTRIAL CONFIG SELECTORS HERE ---
   
   const levelRef = useRef(null);
   const bassRef = useRef(null);
@@ -1691,32 +1690,7 @@ const AudioControlPanel = React.memo(({
                </button>
             </div>
 
-            <div className="section-box" style={{ borderColor: 'var(--color-error)', background: 'rgba(255, 0, 0, 0.05)' }}>
-                <h4 className="config-section-title" style={{ color: 'var(--color-error)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{fontSize: '1.2em'}}>⚠️</span> INDUSTRIAL MODE
-                </h4>
-                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                    <p className="device-note" style={{ color: 'var(--color-error-a90)', margin: 0, maxWidth: '70%' }}>
-                        Extreme distortion. Audio drives chaos. Photosensitivity warning.
-                    </p>
-                    <div className="toggle-switch-wrapper" style={{flexShrink: 0}}>
-                        <label className="toggle-switch" style={{ width: '50px' }}>
-                            <input 
-                                type="checkbox" 
-                                checked={isDestructionMode} 
-                                onChange={(e) => setIndustrialEnabled(e.target.checked)} 
-                            />
-                            <span className="toggle-slider" style={{ 
-                                backgroundColor: isDestructionMode ? 'var(--color-error-a30)' : '',
-                                borderColor: isDestructionMode ? 'var(--color-error)' : ''
-                            }}></span>
-                        </label>
-                        <span className="toggle-state" style={{ color: isDestructionMode ? 'var(--color-error)' : '', fontSize: '10px', marginTop: '4px' }}>
-                            {isDestructionMode ? "DESTROY" : "SAFE"}
-                        </span>
-                    </div>
-                </div>
-            </div>
+            {/* --- REMOVED LEGACY INDUSTRIAL MODE SECTION --- */}
 
             <div className="audio-settings-section section-box">
               <h4 className="config-section-title">Audio Reactivity Settings</h4>
@@ -7597,6 +7571,280 @@ export default React.memo(LibraryPanel);
 ```
 
 ---
+### `src\components\Panels\ModulationPanel.jsx`
+```jsx
+// src/components/Panels/ModulationPanel.jsx
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import PropTypes from 'prop-types';
+import Panel from './Panel';
+import { useVisualEngineContext } from '../../context/VisualEngineContext';
+import { EFFECT_MANIFEST } from '../../config/EffectManifest';
+import SignalBus from '../../utils/SignalBus'; // Import SignalBus for high-freq updates
+import './PanelStyles/ModulationPanel.css';
+
+// Define available signal sources
+const SIGNAL_SOURCES = [
+    { value: '', label: '+ Add Modulation...' },
+    { label: '--- AUDIO ---', options: [
+        { value: 'audio.bass', label: 'Audio Bass' },
+        { value: 'audio.mid', label: 'Audio Mid' },
+        { value: 'audio.treble', label: 'Audio High' },
+        { value: 'audio.level', label: 'Audio Level' }
+    ]},
+    { label: '--- LFO ---', options: [
+        { value: 'lfo.slow.sine', label: 'LFO Slow (Sine)' },
+        { value: 'lfo.mid.sine', label: 'LFO Mid (Sine)' },
+        { value: 'lfo.fast.sine', label: 'LFO Fast (Sine)' },
+        { value: 'lfo.pulse', label: 'LFO Pulse' },
+        { value: 'lfo.chaos', label: 'Random Chaos' }
+    ]}
+];
+
+const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAddPatch, onRemovePatch, onUpdatePatch }) => {
+    const [selectedSource, setSelectedSource] = useState('');
+    
+    // Refs for Zero-Render Updates
+    const visualizerRef = useRef(null);
+    const valueDisplayRef = useRef(null);
+
+    // Subscribe to Modulation Engine Updates via SignalBus
+    useEffect(() => {
+        // Only run this logic for float/int sliders that need animation
+        if (def.type !== 'float' && def.type !== 'int') return;
+
+        const handleUpdate = (allValues) => {
+            const liveValue = allValues[paramId];
+            if (liveValue === undefined) return;
+
+            // 1. Update the visual bar width
+            if (visualizerRef.current) {
+                const range = def.max - def.min;
+                const safeRange = range === 0 ? 1 : range; // Prevent div by zero
+                const percent = Math.max(0, Math.min(100, ((liveValue - def.min) / safeRange) * 100));
+                visualizerRef.current.style.width = `${percent}%`;
+            }
+
+            // 2. Update the text display
+            if (valueDisplayRef.current) {
+                valueDisplayRef.current.innerText = def.type === 'int' ? Math.floor(liveValue) : liveValue.toFixed(2);
+            }
+        };
+
+        const unsubscribe = SignalBus.on('modulation:update', handleUpdate);
+        return () => unsubscribe();
+    }, [paramId, def]);
+
+    const handleAddClick = () => {
+        if (!selectedSource) return;
+        onAddPatch(selectedSource, paramId, 0.5); // Default amount
+        setSelectedSource('');
+    };
+
+    // Filter patches relevant to this specific parameter
+    const myPatches = patches.filter(p => p.target === paramId);
+
+    const renderInput = () => {
+        if (def.type === 'bool') {
+            return (
+                <div style={{display:'flex', alignItems:'center', gap:'8px', height:'20px'}}>
+                    <input 
+                        type="checkbox" 
+                        checked={currentValue > 0.5} 
+                        onChange={(e) => onUpdateBase(paramId, e.target.checked ? 1 : 0)}
+                        style={{accentColor:'var(--color-primary)'}}
+                    />
+                    <span className="param-value-display">{currentValue > 0.5 ? 'ON' : 'OFF'}</span>
+                </div>
+            );
+        }
+        
+        if (def.type === 'select') {
+            return (
+                <select 
+                    className="source-select" 
+                    value={Math.floor(currentValue)} 
+                    onChange={(e) => onUpdateBase(paramId, parseInt(e.target.value))}
+                    style={{width:'100%'}}
+                >
+                    {def.options.map((opt, idx) => (
+                        <option key={idx} value={idx}>{opt}</option>
+                    ))}
+                </select>
+            );
+        }
+
+        // Float/Int with Visualizer
+        return (
+            <div className="slider-wrapper">
+                {/* The "Ghost" Bar showing real-time modulation */}
+                <div ref={visualizerRef} className="mod-visualizer-bar"></div>
+                
+                {/* The Interactive Slider (Controls Base Value) */}
+                <input 
+                    type="range" 
+                    className="base-slider"
+                    min={def.min} 
+                    max={def.max} 
+                    step={def.type === 'int' ? 1 : 0.01}
+                    value={currentValue}
+                    onChange={(e) => onUpdateBase(paramId, parseFloat(e.target.value))}
+                />
+            </div>
+        );
+    };
+
+    return (
+        <div className="param-block">
+            <div className="param-header">
+                <span className="param-name">{def.label}</span>
+                {/* Use ref for high-freq text updates to avoid React renders */}
+                {(def.type === 'float' || def.type === 'int') ? (
+                    <span ref={valueDisplayRef} className="param-value-display">
+                        {Number(currentValue).toFixed(2)}
+                    </span>
+                ) : null}
+            </div>
+            
+            {/* BASE VALUE CONTROL */}
+            <div style={{marginBottom: '4px'}}>
+                {renderInput()}
+            </div>
+
+            {/* ACTIVE PATCHES */}
+            {myPatches.length > 0 && (
+                <div className="active-patches">
+                    {myPatches.map(patch => (
+                        <div key={patch.id} className="patch-row">
+                            <span className="patch-source-name" title={patch.source}>
+                                {patch.source.replace('audio.', 'A.').replace('lfo.', 'L.')}
+                            </span>
+                            <input 
+                                type="range" 
+                                className="patch-amount-slider"
+                                min="-2.0" max="2.0" step="0.1"
+                                value={patch.amount}
+                                onChange={(e) => onUpdatePatch(patch.source, paramId, parseFloat(e.target.value))}
+                                title={`Modulation Amount: ${patch.amount}`}
+                            />
+                            <button className="btn-remove-patch" onClick={() => onRemovePatch(patch.id)}>×</button>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* ADD PATCH UI */}
+            <div className="add-patch-ui">
+                <select 
+                    className="source-select" 
+                    value={selectedSource} 
+                    onChange={(e) => setSelectedSource(e.target.value)}
+                >
+                    {SIGNAL_SOURCES.map((group, idx) => (
+                        group.options ? (
+                            <optgroup key={idx} label={group.label}>
+                                {group.options.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                            </optgroup>
+                        ) : <option key={idx} value={group.value}>{group.label}</option>
+                    ))}
+                </select>
+                <button 
+                    className="btn-add-patch" 
+                    onClick={handleAddClick} 
+                    disabled={!selectedSource}
+                    title="Connect Wire"
+                >
+                    +
+                </button>
+            </div>
+        </div>
+    );
+};
+
+ParamControl.propTypes = {
+    paramId: PropTypes.string.isRequired,
+    def: PropTypes.object.isRequired,
+    currentValue: PropTypes.number.isRequired,
+    patches: PropTypes.array.isRequired,
+    onUpdateBase: PropTypes.func.isRequired,
+    onAddPatch: PropTypes.func.isRequired,
+    onRemovePatch: PropTypes.func.isRequired,
+    onUpdatePatch: PropTypes.func.isRequired,
+};
+
+const ModulationPanel = ({ onClose }) => {
+    // Access the new store slices via Context
+    const { 
+        baseValues, 
+        patches, 
+        updateEffectConfig, // Used for Base Values
+        addPatch, 
+        removePatch 
+    } = useVisualEngineContext();
+
+    // Local state for accordion
+    const [expandedGroup, setExpandedGroup] = useState(null);
+
+    const toggleGroup = (key) => {
+        setExpandedGroup(expandedGroup === key ? null : key);
+    };
+
+    const effectEntries = useMemo(() => Object.entries(EFFECT_MANIFEST), []);
+
+    return (
+        <Panel title="MODULATION MATRIX" onClose={onClose} className="panel-from-toolbar modulation-panel events-panel-custom-scroll">
+            <div className="mod-header">
+                <h4 className="mod-section-title">Global FX Routing</h4>
+            </div>
+
+            {effectEntries.map(([effectKey, config]) => {
+                const isExpanded = expandedGroup === effectKey;
+                
+                // Check if effect is "Active" (enabled param > 0.5)
+                // We look for a param named "enabled" inside this effect group
+                const enabledParamId = config.params.enabled ? config.params.enabled.id : null;
+                const isEnabled = enabledParamId ? (baseValues[enabledParamId] > 0.5) : false;
+
+                return (
+                    <div key={effectKey} className={`effect-group ${isExpanded ? 'active' : ''}`}>
+                        <div className="effect-group-header" onClick={() => toggleGroup(effectKey)}>
+                            <span className="effect-label" style={{color: isEnabled ? 'var(--color-primary)' : 'var(--color-text-muted)'}}>
+                                {config.label}
+                            </span>
+                            <span className="effect-toggle">{isExpanded ? '▼' : '▶'}</span>
+                        </div>
+                        
+                        {isExpanded && (
+                            <div className="effect-params-container">
+                                {Object.values(config.params).map(paramDef => (
+                                    <ParamControl 
+                                        key={paramDef.id}
+                                        paramId={paramDef.id}
+                                        def={paramDef}
+                                        currentValue={baseValues[paramDef.id] ?? paramDef.default}
+                                        patches={patches}
+                                        onUpdateBase={(id, val) => updateEffectConfig(effectKey, id.split('.')[1], val)}
+                                        onAddPatch={addPatch}
+                                        onRemovePatch={removePatch}
+                                        onUpdatePatch={addPatch} // addPatch handles updates if ID exists
+                                    />
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                );
+            })}
+        </Panel>
+    );
+};
+
+ModulationPanel.propTypes = {
+    onClose: PropTypes.func.isRequired,
+};
+
+export default React.memo(ModulationPanel);
+```
+
+---
 ### `src\components\Panels\NotificationPanel.jsx`
 ```jsx
 // src/components/Panels/NotificationPanel.jsx
@@ -9784,6 +10032,300 @@ input[type="range"].alpha-slider { background: linear-gradient( to right, rgba(v
 .library-panel .remove-button:hover {
   background: var(--color-error-a30);
   transform: scale(1.1);
+}
+```
+
+---
+### `src\components\Panels\PanelStyles\ModulationPanel.css`
+```css
+/* src/components/Panels/PanelStyles/ModulationPanel.css */
+@import "../../../styles/variables.css";
+
+.modulation-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+}
+
+.mod-header {
+    margin-bottom: var(--space-sm);
+    padding-bottom: var(--space-xs);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.mod-section-title {
+    font-size: var(--font-size-sm);
+    color: var(--color-primary);
+    text-transform: uppercase;
+    font-weight: 800;
+    letter-spacing: 1px;
+    margin: 0;
+}
+
+/* Effect Group (Accordion style container) */
+.effect-group {
+    background: var(--color-primary-a05);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    transition: all var(--transition-fast);
+}
+
+.effect-group.active {
+    border-color: var(--color-primary-a30);
+    background: rgba(0, 20, 30, 0.6);
+}
+
+.effect-group-header {
+    padding: var(--space-sm);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.effect-group-header:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.effect-label {
+    font-weight: bold;
+    color: var(--color-text);
+    font-size: var(--font-size-sm);
+}
+
+.effect-toggle {
+    font-size: 10px;
+    color: var(--color-text-muted);
+}
+
+.effect-params-container {
+    padding: var(--space-sm);
+    border-top: 1px solid var(--color-border-dark);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+}
+
+/* Parameter Row */
+.param-block {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-left: 4px;
+    border-left: 2px solid var(--color-border);
+}
+
+.param-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.param-name {
+    font-size: 10px;
+    text-transform: uppercase;
+    color: var(--color-text-dim);
+    font-weight: 600;
+}
+
+.param-value-display {
+    font-size: 10px;
+    font-family: monospace;
+    color: var(--color-primary);
+}
+
+/* --- ANIMATED SLIDER STYLES START --- */
+
+/* Container to hold both the slider and the visualizer */
+.slider-wrapper {
+    position: relative;
+    width: 100%;
+    height: 14px; /* Sufficient height for touch targets */
+    display: flex;
+    align-items: center;
+}
+
+/* The Live Modulation Visualizer Bar */
+.mod-visualizer-bar {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    transform: translateY(-50%);
+    height: 6px;
+    background: var(--color-primary-a30); /* Semi-transparent cyan */
+    border-radius: 2px;
+    pointer-events: none; /* Let clicks pass through to input */
+    z-index: 0;
+    width: 0%; /* JS will update this */
+    transition: width 0.05s linear; /* Smooth it slightly */
+    box-shadow: 0 0 5px var(--color-primary-a15);
+}
+
+/* Base Slider styling override */
+.base-slider {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    -webkit-appearance: none;
+    appearance: none;
+    outline: none;
+    cursor: pointer;
+    margin: 0;
+    padding: 0;
+}
+
+/* Slider Track - Faint background */
+.base-slider::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+    border: none;
+}
+
+.base-slider::-moz-range-track {
+    width: 100%;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+    border: none;
+}
+
+/* Slider Thumb - The knob */
+.base-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--color-text);
+    cursor: pointer;
+    box-shadow: 0 0 5px rgba(0,0,0,0.5);
+    margin-top: -4px; /* Align thumb with track */
+    position: relative;
+    z-index: 2;
+}
+
+.base-slider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--color-text);
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 0 5px rgba(0,0,0,0.5);
+    position: relative;
+    z-index: 2;
+}
+
+.base-slider:hover::-webkit-slider-thumb {
+    background: var(--color-primary);
+}
+
+/* --- ANIMATED SLIDER STYLES END --- */
+
+/* Patch List */
+.active-patches {
+    margin-top: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.patch-row {
+    display: grid;
+    grid-template-columns: 70px 1fr 20px; /* Source Name | Amount Slider | Delete */
+    align-items: center;
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 9px;
+}
+
+.patch-source-name {
+    color: var(--color-warning);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.patch-amount-slider {
+    width: 100%;
+    height: 2px;
+    background: rgba(255, 255, 255, 0.1);
+    -webkit-appearance: none;
+    appearance: none;
+    outline: none;
+}
+
+.patch-amount-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-warning);
+    cursor: pointer;
+}
+
+.btn-remove-patch {
+    background: none;
+    border: none;
+    color: var(--color-error-a70);
+    cursor: pointer;
+    font-size: 10px;
+    padding: 0;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.btn-remove-patch:hover {
+    color: var(--color-error);
+}
+
+/* Add Patch UI */
+.add-patch-ui {
+    display: flex;
+    gap: 4px;
+    margin-top: 4px;
+    height: 20px;
+}
+
+.source-select {
+    flex-grow: 1;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+    font-size: 9px;
+    border-radius: 3px;
+    padding-left: 4px;
+    outline: none;
+}
+
+.btn-add-patch {
+    background: var(--color-primary-a10);
+    border: 1px solid var(--color-primary-a30);
+    color: var(--color-primary);
+    font-size: 10px;
+    width: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border-radius: 3px;
+}
+
+.btn-add-patch:hover:not(:disabled) {
+    background: var(--color-primary-a30);
+}
+
+.btn-add-patch:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
 }
 ```
 
@@ -12081,7 +12623,7 @@ export default TopRightControls;
 // src/components/Toolbars/VerticalToolbar.jsx
 import React from "react";
 import PropTypes from "prop-types";
-import { FireIcon } from '@heroicons/react/24/outline';
+import { CpuChipIcon } from '@heroicons/react/24/outline'; // Using CpuChip as Matrix/Wiring icon
 
 import "./ToolbarStyles/VerticalToolbar.css";
 import {
@@ -12092,9 +12634,8 @@ import {
   writeIcon,
   wavezIcon,
   setsIcon,
-  fxIcon,
 } from "../../assets";
-import { useNotificationContext } from "../../hooks/useNotificationContext"; // UPDATED IMPORT
+import { useNotificationContext } from "../../hooks/useNotificationContext"; 
 
 const VerticalToolbar = ({
   activePanel,
@@ -12108,16 +12649,16 @@ const VerticalToolbar = ({
     }
   };
 
+  // Adjusted positions since we merged two buttons into one
   const buttonPositions = [
     { top: "20px" },  // Controls
     { top: "65px" },  // Notifications
     { top: "110px" }, // Events
     { top: "155px" }, // Tokens
-    { top: "200px" }, // FX
+    { top: "200px" }, // MODULATION MATRIX (New)
     { top: "245px" }, // Sets
     { top: "290px" }, // Save
     { top: "335px" }, // Audio
-    { top: "380px" }, // Industrial
   ];
 
   return (
@@ -12141,8 +12682,14 @@ const VerticalToolbar = ({
         <img src={changetokenIcon} alt="Tokens" className="icon-image" />
       </button>
 
-      <button className={`vertical-toolbar-icon ${activePanel === "fx" ? "active" : ""}`} onClick={() => handleIconClick("fx")} title="Global Effects" style={buttonPositions[4]}>
-        <img src={fxIcon || wavezIcon} alt="Effects" className="icon-image" /> 
+      {/* --- NEW MODULATION BUTTON --- */}
+      <button 
+        className={`vertical-toolbar-icon ${activePanel === "modulation" ? "active" : ""}`} 
+        onClick={() => handleIconClick("modulation")} 
+        title="Modulation Matrix (FX Wiring)" 
+        style={buttonPositions[4]}
+      >
+        <CpuChipIcon className="icon-image" style={{padding: '4px', color: 'var(--color-primary)'}} />
       </button>
 
       <button className={`vertical-toolbar-icon ${activePanel === "sets" ? "active" : ""}`} onClick={() => handleIconClick("sets")} title="Setlist" style={buttonPositions[5]}>
@@ -12155,15 +12702,6 @@ const VerticalToolbar = ({
 
       <button className={`vertical-toolbar-icon ${activePanel === "audio" ? "active" : ""}`} onClick={() => handleIconClick("audio")} title="Audio" style={buttonPositions[7]}>
         <img src={wavezIcon} alt="Audio" className="icon-image" />
-      </button>
-
-      <button 
-        className={`vertical-toolbar-icon ${activePanel === "industrial" ? "active" : ""}`} 
-        onClick={() => handleIconClick("industrial")} 
-        title="Signal Router (Overdrive)" 
-        style={buttonPositions[8]}
-      >
-        <FireIcon className="icon-image" style={{padding: '4px', color: 'var(--color-error)'}} />
       </button>
     </>
   );
@@ -13113,10 +13651,11 @@ import GlobalMIDIStatus from '../MIDI/GlobalMIDIStatus';
 import AudioStatusIcon from '../Audio/AudioStatusIcon';
 import SceneSelectorBar from './SceneSelectorBar';
 import LibraryPanel from '../Panels/LibraryPanel';
-import EffectsPanel from '../Panels/EffectsPanel';
+// --- CHANGED IMPORTS ---
+import ModulationPanel from '../Panels/ModulationPanel'; // New Panel
 import Crossfader from './Crossfader';
 import WorkspaceSelectorDots from './WorkspaceSelectorDots';
-import IndustrialPanel from '../Panels/IndustrialPanel';
+// Removed: IndustrialPanel, EffectsPanel
 
 import { useSetManagementState, useProfileSessionState } from '../../hooks/configSelectors';
 import { useVisualEngineContext } from '../../context/VisualEngineContext';
@@ -13186,10 +13725,12 @@ const ActivePanelRenderer = (props) => {
             return ( <PanelWrapper key="audio-panel" className={panelWrapperClassName}><AudioControlPanel onClose={closePanel} isAudioActive={isAudioActive} setIsAudioActive={setIsAudioActive} audioSettings={audioSettings} setAudioSettings={setAudioSettings} analyzerData={analyzerData} /></PanelWrapper> );
         case "whitelist":
             return ( <PanelWrapper key="whitelist-panel" className={panelWrapperClassName}><LibraryPanel onClose={closePanel} /></PanelWrapper> );
-        case "fx":
-            return ( <PanelWrapper key="fx-panel" className={panelWrapperClassName}><EffectsPanel onClose={closePanel} /></PanelWrapper> );
-        case "industrial":
-            return ( <PanelWrapper key="industrial-panel" className={panelWrapperClassName}><IndustrialPanel onClose={closePanel} /></PanelWrapper> );
+        
+        // --- NEW CASE ---
+        case "modulation":
+            return ( <PanelWrapper key="modulation-panel" className={panelWrapperClassName}><ModulationPanel onClose={closePanel} /></PanelWrapper> );
+        // Removed 'fx' and 'industrial' cases
+        
         case "tokens":
             return ( <TokenSelectorOverlay key="token-selector-overlay" isOpen={activePanel === "tokens"} onClose={handleTokenSelectorClose} onTokenApplied={updateTokenAssignment} /> );
         default:
@@ -13251,7 +13792,6 @@ function UIOverlay({
   const { isUiVisible, activePanel, toggleSidePanel, toggleInfoOverlay, toggleUiVisibility } = uiState;
   const { isAudioActive } = audioState;
   
-  // Destructure Sequencer Props directly from actions
   const { 
       onEnhancedView, onToggleParallax, onPreviewEffect,
       toggleSequencer, isSequencerActive, sequencerIntervalMs, setSequencerInterval
@@ -13467,6 +14007,194 @@ WorkspaceSelectorDots.propTypes = {
 };
 
 export default WorkspaceSelectorDots;
+```
+
+---
+### `src\config\EffectManifest.js`
+```js
+// src/config/EffectManifest.js
+
+export const EFFECT_MANIFEST = {
+    // --- FEEDBACK / VIDEO ---
+    feedback: {
+        label: 'Infinity Trails (Feedback)',
+        params: {
+            enabled:  { id: 'feedback.enabled',  label: 'Active',   type: 'bool',  min: 0, max: 1,    default: 0 },
+            amount:   { id: 'feedback.amount',   label: 'Decay',    type: 'float', min: 0.5, max: 0.99, default: 0.9 },
+            scale:    { id: 'feedback.scale',    label: 'Zoom',     type: 'float', min: 0.9, max: 1.1,  default: 1.01 },
+            rotation: { id: 'feedback.rotation', label: 'Spin',     type: 'float', min: -1.0, max: 1.0, default: 0.0 },
+            xOffset:  { id: 'feedback.xOffset',  label: 'Drift X',  type: 'float', min: -10, max: 10,   default: 0.0 },
+            yOffset:  { id: 'feedback.yOffset',  label: 'Drift Y',  type: 'float', min: -10, max: 10,   default: 0.0 },
+        }
+    },
+
+    // --- COLOR & LIGHT ---
+    bloom: {
+        label: 'Bloom (Glow)',
+        params: {
+            intensity: { id: 'bloom.intensity', label: 'Intensity', type: 'float', min: 0, max: 5.0, default: 0.0 },
+            threshold: { id: 'bloom.threshold', label: 'Threshold', type: 'float', min: 0, max: 1.0, default: 0.5 },
+            blur:      { id: 'bloom.blur',      label: 'Blur',      type: 'float', min: 0, max: 20.0, default: 8.0 },
+        }
+    },
+
+    rgb: {
+        label: 'RGB Split (Chromatic)',
+        params: {
+            amount: { id: 'rgb.amount', label: 'Offset', type: 'float', min: 0, max: 50.0, default: 0.0 },
+        }
+    },
+
+    colorMatrix: {
+        label: 'Video Nasty (Color)',
+        params: {
+            threshold: { id: 'colorMatrix.threshold', label: '1-Bit Threshold', type: 'float', min: 0, max: 1.0, default: 0.0 },
+            invert:    { id: 'colorMatrix.invert',    label: 'Invert',          type: 'bool',  min: 0, max: 1,   default: 0 },
+        }
+    },
+
+    oldFilm: {
+        label: 'Old Film (Vintage)',
+        params: {
+            sepia:      { id: 'oldFilm.sepia',      label: 'Sepia',      type: 'float', min: 0, max: 1, default: 0.0 },
+            noise:      { id: 'oldFilm.noise',      label: 'Grain',      type: 'float', min: 0, max: 1, default: 0.0 },
+            scratch:    { id: 'oldFilm.scratch',    label: 'Scratches',  type: 'float', min: 0, max: 1, default: 0.0 },
+            vignetting: { id: 'oldFilm.vignetting', label: 'Vignette',   type: 'float', min: 0, max: 1, default: 0.0 },
+        }
+    },
+
+    volumetric: {
+        label: 'Volumetric Light',
+        params: {
+            exposure:  { id: 'volumetric.exposure',  label: 'Exposure',  type: 'float', min: 0, max: 1.0, default: 0.0 },
+            decay:     { id: 'volumetric.decay',     label: 'Decay',     type: 'float', min: 0.5, max: 1.0, default: 0.95 },
+            density:   { id: 'volumetric.density',   label: 'Density',   type: 'float', min: 0, max: 1.0, default: 0.8 },
+            x:         { id: 'volumetric.x',         label: 'Source X',  type: 'float', min: 0, max: 1.0, default: 0.5 },
+            y:         { id: 'volumetric.y',         label: 'Source Y',  type: 'float', min: 0, max: 1.0, default: 0.5 },
+        }
+    },
+
+    // --- GLITCH & DISTORTION ---
+    pixelate: {
+        label: 'Pixelate (Bitcrush)',
+        params: {
+            enabled: { id: 'pixelate.enabled', label: 'Active', type: 'bool', min: 0, max: 1, default: 0 },
+            size:    { id: 'pixelate.size',    label: 'Block Size', type: 'int', min: 2, max: 100, default: 10 },
+        }
+    },
+
+    adversarial: {
+        label: 'Data Mosh (Adversarial)', 
+        params: {
+            // Added explicit Enabled flag to prevent threshold issues
+            enabled:    { id: 'adversarial.enabled',    label: 'Active',      type: 'bool',  min: 0, max: 1,   default: 0 },
+            intensity:  { id: 'adversarial.intensity',  label: 'Power',       type: 'float', min: 0, max: 2.0, default: 0.5 },
+            bands:      { id: 'adversarial.bands',      label: 'Bands',       type: 'float', min: 1, max: 64,  default: 24 },
+            noiseScale: { id: 'adversarial.noiseScale', label: 'Noise Scale', type: 'float', min: 0.1, max: 12, default: 3.0 },
+            chromatic:  { id: 'adversarial.chromatic',  label: 'RGB Split',   type: 'float', min: 0, max: 10,  default: 1.5 },
+        }
+    },
+
+    glitch: {
+        label: 'Slice Glitch',
+        params: {
+            slices:    { id: 'glitch.slices',    label: 'Slices',    type: 'int',   min: 0, max: 20,  default: 0 },
+            offset:    { id: 'glitch.offset',    label: 'Offset',    type: 'float', min: 0, max: 100, default: 20 },
+            direction: { id: 'glitch.direction', label: 'Direction', type: 'float', min: 0, max: 360, default: 0 },
+        }
+    },
+
+    twist: {
+        label: 'Void Vortex (Twist)',
+        params: {
+            radius: { id: 'twist.radius', label: 'Radius', type: 'float', min: 100, max: 1000, default: 400 },
+            angle:  { id: 'twist.angle',  label: 'Force',  type: 'float', min: -10, max: 10,   default: 0.0 },
+            x:      { id: 'twist.x',      label: 'Center X', type: 'float', min: 0,   max: 1.0,  default: 0.5 },
+            y:      { id: 'twist.y',      label: 'Center Y', type: 'float', min: 0,   max: 1.0,  default: 0.5 }
+        }
+    },
+
+    zoomBlur: {
+        label: 'Warp Drive (Zoom)',
+        params: {
+            strength:    { id: 'zoomBlur.strength',    label: 'Strength',  type: 'float', min: 0, max: 0.5, default: 0.0 },
+            innerRadius: { id: 'zoomBlur.innerRadius', label: 'Safe Zone', type: 'float', min: 0, max: 200, default: 50 },
+        }
+    },
+
+    kaleidoscope: {
+        label: 'Kaleidoscope',
+        params: {
+            sides: { id: 'kaleidoscope.sides', label: 'Segments', type: 'int',   min: 0, max: 32,   default: 0 },
+            angle: { id: 'kaleidoscope.angle', label: 'Rotation', type: 'float', min: 0, max: 6.28, default: 0 },
+        }
+    },
+
+    // --- FLUIDS & TEXTURE ---
+    liquid: {
+        label: 'Liquid Flow',
+        params: {
+            intensity: { id: 'liquid.intensity', label: 'Amount', type: 'float', min: 0, max: 0.5, default: 0.0 },
+            scale:     { id: 'liquid.scale',     label: 'Density', type: 'float', min: 0.1, max: 10, default: 3.0 },
+            speed:     { id: 'liquid.speed',     label: 'Speed',   type: 'float', min: 0, max: 5.0, default: 0.5 },
+        }
+    },
+
+    waveDistort: {
+        label: 'Wave Distortion',
+        params: {
+            intensity: { id: 'waveDistort.intensity', label: 'Amplitude', type: 'float', min: 0, max: 2.0, default: 0.0 },
+        }
+    },
+
+    crt: {
+        label: 'CRT Monitor',
+        params: {
+            curvature:    { id: 'crt.curvature',    label: 'Curve',       type: 'float', min: 0, max: 10.0, default: 0.0 },
+            lineWidth:    { id: 'crt.lineWidth',    label: 'Scanlines',   type: 'float', min: 0, max: 5.0,  default: 0.0 },
+            noise:        { id: 'crt.noise',        label: 'Static',      type: 'float', min: 0, max: 1.0,  default: 0.0 },
+            vignetting:   { id: 'crt.vignetting',   label: 'Vignette',    type: 'float', min: 0, max: 1.0,  default: 0.0 },
+        }
+    },
+
+    ascii: {
+        label: 'ASCII / Terminal',
+        params: {
+            enabled:   { id: 'ascii.enabled',   label: 'Active',    type: 'bool',  min: 0, max: 1,  default: 0 },
+            size:      { id: 'ascii.size',      label: 'Grid Size', type: 'int',   min: 2, max: 50, default: 10 },
+            invert:    { id: 'ascii.invert',    label: 'Invert',    type: 'bool',  min: 0, max: 1,  default: 0 },
+            charSet:   { id: 'ascii.charSet',   label: 'Char Set',  type: 'select', min: 0, max: 3, default: 0, options: ['Shapes', 'Data Flow', 'Binary', 'Density'] },
+            colorMode: { id: 'ascii.colorMode', label: 'Color',     type: 'select', min: 0, max: 4, default: 0, options: ['Original', 'Matrix', 'Amber', 'Cyan', 'B&W'] },
+        }
+    },
+
+    // --- GLOBAL ---
+    global: {
+        label: 'Global Controls',
+        params: {
+            crossfader: { id: 'global.crossfader', label: 'Crossfader', type: 'float', min: 0, max: 1.0, default: 0.0 },
+        }
+    }
+};
+
+export const getAllParamIds = () => {
+    const ids = [];
+    Object.values(EFFECT_MANIFEST).forEach(effect => {
+        Object.values(effect.params).forEach(param => {
+            ids.push(param.id);
+        });
+    });
+    return ids;
+};
+
+export const getParamDefinition = (id) => {
+    for (const effect of Object.values(EFFECT_MANIFEST)) {
+        for (const param of Object.values(effect.params)) {
+            if (param.id === id) return param;
+        }
+    }
+    return null;
+};
 ```
 
 ---
@@ -14225,24 +14953,17 @@ export const VisualEngineProvider = ({ children }) => {
     const managerInstancesRef = useRef(null);
     const canvasUpdateFnsRef = useRef({});
     
-    const industrialConfig = useEngineStore(state => state.industrialConfig);
     const engineRef = useRef(null); 
 
     const registerManagerInstancesRef = useCallback((ref) => { managerInstancesRef.current = ref; }, []);
     const registerCanvasUpdateFns = useCallback((fns) => { canvasUpdateFnsRef.current = fns; }, []);
-
-    useEffect(() => {
-        if (managerInstancesRef.current?.current?.engine) {
-             managerInstancesRef.current.current.engine.setIndustrialConfig(industrialConfig);
-        }
-    }, [industrialConfig]);
 
     const pushCrossfaderUpdate = useCallback((value) => {
         renderedValueRef.current = value;
         SignalBus.emit('crossfader:update', value);
     }, []);
 
-    // --- FIX: ROBUST INITIALIZATION ---
+    // --- INITIALIZATION & SCENE LOADING LOGIC ---
     useEffect(() => {
         const initialLoadJustFinished = !prevIsFullyLoaded && isFullyLoaded;
         const transitionJustFinished = prevIsWorkspaceTransitioning && !isWorkspaceTransitioning;
@@ -14250,7 +14971,6 @@ export const VisualEngineProvider = ({ children }) => {
         const sceneListChanged = prevFullSceneList !== fullSceneList;
         
         const store = useEngineStore.getState();
-        // Check if store is empty despite being loaded (edge case fix)
         const isStoreEmpty = !store.sideA.config && !store.sideB.config;
 
         if (initialLoadJustFinished || transitionJustFinished || (isFullyLoaded && isStoreEmpty)) {
@@ -14518,6 +15238,8 @@ export const VisualEngineProvider = ({ children }) => {
             const state = useEngineStore.getState();
             state.setCrossfader(val);
             pushCrossfaderUpdate(val);
+            // --- SYNC WITH MODULATION ENGINE ---
+            state.setEffectBaseValue('global.crossfader', val); 
         }
     }), [
         handleSceneSelect,
@@ -14542,24 +15264,53 @@ export const useVisualEngineContext = () => {
     const context = useContext(VisualEngineContext);
     if (context === undefined) throw new Error("useVisualEngineContext must be used within a VisualEngineProvider");
     
+    // --- UPDATED SELECTOR ---
     const storeState = useEngineStore(useShallow(state => ({
         sideA: state.sideA,
         sideB: state.sideB,
         isAutoFading: state.isAutoFading,
         targetSceneName: state.targetSceneName,
-        effectsConfig: state.effectsConfig,
         transitionMode: state.transitionMode,
-        industrialConfig: state.industrialConfig
+        baseValues: state.baseValues,
+        patches: state.patches
     })));
     
     const storeActions = useEngineStore.getState();
 
+    // 1. WRAPPER FOR BASE VALUES (Sliders)
     const updateEffectConfigWrapper = useCallback((name, param, value) => {
-        storeActions.updateEffectConfig(name, param, value);
-        const managers = context.managerInstancesRef.current?.current;
-        if (managers && managers['1']) {
-             managers['1'].updateEffectConfig(name, param, value);
-        }
+        const fullId = `${name}.${param}`;
+        
+        // Update Store (UI)
+        storeActions.setEffectBaseValue(fullId, value);
+        
+        // Update Engine (Physics)
+        const engine = context.managerInstancesRef.current?.current?.engine;
+        if (engine) engine.updateEffectConfig(name, param, value);
+    }, [context.managerInstancesRef, storeActions]);
+
+    // 2. WRAPPER FOR ADDING PATCHES (Wires)
+    const addPatchWrapper = useCallback((source, target, amount) => {
+        // Update Store (UI)
+        storeActions.addPatch(source, target, amount);
+        
+        // Update Engine (Physics)
+        const engine = context.managerInstancesRef.current?.current?.engine;
+        if (engine) engine.addModulationPatch(source, target, amount);
+    }, [context.managerInstancesRef, storeActions]);
+
+    // 3. WRAPPER FOR REMOVING PATCHES
+    const removePatchWrapper = useCallback((patchId) => {
+        storeActions.removePatch(patchId);
+        const engine = context.managerInstancesRef.current?.current?.engine;
+        if (engine) engine.removeModulationPatch(patchId);
+    }, [context.managerInstancesRef, storeActions]);
+
+    // 4. WRAPPER FOR CLEARING ALL
+    const clearPatchesWrapper = useCallback(() => {
+        storeActions.clearAllPatches();
+        const engine = context.managerInstancesRef.current?.current?.engine;
+        if (engine) engine.clearModulationPatches();
     }, [context.managerInstancesRef, storeActions]);
 
     return {
@@ -14570,13 +15321,21 @@ export const useVisualEngineContext = () => {
         uiControlConfig: (storeActions.renderedCrossfader < 0.5) ? storeState.sideA.config : storeState.sideB.config,
         isAutoFading: storeState.isAutoFading,
         targetSceneName: storeState.targetSceneName,
-        effectsConfig: storeState.effectsConfig,
+        
+        // New State Exports
+        baseValues: storeState.baseValues,
+        patches: storeState.patches,
         transitionMode: storeState.transitionMode,
-        industrialConfig: storeState.industrialConfig,
+        
         handleCrossfaderChange: context.handleCrossfaderChange, 
         handleCrossfaderCommit: storeActions.setCrossfader,
         updateEffectConfig: updateEffectConfigWrapper, 
         toggleTransitionMode: () => storeActions.setTransitionMode(storeState.transitionMode === 'crossfade' ? 'flythrough' : 'crossfade'),
+        
+        // --- EXPORT THE WRAPPERS, NOT THE RAW ACTIONS ---
+        addPatch: addPatchWrapper,
+        removePatch: removePatchWrapper,
+        clearAllPatches: clearPatchesWrapper
     };
 };
 ```
@@ -17723,6 +18482,7 @@ export function useVisualEffects(updateLayerConfig) {
 ---
 ### `src\main.jsx`
 ```jsx
+// src/main.jsx
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
@@ -19080,6 +19840,7 @@ import '@testing-library/jest-dom'; // Extends expect with jest-dom matchers
 // src/store/useEngineStore.js
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
+import { EFFECT_MANIFEST } from '../config/EffectManifest';
 
 const DEFAULT_AUDIO_SETTINGS = {
   bassIntensity: 1.0,
@@ -19088,23 +19849,24 @@ const DEFAULT_AUDIO_SETTINGS = {
   smoothingFactor: 0.6,
 };
 
-const DEFAULT_INDUSTRIAL_MAPPING = {
-    rgbStrength: { source: 'bass', amount: 1.2, enabled: true },
-    zoomStrength: { source: 'bass', amount: 0.7, enabled: true },
-    glitchIntensity: { source: 'treble', amount: 1.0, enabled: true },
-    crtNoise: { source: 'mid', amount: 0.5, enabled: true },
-    crtGeometry: { source: 'bass', amount: 0.0, enabled: true },
-    binaryThreshold: { source: 'level', amount: 0.0, enabled: false }, 
-    invertStrobe: { source: 'treble', amount: 0.8, enabled: true },
-    crossfaderShred: { source: 'bass', amount: 0.0, enabled: false },
-};
+const DEFAULT_SEQUENCER_INTERVAL = 2000;
 
-// --- NEW CONSTANT ---
-const DEFAULT_SEQUENCER_INTERVAL = 2000; // 2 seconds default
+// Helper: Flatten Manifest Defaults into a simple key-value object
+const getInitialBaseValues = () => {
+    const values = {};
+    Object.values(EFFECT_MANIFEST).forEach(effect => {
+        Object.values(effect.params).forEach(param => {
+            values[param.id] = param.default;
+        });
+    });
+    return values;
+};
 
 export const useEngineStore = create(
   subscribeWithSelector((set, get) => ({
-    // ... (Standard Visual Engine Slice) ...
+    // =========================================
+    // 1. VISUAL ENGINE CORE (Layers & Scenes)
+    // =========================================
     crossfader: 0.0,
     renderedCrossfader: 0.0,
     sideA: { config: null },
@@ -19112,104 +19874,57 @@ export const useEngineStore = create(
     isAutoFading: false,
     transitionMode: 'crossfade',
     targetSceneName: null,
-    
-    // --- NEW: SEQUENCER SLICE ---
-    sequencerState: {
-        active: false,
-        intervalMs: DEFAULT_SEQUENCER_INTERVAL,
-        nextIndex: 0,
-    },
 
-    setSequencerActive: (isActive) => set((state) => ({
-        sequencerState: { ...state.sequencerState, active: isActive }
-    })),
-
-    setSequencerInterval: (ms) => set((state) => ({
-        sequencerState: { ...state.sequencerState, intervalMs: Math.max(100, ms) } // Min 100ms safety
-    })),
-
-    setSequencerNextIndex: (index) => set((state) => ({
-        sequencerState: { ...state.sequencerState, nextIndex: index }
-    })),
-    // ----------------------------
-    
-    // INDUSTRIAL CONFIG
-    industrialConfig: {
-        enabled: false,
-        chaos: 0.0,
-        masterDrive: 1.0,
-        mappings: DEFAULT_INDUSTRIAL_MAPPING
-    },
-
-    // Global Effects
-    effectsConfig: {
-        feedback: { 
-            enabled: false, 
-            amount: 0.9,    // Decay (Opacity of previous frame)
-            scale: 1.02,    // Zoom speed (Creates the tunnel)
-            rotation: 0.0,  // Spin speed (Creates the spiral)
-            xOffset: 0,     // Drift X
-            yOffset: 0      // Drift Y
-        },
-        bloom: { enabled: false, intensity: 1.0, blur: 8, threshold: 0.5 },
-        rgb: { enabled: false, amount: 2 },
-        pixelate: { enabled: false, size: 10 },
-        twist: { enabled: false, radius: 400, angle: 4, offset: { x: 0, y: 0 } },
-        zoomBlur: { enabled: false, strength: 0.1, innerRadius: 50 },
-        crt: { enabled: false, curvature: 1, lineWidth: 1, noise: 0.1 },
-        kaleidoscope: { enabled: false, sides: 6, angle: 0 },
-        liquid: { enabled: false, intensity: 0.02, scale: 3.0, speed: 0.5 },
-        volumetric: { enabled: false, exposure: 0.3, decay: 0.95, density: 0.8, weight: 0.4, threshold: 0.5, x: 0.5, y: 0.5 },
-        waveDistort: { enabled: false, intensity: 0.5 },
-        oldFilm: { enabled: false, noise: 0.3, scratch: 0.1, vignetting: 0.3 },
-        adversarial: { enabled: false, intensity: 0.8, bands: 24, shift: 12, noiseScale: 3.0, chromatic: 1.5, scanline: 0.35, qNoise: 2.0, seed: 0.42 },
-        ascii: { enabled: false, size: 12, invert: 0, charSet: 0, colorMode: 0 }
-    },
-
-    // Actions
     setCrossfader: (value) => set({ crossfader: Math.max(0, Math.min(1, value)) }),
     setRenderedCrossfader: (value) => set({ renderedCrossfader: value }),
     setIsAutoFading: (isFading) => set({ isAutoFading: isFading }),
     setTransitionMode: (mode) => set({ transitionMode: mode }),
     setTargetSceneName: (name) => set({ targetSceneName: name }),
     
-    setIndustrialEnabled: (enabled) => set((state) => ({ 
-        industrialConfig: { ...state.industrialConfig, enabled } 
-    })),
-    
-    setIndustrialChaos: (value) => set((state) => ({ 
-        industrialConfig: { ...state.industrialConfig, chaos: value } 
-    })),
-
-    setIndustrialMasterDrive: (value) => set((state) => ({ 
-        industrialConfig: { ...state.industrialConfig, masterDrive: value } 
-    })),
-
-    updateIndustrialMapping: (target, updates) => set((state) => ({
-        industrialConfig: {
-            ...state.industrialConfig,
-            mappings: {
-                ...state.industrialConfig.mappings,
-                [target]: { ...state.industrialConfig.mappings[target], ...updates }
-            }
-        }
-    })),
-    
     setDeckConfig: (side, config) => set((state) => ({ 
       [side === 'A' ? 'sideA' : 'sideB']: { config } 
     })),
 
-    updateEffectConfig: (effectName, param, value) => set((state) => ({
-        effectsConfig: {
-            ...state.effectsConfig,
-            [effectName]: {
-                ...state.effectsConfig[effectName],
-                [param]: value
-            }
-        }
+    // =========================================
+    // 2. MODULATION SYSTEM
+    // =========================================
+    
+    baseValues: getInitialBaseValues(),
+    patches: [],
+
+    // Action: User moves a slider
+    setEffectBaseValue: (paramId, value) => set((state) => ({
+        baseValues: { ...state.baseValues, [paramId]: value }
     })),
 
-    // Audio Slice
+    // Action: User creates a wire OR updates existing (Fixed for stability)
+    addPatch: (sourceId, targetId, amount = 1.0) => set((state) => {
+        const patchId = `${sourceId}->${targetId}`;
+        const existingIndex = state.patches.findIndex(p => p.id === patchId);
+        
+        if (existingIndex !== -1) {
+            // Update in place to preserve array order (Fixes UI jumping bug)
+            const updatedPatches = [...state.patches];
+            updatedPatches[existingIndex] = { ...updatedPatches[existingIndex], amount };
+            return { patches: updatedPatches };
+        }
+        
+        // Add new patch to the end
+        return {
+            patches: [...state.patches, { id: patchId, source: sourceId, target: targetId, amount }]
+        };
+    }),
+
+    // Action: User removes a wire
+    removePatch: (patchId) => set((state) => ({
+        patches: state.patches.filter(p => p.id !== patchId)
+    })),
+
+    clearAllPatches: () => set({ patches: [] }),
+
+    // =========================================
+    // 3. AUDIO SYSTEM
+    // =========================================
     isAudioActive: false,
     audioSettings: DEFAULT_AUDIO_SETTINGS,
     analyzerData: { level: 0, frequencyBands: { bass: 0, mid: 0, treble: 0 } },
@@ -19226,7 +19941,30 @@ export const useEngineStore = create(
     
     updateAnalyzerData: (data) => set({ analyzerData: data }),
 
-    // MIDI Slice
+    // =========================================
+    // 4. SEQUENCER
+    // =========================================
+    sequencerState: {
+        active: false,
+        intervalMs: DEFAULT_SEQUENCER_INTERVAL,
+        nextIndex: 0,
+    },
+
+    setSequencerActive: (isActive) => set((state) => ({
+        sequencerState: { ...state.sequencerState, active: isActive }
+    })),
+
+    setSequencerInterval: (ms) => set((state) => ({
+        sequencerState: { ...state.sequencerState, intervalMs: Math.max(100, ms) }
+    })),
+
+    setSequencerNextIndex: (index) => set((state) => ({
+        sequencerState: { ...state.sequencerState, nextIndex: index }
+    })),
+
+    // =========================================
+    // 5. MIDI SYSTEM
+    // =========================================
     midiAccess: null,
     midiInputs: [],
     isConnected: false,
@@ -21850,6 +22588,141 @@ export const preloadImages = async (urls) => {
 ```
 
 ---
+### `src\utils\LFO.js`
+```js
+// src/utils/LFO.js
+
+export class LFO {
+    constructor() {
+        this.startTime = Date.now();
+    }
+
+    /**
+     * Generates normalized waveforms based on current time.
+     * @returns {Object} { 'lfo.sine': -1..1, 'lfo.saw': 0..1, ... }
+     */
+    update() {
+        const now = (Date.now() - this.startTime) / 1000; // Time in seconds
+        
+        // We create a few different speeds/shapes
+        // You can expand this list easily
+        return {
+            'lfo.slow.sine': Math.sin(now * 0.5),        // 0.5 Hz (-1 to 1)
+            'lfo.mid.sine':  Math.sin(now * 2.0),        // 2.0 Hz (-1 to 1)
+            'lfo.fast.sine': Math.sin(now * 8.0),        // 8.0 Hz (-1 to 1)
+            
+            'lfo.slow.saw':  (now * 0.5) % 1,            // 0 to 1 ramp
+            'lfo.fast.saw':  (now * 2.0) % 1,            // 0 to 1 ramp
+            
+            'lfo.pulse':     Math.sin(now * 4.0) > 0 ? 1 : 0, // 0 or 1 square wave
+            
+            // Random Chaos (Smoothed noise would be better, but random works for glitch)
+            'lfo.chaos':     Math.random()
+        };
+    }
+}
+```
+
+---
+### `src\utils\ModulationEngine.js`
+```js
+// src/utils/ModulationEngine.js
+import { EFFECT_MANIFEST, getParamDefinition } from '../config/EffectManifest';
+
+export class ModulationEngine {
+    constructor() {
+        this.baseValues = new Map();
+        this.patches = [];
+        this.computedValues = {};
+        this.resetToDefaults();
+    }
+
+    resetToDefaults() {
+        Object.values(EFFECT_MANIFEST).forEach(effect => {
+            Object.values(effect.params).forEach(param => {
+                this.baseValues.set(param.id, param.default);
+            });
+        });
+    }
+
+    setBaseValue(paramId, value) {
+        if (this.baseValues.has(paramId)) {
+            this.baseValues.set(paramId, value);
+        }
+    }
+
+    // Fixed: Updates in place if exists
+    addPatch(sourceId, targetId, amount = 1.0) {
+        const patchId = `${sourceId}->${targetId}`;
+        const existing = this.patches.find(p => p.id === patchId);
+        
+        if (existing) {
+            existing.amount = amount;
+        } else {
+            this.patches.push({ id: patchId, source: sourceId, target: targetId, amount: amount });
+        }
+    }
+
+    removePatch(patchId) {
+        this.patches = this.patches.filter(p => p.id !== patchId);
+    }
+
+    clearAllPatches() {
+        this.patches = [];
+    }
+
+    compute(signals) {
+        const finalResults = {};
+        
+        // 1. Start with Base Values
+        for (const [key, value] of this.baseValues.entries()) {
+            finalResults[key] = value;
+        }
+
+        // 2. Apply Modulations
+        for (const patch of this.patches) {
+            const signalValue = signals[patch.source] || 0;
+            const targetDef = getParamDefinition(patch.target);
+
+            if (targetDef) {
+                const currentVal = finalResults[patch.target];
+                let modDelta = 0;
+
+                if (targetDef.type === 'float' || targetDef.type === 'int') {
+                    const range = targetDef.max - targetDef.min;
+                    modDelta = signalValue * patch.amount * range;
+                } else if (targetDef.type === 'bool') {
+                    modDelta = (signalValue * patch.amount) > 0.5 ? 1 : 0;
+                }
+
+                finalResults[patch.target] = currentVal + modDelta;
+            }
+        }
+
+        // 3. Clamp and Cast
+        for (const key in finalResults) {
+            const def = getParamDefinition(key);
+            if (!def) continue;
+
+            let val = finalResults[key];
+            val = Math.max(def.min, Math.min(def.max, val));
+
+            if (def.type === 'int') val = Math.floor(val);
+            else if (def.type === 'bool') val = val > 0.5;
+            else if (def.type === 'select') {
+                val = Math.floor(val);
+                if (val >= def.options.length) val = def.options.length - 1;
+            }
+
+            this.computedValues[key] = val;
+        }
+
+        return this.computedValues;
+    }
+}
+```
+
+---
 ### `src\utils\performanceHelpers.js`
 ```js
 // src/utils/performanceHelpers.js
@@ -22122,7 +22995,8 @@ import {
     ZoomBlurFilter,
     CRTFilter,
     ShockwaveFilter, 
-    GlitchFilter
+    GlitchFilter,
+    OldFilmFilter 
 } from 'pixi-filters';
 import { ColorMatrixFilter } from 'pixi.js';
 import { VolumetricLightFilter, LiquidFilter, WaveDistortFilter, KaleidoscopeFilter, AdversarialGlitchFilter, AsciiFilter } from './PixiFilters';
@@ -22137,18 +23011,13 @@ export class PixiEffectsManager {
             volumetric: null, waveDistort: null, liquid: null,
             shockwave: null, glitch: null,
             adversarial: null,
-            ascii: null 
-        };
-        
-        this.filters.destruction = {
-            rgb: null,
-            glitch: null,
-            pixelate: null,
-            crt: null,
-            zoom: null,
-            colorMatrix: null 
+            ascii: null,
+            oldFilm: null, 
+            colorMatrix: null,
+            feedback: null 
         };
 
+        this.colorMatrixState = { threshold: 0, invert: 0 };
         this._activeOneShotEffects = [];
         this.screen = null;
         this.res = 1;
@@ -22163,299 +23032,168 @@ export class PixiEffectsManager {
         if (this.filters[name]) return this.filters[name];
 
         const res = this.res;
-        const screen = this.screen;
-
+        
         switch (name) {
             case 'bloom': this.filters.bloom = new AdvancedBloomFilter({ threshold: 0.5, bloomScale: 1.0, brightness: 1.0, blur: 8, quality: 5, resolution: res }); break;
             case 'rgb': this.filters.rgb = new RGBSplitFilter({ red: {x:0,y:0}, green: {x:0,y:0}, blue: {x:0,y:0}, resolution: res }); break;
             case 'pixelate': this.filters.pixelate = new PixelateFilter(1); this.filters.pixelate.resolution = res; break;
             case 'twist': this.filters.twist = new TwistFilter({ radius: 400, angle: 4, padding: 20, resolution: res }); break;
             case 'zoomBlur': this.filters.zoomBlur = new ZoomBlurFilter({ strength: 0.1, innerRadius: 50, resolution: res }); break;
-            
-            // --- FIX: Explicitly zero out ALL CRT properties on init ---
-            case 'crt': this.filters.crt = new CRTFilter({ 
-                curvature: 0, lineWidth: 0, lineContrast: 0, 
-                noise: 0, noiseSize: 1.0, 
-                vignetting: 0, vignettingAlpha: 0, vignettingBlur: 0, 
-                resolution: res 
-            }); break;
-            
+            case 'crt': this.filters.crt = new CRTFilter({ curvature: 0, lineWidth: 0, lineContrast: 0, noise: 0, vignetting: 0, vignettingAlpha: 0, resolution: res }); break;
             case 'kaleidoscope': this.filters.kaleidoscope = new KaleidoscopeFilter(); this.filters.kaleidoscope.resolution = res; break;
             case 'volumetric': this.filters.volumetric = new VolumetricLightFilter(); break;
             case 'waveDistort': this.filters.waveDistort = new WaveDistortFilter(); break;
             case 'liquid': this.filters.liquid = new LiquidFilter(); break;
             case 'adversarial': this.filters.adversarial = new AdversarialGlitchFilter(); break;
             case 'ascii': this.filters.ascii = new AsciiFilter(); break;
-            case 'shockwave': this.filters.shockwave = new ShockwaveFilter({ center: { x: screen.width / 2, y: screen.height / 2 }, speed: 500, amplitude: 30, wavelength: 160, radius: -1 }); break;
-            case 'glitch': this.filters.glitch = new GlitchFilter({ slices: 10, offset: 10, direction: 0, fillMode: 2 }); this.filters.glitch.enabled = false; break;
+            case 'colorMatrix': this.filters.colorMatrix = new ColorMatrixFilter(); break;
+            case 'shockwave': this.filters.shockwave = new ShockwaveFilter({ center: { x: 0, y: 0 }, speed: 500, amplitude: 30, wavelength: 160, radius: -1 }); break;
+            case 'glitch': this.filters.glitch = new GlitchFilter({ slices: 10, offset: 10, direction: 0, fillMode: 2 }); break;
+            case 'oldFilm': this.filters.oldFilm = new OldFilmFilter({ sepia: 0, noise: 0, scratch: 0, vignetting: 0 }, 0); break;
         }
 
+        // Filters default to disabled
         if (this.filters[name]) {
-            if (name !== 'glitch') this.filters[name].enabled = false; 
+            this.filters[name].enabled = false; 
         }
 
         return this.filters[name];
     }
 
-    ensureDestructionChain() {
-        if (!this.filters.destruction.rgb) this.filters.destruction.rgb = this.ensureFilter('rgb');
-        if (!this.filters.destruction.glitch) this.filters.destruction.glitch = this.ensureFilter('adversarial');
-        if (!this.filters.destruction.pixelate) this.filters.destruction.pixelate = this.ensureFilter('pixelate');
-        if (!this.filters.destruction.crt) this.filters.destruction.crt = this.ensureFilter('crt');
-        if (!this.filters.destruction.zoom) this.filters.destruction.zoom = this.ensureFilter('zoomBlur');
-        if (!this.filters.destruction.colorMatrix) {
-            this.filters.destruction.colorMatrix = new ColorMatrixFilter();
-            this.filters.destruction.colorMatrix.enabled = false;
-        }
-    }
-
-    updateDestructionMode(audioData, config) {
-        this.ensureDestructionChain();
-        const { rgb, glitch, pixelate, crt, zoom, colorMatrix } = this.filters.destruction;
-        const enabled = config && config.enabled;
-
-        // Cleanup if disabled
-        if (!enabled) {
-            [rgb, glitch, pixelate, crt, zoom, colorMatrix].forEach(f => {
-                if (f && f._isDestructionControlled) f.enabled = false;
-            });
-            if (rgb) rgb._isDestructionControlled = false;
-            if (crt) crt._isDestructionControlled = false;
-            
-            // Re-enable if was manually set before
-            if (rgb && rgb._wasManuallyEnabled) rgb.enabled = true;
-            if (crt && crt._wasManuallyEnabled) crt.enabled = true;
-            return;
-        }
-
-        const map = config.mappings || {};
-        const chaos = config.chaos || 0; 
-        const masterDrive = config.masterDrive !== undefined ? config.masterDrive : 1.0;
-
-        // Force enable chain
-        [rgb, glitch, pixelate, crt, zoom, colorMatrix].forEach(f => {
-            f.enabled = true; 
-            f._isDestructionControlled = true; 
+    applyValues(values) {
+        Object.entries(values).forEach(([fullId, value]) => {
+            const [effectName, param] = fullId.split('.');
+            this.updateConfig(effectName, param, value);
         });
-
-        const bands = audioData.frequencyBands; 
-        const level = audioData.level;
-
-        const getSourceValue = (source) => {
-            if (source === 'level') return level;
-            return bands[source] || 0;
-        };
-
-        const calcVal = (targetKey, base, rangeScale) => {
-            const m = map[targetKey];
-            if (!m || !m.enabled) return base;
-            
-            const input = getSourceValue(m.source);
-            
-            // Apply Chaos
-            const chaosFactor = chaos > 0 ? 1 + (Math.random() * chaos * 3.0) : 1; 
-            
-            // Audio Curve
-            const signalStrength = Math.pow(input, 2) * m.amount * 3.0; 
-            
-            // Result = Base + (Signal * Scale * Chaos)
-            // Apply Master Drive to the added effect portion
-            const addedEffect = (signalStrength * rangeScale * chaosFactor);
-            return base + (addedEffect * masterDrive);
-        };
-
-        // 1. RGB SPLIT
-        const rgbVal = calcVal('rgbStrength', 0.0, 40.0); 
-        rgb.red = { x: rgbVal, y: -rgbVal * 0.5 };
-        rgb.blue = { x: -rgbVal, y: rgbVal * 0.5 };
-        
-        // 2. KICK ZOOM
-        const zoomVal = calcVal('zoomStrength', 0.0, 0.4);
-        zoom.strength = Math.min(zoomVal, 0.8); 
-        if (this.screen) zoom.center = { x: this.screen.width/2, y: this.screen.height/2 };
-
-        // 3. GLITCH
-        const glitchInt = calcVal('glitchIntensity', 0.0, 5.0);
-        glitch.intensity = glitchInt;
-        glitch.bands = 5 + Math.floor(glitchInt * 20);
-        glitch.shift = Math.floor(glitchInt * 100);
-        glitch.chromatic = calcVal('chromaticShift', 1.0, 15.0) * masterDrive; 
-
-        // 4. CRT - SPLIT INTO NOISE AND GEOMETRY
-        
-        // A. Noise
-        const noiseMap = map['crtNoise'];
-        if (noiseMap && noiseMap.enabled && masterDrive > 0.01) {
-            const calculatedNoise = calcVal('crtNoise', 0.0, 1.5);
-            // Noise Gate: only apply if significant to prevent static hiss when clean
-            crt.noise = calculatedNoise > 0.01 ? calculatedNoise : 0;
-            if (crt.noise > 0) crt.time += 0.5 + (level * 5.0) + chaos; 
-        } else {
-            crt.noise = 0;
-        }
-
-        // B. Geometry & Vignette (The "Retro Look")
-        // We use calcVal here so it responds to Master Drive correctly. 
-        const geomIntensity = calcVal('crtGeometry', 0.0, 1.0); 
-
-        // Stronger Noise Gate for Geometry (0.01) to prevent default vignetting
-        if (geomIntensity > 0.01 && masterDrive > 0.01) {
-            // Apply physics-based look
-            crt.curvature = geomIntensity * 2.0; 
-            crt.lineWidth = geomIntensity * 8.0;
-            crt.lineContrast = geomIntensity * 0.5;
-            
-            // Explicitly control vignette intensity
-            const vignetteAmount = geomIntensity * 0.45;
-            crt.vignetting = vignetteAmount;
-            crt.vignettingAlpha = vignetteAmount;
-            crt.vignettingBlur = vignetteAmount * 0.5;
-        } else {
-            // Completely clean - FORCIBLY ZERO EVERYTHING
-            crt.curvature = 0;
-            crt.lineWidth = 0;
-            crt.lineContrast = 0;
-            crt.vignetting = 0;
-            crt.vignettingAlpha = 0;
-            crt.vignettingBlur = 0;
-        }
-
-        // 5. VIDEO NASTY: BINARY THRESHOLD & INVERT
-        const threshVal = calcVal('binaryThreshold', 0, 1.0);
-        const invertVal = calcVal('invertStrobe', 0, 1.0);
-        
-        colorMatrix.reset();
-        
-        if (threshVal > 0.1) {
-            colorMatrix.desaturate();
-            colorMatrix.contrast(threshVal * 5, true); 
-        }
-
-        if (invertVal > 0.5) {
-            colorMatrix.negative(true);
-        }
-
-        // 6. PIXELATE
-        const pixVal = Math.max(1, calcVal('pixelateSize', 1, 40)); 
-        pixelate.size = pixVal;
-
-        // Chaos Seeds
-        glitch.seed = Math.random();
-    }
-
-    getFilterList() {
-        const list = [
-            this.filters.liquid,
-            this.filters.kaleidoscope, 
-            this.filters.twist, 
-            this.filters.zoomBlur,
-            this.filters.shockwave, 
-            this.filters.glitch,    
-            this.filters.adversarial,
-            this.filters.ascii, 
-            this.filters.volumetric,
-            this.filters.waveDistort,
-            this.filters.pixelate,
-            this.filters.destruction.colorMatrix,
-            this.filters.crt,
-            this.filters.rgb, 
-            this.filters.bloom
-        ];
-        return [...new Set(list.filter(f => f !== null && f.enabled))];
     }
 
     updateConfig(effectName, param, value) {
+        if (effectName === 'feedback') return; // Handled by FeedbackSystem
+        if (effectName === 'global') return;   // Handled by CrossfaderSystem
+
         const filter = this.ensureFilter(effectName);
         if (!filter) return;
-        if (filter._isDestructionControlled) return;
 
+        // --- GLOBAL ENABLE TOGGLE ---
         if (param === 'enabled') {
-            filter.enabled = !!value;
-            if (value) filter._wasManuallyEnabled = true;
-            else delete filter._wasManuallyEnabled;
-        } else if (effectName === 'rgb' && param === 'amount') {
+            filter.enabled = value > 0.5;
+            return;
+        }
+
+        // --- SPECIFIC MAPPINGS ---
+        
+        if (effectName === 'pixelate' && param === 'size') {
+            // FIX: Removed implicit auto-enable logic (value > 1.5)
+            // Ensure size is at least 1 to avoid divide-by-zero artifacts
+            filter.size = Math.max(1, value); 
+        }
+        else if (effectName === 'rgb' && param === 'amount') {
             filter.red = { x: -value, y: -value };
-            filter.green = { x: 0, y: 0 };
             filter.blue = { x: value, y: value };
-        } else if (effectName === 'bloom' && param === 'intensity') {
-            filter.bloomScale = value;
-        } else if (effectName === 'liquid') {
-            if (param === 'speed') filter.speed = value;
-            if (param === 'scale') filter.scale = value;
-            if (param === 'intensity') filter.intensity = value;
-        } else if (effectName === 'volumetric') {
-            if (param === 'exposure') filter.exposure = value;
-            if (param === 'decay') filter.decay = value;
-            if (param === 'density') filter.density = value;
+            // Allow implicit enable for RGB if amount is significant, 
+            // as it's often used as a transient effect.
+            // But relying on the 'enabled' toggle is safer if available.
+            // Keeping implicit here for backward compat with Modulation Engine chaos.
+            if (value > 0.1 && !filter.enabled) filter.enabled = true;
+        }
+        else if (effectName === 'bloom') {
+            if (param === 'intensity') filter.bloomScale = value; 
             if (param === 'threshold') filter.threshold = value;
-            if (param === 'x') filter.lightX = value;
-            if (param === 'y') filter.lightY = value;
-        } else if (effectName === 'waveDistort') {
-            if (param === 'intensity') filter.intensity = value;
-        } else if (effectName === 'ascii') { 
-            if (param === 'size') filter.size = value;
-            if (param === 'invert') filter.invert = value;
-            if (param === 'charSet') filter.charSet = value;
-            if (param === 'colorMode') filter.colorMode = value;
-        } else if (effectName === 'adversarial') {
-            if (param === 'intensity') filter.intensity = value;
-            if (param === 'bands') filter.bands = value;
-            if (param === 'shift') filter.shift = value;
-            if (param === 'noiseScale') filter.noiseScale = value;
-            if (param === 'chromatic') filter.chromatic = value;
-            if (param === 'scanline') filter.scanline = value;
-            if (param === 'qNoise') filter.qNoise = value;
-            if (param === 'seed') filter.seed = value;
-        } else {
+            if (param === 'blur') filter.blur = value;
+            if (filter.bloomScale > 0.1 && !filter.enabled) filter.enabled = true;
+        } 
+        else if (effectName === 'twist') {
+            if (param === 'angle') filter.angle = value;
+            if (param === 'radius') filter.radius = value;
+            if (param === 'x') filter.offset.x = value * this.screen.width;
+            if (param === 'y') filter.offset.y = value * this.screen.height;
+            // Twist has a clear "off" state at angle 0
+            filter.enabled = Math.abs(filter.angle) > 0.1;
+        }
+        else if (effectName === 'zoomBlur') {
+            if (param === 'strength') filter.strength = value;
+            if (param === 'innerRadius') filter.innerRadius = value;
+            filter.enabled = value > 0.01;
+        }
+        else if (effectName === 'crt') {
+            if (param in filter) filter[param] = value;
+            // CRT is complex, enable if any major component is active
+            filter.enabled = (filter.curvature > 0.1 || filter.noise > 0.05 || filter.vignetting > 0.1 || filter.lineWidth > 0.1);
+        }
+        else if (effectName === 'colorMatrix') {
+            if (param === 'threshold') this.colorMatrixState.threshold = value;
+            if (param === 'invert') this.colorMatrixState.invert = value;
+            filter.enabled = (this.colorMatrixState.threshold > 0.01 || this.colorMatrixState.invert > 0.5);
+        }
+        else if (effectName === 'glitch') {
+            // Standard Glitch
+            if (param === 'slices') filter.slices = value;
+            if (param === 'offset') filter.offset = value;
+            if (param === 'direction') filter.direction = value;
+            filter.enabled = filter.slices > 2; 
+        }
+        else if (effectName === 'kaleidoscope') {
+            if (param === 'sides') filter.sides = value;
+            if (param === 'angle') filter.angle = value;
+            filter.enabled = filter.sides > 0;
+        }
+        // --- GENERIC PARAM MAPPING ---
+        else if (['liquid', 'waveDistort', 'volumetric', 'ascii', 'adversarial', 'oldFilm'].includes(effectName)) {
             if (param in filter) {
                 filter[param] = value;
             }
+            
+            // Implicit enables for effects that might rely on intensity
+            if (effectName === 'liquid') filter.enabled = filter.intensity > 0.001;
+            if (effectName === 'waveDistort') filter.enabled = filter.intensity > 0.001;
+            if (effectName === 'volumetric') filter.enabled = filter.exposure > 0.01;
+            
+            // For Adversarial/ASCII/OldFilm, we strongly prefer the explicit 'enabled' toggle
+            // passed via the Modulation Panel, so we removed auto-enable logic here.
         }
     }
 
-    triggerOneShot(type, config, screen) {
-        const now = performance.now();
-        const width = screen.width;
-        const height = screen.height;
-        
-        if (type === 'shockwave') {
-            const filter = this.ensureFilter('shockwave');
-            filter.center = { x: Math.random() * width, y: Math.random() * height };
-            filter.time = 0;
-            filter.radius = -1; 
-            filter.amplitude = config.amplitude || 30;
-            filter.wavelength = config.wavelength || 160;
-            const duration = config.duration || 1000;
-            const maxRadius = Math.max(width, height) * 1.5;
-            this._activeOneShotEffects.push({ type: 'shockwave', startTime: now, duration, maxRadius });
-        }
-        else if (type === 'glitch') {
-            const filter = this.ensureFilter('glitch');
-            filter.enabled = true;
-            filter.slices = config.slices || 15;
-            filter.offset = config.offset || 50;
-            this._activeOneShotEffects.push({ type: 'glitch', startTime: now, duration: config.duration || 600 });
-        }
-        else if (type === 'bloomFlash') {
-            const filter = this.ensureFilter('bloom');
-            if (!filter.enabled) { filter.enabled = true; filter._wasDisabled = true; }
-            const baseIntensity = filter.bloomScale;
-            this._activeOneShotEffects.push({ type: 'bloomFlash', startTime: now, duration: config.duration || 500, baseIntensity, peakIntensity: config.intensity || 6.0 });
-        }
+    getFilterList() {
+        return Object.values(this.filters)
+            .filter(f => f && f.enabled && f !== this.filters.feedback); 
     }
 
     update(ticker, renderer) {
         const now = performance.now();
         const filterDelta = ticker.deltaTime * 0.01;
 
-        if (this.filters.crt && this.filters.crt.enabled) {
-            this.filters.crt.seed = Math.random();
-            this.filters.crt.time += ticker.deltaTime * 0.1;
+        if (this.filters.crt?.enabled) this.filters.crt.time += ticker.deltaTime * 0.1;
+        if (this.filters.liquid?.enabled) this.filters.liquid.time += filterDelta;
+        if (this.filters.waveDistort?.enabled) this.filters.waveDistort.time += filterDelta;
+        if (this.filters.ascii?.enabled) this.filters.ascii.time += filterDelta;
+        
+        if (this.filters.adversarial?.enabled) {
+            this.filters.adversarial.time += filterDelta;
+            this.filters.adversarial.seed = Math.random(); 
         }
-        if (this.filters.liquid && this.filters.liquid.enabled) this.filters.liquid.time += filterDelta;
-        if (this.filters.waveDistort && this.filters.waveDistort.enabled) this.filters.waveDistort.time += filterDelta;
-        if (this.filters.adversarial && this.filters.adversarial.enabled) this.filters.adversarial.time += filterDelta;
-        if (this.filters.ascii && this.filters.ascii.enabled) this.filters.ascii.time += filterDelta;
+
+        if (this.filters.oldFilm?.enabled) {
+            this.filters.oldFilm.seed = Math.random();
+            this.filters.oldFilm.time += ticker.deltaTime * 0.1;
+        }
+
+        if (this.filters.glitch?.enabled) {
+            this.filters.glitch.seed = Math.random();
+        }
+
+        // --- UPDATE COLOR MATRIX ---
+        if (this.filters.colorMatrix?.enabled) {
+            const cm = this.filters.colorMatrix;
+            const { threshold, invert } = this.colorMatrixState;
+            cm.reset(); 
+            if (threshold > 0.01) {
+                cm.desaturate();
+                cm.contrast(threshold * 5, false); 
+            }
+            if (invert > 0.5) {
+                cm.negative(false);
+            }
+        }
 
         const logicalW = renderer.width / renderer.resolution;
         const logicalH = renderer.height / renderer.resolution;
@@ -22463,41 +23201,73 @@ export class PixiEffectsManager {
         if (this.filters.kaleidoscope) this.filters.kaleidoscope.screenSize = { x: renderer.width, y: renderer.height };
         if (this.filters.zoomBlur) this.filters.zoomBlur.center = { x: logicalW/2, y: logicalH/2 };
         if (this.filters.twist) this.filters.twist.offset = { x: logicalW/2, y: logicalH/2 };
+        
+        this._updateOneShots(now);
+    }
 
-        if (this._activeOneShotEffects.length > 0) {
-            this._activeOneShotEffects = this._activeOneShotEffects.filter(effect => {
-                const elapsed = now - effect.startTime;
-                const progress = Math.max(0, Math.min(elapsed / effect.duration, 1.0));
-                
-                if (effect.type === 'shockwave') {
-                    if (this.filters.shockwave) {
-                        this.filters.shockwave.radius = effect.maxRadius * progress;
-                        if (progress > 0.8) {
-                            const fade = (1.0 - progress) / 0.2;
-                            this.filters.shockwave.amplitude = fade * 30;
-                        }
-                    }
-                }
-                else if (effect.type === 'glitch') {
-                    if (this.filters.glitch) {
-                        this.filters.glitch.seed = Math.random();
-                        this.filters.glitch.offset = (1.0 - progress) * 50;
-                        if (progress >= 1.0) this.filters.glitch.enabled = false;
-                    }
-                }
-                else if (effect.type === 'bloomFlash') {
-                    if (this.filters.bloom) {
-                        const current = lerp(effect.peakIntensity, effect.baseIntensity, progress);
-                        this.filters.bloom.bloomScale = current;
-                        if (progress >= 1.0 && this.filters.bloom._wasDisabled) {
-                            this.filters.bloom.enabled = false;
-                            delete this.filters.bloom._wasDisabled;
-                        }
-                    }
-                }
-                return progress < 1.0;
-            });
+    triggerOneShot(type, config, screen) {
+        // ... (Keep existing OneShot logic) ...
+        const now = performance.now();
+        if (type === 'shockwave') {
+            const filter = this.ensureFilter('shockwave');
+            filter.center = { x: Math.random() * screen.width, y: Math.random() * screen.height };
+            filter.time = 0;
+            filter.radius = -1; 
+            filter.amplitude = config.amplitude || 30;
+            filter.wavelength = config.wavelength || 160;
+            const duration = config.duration || 1000;
+            const maxRadius = Math.max(screen.width, screen.height) * 1.5;
+            filter.enabled = true;
+            this._activeOneShotEffects.push({ type: 'shockwave', startTime: now, duration, maxRadius, filter });
         }
+        else if (type === 'glitch') {
+            const filter = this.ensureFilter('glitch');
+            filter.enabled = true;
+            filter.slices = config.slices || 15;
+            filter.offset = config.offset || 50;
+            this._activeOneShotEffects.push({ type: 'glitch', startTime: now, duration: config.duration || 600, filter });
+        }
+        else if (type === 'bloomFlash') {
+            const filter = this.ensureFilter('bloom');
+            if (!filter.enabled) { filter.enabled = true; filter._wasDisabled = true; }
+            const baseIntensity = filter.bloomScale;
+            this._activeOneShotEffects.push({ type: 'bloomFlash', startTime: now, duration: config.duration || 500, baseIntensity, peakIntensity: config.intensity || 6.0, filter });
+        }
+    }
+
+    _updateOneShots(now) {
+        if (this._activeOneShotEffects.length === 0) return;
+        
+        this._activeOneShotEffects = this._activeOneShotEffects.filter(effect => {
+            const elapsed = now - effect.startTime;
+            const progress = Math.max(0, Math.min(elapsed / effect.duration, 1.0));
+            
+            if (effect.type === 'shockwave') {
+                effect.filter.radius = effect.maxRadius * progress;
+                if (progress > 0.8) {
+                    const fade = (1.0 - progress) / 0.2;
+                    effect.filter.amplitude = fade * 30;
+                }
+            }
+            else if (effect.type === 'glitch') {
+                effect.filter.seed = Math.random();
+                effect.filter.offset = (1.0 - progress) * 50;
+            }
+            else if (effect.type === 'bloomFlash') {
+                const current = lerp(effect.peakIntensity, effect.baseIntensity, progress);
+                effect.filter.bloomScale = current;
+                if (progress >= 1.0 && effect.filter._wasDisabled) {
+                    effect.filter.enabled = false;
+                    delete effect.filter._wasDisabled;
+                }
+            }
+            
+            if (progress >= 1.0) {
+                if (effect.type !== 'bloomFlash') effect.filter.enabled = false;
+                return false;
+            }
+            return true;
+        });
     }
 }
 ```
@@ -22508,7 +23278,9 @@ export class PixiEffectsManager {
 // src/utils/pixi/PixiFilters.js
 import { Filter, GlProgram } from 'pixi.js';
 
+// --- SHARED VERTEX SHADER (GLSL 300 ES) ---
 const defaultFilterVertex = `
+    #version 300 es
     precision highp float;
     in vec2 aPosition;
     out vec2 vTextureCoord;
@@ -22533,6 +23305,7 @@ const defaultFilterVertex = `
 
 // --- VOLUMETRIC LIGHT ---
 const volumetricFragment = `
+    #version 300 es
     precision highp float;
     in vec2 vTextureCoord;
     out vec4 finalColor;
@@ -22557,13 +23330,13 @@ const volumetricFragment = `
         
         for(int i=0; i < SAMPLES ; i++) {
             textCoo -= deltaTextCoord;
-            vec4 sample = texture(uTexture, textCoo);
-            float brightness = dot(sample.rgb, vec3(0.2126, 0.7152, 0.0722));
+            vec4 sampleCol = texture(uTexture, textCoo);
+            float brightness = dot(sampleCol.rgb, vec3(0.2126, 0.7152, 0.0722));
             if(brightness < uThreshold) {
-                sample *= 0.05;
+                sampleCol *= 0.05;
             }
-            sample *= illuminationDecay * uWeight;
-            color += sample;
+            sampleCol *= illuminationDecay * uWeight;
+            color += sampleCol;
             illuminationDecay *= uDecay;
         }
         
@@ -22602,6 +23375,7 @@ export class VolumetricLightFilter extends Filter {
 
 // --- LIQUID FLOW ---
 const liquidFragment = `
+    #version 300 es
     precision highp float;
     in vec2 vTextureCoord;
     out vec4 finalColor;
@@ -22670,6 +23444,7 @@ export class LiquidFilter extends Filter {
 
 // --- WAVE DISTORT ---
 const waveDistortFragment = `
+    #version 300 es
     precision highp float;
     in vec2 vTextureCoord;
     out vec4 finalColor;
@@ -22706,6 +23481,7 @@ export class WaveDistortFilter extends Filter {
 
 // --- KALEIDOSCOPE ---
 const kaleidoscopeFragment = `
+    #version 300 es
     precision highp float;
     in vec2 vTextureCoord;
     out vec4 finalColor;
@@ -22714,6 +23490,7 @@ const kaleidoscopeFragment = `
     uniform float angle;
     uniform vec2 uScreenSize; 
     uniform vec4 uInputSize;
+    
     void main() {
         vec2 uvPerPixel = uInputSize.zw;
         vec2 originUV = vTextureCoord - gl_FragCoord.xy * uvPerPixel;
@@ -22757,6 +23534,7 @@ export class KaleidoscopeFilter extends Filter {
 
 // --- ADVERSARIAL GLITCH ---
 const adversarialFragment = `
+    #version 300 es
     precision highp float;
     in vec2 vTextureCoord;
     out vec4 finalColor;
@@ -22889,6 +23667,7 @@ export class AdversarialGlitchFilter extends Filter {
 
 // --- ADVANCED ASCII / TEXTMODE FILTER ---
 const asciiFragment = `
+    #version 300 es
     precision highp float;
     in vec2 vTextureCoord;
     out vec4 finalColor;
@@ -23381,9 +24160,6 @@ export class CrossfaderSystem {
         this.parallaxFactors = { '1': 10, '2': 25, '3': 50 };
         this._morphedState = {}; 
 
-        // Industrial State
-        this.industrialConfig = { enabled: false, chaos: 0, mappings: {} };
-
         this.init();
     }
 
@@ -23392,14 +24168,14 @@ export class CrossfaderSystem {
         const state = useEngineStore.getState();
         this.crossfadeValue = state.renderedCrossfader;
         this.transitionMode = state.transitionMode;
-        this.industrialConfig = state.industrialConfig; // Sync initial config
 
-        // Listen for updates
+        // Listen for high-frequency updates from UI/Sequencer
         SignalBus.on('crossfader:update', (val) => { this.crossfadeValue = val; });
     }
 
+    // Legacy support method (can be removed, but kept to prevent PixiEngine crash if called)
     setIndustrialConfig(config) {
-        this.industrialConfig = config;
+        // No-op: Industrial config is now handled by ModulationEngine
     }
 
     setParallax(x, y) {
@@ -23407,32 +24183,18 @@ export class CrossfaderSystem {
     }
 
     update(deltaTime, now, screen) {
-        // Update transition mode from store
+        // Update transition mode from store (low frequency check)
         this.transitionMode = useEngineStore.getState().transitionMode;
 
-        // --- 1. CALCULATE EFFECTIVE CROSSFADE (SHREDDER LOGIC) ---
-        let effectiveCrossfade = this.crossfadeValue;
+        // Effective crossfade is just the current value
+        // (Modulation logic will handle automated movement in the future via SignalBus)
+        const effectiveCrossfade = this.crossfadeValue;
 
-        if (this.industrialConfig.enabled) {
-            const shredMap = this.industrialConfig.mappings?.crossfaderShred;
-            if (shredMap && shredMap.enabled && shredMap.amount > 0) {
-                const audioData = this.audioReactor.getAudioData();
-                const bands = audioData.frequencyBands;
-                const sourceVal = shredMap.source === 'level' ? audioData.level : (bands[shredMap.source] || 0);
-                
-                // Threshold logic: trigger if signal * amount > 0.6
-                if (sourceVal * shredMap.amount > 0.6) {
-                    // Oscillate rapidly between 0 and 1 based on time
-                    effectiveCrossfade = Math.sin(now * 0.05) > 0 ? 1.0 : 0.0;
-                }
-            }
-        }
-
-        // Direction detection
+        // Direction detection for Flythrough mode
         if (effectiveCrossfade >= 0.999) this.flythroughSequence = 'B->A';
         else if (effectiveCrossfade <= 0.001) this.flythroughSequence = 'A->B';
 
-        // Smooth Parallax
+        // Smooth Parallax Interpolation
         this.renderedParallaxOffset.x += (this.parallaxOffset.x - this.renderedParallaxOffset.x) * 0.05;
         this.renderedParallaxOffset.y += (this.parallaxOffset.y - this.renderedParallaxOffset.y) * 0.05;
 
@@ -23442,7 +24204,7 @@ export class CrossfaderSystem {
             const layerObj = layerList[i];
             const combinedBeatFactor = this.audioReactor.getCombinedBeatFactor(layerObj.id);
 
-            // Determine Visibility
+            // Determine Visibility based on Transition Mode
             let renderA = true;
             let renderB = true;
 
@@ -23459,7 +24221,7 @@ export class CrossfaderSystem {
             const stateA = renderA ? layerObj.deckA.resolveRenderState() : null;
             const stateB = renderB ? layerObj.deckB.resolveRenderState() : null;
 
-            // Apply Transition
+            // Apply Transition Logic
             if (this.transitionMode === 'flythrough') {
                 this._applyFlythrough(layerObj, stateA, stateB, renderA, renderB, combinedBeatFactor, screen, effectiveCrossfade);
             } else {
@@ -23544,7 +24306,7 @@ export class CrossfaderSystem {
     }
 
     _applyCrossfade(layerObj, stateA, stateB, renderA, renderB, beatFactor, screen, t) {
-        // Opacity crossfade curve (Sin/Cos for smoother blend than linear)
+        // Opacity crossfade curve (Sin/Cos for smoother blend)
         const angle = t * 1.570796;
         const opacityA = Math.cos(angle);
         const opacityB = Math.sin(angle);
@@ -23553,7 +24315,6 @@ export class CrossfaderSystem {
             const ms = this._morphedState;
             
             // --- Spatial Morphing ---
-            // We interpolate position/size/angle so the layers overlap perfectly during fade.
             ms.speed = lerp(stateA.speed, stateB.speed, t); 
             ms.size = lerp(stateA.size, stateB.size, t);
             ms.opacity = lerp(stateA.opacity, stateB.opacity, t);
@@ -23565,22 +24326,15 @@ export class CrossfaderSystem {
             ms.driftX = lerp(stateA.driftX, stateB.driftX, t);
             ms.driftY = lerp(stateA.driftY, stateB.driftY, t);
             
-            // Sync rotation physics
             const currentContinuous = lerp(layerObj.deckA.continuousAngle, layerObj.deckB.continuousAngle, t);
             ms.totalAngleRad = (ms.angle + currentContinuous) * 0.01745329251;
 
-            // --- FIXED: APPLY CATEGORICAL PROPERTIES INDIVIDUALLY ---
-            // Previously, we did `ms.blendMode = t < 0.5 ? A : B` and sent `ms` to BOTH.
-            // This caused Deck A to suddenly swap blend modes at 50%.
-            // Now, we override the blendMode/enabled on the morphed state object 
-            // JUST before sending it to the respective deck.
-
-            // Render Deck A
+            // Apply to Deck A
             ms.blendMode = stateA.blendMode;
             ms.enabled = stateA.enabled;
             layerObj.deckA.applyRenderState(ms, opacityA, beatFactor, this.renderedParallaxOffset, this.parallaxFactors[layerObj.id], screen);
 
-            // Render Deck B
+            // Apply to Deck B
             ms.blendMode = stateB.blendMode;
             ms.enabled = stateB.enabled;
             layerObj.deckB.applyRenderState(ms, opacityB, beatFactor, this.renderedParallaxOffset, this.parallaxFactors[layerObj.id], screen);
@@ -23599,6 +24353,7 @@ export class CrossfaderSystem {
 ---
 ### `src\utils\pixi\systems\FeedbackSystem.js`
 ```js
+// src/utils/pixi/systems/FeedbackSystem.js
 import { RenderTexture, Sprite } from 'pixi.js';
 import { useEngineStore } from '../../../store/useEngineStore';
 
@@ -23620,8 +24375,16 @@ export class FeedbackSystem {
         const { width, height } = this.app.screen;
         const res = this.app.renderer.resolution;
 
-        this.rt1 = RenderTexture.create({ width, height, resolution: res });
-        this.rt2 = RenderTexture.create({ width, height, resolution: res });
+        // Use 'linear' string for v8 compatibility to ensure smooth trails
+        const rtOptions = { 
+            width, 
+            height, 
+            resolution: res,
+            scaleMode: 'linear'
+        };
+
+        this.rt1 = RenderTexture.create(rtOptions);
+        this.rt2 = RenderTexture.create(rtOptions);
 
         this.feedbackSprite = new Sprite(this.rt1);
         this.feedbackSprite.anchor.set(0.5);
@@ -23630,7 +24393,8 @@ export class FeedbackSystem {
         this.outputSprite = new Sprite(this.rt2);
         this.outputSprite.visible = false;
         
-        // Add output sprite to stage immediately (visibility toggled later)
+        // Add output sprite to stage immediately
+        // Note: Ensure Z-index in main engine places this correctly if needed
         this.app.stage.addChild(this.outputSprite);
     }
 
@@ -23641,52 +24405,77 @@ export class FeedbackSystem {
     }
 
     updateConfig(param, value) {
-        // Full sync from store if param is null
         if (param === null) {
+            // Full sync fallback
             const state = useEngineStore.getState();
-            this.config = { ...state.effectsConfig.feedback };
+            const vals = state.baseValues || {};
+            if (vals['feedback.enabled'] !== undefined) this.config.enabled = vals['feedback.enabled'] > 0.5;
+            if (vals['feedback.amount'] !== undefined) this.config.amount = vals['feedback.amount'];
+            if (vals['feedback.scale'] !== undefined) this.config.scale = vals['feedback.scale'];
+            if (vals['feedback.rotation'] !== undefined) this.config.rotation = vals['feedback.rotation'];
+            if (vals['feedback.xOffset'] !== undefined) this.config.xOffset = vals['feedback.xOffset'];
+            if (vals['feedback.yOffset'] !== undefined) this.config.yOffset = vals['feedback.yOffset'];
         } else {
             this.config[param] = value;
         }
         
         this.outputSprite.visible = this.config.enabled;
-        return this.config.enabled; // Return visibility state for parent to handle masking
+        return this.config.enabled;
     }
 
     render(sourceContainer) {
         if (!this.config.enabled || !this.rt1 || !this.rt2) return;
 
-        // 1. Configure "History" sprite
-        this.feedbackSprite.scale.set(this.config.scale);
-        this.feedbackSprite.rotation = this.config.rotation * 0.05;
-        this.feedbackSprite.alpha = this.config.amount;
-        this.feedbackSprite.position.x = (this.app.screen.width / 2) + this.config.xOffset;
-        this.feedbackSprite.position.y = (this.app.screen.height / 2) + this.config.yOffset;
+        try {
+            // 1. Configure "History" sprite
+            this.feedbackSprite.scale.set(this.config.scale);
+            this.feedbackSprite.rotation = this.config.rotation;
+            this.feedbackSprite.alpha = this.config.amount;
+            
+            // Use safe access for screen dimensions
+            const screenW = this.app.screen ? this.app.screen.width : this.app.renderer.width;
+            const screenH = this.app.screen ? this.app.screen.height : this.app.renderer.height;
+            
+            this.feedbackSprite.position.x = (screenW / 2) + this.config.xOffset;
+            this.feedbackSprite.position.y = (screenH / 2) + this.config.yOffset;
 
-        // 2. Render History -> Buffer B (Clear previous)
-        this.app.renderer.render({
-            container: this.feedbackSprite,
-            target: this.rt2,
-            clear: true
-        });
+            // 2. Render History -> Buffer B (Clear previous)
+            this.app.renderer.render({
+                container: this.feedbackSprite,
+                target: this.rt2,
+                clear: true
+            });
 
-        // 3. Render New Frame (Source) -> Buffer B (Don't clear, draw on top)
-        sourceContainer.visible = true; // Briefly visible for internal render
-        this.app.renderer.render({
-            container: sourceContainer,
-            target: this.rt2,
-            clear: false
-        });
-        sourceContainer.visible = false; // Hide again to prevent double draw
+            // 3. Render New Frame (Source) -> Buffer B (Overlay)
+            // We must temporarily enable visibility for the render pass
+            const wasVisible = sourceContainer.visible;
+            sourceContainer.visible = true;
+            
+            // Explicitly render to texture
+            this.app.renderer.render({
+                container: sourceContainer,
+                target: this.rt2,
+                clear: false 
+            });
+            
+            sourceContainer.visible = wasVisible; // Restore state
 
-        // 4. Swap Buffers
-        const temp = this.rt1;
-        this.rt1 = this.rt2;
-        this.rt2 = temp;
+            // 4. Swap Buffers
+            const temp = this.rt1;
+            this.rt1 = this.rt2;
+            this.rt2 = temp;
 
-        // 5. Update Sprites
-        this.feedbackSprite.texture = this.rt1;
-        this.outputSprite.texture = this.rt1;
+            // 5. Update Sprites
+            this.feedbackSprite.texture = this.rt1;
+            this.outputSprite.texture = this.rt1;
+
+        } catch (e) {
+            console.warn('[FeedbackSystem] Render error (skipping frame):', e);
+            // Emergency disable to prevent loop crash
+            this.config.enabled = false; 
+            this.outputSprite.visible = false;
+            sourceContainer.visible = true; 
+        }
     }
 
     destroy() {
@@ -23780,12 +24569,17 @@ export class LayerManager {
 import { Application, RenderTexture, Mesh, PlaneGeometry } from 'pixi.js';
 import { PixiEffectsManager } from './pixi/PixiEffectsManager';
 import { useEngineStore } from '../store/useEngineStore'; 
+import SignalBus from '../utils/SignalBus';
 
 // Import Sub-Systems
 import { AudioReactor } from './pixi/systems/AudioReactor';
 import { FeedbackSystem } from './pixi/systems/FeedbackSystem';
 import { LayerManager } from './pixi/systems/LayerManager';
 import { CrossfaderSystem } from './pixi/systems/CrossfaderSystem.js';
+
+// Logic Cores
+import { ModulationEngine } from './ModulationEngine';
+import { LFO } from './LFO';
 
 export default class PixiEngine {
   constructor(canvasElement) {
@@ -23794,21 +24588,22 @@ export default class PixiEngine {
     this.isReady = false;
     this._isDestroyed = false;
 
+    // --- NEW LOGIC CORES ---
+    this.modulationEngine = new ModulationEngine();
+    this.lfo = new LFO();
+
     // --- SYSTEMS ---
     this.effectsManager = new PixiEffectsManager();
     this.audioReactor = new AudioReactor();
     
-    // These are initialized in init() because they need the initialized App/Screen
+    // Initialized in init()
     this.layerManager = null; 
     this.feedbackSystem = null; 
     this.crossfaderSystem = null; 
 
-    // Mapping Resources (Simple mesh logic kept here for now)
     this.isMappingActive = false;
     this.renderTexture = null;
     this.projectionMesh = null;
-
-    this.industrialConfig = { enabled: false, chaos: 0, mappings: {} };
     
     // Bindings
     this._resizeHandler = this.handleResize.bind(this);
@@ -23837,41 +24632,50 @@ export default class PixiEngine {
         return;
     }
 
-    // Initialize Sub-Systems
+    // Init Systems
     this.effectsManager.init(this.app.screen);
-    
     this.layerManager = new LayerManager(this.app, this.effectsManager);
-    
     this.feedbackSystem = new FeedbackSystem(this.app);
-    
     this.crossfaderSystem = new CrossfaderSystem(this.layerManager, this.audioReactor);
 
-    // Initialize Mapping Resources
     this.initMappingResources();
 
-    // Event Listeners
     this.app.renderer.on('resize', this._resizeHandler);
     this.handleResize(); 
     this.app.ticker.add(this._updateLoop);
     
-    // Sync Initial State
+    // --- SYNC INITIAL STATE FROM STORE ---
     const state = useEngineStore.getState();
     
-    // 1. Sync Feedback
-    if (state.effectsConfig?.feedback) {
-        this.updateEffectConfig('feedback', null, null); 
+    // 1. Sync Base Values (Knob Positions)
+    if (state.baseValues) {
+        Object.entries(state.baseValues).forEach(([fullId, value]) => {
+            this.modulationEngine.setBaseValue(fullId, value);
+        });
     }
 
-    // 2. Sync Industrial Config (Critical for Scene Shredder init)
-    if (state.industrialConfig) {
-        this.setIndustrialConfig(state.industrialConfig);
+    // 2. Sync Patches (Wires)
+    if (state.patches) {
+        state.patches.forEach(patch => {
+            this.modulationEngine.addPatch(patch.source, patch.target, patch.amount);
+        });
     }
+
+    // 3. Trigger initial modulation computation
+    const initialSignals = this.lfo.update();
+    const initialParams = this.modulationEngine.compute({ ...initialSignals, 'audio.bass': 0, 'audio.mid': 0, 'audio.treble': 0, 'audio.level': 0 });
+    
+    // Apply initial feedback settings
+    if (this.feedbackSystem) {
+        if (initialParams['feedback.enabled'] !== undefined) this.feedbackSystem.updateConfig('enabled', initialParams['feedback.enabled'] > 0.5);
+    }
+    
+    this.effectsManager.applyValues(initialParams);
 
     this.isReady = true;
-    if (import.meta.env.DEV) console.log("[PixiEngine] ✅ Init Complete. Systems Active.");
+    console.log("[PixiEngine] ✅ Init Complete. Modulation Engine Active & Synced.");
   }
 
-  // --- MAPPING (Projection) ---
   initMappingResources() {
     const { width, height } = this.app.screen;
     this.renderTexture = RenderTexture.create({ width, height, resolution: this.app.renderer.resolution });
@@ -23881,8 +24685,6 @@ export default class PixiEngine {
 
   setMappingMode(isActive) {
     this.isMappingActive = isActive;
-    // When mapping is active, we remove the main layer group from stage 
-    // because we will render it manually into a texture.
     const mainGroup = this.layerManager.mainLayerGroup;
     
     if (isActive) {
@@ -23894,80 +24696,45 @@ export default class PixiEngine {
     }
   }
 
-  updateCorner(index, x, y) {
-    if (!this.projectionMesh) return;
-    const buffer = this.projectionMesh.geometry.getAttribute('aPosition').buffer;
-    if (buffer.data) {
-        buffer.data[index * 2] = x;
-        buffer.data[index * 2 + 1] = y;
-        buffer.update();
-    }
-  }
-
-  // --- CONFIG HANDLERS ---
-
-  setRenderedCrossfade(value) { 
-      // Handled via SignalBus in CrossfaderSystem for high frequency, 
-      // but we update the system reference directly here for redundancy/initialization
-      if (this.crossfaderSystem) {
-          this.crossfaderSystem.crossfadeValue = value; 
-      }
-  }
-
-  setIndustrialConfig(config) {
-      this.industrialConfig = config;
-      
-      // 1. Pass config to CrossfaderSystem (Fixes Scene Shredder)
-      if (this.crossfaderSystem) {
-          this.crossfaderSystem.setIndustrialConfig(config);
-      }
-
-      // 2. Pass config to EffectsManager (Visual Destruction)
-      if (!config.enabled) {
-          // Force cleanup of destruction effects if disabled
-          this.effectsManager.updateDestructionMode(this.audioReactor.getAudioData(), config);
-          if (this.layerManager) {
-              this.layerManager.mainLayerGroup.filters = this.effectsManager.getFilterList();
-          }
-      }
-  }
-
   handleResize() {
     if (this._isDestroyed || !this.app || !this.app.renderer) return;
     const w = this.app.screen.width;
     const h = this.app.screen.height;
-    
     if (this.renderTexture) this.renderTexture.resize(w, h);
     if (this.feedbackSystem) this.feedbackSystem.resize(w, h);
     if (this.layerManager) this.layerManager.resize();
   }
 
-  triggerVisualEffect(type, config = {}) {
-    this.effectsManager.triggerOneShot(type, config, this.app.screen);
-    if (this.layerManager) {
-        this.layerManager.mainLayerGroup.filters = this.effectsManager.getFilterList();
-    }
+  // --- CONFIG HANDLERS ---
+
+  setRenderedCrossfade(value) { 
+      if (this.crossfaderSystem) this.crossfaderSystem.crossfadeValue = value; 
   }
 
+  // Legacy support
+  setIndustrialConfig(config) {}
+
+  // New method for UI to update base values (Sliders)
   updateEffectConfig(name, param, value) {
-    if (name === 'feedback') {
-        if (this.feedbackSystem) {
-            const isEnabled = this.feedbackSystem.updateConfig(param, value);
-            // If feedback is enabled, hide the main layers (we draw them manually into the feedback buffer)
-            if (this.layerManager) {
-                this.layerManager.mainLayerGroup.visible = !isEnabled;
-            }
-        }
-        return;
-    }
-    
-    this.effectsManager.updateConfig(name, param, value);
-    if (this.layerManager) {
-        this.layerManager.mainLayerGroup.filters = this.effectsManager.getFilterList();
-    }
+      // Always update the modulation engine base values.
+      // The update loop will pick this up next frame and apply it to the specific system.
+      const fullId = `${name}.${param}`;
+      this.modulationEngine.setBaseValue(fullId, value);
   }
 
-  // --- PROXIES FOR REACT BRIDGE (usePixiOrchestrator) ---
+  addModulationPatch(source, target, amount) {
+      this.modulationEngine.addPatch(source, target, amount);
+  }
+
+  removeModulationPatch(patchId) {
+      this.modulationEngine.removePatch(patchId);
+  }
+
+  clearModulationPatches() {
+      this.modulationEngine.clearAllPatches();
+  }
+
+  // --- PROXIES FOR REACT BRIDGE ---
   
   async setTexture(layerId, deckSide, imageSrc, tokenId) {
       if (this.layerManager) await this.layerManager.setTexture(layerId, deckSide, imageSrc, tokenId);
@@ -23986,39 +24753,25 @@ export default class PixiEngine {
       return deck ? deck.getState() : null;
   }
 
-  setAudioFactors(factors) { 
-      this.audioReactor.setAudioFactors(factors); 
-  }
-  
-  triggerBeatPulse(factor, duration) { 
-      this.audioReactor.triggerBeatPulse(factor, duration); 
-  }
-  
-  setParallax(x, y) { 
-      if (this.crossfaderSystem) this.crossfaderSystem.setParallax(x, y); 
-  }
-  
+  setAudioFactors(factors) { this.audioReactor.setAudioFactors(factors); }
+  triggerBeatPulse(factor, duration) { this.audioReactor.triggerBeatPulse(factor, duration); }
+  setParallax(x, y) { if (this.crossfaderSystem) this.crossfaderSystem.setParallax(x, y); }
   applyPlaybackValue(layerId, key, value) { 
       const deckA = this.layerManager?.getDeck(layerId, 'A');
       const deckB = this.layerManager?.getDeck(layerId, 'B');
       if (deckA) deckA.playbackValues[key] = value;
       if (deckB) deckB.playbackValues[key] = value;
   }
-
   clearPlaybackValues() { 
       this.layerManager?.layerList.forEach(l => {
           l.deckA.playbackValues = {};
           l.deckB.playbackValues = {};
       });
   }
-
   syncDeckPhysics(layerId, targetDeckSide) {
       const deckTarget = this.layerManager?.getDeck(layerId, targetDeckSide);
       const deckSource = this.layerManager?.getDeck(layerId, targetDeckSide === 'A' ? 'B' : 'A');
-      
       if (deckTarget && deckSource) {
-          // --- FIX: NO NORMALIZATION ---
-          // Just copy the raw value. This prevents the large-value interpolation spin.
           deckTarget.continuousAngle = deckSource.continuousAngle;
           deckTarget.syncPhysicsFrom(deckSource);
       }
@@ -24030,62 +24783,94 @@ export default class PixiEngine {
     if (this._isDestroyed) return;
 
     const now = performance.now();
-    const deltaTime = ticker.deltaTime * 0.01666; // Normalize to approx seconds
+    const deltaTime = ticker.deltaTime * 0.01666; 
 
-    // 1. Update Industrial/Destruction Effects
-    //    We check enabled state here to apply dynamic audio-reactive changes
-    if (this.industrialConfig.enabled) {
-        this.effectsManager.updateDestructionMode(this.audioReactor.getAudioData(), this.industrialConfig);
-        // Re-apply filter list in case enabled filters changed
+    // 1. GENERATE SIGNALS
+    const lfoSignals = this.lfo.update();
+    const audioData = this.audioReactor.getAudioData();
+    
+    const signals = {
+        ...lfoSignals,
+        'audio.bass': audioData.frequencyBands.bass,
+        'audio.mid':  audioData.frequencyBands.mid,
+        'audio.treble': audioData.frequencyBands.treble,
+        'audio.level': audioData.level
+    };
+
+    // 2. COMPUTE MODULATIONS
+    const finalParams = this.modulationEngine.compute(signals);
+
+    // --- BROADCAST TO UI ---
+    SignalBus.emit('modulation:update', finalParams);
+
+    // --- APPLY GLOBAL CROSSFADER MODULATION ---
+    const isCrossfaderModulated = this.modulationEngine.patches.some(p => p.target === 'global.crossfader');
+    
+    if (isCrossfaderModulated && finalParams['global.crossfader'] !== undefined) {
+        this.crossfaderSystem.crossfadeValue = Math.max(0, Math.min(1, finalParams['global.crossfader']));
+    }
+
+    // 3. APPLY TO FILTERS (Standard Effects)
+    this.effectsManager.applyValues(finalParams);
+    
+    // --- APPLY FEEDBACK (Special System) ---
+    if (this.feedbackSystem) {
+        let feedbackUpdated = false;
+        
+        // Enabled is now strictly boolean 0/1 coming from ModulationEngine (based on manifest)
+        if (finalParams['feedback.enabled'] !== undefined) { 
+            this.feedbackSystem.updateConfig('enabled', finalParams['feedback.enabled'] > 0.5); 
+            feedbackUpdated = true;
+        }
+        if (finalParams['feedback.amount'] !== undefined) this.feedbackSystem.updateConfig('amount', finalParams['feedback.amount']);
+        if (finalParams['feedback.scale'] !== undefined) this.feedbackSystem.updateConfig('scale', finalParams['feedback.scale']);
+        if (finalParams['feedback.rotation'] !== undefined) this.feedbackSystem.updateConfig('rotation', finalParams['feedback.rotation']);
+        if (finalParams['feedback.xOffset'] !== undefined) this.feedbackSystem.updateConfig('xOffset', finalParams['feedback.xOffset']);
+        if (finalParams['feedback.yOffset'] !== undefined) this.feedbackSystem.updateConfig('yOffset', finalParams['feedback.yOffset']);
+
+        // Manage Layer Group Visibility based on Feedback State
+        if (this.layerManager) {
+            if (this.feedbackSystem.config.enabled) {
+                this.layerManager.mainLayerGroup.visible = false;
+            } else if (feedbackUpdated) {
+                // If feedback just turned off, show the normal layers
+                this.layerManager.mainLayerGroup.visible = true;
+            }
+        }
+    }
+    
+    if (this.layerManager) {
         this.layerManager.mainLayerGroup.filters = this.effectsManager.getFilterList();
     }
 
-    // 2. Update General Effects (Time based animations like liquid/wave)
+    // 4. Update Time-Based Effects
     this.effectsManager.update(ticker, this.app.renderer);
 
-    // 3. Update Layers & Transitions via CrossfaderSystem
-    //    This handles physics stepping and calculating render state (opacity/transform)
+    // 5. Physics & Layers
     this.crossfaderSystem.update(deltaTime, now, this.app.screen);
 
-    // 4. Handle Render Pipeline
-    
-    // A. Feedback Loop (Video Feedback Effect)
+    // 6. Render Pipeline
     if (this.feedbackSystem.config.enabled) {
-        // Render layers into feedback buffer instead of screen
         this.feedbackSystem.render(this.layerManager.mainLayerGroup);
     } 
     
-    // B. Projection Mapping (Mesh Distortion)
     if (this.isMappingActive && this.projectionMesh) {
-        // Source is either the feedback output or the raw layer group
         const source = this.feedbackSystem.config.enabled ? this.feedbackSystem.outputSprite : this.layerManager.mainLayerGroup;
-        
-        // Ensure source is visible for the texture render
         const wasVisible = source.visible;
         source.visible = true;
-        
-        // Render the scene onto the projection mesh texture
         this.app.renderer.render({ container: source, target: this.renderTexture });
-        
-        // Restore visibility state (e.g. if mainLayerGroup was hidden by feedback)
         source.visible = wasVisible;
     }
   }
 
   destroy() { 
       this._isDestroyed = true;
-      
-      // Cleanup Systems
       this.audioReactor.destroy();
       this.layerManager.destroy();
       this.feedbackSystem.destroy();
-      // CrossfaderSystem has no internal resources to destroy currently
-
       if (this.app) {
           if (this.app.renderer) { this.app.renderer.off('resize', this._resizeHandler); }
           this.app.ticker.remove(this._updateLoop);
-          
-          if (import.meta.env.DEV) console.log("[PixiEngine] Destroying application instance.");
           this.app.destroy(true, { children: true, texture: false, baseTexture: false }); 
       }
       this.isReady = false; 

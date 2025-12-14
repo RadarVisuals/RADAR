@@ -18,9 +18,6 @@ export class CrossfaderSystem {
         this.parallaxFactors = { '1': 10, '2': 25, '3': 50 };
         this._morphedState = {}; 
 
-        // Industrial State
-        this.industrialConfig = { enabled: false, chaos: 0, mappings: {} };
-
         this.init();
     }
 
@@ -29,14 +26,14 @@ export class CrossfaderSystem {
         const state = useEngineStore.getState();
         this.crossfadeValue = state.renderedCrossfader;
         this.transitionMode = state.transitionMode;
-        this.industrialConfig = state.industrialConfig; // Sync initial config
 
-        // Listen for updates
+        // Listen for high-frequency updates from UI/Sequencer
         SignalBus.on('crossfader:update', (val) => { this.crossfadeValue = val; });
     }
 
+    // Legacy support method (can be removed, but kept to prevent PixiEngine crash if called)
     setIndustrialConfig(config) {
-        this.industrialConfig = config;
+        // No-op: Industrial config is now handled by ModulationEngine
     }
 
     setParallax(x, y) {
@@ -44,32 +41,18 @@ export class CrossfaderSystem {
     }
 
     update(deltaTime, now, screen) {
-        // Update transition mode from store
+        // Update transition mode from store (low frequency check)
         this.transitionMode = useEngineStore.getState().transitionMode;
 
-        // --- 1. CALCULATE EFFECTIVE CROSSFADE (SHREDDER LOGIC) ---
-        let effectiveCrossfade = this.crossfadeValue;
+        // Effective crossfade is just the current value
+        // (Modulation logic will handle automated movement in the future via SignalBus)
+        const effectiveCrossfade = this.crossfadeValue;
 
-        if (this.industrialConfig.enabled) {
-            const shredMap = this.industrialConfig.mappings?.crossfaderShred;
-            if (shredMap && shredMap.enabled && shredMap.amount > 0) {
-                const audioData = this.audioReactor.getAudioData();
-                const bands = audioData.frequencyBands;
-                const sourceVal = shredMap.source === 'level' ? audioData.level : (bands[shredMap.source] || 0);
-                
-                // Threshold logic: trigger if signal * amount > 0.6
-                if (sourceVal * shredMap.amount > 0.6) {
-                    // Oscillate rapidly between 0 and 1 based on time
-                    effectiveCrossfade = Math.sin(now * 0.05) > 0 ? 1.0 : 0.0;
-                }
-            }
-        }
-
-        // Direction detection
+        // Direction detection for Flythrough mode
         if (effectiveCrossfade >= 0.999) this.flythroughSequence = 'B->A';
         else if (effectiveCrossfade <= 0.001) this.flythroughSequence = 'A->B';
 
-        // Smooth Parallax
+        // Smooth Parallax Interpolation
         this.renderedParallaxOffset.x += (this.parallaxOffset.x - this.renderedParallaxOffset.x) * 0.05;
         this.renderedParallaxOffset.y += (this.parallaxOffset.y - this.renderedParallaxOffset.y) * 0.05;
 
@@ -79,7 +62,7 @@ export class CrossfaderSystem {
             const layerObj = layerList[i];
             const combinedBeatFactor = this.audioReactor.getCombinedBeatFactor(layerObj.id);
 
-            // Determine Visibility
+            // Determine Visibility based on Transition Mode
             let renderA = true;
             let renderB = true;
 
@@ -96,7 +79,7 @@ export class CrossfaderSystem {
             const stateA = renderA ? layerObj.deckA.resolveRenderState() : null;
             const stateB = renderB ? layerObj.deckB.resolveRenderState() : null;
 
-            // Apply Transition
+            // Apply Transition Logic
             if (this.transitionMode === 'flythrough') {
                 this._applyFlythrough(layerObj, stateA, stateB, renderA, renderB, combinedBeatFactor, screen, effectiveCrossfade);
             } else {
@@ -181,7 +164,7 @@ export class CrossfaderSystem {
     }
 
     _applyCrossfade(layerObj, stateA, stateB, renderA, renderB, beatFactor, screen, t) {
-        // Opacity crossfade curve (Sin/Cos for smoother blend than linear)
+        // Opacity crossfade curve (Sin/Cos for smoother blend)
         const angle = t * 1.570796;
         const opacityA = Math.cos(angle);
         const opacityB = Math.sin(angle);
@@ -190,7 +173,6 @@ export class CrossfaderSystem {
             const ms = this._morphedState;
             
             // --- Spatial Morphing ---
-            // We interpolate position/size/angle so the layers overlap perfectly during fade.
             ms.speed = lerp(stateA.speed, stateB.speed, t); 
             ms.size = lerp(stateA.size, stateB.size, t);
             ms.opacity = lerp(stateA.opacity, stateB.opacity, t);
@@ -202,22 +184,15 @@ export class CrossfaderSystem {
             ms.driftX = lerp(stateA.driftX, stateB.driftX, t);
             ms.driftY = lerp(stateA.driftY, stateB.driftY, t);
             
-            // Sync rotation physics
             const currentContinuous = lerp(layerObj.deckA.continuousAngle, layerObj.deckB.continuousAngle, t);
             ms.totalAngleRad = (ms.angle + currentContinuous) * 0.01745329251;
 
-            // --- FIXED: APPLY CATEGORICAL PROPERTIES INDIVIDUALLY ---
-            // Previously, we did `ms.blendMode = t < 0.5 ? A : B` and sent `ms` to BOTH.
-            // This caused Deck A to suddenly swap blend modes at 50%.
-            // Now, we override the blendMode/enabled on the morphed state object 
-            // JUST before sending it to the respective deck.
-
-            // Render Deck A
+            // Apply to Deck A
             ms.blendMode = stateA.blendMode;
             ms.enabled = stateA.enabled;
             layerObj.deckA.applyRenderState(ms, opacityA, beatFactor, this.renderedParallaxOffset, this.parallaxFactors[layerObj.id], screen);
 
-            // Render Deck B
+            // Apply to Deck B
             ms.blendMode = stateB.blendMode;
             ms.enabled = stateB.enabled;
             layerObj.deckB.applyRenderState(ms, opacityB, beatFactor, this.renderedParallaxOffset, this.parallaxFactors[layerObj.id], screen);

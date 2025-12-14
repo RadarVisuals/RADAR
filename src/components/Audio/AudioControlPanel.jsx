@@ -1,7 +1,7 @@
 // src/components/Audio/AudioControlPanel.jsx
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import PropTypes from "prop-types";
-import { useEngineStore } from "../../store/useEngineStore"; 
+// Removed useEngineStore import as it was only used for the legacy industrial config
 import SignalBus from "../../utils/SignalBus";
 
 import Panel from "../Panels/Panel";
@@ -20,8 +20,7 @@ const AudioControlPanel = React.memo(({
 }) => {
   const [audioDevices, setAudioDevices] = useState([]);
   
-  const isDestructionMode = useEngineStore((state) => state.industrialConfig.enabled);
-  const setIndustrialEnabled = useEngineStore((state) => state.setIndustrialEnabled);
+  // --- REMOVED LEGACY INDUSTRIAL CONFIG SELECTORS HERE ---
   
   const levelRef = useRef(null);
   const bassRef = useRef(null);
@@ -175,32 +174,7 @@ const AudioControlPanel = React.memo(({
                </button>
             </div>
 
-            <div className="section-box" style={{ borderColor: 'var(--color-error)', background: 'rgba(255, 0, 0, 0.05)' }}>
-                <h4 className="config-section-title" style={{ color: 'var(--color-error)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{fontSize: '1.2em'}}>⚠️</span> INDUSTRIAL MODE
-                </h4>
-                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                    <p className="device-note" style={{ color: 'var(--color-error-a90)', margin: 0, maxWidth: '70%' }}>
-                        Extreme distortion. Audio drives chaos. Photosensitivity warning.
-                    </p>
-                    <div className="toggle-switch-wrapper" style={{flexShrink: 0}}>
-                        <label className="toggle-switch" style={{ width: '50px' }}>
-                            <input 
-                                type="checkbox" 
-                                checked={isDestructionMode} 
-                                onChange={(e) => setIndustrialEnabled(e.target.checked)} 
-                            />
-                            <span className="toggle-slider" style={{ 
-                                backgroundColor: isDestructionMode ? 'var(--color-error-a30)' : '',
-                                borderColor: isDestructionMode ? 'var(--color-error)' : ''
-                            }}></span>
-                        </label>
-                        <span className="toggle-state" style={{ color: isDestructionMode ? 'var(--color-error)' : '', fontSize: '10px', marginTop: '4px' }}>
-                            {isDestructionMode ? "DESTROY" : "SAFE"}
-                        </span>
-                    </div>
-                </div>
-            </div>
+            {/* --- REMOVED LEGACY INDUSTRIAL MODE SECTION --- */}
 
             <div className="audio-settings-section section-box">
               <h4 className="config-section-title">Audio Reactivity Settings</h4>

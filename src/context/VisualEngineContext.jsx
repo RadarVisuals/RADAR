@@ -56,24 +56,17 @@ export const VisualEngineProvider = ({ children }) => {
     const managerInstancesRef = useRef(null);
     const canvasUpdateFnsRef = useRef({});
     
-    const industrialConfig = useEngineStore(state => state.industrialConfig);
     const engineRef = useRef(null); 
 
     const registerManagerInstancesRef = useCallback((ref) => { managerInstancesRef.current = ref; }, []);
     const registerCanvasUpdateFns = useCallback((fns) => { canvasUpdateFnsRef.current = fns; }, []);
-
-    useEffect(() => {
-        if (managerInstancesRef.current?.current?.engine) {
-             managerInstancesRef.current.current.engine.setIndustrialConfig(industrialConfig);
-        }
-    }, [industrialConfig]);
 
     const pushCrossfaderUpdate = useCallback((value) => {
         renderedValueRef.current = value;
         SignalBus.emit('crossfader:update', value);
     }, []);
 
-    // --- FIX: ROBUST INITIALIZATION ---
+    // --- INITIALIZATION & SCENE LOADING LOGIC ---
     useEffect(() => {
         const initialLoadJustFinished = !prevIsFullyLoaded && isFullyLoaded;
         const transitionJustFinished = prevIsWorkspaceTransitioning && !isWorkspaceTransitioning;
@@ -81,7 +74,6 @@ export const VisualEngineProvider = ({ children }) => {
         const sceneListChanged = prevFullSceneList !== fullSceneList;
         
         const store = useEngineStore.getState();
-        // Check if store is empty despite being loaded (edge case fix)
         const isStoreEmpty = !store.sideA.config && !store.sideB.config;
 
         if (initialLoadJustFinished || transitionJustFinished || (isFullyLoaded && isStoreEmpty)) {
@@ -349,6 +341,8 @@ export const VisualEngineProvider = ({ children }) => {
             const state = useEngineStore.getState();
             state.setCrossfader(val);
             pushCrossfaderUpdate(val);
+            // --- SYNC WITH MODULATION ENGINE ---
+            state.setEffectBaseValue('global.crossfader', val); 
         }
     }), [
         handleSceneSelect,
@@ -373,24 +367,53 @@ export const useVisualEngineContext = () => {
     const context = useContext(VisualEngineContext);
     if (context === undefined) throw new Error("useVisualEngineContext must be used within a VisualEngineProvider");
     
+    // --- UPDATED SELECTOR ---
     const storeState = useEngineStore(useShallow(state => ({
         sideA: state.sideA,
         sideB: state.sideB,
         isAutoFading: state.isAutoFading,
         targetSceneName: state.targetSceneName,
-        effectsConfig: state.effectsConfig,
         transitionMode: state.transitionMode,
-        industrialConfig: state.industrialConfig
+        baseValues: state.baseValues,
+        patches: state.patches
     })));
     
     const storeActions = useEngineStore.getState();
 
+    // 1. WRAPPER FOR BASE VALUES (Sliders)
     const updateEffectConfigWrapper = useCallback((name, param, value) => {
-        storeActions.updateEffectConfig(name, param, value);
-        const managers = context.managerInstancesRef.current?.current;
-        if (managers && managers['1']) {
-             managers['1'].updateEffectConfig(name, param, value);
-        }
+        const fullId = `${name}.${param}`;
+        
+        // Update Store (UI)
+        storeActions.setEffectBaseValue(fullId, value);
+        
+        // Update Engine (Physics)
+        const engine = context.managerInstancesRef.current?.current?.engine;
+        if (engine) engine.updateEffectConfig(name, param, value);
+    }, [context.managerInstancesRef, storeActions]);
+
+    // 2. WRAPPER FOR ADDING PATCHES (Wires)
+    const addPatchWrapper = useCallback((source, target, amount) => {
+        // Update Store (UI)
+        storeActions.addPatch(source, target, amount);
+        
+        // Update Engine (Physics)
+        const engine = context.managerInstancesRef.current?.current?.engine;
+        if (engine) engine.addModulationPatch(source, target, amount);
+    }, [context.managerInstancesRef, storeActions]);
+
+    // 3. WRAPPER FOR REMOVING PATCHES
+    const removePatchWrapper = useCallback((patchId) => {
+        storeActions.removePatch(patchId);
+        const engine = context.managerInstancesRef.current?.current?.engine;
+        if (engine) engine.removeModulationPatch(patchId);
+    }, [context.managerInstancesRef, storeActions]);
+
+    // 4. WRAPPER FOR CLEARING ALL
+    const clearPatchesWrapper = useCallback(() => {
+        storeActions.clearAllPatches();
+        const engine = context.managerInstancesRef.current?.current?.engine;
+        if (engine) engine.clearModulationPatches();
     }, [context.managerInstancesRef, storeActions]);
 
     return {
@@ -401,12 +424,20 @@ export const useVisualEngineContext = () => {
         uiControlConfig: (storeActions.renderedCrossfader < 0.5) ? storeState.sideA.config : storeState.sideB.config,
         isAutoFading: storeState.isAutoFading,
         targetSceneName: storeState.targetSceneName,
-        effectsConfig: storeState.effectsConfig,
+        
+        // New State Exports
+        baseValues: storeState.baseValues,
+        patches: storeState.patches,
         transitionMode: storeState.transitionMode,
-        industrialConfig: storeState.industrialConfig,
+        
         handleCrossfaderChange: context.handleCrossfaderChange, 
         handleCrossfaderCommit: storeActions.setCrossfader,
         updateEffectConfig: updateEffectConfigWrapper, 
         toggleTransitionMode: () => storeActions.setTransitionMode(storeState.transitionMode === 'crossfade' ? 'flythrough' : 'crossfade'),
+        
+        // --- EXPORT THE WRAPPERS, NOT THE RAW ACTIONS ---
+        addPatch: addPatchWrapper,
+        removePatch: removePatchWrapper,
+        clearAllPatches: clearPatchesWrapper
     };
 };

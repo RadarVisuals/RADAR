@@ -1,7 +1,7 @@
 // src/components/Toolbars/VerticalToolbar.jsx
 import React from "react";
 import PropTypes from "prop-types";
-import { FireIcon } from '@heroicons/react/24/outline';
+import { CpuChipIcon } from '@heroicons/react/24/outline'; // Using CpuChip as Matrix/Wiring icon
 
 import "./ToolbarStyles/VerticalToolbar.css";
 import {
@@ -12,9 +12,8 @@ import {
   writeIcon,
   wavezIcon,
   setsIcon,
-  fxIcon,
 } from "../../assets";
-import { useNotificationContext } from "../../hooks/useNotificationContext"; // UPDATED IMPORT
+import { useNotificationContext } from "../../hooks/useNotificationContext"; 
 
 const VerticalToolbar = ({
   activePanel,
@@ -28,16 +27,16 @@ const VerticalToolbar = ({
     }
   };
 
+  // Adjusted positions since we merged two buttons into one
   const buttonPositions = [
     { top: "20px" },  // Controls
     { top: "65px" },  // Notifications
     { top: "110px" }, // Events
     { top: "155px" }, // Tokens
-    { top: "200px" }, // FX
+    { top: "200px" }, // MODULATION MATRIX (New)
     { top: "245px" }, // Sets
     { top: "290px" }, // Save
     { top: "335px" }, // Audio
-    { top: "380px" }, // Industrial
   ];
 
   return (
@@ -61,8 +60,14 @@ const VerticalToolbar = ({
         <img src={changetokenIcon} alt="Tokens" className="icon-image" />
       </button>
 
-      <button className={`vertical-toolbar-icon ${activePanel === "fx" ? "active" : ""}`} onClick={() => handleIconClick("fx")} title="Global Effects" style={buttonPositions[4]}>
-        <img src={fxIcon || wavezIcon} alt="Effects" className="icon-image" /> 
+      {/* --- NEW MODULATION BUTTON --- */}
+      <button 
+        className={`vertical-toolbar-icon ${activePanel === "modulation" ? "active" : ""}`} 
+        onClick={() => handleIconClick("modulation")} 
+        title="Modulation Matrix (FX Wiring)" 
+        style={buttonPositions[4]}
+      >
+        <CpuChipIcon className="icon-image" style={{padding: '4px', color: 'var(--color-primary)'}} />
       </button>
 
       <button className={`vertical-toolbar-icon ${activePanel === "sets" ? "active" : ""}`} onClick={() => handleIconClick("sets")} title="Setlist" style={buttonPositions[5]}>
@@ -75,15 +80,6 @@ const VerticalToolbar = ({
 
       <button className={`vertical-toolbar-icon ${activePanel === "audio" ? "active" : ""}`} onClick={() => handleIconClick("audio")} title="Audio" style={buttonPositions[7]}>
         <img src={wavezIcon} alt="Audio" className="icon-image" />
-      </button>
-
-      <button 
-        className={`vertical-toolbar-icon ${activePanel === "industrial" ? "active" : ""}`} 
-        onClick={() => handleIconClick("industrial")} 
-        title="Signal Router (Overdrive)" 
-        style={buttonPositions[8]}
-      >
-        <FireIcon className="icon-image" style={{padding: '4px', color: 'var(--color-error)'}} />
       </button>
     </>
   );

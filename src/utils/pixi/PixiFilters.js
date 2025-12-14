@@ -1,7 +1,9 @@
 // src/utils/pixi/PixiFilters.js
 import { Filter, GlProgram } from 'pixi.js';
 
+// --- SHARED VERTEX SHADER (GLSL 300 ES) ---
 const defaultFilterVertex = `
+    #version 300 es
     precision highp float;
     in vec2 aPosition;
     out vec2 vTextureCoord;
@@ -26,6 +28,7 @@ const defaultFilterVertex = `
 
 // --- VOLUMETRIC LIGHT ---
 const volumetricFragment = `
+    #version 300 es
     precision highp float;
     in vec2 vTextureCoord;
     out vec4 finalColor;
@@ -50,13 +53,13 @@ const volumetricFragment = `
         
         for(int i=0; i < SAMPLES ; i++) {
             textCoo -= deltaTextCoord;
-            vec4 sample = texture(uTexture, textCoo);
-            float brightness = dot(sample.rgb, vec3(0.2126, 0.7152, 0.0722));
+            vec4 sampleCol = texture(uTexture, textCoo);
+            float brightness = dot(sampleCol.rgb, vec3(0.2126, 0.7152, 0.0722));
             if(brightness < uThreshold) {
-                sample *= 0.05;
+                sampleCol *= 0.05;
             }
-            sample *= illuminationDecay * uWeight;
-            color += sample;
+            sampleCol *= illuminationDecay * uWeight;
+            color += sampleCol;
             illuminationDecay *= uDecay;
         }
         
@@ -95,6 +98,7 @@ export class VolumetricLightFilter extends Filter {
 
 // --- LIQUID FLOW ---
 const liquidFragment = `
+    #version 300 es
     precision highp float;
     in vec2 vTextureCoord;
     out vec4 finalColor;
@@ -163,6 +167,7 @@ export class LiquidFilter extends Filter {
 
 // --- WAVE DISTORT ---
 const waveDistortFragment = `
+    #version 300 es
     precision highp float;
     in vec2 vTextureCoord;
     out vec4 finalColor;
@@ -199,6 +204,7 @@ export class WaveDistortFilter extends Filter {
 
 // --- KALEIDOSCOPE ---
 const kaleidoscopeFragment = `
+    #version 300 es
     precision highp float;
     in vec2 vTextureCoord;
     out vec4 finalColor;
@@ -207,6 +213,7 @@ const kaleidoscopeFragment = `
     uniform float angle;
     uniform vec2 uScreenSize; 
     uniform vec4 uInputSize;
+    
     void main() {
         vec2 uvPerPixel = uInputSize.zw;
         vec2 originUV = vTextureCoord - gl_FragCoord.xy * uvPerPixel;
@@ -250,6 +257,7 @@ export class KaleidoscopeFilter extends Filter {
 
 // --- ADVERSARIAL GLITCH ---
 const adversarialFragment = `
+    #version 300 es
     precision highp float;
     in vec2 vTextureCoord;
     out vec4 finalColor;
@@ -382,6 +390,7 @@ export class AdversarialGlitchFilter extends Filter {
 
 // --- ADVANCED ASCII / TEXTMODE FILTER ---
 const asciiFragment = `
+    #version 300 es
     precision highp float;
     in vec2 vTextureCoord;
     out vec4 finalColor;

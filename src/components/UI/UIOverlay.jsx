@@ -17,10 +17,11 @@ import GlobalMIDIStatus from '../MIDI/GlobalMIDIStatus';
 import AudioStatusIcon from '../Audio/AudioStatusIcon';
 import SceneSelectorBar from './SceneSelectorBar';
 import LibraryPanel from '../Panels/LibraryPanel';
-import EffectsPanel from '../Panels/EffectsPanel';
+// --- CHANGED IMPORTS ---
+import ModulationPanel from '../Panels/ModulationPanel'; // New Panel
 import Crossfader from './Crossfader';
 import WorkspaceSelectorDots from './WorkspaceSelectorDots';
-import IndustrialPanel from '../Panels/IndustrialPanel';
+// Removed: IndustrialPanel, EffectsPanel
 
 import { useSetManagementState, useProfileSessionState } from '../../hooks/configSelectors';
 import { useVisualEngineContext } from '../../context/VisualEngineContext';
@@ -90,10 +91,12 @@ const ActivePanelRenderer = (props) => {
             return ( <PanelWrapper key="audio-panel" className={panelWrapperClassName}><AudioControlPanel onClose={closePanel} isAudioActive={isAudioActive} setIsAudioActive={setIsAudioActive} audioSettings={audioSettings} setAudioSettings={setAudioSettings} analyzerData={analyzerData} /></PanelWrapper> );
         case "whitelist":
             return ( <PanelWrapper key="whitelist-panel" className={panelWrapperClassName}><LibraryPanel onClose={closePanel} /></PanelWrapper> );
-        case "fx":
-            return ( <PanelWrapper key="fx-panel" className={panelWrapperClassName}><EffectsPanel onClose={closePanel} /></PanelWrapper> );
-        case "industrial":
-            return ( <PanelWrapper key="industrial-panel" className={panelWrapperClassName}><IndustrialPanel onClose={closePanel} /></PanelWrapper> );
+        
+        // --- NEW CASE ---
+        case "modulation":
+            return ( <PanelWrapper key="modulation-panel" className={panelWrapperClassName}><ModulationPanel onClose={closePanel} /></PanelWrapper> );
+        // Removed 'fx' and 'industrial' cases
+        
         case "tokens":
             return ( <TokenSelectorOverlay key="token-selector-overlay" isOpen={activePanel === "tokens"} onClose={handleTokenSelectorClose} onTokenApplied={updateTokenAssignment} /> );
         default:
@@ -155,7 +158,6 @@ function UIOverlay({
   const { isUiVisible, activePanel, toggleSidePanel, toggleInfoOverlay, toggleUiVisibility } = uiState;
   const { isAudioActive } = audioState;
   
-  // Destructure Sequencer Props directly from actions
   const { 
       onEnhancedView, onToggleParallax, onPreviewEffect,
       toggleSequencer, isSequencerActive, sequencerIntervalMs, setSequencerInterval

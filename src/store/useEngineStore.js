@@ -1,6 +1,7 @@
 // src/store/useEngineStore.js
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
+import { EFFECT_MANIFEST } from '../config/EffectManifest';
 
 const DEFAULT_AUDIO_SETTINGS = {
   bassIntensity: 1.0,
@@ -9,23 +10,24 @@ const DEFAULT_AUDIO_SETTINGS = {
   smoothingFactor: 0.6,
 };
 
-const DEFAULT_INDUSTRIAL_MAPPING = {
-    rgbStrength: { source: 'bass', amount: 1.2, enabled: true },
-    zoomStrength: { source: 'bass', amount: 0.7, enabled: true },
-    glitchIntensity: { source: 'treble', amount: 1.0, enabled: true },
-    crtNoise: { source: 'mid', amount: 0.5, enabled: true },
-    crtGeometry: { source: 'bass', amount: 0.0, enabled: true },
-    binaryThreshold: { source: 'level', amount: 0.0, enabled: false }, 
-    invertStrobe: { source: 'treble', amount: 0.8, enabled: true },
-    crossfaderShred: { source: 'bass', amount: 0.0, enabled: false },
-};
+const DEFAULT_SEQUENCER_INTERVAL = 2000;
 
-// --- NEW CONSTANT ---
-const DEFAULT_SEQUENCER_INTERVAL = 2000; // 2 seconds default
+// Helper: Flatten Manifest Defaults into a simple key-value object
+const getInitialBaseValues = () => {
+    const values = {};
+    Object.values(EFFECT_MANIFEST).forEach(effect => {
+        Object.values(effect.params).forEach(param => {
+            values[param.id] = param.default;
+        });
+    });
+    return values;
+};
 
 export const useEngineStore = create(
   subscribeWithSelector((set, get) => ({
-    // ... (Standard Visual Engine Slice) ...
+    // =========================================
+    // 1. VISUAL ENGINE CORE (Layers & Scenes)
+    // =========================================
     crossfader: 0.0,
     renderedCrossfader: 0.0,
     sideA: { config: null },
@@ -33,104 +35,57 @@ export const useEngineStore = create(
     isAutoFading: false,
     transitionMode: 'crossfade',
     targetSceneName: null,
-    
-    // --- NEW: SEQUENCER SLICE ---
-    sequencerState: {
-        active: false,
-        intervalMs: DEFAULT_SEQUENCER_INTERVAL,
-        nextIndex: 0,
-    },
 
-    setSequencerActive: (isActive) => set((state) => ({
-        sequencerState: { ...state.sequencerState, active: isActive }
-    })),
-
-    setSequencerInterval: (ms) => set((state) => ({
-        sequencerState: { ...state.sequencerState, intervalMs: Math.max(100, ms) } // Min 100ms safety
-    })),
-
-    setSequencerNextIndex: (index) => set((state) => ({
-        sequencerState: { ...state.sequencerState, nextIndex: index }
-    })),
-    // ----------------------------
-    
-    // INDUSTRIAL CONFIG
-    industrialConfig: {
-        enabled: false,
-        chaos: 0.0,
-        masterDrive: 1.0,
-        mappings: DEFAULT_INDUSTRIAL_MAPPING
-    },
-
-    // Global Effects
-    effectsConfig: {
-        feedback: { 
-            enabled: false, 
-            amount: 0.9,    // Decay (Opacity of previous frame)
-            scale: 1.02,    // Zoom speed (Creates the tunnel)
-            rotation: 0.0,  // Spin speed (Creates the spiral)
-            xOffset: 0,     // Drift X
-            yOffset: 0      // Drift Y
-        },
-        bloom: { enabled: false, intensity: 1.0, blur: 8, threshold: 0.5 },
-        rgb: { enabled: false, amount: 2 },
-        pixelate: { enabled: false, size: 10 },
-        twist: { enabled: false, radius: 400, angle: 4, offset: { x: 0, y: 0 } },
-        zoomBlur: { enabled: false, strength: 0.1, innerRadius: 50 },
-        crt: { enabled: false, curvature: 1, lineWidth: 1, noise: 0.1 },
-        kaleidoscope: { enabled: false, sides: 6, angle: 0 },
-        liquid: { enabled: false, intensity: 0.02, scale: 3.0, speed: 0.5 },
-        volumetric: { enabled: false, exposure: 0.3, decay: 0.95, density: 0.8, weight: 0.4, threshold: 0.5, x: 0.5, y: 0.5 },
-        waveDistort: { enabled: false, intensity: 0.5 },
-        oldFilm: { enabled: false, noise: 0.3, scratch: 0.1, vignetting: 0.3 },
-        adversarial: { enabled: false, intensity: 0.8, bands: 24, shift: 12, noiseScale: 3.0, chromatic: 1.5, scanline: 0.35, qNoise: 2.0, seed: 0.42 },
-        ascii: { enabled: false, size: 12, invert: 0, charSet: 0, colorMode: 0 }
-    },
-
-    // Actions
     setCrossfader: (value) => set({ crossfader: Math.max(0, Math.min(1, value)) }),
     setRenderedCrossfader: (value) => set({ renderedCrossfader: value }),
     setIsAutoFading: (isFading) => set({ isAutoFading: isFading }),
     setTransitionMode: (mode) => set({ transitionMode: mode }),
     setTargetSceneName: (name) => set({ targetSceneName: name }),
     
-    setIndustrialEnabled: (enabled) => set((state) => ({ 
-        industrialConfig: { ...state.industrialConfig, enabled } 
-    })),
-    
-    setIndustrialChaos: (value) => set((state) => ({ 
-        industrialConfig: { ...state.industrialConfig, chaos: value } 
-    })),
-
-    setIndustrialMasterDrive: (value) => set((state) => ({ 
-        industrialConfig: { ...state.industrialConfig, masterDrive: value } 
-    })),
-
-    updateIndustrialMapping: (target, updates) => set((state) => ({
-        industrialConfig: {
-            ...state.industrialConfig,
-            mappings: {
-                ...state.industrialConfig.mappings,
-                [target]: { ...state.industrialConfig.mappings[target], ...updates }
-            }
-        }
-    })),
-    
     setDeckConfig: (side, config) => set((state) => ({ 
       [side === 'A' ? 'sideA' : 'sideB']: { config } 
     })),
 
-    updateEffectConfig: (effectName, param, value) => set((state) => ({
-        effectsConfig: {
-            ...state.effectsConfig,
-            [effectName]: {
-                ...state.effectsConfig[effectName],
-                [param]: value
-            }
-        }
+    // =========================================
+    // 2. MODULATION SYSTEM
+    // =========================================
+    
+    baseValues: getInitialBaseValues(),
+    patches: [],
+
+    // Action: User moves a slider
+    setEffectBaseValue: (paramId, value) => set((state) => ({
+        baseValues: { ...state.baseValues, [paramId]: value }
     })),
 
-    // Audio Slice
+    // Action: User creates a wire OR updates existing (Fixed for stability)
+    addPatch: (sourceId, targetId, amount = 1.0) => set((state) => {
+        const patchId = `${sourceId}->${targetId}`;
+        const existingIndex = state.patches.findIndex(p => p.id === patchId);
+        
+        if (existingIndex !== -1) {
+            // Update in place to preserve array order (Fixes UI jumping bug)
+            const updatedPatches = [...state.patches];
+            updatedPatches[existingIndex] = { ...updatedPatches[existingIndex], amount };
+            return { patches: updatedPatches };
+        }
+        
+        // Add new patch to the end
+        return {
+            patches: [...state.patches, { id: patchId, source: sourceId, target: targetId, amount }]
+        };
+    }),
+
+    // Action: User removes a wire
+    removePatch: (patchId) => set((state) => ({
+        patches: state.patches.filter(p => p.id !== patchId)
+    })),
+
+    clearAllPatches: () => set({ patches: [] }),
+
+    // =========================================
+    // 3. AUDIO SYSTEM
+    // =========================================
     isAudioActive: false,
     audioSettings: DEFAULT_AUDIO_SETTINGS,
     analyzerData: { level: 0, frequencyBands: { bass: 0, mid: 0, treble: 0 } },
@@ -147,7 +102,30 @@ export const useEngineStore = create(
     
     updateAnalyzerData: (data) => set({ analyzerData: data }),
 
-    // MIDI Slice
+    // =========================================
+    // 4. SEQUENCER
+    // =========================================
+    sequencerState: {
+        active: false,
+        intervalMs: DEFAULT_SEQUENCER_INTERVAL,
+        nextIndex: 0,
+    },
+
+    setSequencerActive: (isActive) => set((state) => ({
+        sequencerState: { ...state.sequencerState, active: isActive }
+    })),
+
+    setSequencerInterval: (ms) => set((state) => ({
+        sequencerState: { ...state.sequencerState, intervalMs: Math.max(100, ms) }
+    })),
+
+    setSequencerNextIndex: (index) => set((state) => ({
+        sequencerState: { ...state.sequencerState, nextIndex: index }
+    })),
+
+    // =========================================
+    // 5. MIDI SYSTEM
+    // =========================================
     midiAccess: null,
     midiInputs: [],
     isConnected: false,
