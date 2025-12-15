@@ -9,20 +9,69 @@ import './PanelStyles/ModulationPanel.css';
 
 const SIGNAL_SOURCES = [
     { value: '', label: '+ MODULATE...' }, 
+    { label: '--- GENERATORS ---', options: [
+        { value: 'lfo_1', label: 'LFO 1' },
+        { value: 'lfo_2', label: 'LFO 2' },
+        { value: 'lfo_3', label: 'LFO 3' },
+        { value: 'lfo.chaos', label: 'Random Chaos' }
+    ]},
     { label: '--- AUDIO ---', options: [
         { value: 'audio.bass', label: 'Audio Bass' },
         { value: 'audio.mid', label: 'Audio Mid' },
         { value: 'audio.treble', label: 'Audio High' },
         { value: 'audio.level', label: 'Audio Level' }
-    ]},
-    { label: '--- LFO ---', options: [
-        { value: 'lfo.slow.sine', label: 'LFO Slow (Sine)' },
-        { value: 'lfo.mid.sine', label: 'LFO Mid (Sine)' },
-        { value: 'lfo.fast.sine', label: 'LFO Fast (Sine)' },
-        { value: 'lfo.pulse', label: 'LFO Pulse' },
-        { value: 'lfo.chaos', label: 'Random Chaos' }
     ]}
 ];
+
+const LfoConfigurator = ({ lfoId, label, settings, onChange }) => {
+    const { frequency, type } = settings || { frequency: 1, type: 'sine' };
+
+    return (
+        <div className="lfo-config-row">
+            <span className="lfo-label">{label}</span>
+            
+            <div className="lfo-controls">
+                <select 
+                    className="custom-select lfo-type-select"
+                    value={type}
+                    onChange={(e) => onChange(lfoId, 'type', e.target.value)}
+                >
+                    <option value="sine">Sine</option>
+                    <option value="saw">Saw</option>
+                    <option value="tri">Tri</option>
+                    <option value="pulse">Pulse</option>
+                </select>
+
+                <div className="lfo-speed-container">
+                    <span className="lfo-speed-label">Hz: {frequency.toFixed(2)}</span>
+                    <input 
+                        type="range" 
+                        min="0.01" 
+                        max="10.0" 
+                        step="0.01" 
+                        value={frequency}
+                        onChange={(e) => onChange(lfoId, 'frequency', parseFloat(e.target.value))}
+                        className="lfo-speed-slider"
+                    />
+                </div>
+            </div>
+            
+            <div className="lfo-visualizer">
+                <div className={`lfo-dot-anim ${lfoId}`} style={{ animationDuration: `${1/frequency}s` }}></div>
+            </div>
+        </div>
+    );
+};
+
+LfoConfigurator.propTypes = {
+    lfoId: PropTypes.string.isRequired,
+    label: PropTypes.string.isRequired,
+    settings: PropTypes.shape({
+        frequency: PropTypes.number,
+        type: PropTypes.string
+    }),
+    onChange: PropTypes.func.isRequired
+};
 
 const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAddPatch, onRemovePatch, onUpdatePatch }) => {
     const [selectedSource, setSelectedSource] = useState('');
@@ -127,7 +176,7 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
                     {myPatches.map(patch => (
                         <div key={patch.id} className="patch-row">
                             <span className="patch-source-name" title={patch.source}>
-                                {patch.source.replace('audio.', 'A.').replace('lfo.', 'L.').replace('event.', 'E.')}
+                                {patch.source.replace('audio.', 'A.').replace('lfo_', 'LFO ')}
                             </span>
                             <div className="patch-slider-container">
                                 <input 
@@ -184,17 +233,26 @@ ParamControl.propTypes = {
 };
 
 const ModulationPanel = ({ onClose }) => {
-    const { baseValues, patches, setModulationValue, addPatch, removePatch } = useVisualEngineContext();
+    const { 
+        baseValues, patches, setModulationValue, 
+        addPatch, removePatch, 
+        lfoSettings, setLfoSetting 
+    } = useVisualEngineContext();
+    
     const [expandedGroup, setExpandedGroup] = useState(null);
-
-    const toggleGroup = (key) => {
-        setExpandedGroup(expandedGroup === key ? null : key);
-    };
-
+    const toggleGroup = (key) => setExpandedGroup(expandedGroup === key ? null : key);
     const effectEntries = useMemo(() => Object.entries(EFFECT_MANIFEST), []);
 
     return (
         <Panel title="MODULATION MATRIX" onClose={onClose} className="panel-from-toolbar modulation-panel events-panel-custom-scroll">
+            
+            <div className="lfo-generator-section section-box">
+                <h4 className="section-title-small">LFO Generators</h4>
+                <LfoConfigurator lfoId="lfo_1" label="LFO 1" settings={lfoSettings['lfo_1']} onChange={setLfoSetting} />
+                <LfoConfigurator lfoId="lfo_2" label="LFO 2" settings={lfoSettings['lfo_2']} onChange={setLfoSetting} />
+                <LfoConfigurator lfoId="lfo_3" label="LFO 3" settings={lfoSettings['lfo_3']} onChange={setLfoSetting} />
+            </div>
+
             <div className="mod-list-container">
                 {effectEntries.map(([effectKey, config]) => {
                     const isExpanded = expandedGroup === effectKey;

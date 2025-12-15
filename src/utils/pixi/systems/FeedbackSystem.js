@@ -1,4 +1,5 @@
-import { RenderTexture, Sprite } from 'pixi.js';
+// src/utils/pixi/systems/FeedbackSystem.js
+import { RenderTexture, Sprite, ColorMatrixFilter } from 'pixi.js';
 import { useEngineStore } from '../../../store/useEngineStore';
 
 export class FeedbackSystem {
@@ -12,14 +13,17 @@ export class FeedbackSystem {
             scale: 1.01, 
             rotation: 0, 
             xOffset: 0, 
-            yOffset: 0 
+            yOffset: 0,
+            hueShift: 0,
+            renderOnTop: false 
         };
         
         this.buffers = [];
         this.activeBufferIndex = 0;
         
         this.feedbackSprite = null; 
-        this.displaySprite = null;  
+        this.displaySprite = null;
+        this.colorMatrix = new ColorMatrixFilter();
         
         this.isInitialized = false;
         
@@ -57,6 +61,7 @@ export class FeedbackSystem {
 
             this.feedbackSprite = new Sprite(this.buffers[0]);
             this.feedbackSprite.anchor.set(0.5);
+            this.feedbackSprite.filters = [this.colorMatrix];
             
             this.displaySprite = new Sprite(this.buffers[1]);
             this.displaySprite.anchor.set(0.5);
@@ -113,8 +118,17 @@ export class FeedbackSystem {
             const rot = (Number(this.config.rotation) || 0) * 0.05;
             const xOff = Number(this.config.xOffset) || 0;
             const yOff = Number(this.config.yOffset) || 0;
+            const hueShift = Number(this.config.hueShift) || 0;
+            const renderOnTop = this.config.renderOnTop;
 
-            // 1. Setup Feedback Sprite (Previous Frame)
+            // 1. Configure Color Matrix
+            if (Math.abs(hueShift) > 0.001) {
+                this.colorMatrix.hue(hueShift * 30, false);
+            } else {
+                this.colorMatrix.reset();
+            }
+
+            // 2. Setup Feedback Sprite (Previous Frame)
             this.feedbackSprite.texture = inputTexture;
             this.feedbackSprite.alpha = amt;
             this.feedbackSprite.rotation = rot;
@@ -131,32 +145,53 @@ export class FeedbackSystem {
                 isNaN(scl) ? 1 : scl
             );
 
-            // Render trail (Clear buffer)
-            renderer.render({
-                container: this.feedbackSprite,
-                target: outputTexture,
-                clear: true
-            });
-
-            // 2. Draw Source (Live Content)
-            // FIX: Momentarily enable visibility to render, then disable.
-            // We rely on the renderer to handle transforms now that it's attached.
+            // 3. Render Loop (Order Switching logic)
+            // Ensure Source is momentarily visible for the render pass
             const wasVisible = sourceContainer.visible;
             sourceContainer.visible = true;
             sourceContainer.renderable = true;
 
-            renderer.render({
-                container: sourceContainer,
-                target: outputTexture,
-                clear: false // Draw over trails
-            });
+            if (renderOnTop) {
+                // "Upward Tunnel": Render Asset first, then Trails on Top
+                
+                // Draw Source (Clear Buffer)
+                renderer.render({
+                    container: sourceContainer,
+                    target: outputTexture,
+                    clear: true
+                });
+
+                // Draw Feedback Trails (No Clear)
+                renderer.render({
+                    container: this.feedbackSprite,
+                    target: outputTexture,
+                    clear: false
+                });
+            } else {
+                // "Standard Tunnel": Render Trails first, then Asset on Top
+                
+                // Draw Feedback Trails (Clear Buffer)
+                renderer.render({
+                    container: this.feedbackSprite,
+                    target: outputTexture,
+                    clear: true
+                });
+
+                // Draw Source (No Clear)
+                renderer.render({
+                    container: sourceContainer,
+                    target: outputTexture,
+                    clear: false
+                });
+            }
             
-            sourceContainer.visible = wasVisible; // Restore original state (likely false from PixiEngine)
+            // Restore visibility state
+            sourceContainer.visible = wasVisible; 
             
-            // 3. Update Display
+            // 4. Update Display
             this.displaySprite.texture = outputTexture;
 
-            // 4. Swap for next frame
+            // 5. Swap for next frame
             this.activeBufferIndex = outputIndex;
 
         } catch (err) {

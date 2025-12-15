@@ -80,6 +80,8 @@ export class ModulationEngine {
                 let modDelta = 0;
 
                 if (targetDef.type === 'float' || targetDef.type === 'int') {
+                    // Use UI range (max-min) as the scale factor for modulation strength.
+                    // This makes "1.0 amount" feel intuitive relative to the slider.
                     const range = targetDef.max - targetDef.min;
                     modDelta = signalValue * patch.amount * range;
                 } else if (targetDef.type === 'bool') {
@@ -101,9 +103,17 @@ export class ModulationEngine {
 
             let val = this.computedValues[key];
             
-            // Clamp
-            if (val < def.min) val = def.min;
-            else if (val > def.max) val = def.max;
+            // SAFETY RAIL: Check for NaN or Infinity before they hit the GPU
+            if (!Number.isFinite(val)) {
+                val = def.default; 
+            }
+
+            // SAFETY RAIL: Clamp to Hard Limits (or Soft Limits if Hard not defined)
+            const floor = def.hardMin !== undefined ? def.hardMin : def.min;
+            const ceiling = def.hardMax !== undefined ? def.hardMax : def.max;
+
+            if (val < floor) val = floor;
+            else if (val > ceiling) val = ceiling;
 
             // Type Cast
             if (def.type === 'int') {

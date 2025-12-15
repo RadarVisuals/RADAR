@@ -3,29 +3,70 @@
 export class LFO {
     constructor() {
         this.startTime = Date.now();
+        
+        // Define 3 mutable LFO states with defaults
+        this.configs = {
+            'lfo_1': { frequency: 0.2, type: 'sine' }, // Slow
+            'lfo_2': { frequency: 1.0, type: 'sine' }, // Mid
+            'lfo_3': { frequency: 4.0, type: 'pulse' } // Fast
+        };
+    }
+
+    /**
+     * Update configuration for a specific LFO
+     * @param {string} id - 'lfo_1', 'lfo_2', or 'lfo_3'
+     * @param {string} param - 'frequency' or 'type'
+     * @param {any} value 
+     */
+    setConfig(id, param, value) {
+        if (this.configs[id]) {
+            this.configs[id][param] = value;
+        }
+    }
+
+    getWaveValue(type, t) {
+        // t is expected to be a continuous time value scaled by frequency
+        switch (type) {
+            case 'sine': 
+                return Math.sin(t * Math.PI * 2);
+            case 'saw':  
+                // Ramp from -1 to 1
+                return (t % 1) * 2 - 1; 
+            case 'pulse': 
+                // Square wave: -1 or 1
+                return Math.sin(t * Math.PI * 2) > 0 ? 1 : -1; 
+            case 'tri':  
+                // Triangle wave: Linear ramp up and down between -1 and 1
+                return Math.abs((t % 1) * 2 - 1) * 2 - 1; 
+            case 'chaos': 
+                // Random noise
+                return Math.random() * 2 - 1; 
+            default: 
+                return Math.sin(t * Math.PI * 2);
+        }
     }
 
     /**
      * Generates normalized waveforms based on current time.
-     * @returns {Object} { 'lfo.sine': -1..1, 'lfo.saw': 0..1, ... }
+     * @returns {Object} { 'lfo_1': val, 'lfo_2': val, 'lfo_3': val, 'lfo.chaos': val }
      */
     update() {
         const now = (Date.now() - this.startTime) / 1000; // Time in seconds
         
-        // We create a few different speeds/shapes
-        // You can expand this list easily
-        return {
-            'lfo.slow.sine': Math.sin(now * 0.5),        // 0.5 Hz (-1 to 1)
-            'lfo.mid.sine':  Math.sin(now * 2.0),        // 2.0 Hz (-1 to 1)
-            'lfo.fast.sine': Math.sin(now * 8.0),        // 8.0 Hz (-1 to 1)
-            
-            'lfo.slow.saw':  (now * 0.5) % 1,            // 0 to 1 ramp
-            'lfo.fast.saw':  (now * 2.0) % 1,            // 0 to 1 ramp
-            
-            'lfo.pulse':     Math.sin(now * 4.0) > 0 ? 1 : 0, // 0 or 1 square wave
-            
-            // Random Chaos (Smoothed noise would be better, but random works for glitch)
-            'lfo.chaos':     Math.random()
-        };
+        const signals = {};
+
+        for (const [id, config] of Object.entries(this.configs)) {
+            // t = total elapsed "cycles" based on frequency
+            // Note: Changing frequency simply scales time here. 
+            // For a perfectly smooth frequency ramp, we'd need to integrate phase (dt * freq),
+            // but this is sufficient for a visualizer.
+            const t = now * config.frequency;
+            signals[id] = this.getWaveValue(config.type, t);
+        }
+
+        // Keep chaos separate as a raw noise source
+        signals['lfo.chaos'] = Math.random();
+
+        return signals;
     }
 }

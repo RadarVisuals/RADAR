@@ -55,7 +55,39 @@ export const VisualEngineProvider = ({ children }) => {
         return () => unsub();
     }, []);
 
-    // --- NEW: LISTEN FOR DOCKING EVENTS (The DJ Logic) ---
+    // --- SYNC MODULATION LOAD (HOT SWAP) ---
+    // This connects the ProjectStore's load action to the PixiEngine's internals
+    useEffect(() => {
+        const unsub = useEngineStore.subscribe(
+            (state) => state.modulationLoadNonce,
+            (nonce) => {
+                const engine = managerInstancesRef.current?.current?.engine;
+                const store = useEngineStore.getState();
+                
+                if (engine) {
+                    // 1. Wipe existing wires in the Engine
+                    engine.clearModulationPatches();
+                    
+                    // 2. Apply Base Values (The positions of the sliders)
+                    if (store.baseValues) {
+                        Object.entries(store.baseValues).forEach(([key, val]) => {
+                            engine.setModulationValue(key, val);
+                        });
+                    }
+                    
+                    // 3. Re-connect wires (The Patches)
+                    if (store.patches) {
+                        store.patches.forEach(p => {
+                            engine.addModulationPatch(p.source, p.target, p.amount);
+                        });
+                    }
+                }
+            }
+        );
+        return () => unsub();
+    }, []);
+
+    // --- LISTEN FOR DOCKING EVENTS (The DJ Logic) ---
     useEffect(() => {
         const handleDock = (side) => {
             const store = useEngineStore.getState();
@@ -67,8 +99,7 @@ export const VisualEngineProvider = ({ children }) => {
             const visibleConfig = store[visibleDeckKey]?.config;
             
             if (visibleConfig?.name) {
-                // We only update the React State here. 
-                // The main useEffect below will detect this change and handle the "Preload Next" logic.
+                // Update React State to reflect visibility
                 if (useProjectStore.getState().activeSceneName !== visibleConfig.name) {
                     setActiveSceneName(visibleConfig.name);
                 }
@@ -148,19 +179,13 @@ export const VisualEngineProvider = ({ children }) => {
                 const activeDeckIsA = renderedValueRef.current < 0.5;
                 const deckToSet = activeDeckIsA ? 'B' : 'A'; // Load on inactive
                 store.setDeckConfig(deckToSet, JSON.parse(JSON.stringify(newActiveSceneData)));
-                
-                // Note: We don't auto-fade here. User just loaded it. 
-                // They can drag the fader themselves or click the scene again to trigger handleSceneSelect.
                 return;
             }
 
             // Scenario B: Progressive Loading (Pre-load the NEXT scene)
-            // If the Active Scene is on Deck A, ensure Deck B has Next Scene.
-            // If the Active Scene is on Deck B, ensure Deck A has Next Scene.
-            
             let targetDeckForNext = null;
             
-            // Prioritize A if both match (break deadlock), otherwise pick the one that matches
+            // Prioritize A if both match, otherwise pick the one that matches
             if (isOnDeckA) targetDeckForNext = 'B';
             else if (isOnDeckB) targetDeckForNext = 'A';
 
@@ -175,14 +200,10 @@ export const VisualEngineProvider = ({ children }) => {
                 
                 // Only load if not already there
                 if (currentTargetConfig?.name !== nextSceneData.name) {
-                    // console.log(`[Scene Sync] Active is "${activeSceneName}" on Deck ${targetDeckForNext==='A'?'B':'A'}. Preloading "${nextSceneData.name}" on Deck ${targetDeckForNext}.`);
-                    
-                    // Sync physics from Active -> Next Deck for smooth transition
                     const engine = managerInstancesRef.current?.current?.engine;
                     if (engine) {
                         ['1','2','3'].forEach(layerId => engine.syncDeckPhysics(layerId, targetDeckForNext));
                     }
-
                     store.setDeckConfig(targetDeckForNext, JSON.parse(JSON.stringify(nextSceneData)));
                 }
             }
@@ -193,7 +214,7 @@ export const VisualEngineProvider = ({ children }) => {
         prevFullSceneList, setActiveSceneName, isLoading
     ]);
 
-    // --- REFACTORED: Engine-Driven Scene Transition ---
+    // --- ENGINE-DRIVEN TRANSITION ---
     const handleSceneSelect = useCallback((sceneName, duration = AUTO_FADE_DURATION_MS) => {
         const state = useEngineStore.getState();
         const { isAutoFading, sideA, sideB, setDeckConfig, setIsAutoFading, setTargetSceneName, setCrossfader, setRenderedCrossfader } = state;
@@ -361,33 +382,50 @@ export const useVisualEngineContext = () => {
         targetSceneName: state.targetSceneName,
         transitionMode: state.transitionMode,
         baseValues: state.baseValues,
-        patches: state.patches
+        patches: state.patches,
+        lfoSettings: state.lfoSettings // Added here
     })));
     
     const storeActions = useEngineStore.getState();
+
+    // --- UPDATED: WRAPPERS THAT TRIGGER DIRTY FLAG ---
+    
+    const markAsDirty = () => useProjectStore.setState({ hasPendingChanges: true });
 
     const setModulationValueWrapper = useCallback((paramId, value) => {
         storeActions.setEffectBaseValue(paramId, value);
         const engine = context.managerInstancesRef.current?.current?.engine;
         if (engine) engine.setModulationValue(paramId, value);
+        markAsDirty(); // <--- Dirty
     }, [context.managerInstancesRef, storeActions]);
 
     const addPatchWrapper = useCallback((source, target, amount) => {
         storeActions.addPatch(source, target, amount);
         const engine = context.managerInstancesRef.current?.current?.engine;
         if (engine) engine.addModulationPatch(source, target, amount);
+        markAsDirty(); // <--- Dirty
     }, [context.managerInstancesRef, storeActions]);
 
     const removePatchWrapper = useCallback((patchId) => {
         storeActions.removePatch(patchId);
         const engine = context.managerInstancesRef.current?.current?.engine;
         if (engine) engine.removeModulationPatch(patchId);
+        markAsDirty(); // <--- Dirty
     }, [context.managerInstancesRef, storeActions]);
 
     const clearPatchesWrapper = useCallback(() => {
         storeActions.clearAllPatches();
         const engine = context.managerInstancesRef.current?.current?.engine;
         if (engine) engine.clearModulationPatches();
+        markAsDirty(); // <--- Dirty
+    }, [context.managerInstancesRef, storeActions]);
+
+    const setLfoSettingWrapper = useCallback((lfoId, param, value) => {
+        storeActions.setLfoSetting(lfoId, param, value);
+        const engine = context.managerInstancesRef.current?.current?.engine;
+        if (engine && engine.lfo) {
+            engine.lfo.setConfig(lfoId, param, value);
+        }
     }, [context.managerInstancesRef, storeActions]);
 
     return {
@@ -401,6 +439,7 @@ export const useVisualEngineContext = () => {
         baseValues: storeState.baseValues,
         patches: storeState.patches,
         transitionMode: storeState.transitionMode,
+        lfoSettings: storeState.lfoSettings, // Exposed
         
         handleCrossfaderChange: context.handleCrossfaderChange, 
         handleCrossfaderCommit: storeActions.setCrossfader,
@@ -409,6 +448,7 @@ export const useVisualEngineContext = () => {
         
         addPatch: addPatchWrapper,
         removePatch: removePatchWrapper,
-        clearAllPatches: clearPatchesWrapper
+        clearAllPatches: clearPatchesWrapper,
+        setLfoSetting: setLfoSettingWrapper // Exposed
     };
 };

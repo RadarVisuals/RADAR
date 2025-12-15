@@ -233,15 +233,11 @@ export default class PixiEngine {
     const finalParams = this.modulationEngine.compute(this._signals);
     SignalBus.emit('modulation:update', finalParams);
 
-    // --- NEW: Priority Logic for Crossfader ---
-    // 1. If 'global.crossfader' is modulated, Modulation Engine wins.
-    // 2. Else, CrossfaderSystem internal state (Automation or Manual) wins.
+    // --- Priority Logic for Crossfader ---
     if (this.modulationEngine.patches.some(p => p.target === 'global.crossfader')) {
         if (finalParams['global.crossfader'] !== undefined) {
-            // Override system value
             const modValue = Math.max(0, Math.min(1, finalParams['global.crossfader']));
             this.crossfaderSystem.crossfadeValue = modValue;
-            // Also notify UI so slider moves
             SignalBus.emit('crossfader:update', modValue);
         }
     }
@@ -258,7 +254,8 @@ export default class PixiEngine {
             const isEnabled = finalParams['feedback.enabled'] > 0.5;
             this.feedbackSystem.updateConfig('enabled', isEnabled); 
         }
-        ['amount', 'scale', 'rotation', 'xOffset', 'yOffset'].forEach(p => {
+        // --- UPDATED: added 'renderOnTop' to the update list ---
+        ['amount', 'scale', 'rotation', 'xOffset', 'yOffset', 'hueShift', 'renderOnTop'].forEach(p => {
             if (finalParams[`feedback.${p}`] !== undefined) {
                 this.feedbackSystem.updateConfig(p, finalParams[`feedback.${p}`]);
             }
