@@ -11,7 +11,14 @@ import {
     OldFilmFilter 
 } from 'pixi-filters';
 import { ColorMatrixFilter } from 'pixi.js';
-import { VolumetricLightFilter, LiquidFilter, WaveDistortFilter, KaleidoscopeFilter, AdversarialGlitchFilter, AsciiFilter } from './PixiFilters';
+import { 
+    VolumetricLightFilter, 
+    LiquidFilter, 
+    WaveDistortFilter, 
+    KaleidoscopeFilter, 
+    AdversarialGlitchFilter, 
+    AsciiFilter 
+} from './PixiFilters';
 import { lerp } from '../helpers';
 
 export class PixiEffectsManager {
@@ -33,11 +40,60 @@ export class PixiEffectsManager {
         this._activeOneShotEffects = [];
         this.screen = null;
         this.res = 1;
+        this.paramTransformers = {};
     }
 
     init(screen) {
         this.screen = screen;
         this.res = window.devicePixelRatio || 1;
+
+        // --- DEFINE TRANSFORMERS ---
+        // Maps "EffectName.ParamName" -> Function(filter, value)
+        this.paramTransformers = {
+            // RGB Split: Maps amount to X/Y offsets + Auto Enable
+            'rgb.amount': (filter, val) => {
+                filter.red = { x: -val, y: -val };
+                filter.blue = { x: val, y: val };
+                if (val > 0.1 && !filter.enabled) filter.enabled = true;
+            },
+            
+            // Pixelate: Safety check
+            'pixelate.size': (filter, val) => {
+                filter.size = Math.max(1, val);
+            },
+
+            // Bloom: Map generic param to internal prop + Auto Enable
+            'bloom.intensity': (filter, val) => { 
+                filter.bloomScale = val; 
+                if (val > 0.1 && !filter.enabled) filter.enabled = true;
+            },
+            
+            // Twist: Convert normalized coords + Auto Enable
+            'twist.x': (filter, val) => { filter.offset.x = val * this.screen.width; },
+            'twist.y': (filter, val) => { filter.offset.y = val * this.screen.height; },
+            'twist.angle': (filter, val) => {
+                filter.angle = val;
+                // Auto-enable if there is a visible twist
+                if (Math.abs(val) > 0.1 && !filter.enabled) filter.enabled = true;
+            },
+
+            // ZoomBlur: Auto Enable
+            'zoomBlur.strength': (filter, val) => {
+                filter.strength = val;
+                if (val > 0.01 && !filter.enabled) filter.enabled = true;
+            },
+
+            // --- FIXED: KALEIDOSCOPE AUTO-ENABLE ---
+            // This restores the logic: if sides > 0, turn it on.
+            'kaleidoscope.sides': (filter, val) => {
+                filter.sides = val;
+                filter.enabled = val > 0;
+            },
+
+            // Color Matrix: Local State
+            'colorMatrix.threshold': (_, val) => { this.colorMatrixState.threshold = val; },
+            'colorMatrix.invert': (_, val) => { this.colorMatrixState.invert = val; },
+        };
     }
 
     ensureFilter(name) {
@@ -64,7 +120,6 @@ export class PixiEffectsManager {
             case 'oldFilm': this.filters.oldFilm = new OldFilmFilter({ sepia: 0, noise: 0, scratch: 0, vignetting: 0 }, 0); break;
         }
 
-        // Filters default to disabled
         if (this.filters[name]) {
             this.filters[name].enabled = false; 
         }
@@ -80,88 +135,34 @@ export class PixiEffectsManager {
     }
 
     updateConfig(effectName, param, value) {
-        if (effectName === 'feedback') return; // Handled by FeedbackSystem
-        if (effectName === 'global') return;   // Handled by CrossfaderSystem
+        if (effectName === 'feedback') return;
+        if (effectName === 'global') return;
 
         const filter = this.ensureFilter(effectName);
         if (!filter) return;
 
-        // --- GLOBAL ENABLE TOGGLE ---
+        // 1. Handle Global Enabled Toggle
         if (param === 'enabled') {
             filter.enabled = value > 0.5;
             return;
         }
 
-        // --- SPECIFIC MAPPINGS ---
-        
-        if (effectName === 'pixelate' && param === 'size') {
-            // FIX: Removed implicit auto-enable logic (value > 1.5)
-            // Ensure size is at least 1 to avoid divide-by-zero artifacts
-            filter.size = Math.max(1, value); 
+        // 2. Check Transformers (Complex mapping & Auto-Enables)
+        const transformKey = `${effectName}.${param}`;
+        if (this.paramTransformers[transformKey]) {
+            this.paramTransformers[transformKey](filter, value);
+            return;
         }
-        else if (effectName === 'rgb' && param === 'amount') {
-            filter.red = { x: -value, y: -value };
-            filter.blue = { x: value, y: value };
-            // Allow implicit enable for RGB if amount is significant, 
-            // as it's often used as a transient effect.
-            // But relying on the 'enabled' toggle is safer if available.
-            // Keeping implicit here for backward compat with Modulation Engine chaos.
-            if (value > 0.1 && !filter.enabled) filter.enabled = true;
-        }
-        else if (effectName === 'bloom') {
-            if (param === 'intensity') filter.bloomScale = value; 
-            if (param === 'threshold') filter.threshold = value;
-            if (param === 'blur') filter.blur = value;
-            if (filter.bloomScale > 0.1 && !filter.enabled) filter.enabled = true;
-        } 
-        else if (effectName === 'twist') {
-            if (param === 'angle') filter.angle = value;
-            if (param === 'radius') filter.radius = value;
-            if (param === 'x') filter.offset.x = value * this.screen.width;
-            if (param === 'y') filter.offset.y = value * this.screen.height;
-            // Twist has a clear "off" state at angle 0
-            filter.enabled = Math.abs(filter.angle) > 0.1;
-        }
-        else if (effectName === 'zoomBlur') {
-            if (param === 'strength') filter.strength = value;
-            if (param === 'innerRadius') filter.innerRadius = value;
-            filter.enabled = value > 0.01;
-        }
-        else if (effectName === 'crt') {
-            if (param in filter) filter[param] = value;
-            // CRT is complex, enable if any major component is active
-            filter.enabled = (filter.curvature > 0.1 || filter.noise > 0.05 || filter.vignetting > 0.1 || filter.lineWidth > 0.1);
-        }
-        else if (effectName === 'colorMatrix') {
-            if (param === 'threshold') this.colorMatrixState.threshold = value;
-            if (param === 'invert') this.colorMatrixState.invert = value;
-            filter.enabled = (this.colorMatrixState.threshold > 0.01 || this.colorMatrixState.invert > 0.5);
-        }
-        else if (effectName === 'glitch') {
-            // Standard Glitch
-            if (param === 'slices') filter.slices = value;
-            if (param === 'offset') filter.offset = value;
-            if (param === 'direction') filter.direction = value;
-            filter.enabled = filter.slices > 2; 
-        }
-        else if (effectName === 'kaleidoscope') {
-            if (param === 'sides') filter.sides = value;
-            if (param === 'angle') filter.angle = value;
-            filter.enabled = filter.sides > 0;
-        }
-        // --- GENERIC PARAM MAPPING ---
-        else if (['liquid', 'waveDistort', 'volumetric', 'ascii', 'adversarial', 'oldFilm'].includes(effectName)) {
-            if (param in filter) {
-                filter[param] = value;
-            }
+
+        // 3. Default Direct Assignment (1:1 mapping)
+        if (param in filter) {
+            filter[param] = value;
             
-            // Implicit enables for effects that might rely on intensity
-            if (effectName === 'liquid') filter.enabled = filter.intensity > 0.001;
-            if (effectName === 'waveDistort') filter.enabled = filter.intensity > 0.001;
-            if (effectName === 'volumetric') filter.enabled = filter.exposure > 0.01;
-            
-            // For Adversarial/ASCII/OldFilm, we strongly prefer the explicit 'enabled' toggle
-            // passed via the Modulation Panel, so we removed auto-enable logic here.
+            // Implicit Auto-Enables for custom filters
+            // These don't need complex transformers, just a check
+            if (effectName === 'liquid' && param === 'intensity') filter.enabled = value > 0.001;
+            if (effectName === 'waveDistort' && param === 'intensity') filter.enabled = value > 0.001;
+            if (effectName === 'volumetric' && param === 'exposure') filter.enabled = value > 0.01;
         }
     }
 
@@ -193,17 +194,22 @@ export class PixiEffectsManager {
             this.filters.glitch.seed = Math.random();
         }
 
-        // --- UPDATE COLOR MATRIX ---
-        if (this.filters.colorMatrix?.enabled) {
+        if (this.filters.colorMatrix) {
             const cm = this.filters.colorMatrix;
             const { threshold, invert } = this.colorMatrixState;
-            cm.reset(); 
-            if (threshold > 0.01) {
-                cm.desaturate();
-                cm.contrast(threshold * 5, false); 
-            }
-            if (invert > 0.5) {
-                cm.negative(false);
+            
+            if (threshold > 0.01 || invert > 0.5) {
+                cm.enabled = true;
+                cm.reset(); 
+                if (threshold > 0.01) {
+                    cm.desaturate();
+                    cm.contrast(threshold * 5, false); 
+                }
+                if (invert > 0.5) {
+                    cm.negative(false);
+                }
+            } else {
+                cm.enabled = false;
             }
         }
 
@@ -212,13 +218,11 @@ export class PixiEffectsManager {
         
         if (this.filters.kaleidoscope) this.filters.kaleidoscope.screenSize = { x: renderer.width, y: renderer.height };
         if (this.filters.zoomBlur) this.filters.zoomBlur.center = { x: logicalW/2, y: logicalH/2 };
-        if (this.filters.twist) this.filters.twist.offset = { x: logicalW/2, y: logicalH/2 };
         
         this._updateOneShots(now);
     }
 
     triggerOneShot(type, config, screen) {
-        // ... (Keep existing OneShot logic) ...
         const now = performance.now();
         if (type === 'shockwave') {
             const filter = this.ensureFilter('shockwave');

@@ -7,9 +7,8 @@ import { EFFECT_MANIFEST } from '../../config/EffectManifest';
 import SignalBus from '../../utils/SignalBus'; 
 import './PanelStyles/ModulationPanel.css';
 
-// Define available signal sources
 const SIGNAL_SOURCES = [
-    { value: '', label: '+ MODULATE...' }, // Shortened label
+    { value: '', label: '+ MODULATE...' }, 
     { label: '--- AUDIO ---', options: [
         { value: 'audio.bass', label: 'Audio Bass' },
         { value: 'audio.mid', label: 'Audio Mid' },
@@ -28,11 +27,9 @@ const SIGNAL_SOURCES = [
 const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAddPatch, onRemovePatch, onUpdatePatch }) => {
     const [selectedSource, setSelectedSource] = useState('');
     
-    // Refs for Zero-Render Updates
     const visualizerRef = useRef(null);
     const valueDisplayRef = useRef(null);
 
-    // Subscribe to Modulation Engine Updates via SignalBus
     useEffect(() => {
         if (def.type !== 'float' && def.type !== 'int') return;
 
@@ -40,7 +37,6 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
             const liveValue = allValues[paramId];
             if (liveValue === undefined) return;
 
-            // 1. Update the visual bar width
             if (visualizerRef.current) {
                 const range = def.max - def.min;
                 const safeRange = range === 0 ? 1 : range; 
@@ -48,7 +44,6 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
                 visualizerRef.current.style.width = `${percent}%`;
             }
 
-            // 2. Update the text display
             if (valueDisplayRef.current) {
                 valueDisplayRef.current.innerText = def.type === 'int' ? Math.floor(liveValue) : liveValue.toFixed(2);
             }
@@ -64,7 +59,6 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
         setSelectedSource('');
     };
 
-    // Filter patches relevant to this specific parameter
     const myPatches = patches.filter(p => p.target === paramId);
 
     const renderInput = () => {
@@ -98,15 +92,12 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
             );
         }
 
-        // Float/Int with Visualizer
         return (
             <div className="slider-wrapper">
-                {/* Visualizer Background Bar */}
                 <div className="slider-track-bg">
                     <div ref={visualizerRef} className="mod-visualizer-bar"></div>
                 </div>
                 
-                {/* Actual Input */}
                 <input 
                     type="range" 
                     className="base-slider" 
@@ -131,7 +122,6 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
             
             <div className="param-control-row">{renderInput()}</div>
 
-            {/* ACTIVE PATCHES */}
             {myPatches.length > 0 && (
                 <div className="active-patches">
                     {myPatches.map(patch => (
@@ -155,7 +145,6 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
                 </div>
             )}
 
-            {/* ADD PATCH UI */}
             <div className="add-patch-ui">
                 <select 
                     className="custom-select source-select" 
@@ -195,7 +184,7 @@ ParamControl.propTypes = {
 };
 
 const ModulationPanel = ({ onClose }) => {
-    const { baseValues, patches, updateEffectConfig, addPatch, removePatch } = useVisualEngineContext();
+    const { baseValues, patches, setModulationValue, addPatch, removePatch } = useVisualEngineContext();
     const [expandedGroup, setExpandedGroup] = useState(null);
 
     const toggleGroup = (key) => {
@@ -210,7 +199,6 @@ const ModulationPanel = ({ onClose }) => {
                 {effectEntries.map(([effectKey, config]) => {
                     const isExpanded = expandedGroup === effectKey;
                     
-                    // Check if effect is "Active"
                     const enabledParamId = config.params.enabled ? config.params.enabled.id : null;
                     const isEnabled = enabledParamId ? (baseValues[enabledParamId] > 0.5) : false;
 
@@ -233,7 +221,7 @@ const ModulationPanel = ({ onClose }) => {
                                             def={paramDef} 
                                             currentValue={baseValues[paramDef.id] ?? paramDef.default} 
                                             patches={patches} 
-                                            onUpdateBase={(id, val) => updateEffectConfig(effectKey, id.split('.')[1], val)} 
+                                            onUpdateBase={setModulationValue}
                                             onAddPatch={addPatch} 
                                             onRemovePatch={removePatch} 
                                             onUpdatePatch={addPatch} 

@@ -2,20 +2,16 @@
 import React, { createContext, useContext, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useProjectStore } from '../store/useProjectStore';
-import { lerp } from '../utils/helpers';
 import { useEngineStore } from '../store/useEngineStore';
 import fallbackConfig from '../config/fallback-config.js';
 import SignalBus from '../utils/SignalBus';
 
 const VisualEngineContext = createContext(null);
 const AUTO_FADE_DURATION_MS = 1000;
-const CROSSFADER_LERP_FACTOR = 0.2;
 
 function usePrevious(value) {
   const ref = useRef();
-  useEffect(() => {
-    ref.current = value;
-  });
+  useEffect(() => { ref.current = value; });
   return ref.current;
 }
 
@@ -24,13 +20,11 @@ export const VisualEngineProvider = ({ children }) => {
         stagedWorkspace: stagedActiveWorkspace, 
         activeSceneName, 
         isLoading,
-        isConfigReady,
         activeWorkspaceName
     } = useProjectStore(useShallow(s => ({
         stagedWorkspace: s.stagedWorkspace,
         activeSceneName: s.activeSceneName,
         isLoading: s.isLoading,
-        isConfigReady: s.isConfigReady,
         activeWorkspaceName: s.activeWorkspaceName
     })));
 
@@ -43,41 +37,60 @@ export const VisualEngineProvider = ({ children }) => {
         .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })), 
     [stagedActiveWorkspace]);
     
-    const isWorkspaceTransitioning = false; 
-
     const prevIsFullyLoaded = usePrevious(isFullyLoaded);
-    const prevIsWorkspaceTransitioning = usePrevious(isWorkspaceTransitioning);
     const prevActiveSceneName = usePrevious(activeSceneName);
     const prevFullSceneList = usePrevious(fullSceneList);
 
-    const faderAnimationRef = useRef();
-    const autoFadeRef = useRef(null);
     const renderedValueRef = useRef(0.0);
     const managerInstancesRef = useRef(null);
     const canvasUpdateFnsRef = useRef({});
     
-    const engineRef = useRef(null); 
-
     const registerManagerInstancesRef = useCallback((ref) => { managerInstancesRef.current = ref; }, []);
     const registerCanvasUpdateFns = useCallback((fns) => { canvasUpdateFnsRef.current = fns; }, []);
 
-    const pushCrossfaderUpdate = useCallback((value) => {
-        renderedValueRef.current = value;
-        SignalBus.emit('crossfader:update', value);
+    // Listener to keep local ref updated for UI logic that needs instantaneous values
+    useEffect(() => {
+        const handleUpdate = (val) => { renderedValueRef.current = val; };
+        const unsub = SignalBus.on('crossfader:update', handleUpdate);
+        return () => unsub();
     }, []);
 
-    // --- INITIALIZATION & SCENE LOADING LOGIC ---
+    // --- NEW: LISTEN FOR DOCKING EVENTS (The DJ Logic) ---
+    useEffect(() => {
+        const handleDock = (side) => {
+            const store = useEngineStore.getState();
+            
+            // Ignore if auto-fading (sequencer handles this)
+            if (store.isAutoFading) return;
+
+            const visibleDeckKey = side === 'A' ? 'sideA' : 'sideB';
+            const visibleConfig = store[visibleDeckKey]?.config;
+            
+            if (visibleConfig?.name) {
+                // We only update the React State here. 
+                // The main useEffect below will detect this change and handle the "Preload Next" logic.
+                if (useProjectStore.getState().activeSceneName !== visibleConfig.name) {
+                    setActiveSceneName(visibleConfig.name);
+                }
+            }
+        };
+
+        const unsub = SignalBus.on('crossfader:docked', handleDock);
+        return () => unsub();
+    }, [setActiveSceneName]);
+
+
+    // --- MAIN LOGIC: INITIALIZATION & SCENE SYNC ---
     useEffect(() => {
         const initialLoadJustFinished = !prevIsFullyLoaded && isFullyLoaded;
-        const transitionJustFinished = prevIsWorkspaceTransitioning && !isWorkspaceTransitioning;
         const sceneNameChanged = activeSceneName !== prevActiveSceneName;
         const sceneListChanged = prevFullSceneList !== fullSceneList;
         
         const store = useEngineStore.getState();
         const isStoreEmpty = !store.sideA.config && !store.sideB.config;
 
-        if (initialLoadJustFinished || transitionJustFinished || (isFullyLoaded && isStoreEmpty)) {
-            // Case 1: No scenes found -> Fallback
+        // 1. Initial Load Fallback
+        if (initialLoadJustFinished || (isFullyLoaded && isStoreEmpty)) {
             if (!isLoading && (!fullSceneList || fullSceneList.length === 0)) {
                 const baseScene = { 
                     name: "Fallback", 
@@ -89,12 +102,11 @@ export const VisualEngineProvider = ({ children }) => {
                 store.setDeckConfig('B', baseScene);
                 store.setCrossfader(0.0);
                 store.setRenderedCrossfader(0.0);
-                pushCrossfaderUpdate(0.0);
+                SignalBus.emit('crossfader:set', 0.0);
                 if (activeSceneName) setActiveSceneName(null);
                 return;
             }
 
-            // Case 2: Scenes exist -> Load Default
             if (!isLoading && fullSceneList && fullSceneList.length > 0) {
                 const initialSceneName = stagedActiveWorkspace.defaultPresetName || fullSceneList[0]?.name;
                 let startIndex = fullSceneList.findIndex(p => p.name === initialSceneName);
@@ -105,124 +117,89 @@ export const VisualEngineProvider = ({ children }) => {
                 const startSceneConfig = JSON.parse(JSON.stringify(fullSceneList[startIndex]));
                 const nextSceneConfig = JSON.parse(JSON.stringify(fullSceneList[nextIndex]));
                 
-                const initialFaderValue = 0.0;
-
                 store.setDeckConfig('A', startSceneConfig);
                 store.setDeckConfig('B', nextSceneConfig);
-                store.setCrossfader(initialFaderValue);
-                store.setRenderedCrossfader(initialFaderValue);
-                pushCrossfaderUpdate(initialFaderValue);
+                store.setCrossfader(0.0);
+                store.setRenderedCrossfader(0.0);
+                SignalBus.emit('crossfader:set', 0.0);
 
                 if (activeSceneName !== startSceneConfig.name) {
                     setActiveSceneName(startSceneConfig.name);
                 }
             }
         } 
-        // Case 3: Scene Switched via UI
+        // 2. Active Scene Changed (Clicked in list OR Arrived via Crossfader)
         else if ((sceneNameChanged || sceneListChanged) && isFullyLoaded && !store.isAutoFading) {
             if (!activeSceneName || !fullSceneList || fullSceneList.length === 0) return;
-            const newActiveSceneData = fullSceneList.find(scene => scene.name === activeSceneName);
-            if (!newActiveSceneData) return;
-
+            
             const currentSideA = store.sideA.config;
             const currentSideB = store.sideB.config;
+
+            // Determine where the active scene currently lives
             const isOnDeckA = currentSideA?.name === activeSceneName;
             const isOnDeckB = currentSideB?.name === activeSceneName;
 
+            // Scenario A: User clicked a scene that is NOT on either deck.
             if (!isOnDeckA && !isOnDeckB) {
+                const newActiveSceneData = fullSceneList.find(scene => scene.name === activeSceneName);
+                if (!newActiveSceneData) return;
+
+                // Load onto the INACTIVE deck (the one hidden by crossfader)
                 const activeDeckIsA = renderedValueRef.current < 0.5;
-                const deckToSet = activeDeckIsA ? 'A' : 'B';
+                const deckToSet = activeDeckIsA ? 'B' : 'A'; // Load on inactive
                 store.setDeckConfig(deckToSet, JSON.parse(JSON.stringify(newActiveSceneData)));
+                
+                // Note: We don't auto-fade here. User just loaded it. 
+                // They can drag the fader themselves or click the scene again to trigger handleSceneSelect.
+                return;
             }
 
-            const currentIndex = fullSceneList.findIndex(scene => scene.name === activeSceneName);
-            if (currentIndex === -1) return;
+            // Scenario B: Progressive Loading (Pre-load the NEXT scene)
+            // If the Active Scene is on Deck A, ensure Deck B has Next Scene.
+            // If the Active Scene is on Deck B, ensure Deck A has Next Scene.
             
-            const nextIndex = (currentIndex + 1) % fullSceneList.length;
-            const nextSceneData = JSON.parse(JSON.stringify(fullSceneList[nextIndex]));
-            const activeDeckIsNowA = renderedValueRef.current < 0.5;
+            let targetDeckForNext = null;
             
-            if (activeDeckIsNowA) {
-                if (currentSideB?.name !== nextSceneData.name) store.setDeckConfig('B', nextSceneData);
-            } else {
-                if (currentSideA?.name !== nextSceneData.name) store.setDeckConfig('A', nextSceneData);
+            // Prioritize A if both match (break deadlock), otherwise pick the one that matches
+            if (isOnDeckA) targetDeckForNext = 'B';
+            else if (isOnDeckB) targetDeckForNext = 'A';
+
+            if (targetDeckForNext) {
+                const currentIndex = fullSceneList.findIndex(s => s.name === activeSceneName);
+                if (currentIndex === -1) return;
+                
+                const nextIndex = (currentIndex + 1) % fullSceneList.length;
+                const nextSceneData = fullSceneList[nextIndex];
+                
+                const currentTargetConfig = targetDeckForNext === 'A' ? currentSideA : currentSideB;
+                
+                // Only load if not already there
+                if (currentTargetConfig?.name !== nextSceneData.name) {
+                    // console.log(`[Scene Sync] Active is "${activeSceneName}" on Deck ${targetDeckForNext==='A'?'B':'A'}. Preloading "${nextSceneData.name}" on Deck ${targetDeckForNext}.`);
+                    
+                    // Sync physics from Active -> Next Deck for smooth transition
+                    const engine = managerInstancesRef.current?.current?.engine;
+                    if (engine) {
+                        ['1','2','3'].forEach(layerId => engine.syncDeckPhysics(layerId, targetDeckForNext));
+                    }
+
+                    store.setDeckConfig(targetDeckForNext, JSON.parse(JSON.stringify(nextSceneData)));
+                }
             }
         }
     }, [
-        isWorkspaceTransitioning, isFullyLoaded, stagedActiveWorkspace, fullSceneList, 
-        prevIsFullyLoaded, prevIsWorkspaceTransitioning, activeSceneName, prevActiveSceneName, 
-        prevFullSceneList, setActiveSceneName, isLoading, pushCrossfaderUpdate
+        isFullyLoaded, stagedActiveWorkspace, fullSceneList, 
+        prevIsFullyLoaded, activeSceneName, prevActiveSceneName, 
+        prevFullSceneList, setActiveSceneName, isLoading
     ]);
 
-    useEffect(() => {
-        const animateFader = () => {
-            const state = useEngineStore.getState();
-            const current = renderedValueRef.current;
-            const target = state.crossfader;
-            const isAuto = state.isAutoFading;
-            let newRendered;
-
-            if (!isAuto) {
-                if (Math.abs(target - current) > 0.0001) {
-                    newRendered = lerp(current, target, CROSSFADER_LERP_FACTOR);
-                } else {
-                    newRendered = target; 
-                }
-                
-                pushCrossfaderUpdate(newRendered);
-
-                const isSettled = Math.abs(target - newRendered) < 0.0001;
-                if (isSettled) {
-                    const currentSideA = state.sideA.config;
-                    const currentSideB = state.sideB.config;
-                    
-                    if (target === 1.0) {
-                        const sceneNameB = currentSideB?.name;
-                        if (sceneNameB && activeSceneName !== sceneNameB) setActiveSceneName(sceneNameB);
-                    } else if (target === 0.0) {
-                        const sceneNameA = currentSideA?.name;
-                        if (sceneNameA && activeSceneName !== sceneNameA) setActiveSceneName(sceneNameA);
-                    }
-                    
-                    if (state.renderedCrossfader !== newRendered) {
-                        state.setRenderedCrossfader(newRendered);
-                    }
-                }
-            }
-            faderAnimationRef.current = requestAnimationFrame(animateFader);
-        };
-        faderAnimationRef.current = requestAnimationFrame(animateFader);
-        return () => { if (faderAnimationRef.current) cancelAnimationFrame(faderAnimationRef.current); };
-    }, [activeSceneName, setActiveSceneName, pushCrossfaderUpdate]);
-
-    const animateCrossfade = useCallback((startTime, startValue, endValue, duration, targetSceneNameParam) => {
-        const now = performance.now();
-        const elapsed = now - startTime;
-        const progress = Math.min(elapsed / duration, 1);
-        const newCrossfaderValue = startValue + (endValue - startValue) * progress;
-        
-        pushCrossfaderUpdate(newCrossfaderValue);
-        
-        if (progress < 1) {
-            autoFadeRef.current = requestAnimationFrame(() => animateCrossfade(startTime, startValue, endValue, duration, targetSceneNameParam));
-        } else {
-            const { setIsAutoFading, setCrossfader, setTargetSceneName, setRenderedCrossfader } = useEngineStore.getState();
-            
-            setIsAutoFading(false);
-            setCrossfader(endValue);
-            setRenderedCrossfader(endValue);
-            
-            setActiveSceneName(targetSceneNameParam);
-            setTargetSceneName(null);
-            autoFadeRef.current = null;
-        }
-    }, [setActiveSceneName, pushCrossfaderUpdate]);
-
+    // --- REFACTORED: Engine-Driven Scene Transition ---
     const handleSceneSelect = useCallback((sceneName, duration = AUTO_FADE_DURATION_MS) => {
         const state = useEngineStore.getState();
-        const { isAutoFading, sideA, sideB, setDeckConfig, setIsAutoFading, setTargetSceneName } = state;
+        const { isAutoFading, sideA, sideB, setDeckConfig, setIsAutoFading, setTargetSceneName, setCrossfader, setRenderedCrossfader } = state;
+        const engine = managerInstancesRef.current?.current?.engine;
 
-        if (isAutoFading || !fullSceneList || fullSceneList.length === 0) return;
+        if (isAutoFading || !fullSceneList || fullSceneList.length === 0 || !engine) return;
         
         setTargetSceneName(sceneName);
         const targetScene = fullSceneList.find(s => s.name === sceneName);
@@ -233,27 +210,35 @@ export const VisualEngineProvider = ({ children }) => {
         
         if (currentConfig?.name === sceneName) return; 
 
-        const syncIncomingDeck = (targetDeck) => {
-            const managers = managerInstancesRef.current?.current;
-            if (managers) {
-                Object.values(managers).forEach(manager => {
-                    if (manager.syncPhysics) manager.syncPhysics(targetDeck);
-                });
-            }
-        };
-
         if (activeDeckIsA) { 
-            syncIncomingDeck('B'); 
+            ['1','2','3'].forEach(id => engine.syncDeckPhysics(id, 'B'));
+            
             setDeckConfig('B', JSON.parse(JSON.stringify(targetScene)));
             setIsAutoFading(true); 
-            animateCrossfade(performance.now(), renderedValueRef.current, 1.0, duration, sceneName); 
+            
+            engine.fadeTo(1.0, duration, () => {
+                setIsAutoFading(false);
+                setCrossfader(1.0);
+                setRenderedCrossfader(1.0);
+                setActiveSceneName(sceneName);
+                setTargetSceneName(null);
+            });
+
         } else { 
-            syncIncomingDeck('A'); 
+            ['1','2','3'].forEach(id => engine.syncDeckPhysics(id, 'A'));
+            
             setDeckConfig('A', JSON.parse(JSON.stringify(targetScene)));
             setIsAutoFading(true); 
-            animateCrossfade(performance.now(), renderedValueRef.current, 0.0, duration, sceneName); 
+            
+            engine.fadeTo(0.0, duration, () => {
+                setIsAutoFading(false);
+                setCrossfader(0.0);
+                setRenderedCrossfader(0.0);
+                setActiveSceneName(sceneName);
+                setTargetSceneName(null);
+            });
         }
-    }, [fullSceneList, animateCrossfade]);
+    }, [fullSceneList, setActiveSceneName]);
 
     const updateLayerConfig = useCallback((layerId, key, value, isMidiUpdate = false, skipStoreUpdate = false) => {
         const managers = managerInstancesRef.current?.current;
@@ -338,10 +323,13 @@ export const VisualEngineProvider = ({ children }) => {
         setLiveConfig,
         reloadSceneOntoInactiveDeck,
         handleCrossfaderChange: (val) => {
+            const engine = managerInstancesRef.current?.current?.engine;
+            if(engine) engine.cancelFade();
+            
             const state = useEngineStore.getState();
             state.setCrossfader(val);
-            pushCrossfaderUpdate(val);
-            // --- SYNC WITH MODULATION ENGINE ---
+            state.setRenderedCrossfader(val); 
+            SignalBus.emit('crossfader:set', val);
             state.setEffectBaseValue('global.crossfader', val); 
         }
     }), [
@@ -352,8 +340,7 @@ export const VisualEngineProvider = ({ children }) => {
         registerCanvasUpdateFns,
         managerInstancesRef,
         setLiveConfig,
-        reloadSceneOntoInactiveDeck,
-        pushCrossfaderUpdate
+        reloadSceneOntoInactiveDeck
     ]);
 
     return (
@@ -367,7 +354,6 @@ export const useVisualEngineContext = () => {
     const context = useContext(VisualEngineContext);
     if (context === undefined) throw new Error("useVisualEngineContext must be used within a VisualEngineProvider");
     
-    // --- UPDATED SELECTOR ---
     const storeState = useEngineStore(useShallow(state => ({
         sideA: state.sideA,
         sideB: state.sideB,
@@ -380,36 +366,24 @@ export const useVisualEngineContext = () => {
     
     const storeActions = useEngineStore.getState();
 
-    // 1. WRAPPER FOR BASE VALUES (Sliders)
-    const updateEffectConfigWrapper = useCallback((name, param, value) => {
-        const fullId = `${name}.${param}`;
-        
-        // Update Store (UI)
-        storeActions.setEffectBaseValue(fullId, value);
-        
-        // Update Engine (Physics)
+    const setModulationValueWrapper = useCallback((paramId, value) => {
+        storeActions.setEffectBaseValue(paramId, value);
         const engine = context.managerInstancesRef.current?.current?.engine;
-        if (engine) engine.updateEffectConfig(name, param, value);
+        if (engine) engine.setModulationValue(paramId, value);
     }, [context.managerInstancesRef, storeActions]);
 
-    // 2. WRAPPER FOR ADDING PATCHES (Wires)
     const addPatchWrapper = useCallback((source, target, amount) => {
-        // Update Store (UI)
         storeActions.addPatch(source, target, amount);
-        
-        // Update Engine (Physics)
         const engine = context.managerInstancesRef.current?.current?.engine;
         if (engine) engine.addModulationPatch(source, target, amount);
     }, [context.managerInstancesRef, storeActions]);
 
-    // 3. WRAPPER FOR REMOVING PATCHES
     const removePatchWrapper = useCallback((patchId) => {
         storeActions.removePatch(patchId);
         const engine = context.managerInstancesRef.current?.current?.engine;
         if (engine) engine.removeModulationPatch(patchId);
     }, [context.managerInstancesRef, storeActions]);
 
-    // 4. WRAPPER FOR CLEARING ALL
     const clearPatchesWrapper = useCallback(() => {
         storeActions.clearAllPatches();
         const engine = context.managerInstancesRef.current?.current?.engine;
@@ -424,18 +398,15 @@ export const useVisualEngineContext = () => {
         uiControlConfig: (storeActions.renderedCrossfader < 0.5) ? storeState.sideA.config : storeState.sideB.config,
         isAutoFading: storeState.isAutoFading,
         targetSceneName: storeState.targetSceneName,
-        
-        // New State Exports
         baseValues: storeState.baseValues,
         patches: storeState.patches,
         transitionMode: storeState.transitionMode,
         
         handleCrossfaderChange: context.handleCrossfaderChange, 
         handleCrossfaderCommit: storeActions.setCrossfader,
-        updateEffectConfig: updateEffectConfigWrapper, 
+        setModulationValue: setModulationValueWrapper,
         toggleTransitionMode: () => storeActions.setTransitionMode(storeState.transitionMode === 'crossfade' ? 'flythrough' : 'crossfade'),
         
-        // --- EXPORT THE WRAPPERS, NOT THE RAW ACTIONS ---
         addPatch: addPatchWrapper,
         removePatch: removePatchWrapper,
         clearAllPatches: clearPatchesWrapper

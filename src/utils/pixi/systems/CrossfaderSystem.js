@@ -12,6 +12,17 @@ export class CrossfaderSystem {
         this.transitionMode = 'crossfade';
         this.flythroughSequence = 'A->B';
         
+        this.autoFadeState = {
+            active: false,
+            startValue: 0,
+            targetValue: 0,
+            startTime: 0,
+            duration: 0,
+            onComplete: null
+        };
+
+        this._lastDocked = 'A'; 
+
         // Physics Helpers
         this.parallaxOffset = { x: 0, y: 0 };
         this.renderedParallaxOffset = { x: 0, y: 0 };
@@ -22,18 +33,35 @@ export class CrossfaderSystem {
     }
 
     init() {
-        // Sync initial state
         const state = useEngineStore.getState();
         this.crossfadeValue = state.renderedCrossfader;
         this.transitionMode = state.transitionMode;
+        
+        if (this.crossfadeValue <= 0.001) this._lastDocked = 'A';
+        else if (this.crossfadeValue >= 0.999) this._lastDocked = 'B';
+        else this._lastDocked = null;
 
-        // Listen for high-frequency updates from UI/Sequencer
-        SignalBus.on('crossfader:update', (val) => { this.crossfadeValue = val; });
+        SignalBus.on('crossfader:set', (val) => { 
+            if (!this.autoFadeState.active) {
+                this.crossfadeValue = Math.max(0, Math.min(1, val));
+            }
+        });
     }
 
-    // Legacy support method (can be removed, but kept to prevent PixiEngine crash if called)
-    setIndustrialConfig(config) {
-        // No-op: Industrial config is now handled by ModulationEngine
+    fadeTo(targetValue, duration, onComplete) {
+        this.autoFadeState = {
+            active: true,
+            startValue: this.crossfadeValue,
+            targetValue: Math.max(0, Math.min(1, targetValue)),
+            startTime: performance.now(),
+            duration: duration,
+            onComplete: onComplete || null
+        };
+    }
+
+    cancelFade() {
+        this.autoFadeState.active = false;
+        this.autoFadeState.onComplete = null;
     }
 
     setParallax(x, y) {
@@ -41,28 +69,62 @@ export class CrossfaderSystem {
     }
 
     update(deltaTime, now, screen) {
-        // Update transition mode from store (low frequency check)
         this.transitionMode = useEngineStore.getState().transitionMode;
 
-        // Effective crossfade is just the current value
-        // (Modulation logic will handle automated movement in the future via SignalBus)
+        if (this.autoFadeState.active) {
+            const elapsed = now - this.autoFadeState.startTime;
+            const progress = this.autoFadeState.duration > 0 ? Math.min(elapsed / this.autoFadeState.duration, 1.0) : 1.0;
+            const ease = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+            
+            this.crossfadeValue = lerp(this.autoFadeState.startValue, this.autoFadeState.targetValue, ease);
+            
+            // --- OPTIMIZATION: Only emit if value changed significantly ---
+            SignalBus.emitIfChanged('crossfader:update', this.crossfadeValue);
+
+            if (progress >= 1.0) {
+                this.crossfadeValue = this.autoFadeState.targetValue;
+                this.autoFadeState.active = false;
+                if (this.autoFadeState.onComplete) this.autoFadeState.onComplete();
+            }
+        } else {
+            // Even in manual mode, ensure we emit so UI sliders snap to physics updates if needed
+            SignalBus.emitIfChanged('crossfader:update', this.crossfadeValue);
+        }
+
         const effectiveCrossfade = this.crossfadeValue;
 
+        // Docking Logic
+        if (effectiveCrossfade <= 0.0001) {
+            if (this._lastDocked !== 'A') {
+                this._lastDocked = 'A';
+                // Docking events are rare status changes, standard emit is fine
+                SignalBus.emit('crossfader:docked', 'A');
+            }
+        } else if (effectiveCrossfade >= 0.9999) {
+            if (this._lastDocked !== 'B') {
+                this._lastDocked = 'B';
+                SignalBus.emit('crossfader:docked', 'B');
+            }
+        } else {
+            if (this._lastDocked !== null) {
+                this._lastDocked = null; 
+            }
+        }
+
+        // ... (Rest of Physics logic remains unchanged) ...
+        
         // Direction detection for Flythrough mode
         if (effectiveCrossfade >= 0.999) this.flythroughSequence = 'B->A';
         else if (effectiveCrossfade <= 0.001) this.flythroughSequence = 'A->B';
 
-        // Smooth Parallax Interpolation
         this.renderedParallaxOffset.x += (this.parallaxOffset.x - this.renderedParallaxOffset.x) * 0.05;
         this.renderedParallaxOffset.y += (this.parallaxOffset.y - this.renderedParallaxOffset.y) * 0.05;
 
-        // Iterate Layers
         const layerList = this.layerManager.layerList;
         for (let i = 0; i < layerList.length; i++) {
             const layerObj = layerList[i];
             const combinedBeatFactor = this.audioReactor.getCombinedBeatFactor(layerObj.id);
 
-            // Determine Visibility based on Transition Mode
             let renderA = true;
             let renderB = true;
 
@@ -71,15 +133,12 @@ export class CrossfaderSystem {
                 if (effectiveCrossfade < 0.001) renderB = false;
             }
 
-            // Step Physics
             if (renderA) layerObj.deckA.stepPhysics(deltaTime, now);
             if (renderB) layerObj.deckB.stepPhysics(deltaTime, now);
 
-            // Resolve States
             const stateA = renderA ? layerObj.deckA.resolveRenderState() : null;
             const stateB = renderB ? layerObj.deckB.resolveRenderState() : null;
 
-            // Apply Transition Logic
             if (this.transitionMode === 'flythrough') {
                 this._applyFlythrough(layerObj, stateA, stateB, renderA, renderB, combinedBeatFactor, screen, effectiveCrossfade);
             } else {
@@ -89,6 +148,7 @@ export class CrossfaderSystem {
     }
 
     _applyFlythrough(layerObj, stateA, stateB, renderA, renderB, beatFactor, screen, t) {
+        // ... (Logic unchanged, same as Step 3)
         const SIDEWAYS_FORCE = -25000;
         const VERTICAL_FORCE = -8000;
 
@@ -164,7 +224,7 @@ export class CrossfaderSystem {
     }
 
     _applyCrossfade(layerObj, stateA, stateB, renderA, renderB, beatFactor, screen, t) {
-        // Opacity crossfade curve (Sin/Cos for smoother blend)
+        // ... (Logic unchanged, same as Step 3)
         const angle = t * 1.570796;
         const opacityA = Math.cos(angle);
         const opacityB = Math.sin(angle);
@@ -172,7 +232,6 @@ export class CrossfaderSystem {
         if (renderA && renderB) {
             const ms = this._morphedState;
             
-            // --- Spatial Morphing ---
             ms.speed = lerp(stateA.speed, stateB.speed, t); 
             ms.size = lerp(stateA.size, stateB.size, t);
             ms.opacity = lerp(stateA.opacity, stateB.opacity, t);
@@ -187,12 +246,10 @@ export class CrossfaderSystem {
             const currentContinuous = lerp(layerObj.deckA.continuousAngle, layerObj.deckB.continuousAngle, t);
             ms.totalAngleRad = (ms.angle + currentContinuous) * 0.01745329251;
 
-            // Apply to Deck A
             ms.blendMode = stateA.blendMode;
             ms.enabled = stateA.enabled;
             layerObj.deckA.applyRenderState(ms, opacityA, beatFactor, this.renderedParallaxOffset, this.parallaxFactors[layerObj.id], screen);
 
-            // Apply to Deck B
             ms.blendMode = stateB.blendMode;
             ms.enabled = stateB.enabled;
             layerObj.deckB.applyRenderState(ms, opacityB, beatFactor, this.renderedParallaxOffset, this.parallaxFactors[layerObj.id], screen);

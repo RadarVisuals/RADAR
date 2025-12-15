@@ -8,6 +8,8 @@
 class SignalBus {
   constructor() {
     this.events = {};
+    // Cache for dirty checking to prevent redundant emissions
+    this.lastState = new Map();
   }
 
   /**
@@ -40,7 +42,7 @@ class SignalBus {
   }
 
   /**
-   * Emit an event with data.
+   * Emit an event with data. Always fires.
    * @param {string} eventName 
    * @param {any} data 
    */
@@ -56,10 +58,34 @@ class SignalBus {
   }
 
   /**
+   * Only emit if the data is different from the last emission.
+   * Best for primitive values (numbers, booleans, strings).
+   * Do NOT use for Objects unless you want reference equality checking.
+   * 
+   * @param {string} eventName 
+   * @param {any} data 
+   */
+  emitIfChanged(eventName, data) {
+    const prev = this.lastState.get(eventName);
+    
+    // Strict equality check (fast)
+    if (prev === data) return;
+    
+    // For floats, we might want a tiny epsilon check to avoid micro-jitters
+    if (typeof data === 'number' && typeof prev === 'number') {
+        if (Math.abs(data - prev) < 0.000001) return;
+    }
+
+    this.lastState.set(eventName, data);
+    this.emit(eventName, data);
+  }
+
+  /**
    * Clear all listeners (Useful for app reset/HMR)
    */
   clear() {
     this.events = {};
+    this.lastState.clear();
   }
 }
 

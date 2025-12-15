@@ -11,7 +11,6 @@ class Quadrant {
   constructor(container) {
     this.container = new Container();
     this.mask = new Graphics();
-    // FIX: Initialize with Texture.EMPTY to prevent "reading 'x' of undefined" if rendered before texture loads
     this.sprite = new Sprite(Texture.EMPTY);
     this.sprite.anchor.set(0.5);
     this.container.mask = this.mask;
@@ -27,7 +26,6 @@ class Quadrant {
   }
 
   setTexture(texture) {
-    // FIX: Ensure we never set null/undefined texture
     this.sprite.texture = texture || Texture.EMPTY;
   }
 }
@@ -51,6 +49,8 @@ export class PixiLayerDeck {
     
     this.interpolators = {};
     this.playbackValues = {}; 
+    this.modulatedValues = {}; 
+
     this.tokenId = null;
     this._loadingTokenId = null;
 
@@ -81,6 +81,10 @@ export class PixiLayerDeck {
     return defaultConfig;
   }
 
+  setModulatedValues(values) {
+      this.modulatedValues = values;
+  }
+
   syncPhysicsFrom(otherDeck) {
     if (!otherDeck) return;
     this.continuousAngle = otherDeck.continuousAngle;
@@ -88,7 +92,6 @@ export class PixiLayerDeck {
     this.driftState.y = otherDeck.driftState.y;
     this.driftState.phase = otherDeck.driftState.phase;
     
-    // Sync P-Locks so incoming deck inherits overrides immediately
     this.playbackValues = { ...otherDeck.playbackValues };
     
     Object.keys(this.interpolators).forEach(key => {
@@ -118,7 +121,6 @@ export class PixiLayerDeck {
       }
     } catch (e) { 
         console.warn(`[PixiLayerDeck] Failed texture load for ${tokenId}`);
-        // Fallback to empty on failure to prevent crash
         if (this._loadingTokenId === tokenId) {
             this.quadrants.forEach(q => q.setTexture(Texture.EMPTY));
         }
@@ -162,11 +164,24 @@ export class PixiLayerDeck {
         this.interpolators[key].update(now);
     }
     
-    // --- KEY: Use playbackValues for Speed/Direction if present ---
-    const getVal = (k) => (this.playbackValues[k] !== undefined ? this.playbackValues[k] : (this.interpolators[k] ? this.interpolators[k].currentValue : this.config[k]));
+    // --- FIXED PRIORITY LOGIC ---
+    // 1. Playback Value (Absolute Override from P-Lock)
+    //    OR
+    // 2. Base Config (Interpolated) + Modulation (Additive Offset)
+    
+    const getVal = (k) => {
+        // P-Lock overrides everything if active
+        if (this.playbackValues[k] !== undefined) return this.playbackValues[k];
+        
+        // Otherwise: Base + Modulation
+        const base = this.interpolators[k] ? this.interpolators[k].currentValue : this.config[k];
+        const mod = this.modulatedValues[k] !== undefined ? this.modulatedValues[k] : 0;
+        
+        return base + mod;
+    };
     
     const speed = getVal('speed');
-    const direction = getVal('direction') ?? 1; // P-Lockable Direction
+    const direction = getVal('direction') ?? 1; 
     const drift = getVal('drift');
     const driftSpeed = getVal('driftSpeed');
 
@@ -187,11 +202,17 @@ export class PixiLayerDeck {
 
   resolveRenderState() {
     const s = this._reusableRenderState;
-    // Helper to check playbackValues first, then interpolator, then config
+    
+    // --- FIXED RESOLUTION LOGIC ---
     const getVal = (k) => {
+        // 1. P-Lock Override
         if (this.playbackValues[k] !== undefined) return this.playbackValues[k];
-        if (this.interpolators[k]) return this.interpolators[k].currentValue;
-        return this.config[k];
+        
+        // 2. Base + Modulation
+        const base = this.interpolators[k] ? this.interpolators[k].currentValue : this.config[k];
+        const mod = this.modulatedValues[k] !== undefined ? this.modulatedValues[k] : 0;
+        
+        return base + mod;
     };
 
     const angle = getVal('angle');
@@ -205,11 +226,10 @@ export class PixiLayerDeck {
     s.yaxis = getVal('yaxis');
     s.angle = angle;
     
-    // --- FIX: Respect P-Locks for categorical props ---
+    // Non-numeric props don't get modulation offsets, usually just overrides
     s.direction = getVal('direction') ?? 1;
     s.blendMode = getVal('blendMode');
     s.enabled = getVal('enabled');
-    // ------------------------------------------------
 
     s.driftX = this.driftState.x;
     s.driftY = this.driftState.y;
@@ -241,7 +261,6 @@ export class PixiLayerDeck {
     const tex = this.quadrants[0].sprite.texture;
     let screenRelativeScale = 1.0;
     
-    // Safety check for valid texture before dimensions
     if (tex && tex.valid && tex.width > 1) {
         const fitWidth = halfW / tex.width;
         const fitHeight = halfH / tex.height;
@@ -251,7 +270,9 @@ export class PixiLayerDeck {
     let finalScale = state.size * screenRelativeScale * beatFactor * BASE_SCALE_MODIFIER;
     if (finalScale < 0.001) finalScale = 0.001;
 
-    const finalAlpha = state.opacity * alphaMult;
+    // Clamp opacity to 0-1 range to prevent visual artifacts
+    const finalAlpha = Math.max(0, Math.min(1, state.opacity * alphaMult));
+    
     const blend = BLEND_MODE_MAP[state.blendMode] || 'normal';
     const rad = state.totalAngleRad;
 

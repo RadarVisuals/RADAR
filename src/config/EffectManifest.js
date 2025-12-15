@@ -1,6 +1,41 @@
 // src/config/EffectManifest.js
 
+// --- MASTER DEFINITION FOR LAYER PHYSICS ---
+// This is the Single Source of Truth for UI Sliders, MIDI, and Physics limits.
+export const LAYER_PARAMS_DEF = {
+    speed:      { label: 'SPEED',       type: 'float', min: 0.001, max: 0.1,   step: 0.001, default: 0.01, formatDecimals: 3 },
+    size:       { label: 'SIZE',        type: 'float', min: 0.1,   max: 8.0,   step: 0.01,  default: 1.0,  formatDecimals: 1 },
+    opacity:    { label: 'OPACITY',     type: 'float', min: 0,     max: 1,     step: 0.001, default: 1.0,  formatDecimals: 2 },
+    drift:      { label: 'DRIFT',       type: 'float', min: 0,     max: 100,   step: 0.001, default: 0.0,  formatDecimals: 1 },
+    driftSpeed: { label: 'DRIFT SPEED', type: 'float', min: 0,     max: 1,     step: 0.001, default: 0.0,  formatDecimals: 1 },
+    xaxis:      { label: 'X POS',       type: 'float', min: -10000, max: 10000, step: 1,     default: 0.0,  formatDecimals: 0 },
+    yaxis:      { label: 'Y POS',       type: 'float', min: -10000, max: 10000, step: 1,     default: 0.0,  formatDecimals: 0 },
+    angle:      { label: 'ANGLE',       type: 'float', min: -90,   max: 90,    step: 0.1,   default: 0.0,  formatDecimals: 1 },
+};
+
+// Helper to generate fully qualified IDs for the Matrix (e.g., 'layer.1.speed')
+// Note: We set defaults to 0.0 here for the Matrix, because Modulation is ADDITIVE relative to the Scene Config.
+const generateLayerParams = (layerNum) => {
+    const params = {};
+    for (const [key, def] of Object.entries(LAYER_PARAMS_DEF)) {
+        params[`l${layerNum}_${key}`] = {
+            id: `layer.${layerNum}.${key}`,
+            label: `L${layerNum} ${def.label}`,
+            type: def.type,
+            min: def.min,
+            max: def.max,
+            default: 0.0 // Matrix modulation offset starts at 0
+        };
+    }
+    return params;
+};
+
 export const EFFECT_MANIFEST = {
+    // --- LAYERS (Physics Offsets) ---
+    layer1: { label: 'Layer 1 Physics', params: generateLayerParams(1) },
+    layer2: { label: 'Layer 2 Physics', params: generateLayerParams(2) },
+    layer3: { label: 'Layer 3 Physics', params: generateLayerParams(3) },
+
     // --- FEEDBACK / VIDEO ---
     feedback: {
         label: 'Infinity Trails (Feedback)',
@@ -72,7 +107,6 @@ export const EFFECT_MANIFEST = {
     adversarial: {
         label: 'Data Mosh (Adversarial)', 
         params: {
-            // Added explicit Enabled flag to prevent threshold issues
             enabled:    { id: 'adversarial.enabled',    label: 'Active',      type: 'bool',  min: 0, max: 1,   default: 0 },
             intensity:  { id: 'adversarial.intensity',  label: 'Power',       type: 'float', min: 0, max: 2.0, default: 0.5 },
             bands:      { id: 'adversarial.bands',      label: 'Bands',       type: 'float', min: 1, max: 64,  default: 24 },

@@ -25,6 +25,12 @@ const PerformanceSlider = ({
 }) => {
   const inputRef = useRef(null);
   const isDragging = useRef(false);
+  const isMountedRef = useRef(false);
+
+  useEffect(() => {
+      isMountedRef.current = true;
+      return () => { isMountedRef.current = false; };
+  }, []);
 
   // Sync with external React prop changes (e.g. Scene load, Undo/Redo)
   useEffect(() => {
@@ -36,10 +42,13 @@ const PerformanceSlider = ({
   // Sync with high-frequency Event updates (P-Lock, MIDI) via SIGNAL BUS
   useEffect(() => {
     const handleParamUpdate = (data) => {
+      // Safety check for unmounted component
+      if (!isMountedRef.current || !inputRef.current) return;
+
       const { layerId: targetLayer, param, value: newValue } = data;
       // Update only if this event targets this specific slider instance
       if (targetLayer === String(layerId) && param === name) {
-         if (!isDragging.current && inputRef.current) {
+         if (!isDragging.current) {
              inputRef.current.value = newValue;
          }
       }
@@ -61,6 +70,8 @@ const PerformanceSlider = ({
 
   const handleCommit = useCallback((e) => {
     isDragging.current = false;
+    if (!isMountedRef.current) return;
+
     const val = parseFloat(e.target.value);
 
     // Commit to Zustand/React State ONLY on release/interaction end

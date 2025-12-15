@@ -1,3 +1,4 @@
+// src/utils/pixi/systems/LayerManager.js
 import { Container } from 'pixi.js';
 import { PixiLayerDeck } from '../PixiLayerDeck'; 
 
@@ -9,6 +10,11 @@ export class LayerManager {
         this.layers = {};
         this.layerList = [];
         
+        // Temp storage for modulation distribution
+        this.deckModulations = {
+            '1': {}, '2': {}, '3': {}
+        };
+
         this.init();
     }
 
@@ -28,13 +34,42 @@ export class LayerManager {
             this.mainLayerGroup.addChild(container);
         });
 
-        // NOTE: Filters are NOT applied here. They are applied to rootContainer in PixiEngine.
         this.app.stage.addChild(this.mainLayerGroup);
     }
 
+    // --- NEW METHOD FOR STEP 2 ---
+    applyModulations(allParams) {
+        // Reset temp storage
+        this.deckModulations['1'] = {};
+        this.deckModulations['2'] = {};
+        this.deckModulations['3'] = {};
+
+        // Parse and distribute
+        for (const fullKey in allParams) {
+            if (fullKey.startsWith('layer.')) {
+                // Key format: layer.1.speed
+                const parts = fullKey.split('.');
+                if (parts.length === 3) {
+                    const layerId = parts[1];
+                    const param = parts[2];
+                    if (this.deckModulations[layerId]) {
+                        this.deckModulations[layerId][param] = allParams[fullKey];
+                    }
+                }
+            }
+        }
+
+        // Apply to decks (Both A and B receive modulation equally for now)
+        ['1', '2', '3'].forEach(id => {
+            if (this.layers[id]) {
+                const mods = this.deckModulations[id];
+                this.layers[id].deckA.setModulatedValues(mods);
+                this.layers[id].deckB.setModulatedValues(mods);
+            }
+        });
+    }
+
     resize() {
-        // FIX: Do NOT set filterArea. It causes crashes when rendering this container 
-        // to a RenderTexture (Feedback) because the coordinate systems differ.
         this.mainLayerGroup.filterArea = null;
 
         for (const layer of this.layerList) {

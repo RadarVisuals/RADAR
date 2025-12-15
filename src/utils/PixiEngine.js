@@ -4,7 +4,6 @@ import { PixiEffectsManager } from './pixi/PixiEffectsManager';
 import { useEngineStore } from '../store/useEngineStore'; 
 import SignalBus from '../utils/SignalBus';
 
-// Import Sub-Systems
 import { AudioReactor } from './pixi/systems/AudioReactor';
 import { FeedbackSystem } from './pixi/systems/FeedbackSystem';
 import { LayerManager } from './pixi/systems/LayerManager';
@@ -28,7 +27,6 @@ export default class PixiEngine {
     this.effectsManager = new PixiEffectsManager();
     this.audioReactor = new AudioReactor();
     
-    // Core Groups
     this.rootContainer = new Container(); 
     this.layerManager = null; 
     this.feedbackSystem = null; 
@@ -38,10 +36,18 @@ export default class PixiEngine {
     this.renderTexture = null;
     this.projectionMesh = null;
     
+    // Zero-allocation signal container
+    this._signals = {
+        'audio.bass': 0, 'audio.mid': 0, 'audio.treble': 0, 'audio.level': 0,
+        'lfo.slow.sine': 0, 'lfo.mid.sine': 0, 'lfo.fast.sine': 0,
+        'lfo.slow.saw': 0, 'lfo.fast.saw': 0,
+        'lfo.pulse': 0, 'lfo.chaos': 0,
+        'event.any': 0
+    };
+    
     this._resizeHandler = this.handleResize.bind(this);
     this._updateLoop = this.update.bind(this);
     
-    // Bind Event Listener
     this._onEventTrigger = (data) => {
         if(this.eventSignalGenerator) {
             this.eventSignalGenerator.trigger(data.type);
@@ -71,7 +77,6 @@ export default class PixiEngine {
         return;
     }
 
-    // Setup Hierarchy
     this.app.stage.addChild(this.rootContainer);
 
     this.effectsManager.init(this.app.screen);
@@ -85,10 +90,8 @@ export default class PixiEngine {
     this.handleResize(); 
     this.app.ticker.add(this._updateLoop);
     
-    // Listen to Signal Bus for Events
     SignalBus.on('event:trigger', this._onEventTrigger);
     
-    // Sync Initial State
     const state = useEngineStore.getState();
     if (state.baseValues) {
         Object.entries(state.baseValues).forEach(([fullId, value]) => {
@@ -101,19 +104,23 @@ export default class PixiEngine {
         });
     }
 
-    // Initial modulation compute to prevent jump
-    const initialSignals = {
-        ...this.lfo.update(),
-        ...this.eventSignalGenerator.update(0),
-        'audio.bass': 0, 'audio.mid': 0, 'audio.treble': 0, 'audio.level': 0 
-    };
-    const initialParams = this.modulationEngine.compute(initialSignals);
+    const lfoData = this.lfo.update();
+    Object.assign(this._signals, lfoData);
+    
+    const eventData = this.eventSignalGenerator.update(0);
+    Object.assign(this._signals, eventData);
+
+    const initialParams = this.modulationEngine.compute(this._signals);
     
     if (this.feedbackSystem && initialParams['feedback.enabled'] !== undefined) {
         this.feedbackSystem.updateConfig('enabled', initialParams['feedback.enabled'] > 0.5);
     }
     
     this.effectsManager.applyValues(initialParams);
+    
+    if (this.layerManager) {
+        this.layerManager.applyModulations(initialParams);
+    }
 
     this.isReady = true;
     console.log("[PixiEngine] ✅ Init Complete.");
@@ -139,14 +146,27 @@ export default class PixiEngine {
     if (this.layerManager) this.layerManager.resize();
   }
 
+  // --- NEW: Fade Command exposed to React ---
+  fadeTo(targetValue, duration, onComplete) {
+      if (this.crossfaderSystem) {
+          this.crossfaderSystem.fadeTo(targetValue, duration, onComplete);
+      }
+  }
+
+  cancelFade() {
+      if (this.crossfaderSystem) {
+          this.crossfaderSystem.cancelFade();
+      }
+  }
+
   setRenderedCrossfade(value) { 
       if (this.crossfaderSystem) this.crossfaderSystem.crossfadeValue = value; 
   }
-  setIndustrialConfig(config) {}
-  updateEffectConfig(name, param, value) {
-      const fullId = `${name}.${param}`;
-      this.modulationEngine.setBaseValue(fullId, value);
+  
+  setModulationValue(paramId, value) {
+      this.modulationEngine.setBaseValue(paramId, value);
   }
+
   addModulationPatch(source, target, amount) { this.modulationEngine.addPatch(source, target, amount); }
   removeModulationPatch(patchId) { this.modulationEngine.removePatch(patchId); }
   clearModulationPatches() { this.modulationEngine.clearAllPatches(); }
@@ -188,42 +208,50 @@ export default class PixiEngine {
       }
   }
 
-  // --- MAIN LOOP ---
-
   update(ticker) {
     if (this._isDestroyed) return;
 
     const now = performance.now();
     const deltaTime = ticker.deltaTime * 0.01666; 
 
-    // 1. SIGNALS
     const lfoSignals = this.lfo.update();
+    for (const key in lfoSignals) {
+        this._signals[key] = lfoSignals[key];
+    }
+
     const audioData = this.audioReactor.getAudioData();
-    const eventSignals = this.eventSignalGenerator.update(deltaTime); // Update events
+    this._signals['audio.bass'] = audioData.frequencyBands.bass;
+    this._signals['audio.mid'] = audioData.frequencyBands.mid;
+    this._signals['audio.treble'] = audioData.frequencyBands.treble;
+    this._signals['audio.level'] = audioData.level;
 
-    const signals = {
-        ...lfoSignals,
-        ...eventSignals,
-        'audio.bass': audioData.frequencyBands.bass,
-        'audio.mid':  audioData.frequencyBands.mid,
-        'audio.treble': audioData.frequencyBands.treble,
-        'audio.level': audioData.level
-    };
+    const eventSignals = this.eventSignalGenerator.update(deltaTime);
+    for (const key in eventSignals) {
+        this._signals[key] = eventSignals[key];
+    }
 
-    // 2. MODULATION
-    const finalParams = this.modulationEngine.compute(signals);
+    const finalParams = this.modulationEngine.compute(this._signals);
     SignalBus.emit('modulation:update', finalParams);
 
+    // --- NEW: Priority Logic for Crossfader ---
+    // 1. If 'global.crossfader' is modulated, Modulation Engine wins.
+    // 2. Else, CrossfaderSystem internal state (Automation or Manual) wins.
     if (this.modulationEngine.patches.some(p => p.target === 'global.crossfader')) {
         if (finalParams['global.crossfader'] !== undefined) {
-            this.crossfaderSystem.crossfadeValue = Math.max(0, Math.min(1, finalParams['global.crossfader']));
+            // Override system value
+            const modValue = Math.max(0, Math.min(1, finalParams['global.crossfader']));
+            this.crossfaderSystem.crossfadeValue = modValue;
+            // Also notify UI so slider moves
+            SignalBus.emit('crossfader:update', modValue);
         }
     }
 
-    // 3. APPLY EFFECTS
     this.effectsManager.applyValues(finalParams);
     
-    // 4. FEEDBACK CONFIG
+    if (this.layerManager) {
+        this.layerManager.applyModulations(finalParams);
+    }
+    
     let isFeedbackOn = false;
     if (this.feedbackSystem) {
         if (finalParams['feedback.enabled'] !== undefined) { 
@@ -238,55 +266,38 @@ export default class PixiEngine {
         isFeedbackOn = this.feedbackSystem.config.enabled;
     }
 
-    // 5. GRAPH MANAGEMENT (VISIBILITY & PARENTING)
     if (this.layerManager) {
         const mainGroup = this.layerManager.mainLayerGroup;
-        
-        // IMPORTANT: Filters go on rootContainer
         this.rootContainer.filters = this.effectsManager.getFilterList();
 
-        // FIX: Ensure mainGroup NEVER has filters to prevent feedback crash
         if (mainGroup.filters && mainGroup.filters.length > 0) {
             mainGroup.filters = null;
         }
 
-        // FIX: Always keep mainGroup attached to rootContainer to maintain scene graph integrity.
-        // We only toggle visibility.
         if (mainGroup.parent !== this.rootContainer) {
             this.rootContainer.addChildAt(mainGroup, 0);
         }
 
         if (isFeedbackOn) {
-            // Feedback ON: Hide from main render pass. FeedbackSystem will manually render it.
             mainGroup.visible = false;
-            
-            // Ensure Feedback Output is visible on root
             if (this.feedbackSystem.displaySprite.parent !== this.rootContainer) {
                 this.rootContainer.addChild(this.feedbackSystem.displaySprite);
             }
         } else {
-            // Feedback OFF: Show normally
             mainGroup.visible = true;
-            
-            // Hide Feedback Output
             if (this.feedbackSystem.displaySprite.parent) {
                 this.feedbackSystem.displaySprite.parent.removeChild(this.feedbackSystem.displaySprite);
             }
         }
     }
 
-    // 6. PHYSICS
     this.effectsManager.update(ticker, this.app.renderer);
     this.crossfaderSystem.update(deltaTime, now, this.app.screen);
 
-    // 7. RENDER PIPELINE
     if (isFeedbackOn) {
-        // Source is mainLayerGroup. It is clean (no filters).
-        // render() will toggle visibility internally to capture the frame.
         this.feedbackSystem.render(this.layerManager.mainLayerGroup);
     } 
     
-    // MAPPING MODE
     if (this.isMappingActive && this.projectionMesh) {
         const wasRenderable = this.rootContainer.renderable;
         this.rootContainer.renderable = true;
