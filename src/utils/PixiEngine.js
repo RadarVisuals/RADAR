@@ -1,5 +1,4 @@
-// src/utils/PixiEngine.js
-import { Application, RenderTexture, Mesh, PlaneGeometry } from 'pixi.js';
+import { Application, RenderTexture, Mesh, PlaneGeometry, Container } from 'pixi.js';
 import { PixiEffectsManager } from './pixi/PixiEffectsManager';
 import { useEngineStore } from '../store/useEngineStore'; 
 import SignalBus from '../utils/SignalBus';
@@ -26,6 +25,8 @@ export default class PixiEngine {
     this.effectsManager = new PixiEffectsManager();
     this.audioReactor = new AudioReactor();
     
+    // Core Groups
+    this.rootContainer = new Container(); 
     this.layerManager = null; 
     this.feedbackSystem = null; 
     this.crossfaderSystem = null; 
@@ -60,9 +61,12 @@ export default class PixiEngine {
         return;
     }
 
+    // Setup Hierarchy
+    this.app.stage.addChild(this.rootContainer);
+
     this.effectsManager.init(this.app.screen);
     this.layerManager = new LayerManager(this.app, this.effectsManager);
-    this.feedbackSystem = new FeedbackSystem(this.app);
+    this.feedbackSystem = new FeedbackSystem(this.app, this.rootContainer); 
     this.crossfaderSystem = new CrossfaderSystem(this.layerManager, this.audioReactor);
 
     this.initMappingResources();
@@ -106,15 +110,6 @@ export default class PixiEngine {
 
   setMappingMode(isActive) {
     this.isMappingActive = isActive;
-    const mainGroup = this.layerManager.mainLayerGroup;
-    
-    if (isActive) {
-        this.app.stage.removeChild(mainGroup);
-        this.app.stage.addChild(this.projectionMesh);
-    } else {
-        this.app.stage.removeChild(this.projectionMesh);
-        this.app.stage.addChild(mainGroup);
-    }
   }
 
   handleResize() {
@@ -198,15 +193,16 @@ export default class PixiEngine {
     const finalParams = this.modulationEngine.compute(signals);
     SignalBus.emit('modulation:update', finalParams);
 
-    const isCrossfaderModulated = this.modulationEngine.patches.some(p => p.target === 'global.crossfader');
-    if (isCrossfaderModulated && finalParams['global.crossfader'] !== undefined) {
-        this.crossfaderSystem.crossfadeValue = Math.max(0, Math.min(1, finalParams['global.crossfader']));
+    if (this.modulationEngine.patches.some(p => p.target === 'global.crossfader')) {
+        if (finalParams['global.crossfader'] !== undefined) {
+            this.crossfaderSystem.crossfadeValue = Math.max(0, Math.min(1, finalParams['global.crossfader']));
+        }
     }
 
     // 3. APPLY EFFECTS
     this.effectsManager.applyValues(finalParams);
     
-    // 4. FEEDBACK CONFIG & VISIBILITY
+    // 4. FEEDBACK CONFIG
     let isFeedbackOn = false;
     if (this.feedbackSystem) {
         if (finalParams['feedback.enabled'] !== undefined) { 
@@ -219,42 +215,64 @@ export default class PixiEngine {
             }
         });
         isFeedbackOn = this.feedbackSystem.config.enabled;
+    }
 
-        // --- MANAGE VISIBILITY ---
-        if (this.layerManager) {
-            const mainGroup = this.layerManager.mainLayerGroup;
-            // When feedback is ON, we disable automatic rendering (renderable = false)
-            // But we keep it on stage so updateTransform works.
-            mainGroup.renderable = !isFeedbackOn;
+    // 5. GRAPH MANAGEMENT (VISIBILITY & PARENTING)
+    if (this.layerManager) {
+        const mainGroup = this.layerManager.mainLayerGroup;
+        
+        // IMPORTANT: Filters go on rootContainer
+        this.rootContainer.filters = this.effectsManager.getFilterList();
+
+        // FIX: Ensure mainGroup NEVER has filters to prevent feedback crash
+        if (mainGroup.filters && mainGroup.filters.length > 0) {
+            mainGroup.filters = null;
+        }
+
+        // FIX: Always keep mainGroup attached to rootContainer to maintain scene graph integrity.
+        // We only toggle visibility.
+        if (mainGroup.parent !== this.rootContainer) {
+            this.rootContainer.addChildAt(mainGroup, 0);
+        }
+
+        if (isFeedbackOn) {
+            // Feedback ON: Hide from main render pass. FeedbackSystem will manually render it.
+            mainGroup.visible = false;
+            
+            // Ensure Feedback Output is visible on root
+            if (this.feedbackSystem.displaySprite.parent !== this.rootContainer) {
+                this.rootContainer.addChild(this.feedbackSystem.displaySprite);
+            }
+        } else {
+            // Feedback OFF: Show normally
+            mainGroup.visible = true;
+            
+            // Hide Feedback Output
+            if (this.feedbackSystem.displaySprite.parent) {
+                this.feedbackSystem.displaySprite.parent.removeChild(this.feedbackSystem.displaySprite);
+            }
         }
     }
-    
-    if (this.layerManager) {
-        this.layerManager.mainLayerGroup.filters = this.effectsManager.getFilterList();
-    }
 
-    // 5. PHYSICS
+    // 6. PHYSICS
     this.effectsManager.update(ticker, this.app.renderer);
     this.crossfaderSystem.update(deltaTime, now, this.app.screen);
 
-    // 6. RENDER PIPELINE
-    if (this.feedbackSystem.config.enabled) {
-        // Render mainLayerGroup (detached/hidden) into feedback loop
+    // 7. RENDER PIPELINE
+    if (isFeedbackOn) {
+        // Source is mainLayerGroup. It is clean (no filters).
+        // render() will toggle visibility internally to capture the frame.
         this.feedbackSystem.render(this.layerManager.mainLayerGroup);
     } 
     
     // MAPPING MODE
     if (this.isMappingActive && this.projectionMesh) {
-        const source = this.feedbackSystem.config.enabled ? this.feedbackSystem.outputSprite : this.layerManager.mainLayerGroup;
-        const wasRenderable = source.renderable;
-        source.renderable = true; // Force renderable for texture render
-        
-        // Safety update
-        if (source.updateTransform) source.updateTransform();
+        const wasRenderable = this.rootContainer.renderable;
+        this.rootContainer.renderable = true;
+        if (this.rootContainer.updateTransform) this.rootContainer.updateTransform();
 
-        this.app.renderer.render({ container: source, target: this.renderTexture });
-        
-        source.renderable = wasRenderable;
+        this.app.renderer.render({ container: this.rootContainer, target: this.renderTexture });
+        this.rootContainer.renderable = wasRenderable;
     }
   }
 
@@ -263,6 +281,9 @@ export default class PixiEngine {
       this.audioReactor.destroy();
       this.layerManager.destroy();
       this.feedbackSystem.destroy();
+      
+      this.rootContainer.destroy({ children: false });
+
       if (this.app) {
           if (this.app.renderer) { this.app.renderer.off('resize', this._resizeHandler); }
           this.app.ticker.remove(this._updateLoop);

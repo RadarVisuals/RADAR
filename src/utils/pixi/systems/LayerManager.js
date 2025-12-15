@@ -1,5 +1,5 @@
 import { Container } from 'pixi.js';
-import { PixiLayerDeck } from '../PixiLayerDeck'; // Adjusted path
+import { PixiLayerDeck } from '../PixiLayerDeck'; 
 
 export class LayerManager {
     constructor(app, effectsManager) {
@@ -28,13 +28,15 @@ export class LayerManager {
             this.mainLayerGroup.addChild(container);
         });
 
-        // Attach global filters to the group
-        this.mainLayerGroup.filters = this.effectsManager.getFilterList();
+        // NOTE: Filters are NOT applied here. They are applied to rootContainer in PixiEngine.
         this.app.stage.addChild(this.mainLayerGroup);
     }
 
     resize() {
-        this.mainLayerGroup.filterArea = this.app.screen;
+        // FIX: Do NOT set filterArea. It causes crashes when rendering this container 
+        // to a RenderTexture (Feedback) because the coordinate systems differ.
+        this.mainLayerGroup.filterArea = null;
+
         for (const layer of this.layerList) {
             layer.deckA.resize(this.app.renderer);
             layer.deckB.resize(this.app.renderer);

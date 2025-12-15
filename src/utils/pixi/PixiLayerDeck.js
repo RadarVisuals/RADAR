@@ -11,7 +11,8 @@ class Quadrant {
   constructor(container) {
     this.container = new Container();
     this.mask = new Graphics();
-    this.sprite = new Sprite();
+    // FIX: Initialize with Texture.EMPTY to prevent "reading 'x' of undefined" if rendered before texture loads
+    this.sprite = new Sprite(Texture.EMPTY);
     this.sprite.anchor.set(0.5);
     this.container.mask = this.mask;
     this.container.addChild(this.mask);
@@ -26,7 +27,8 @@ class Quadrant {
   }
 
   setTexture(texture) {
-    this.sprite.texture = texture;
+    // FIX: Ensure we never set null/undefined texture
+    this.sprite.texture = texture || Texture.EMPTY;
   }
 }
 
@@ -116,6 +118,10 @@ export class PixiLayerDeck {
       }
     } catch (e) { 
         console.warn(`[PixiLayerDeck] Failed texture load for ${tokenId}`);
+        // Fallback to empty on failure to prevent crash
+        if (this._loadingTokenId === tokenId) {
+            this.quadrants.forEach(q => q.setTexture(Texture.EMPTY));
+        }
     }
   }
 
@@ -235,6 +241,7 @@ export class PixiLayerDeck {
     const tex = this.quadrants[0].sprite.texture;
     let screenRelativeScale = 1.0;
     
+    // Safety check for valid texture before dimensions
     if (tex && tex.valid && tex.width > 1) {
         const fitWidth = halfW / tex.width;
         const fitHeight = halfH / tex.height;
