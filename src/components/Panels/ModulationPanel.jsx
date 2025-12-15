@@ -4,12 +4,12 @@ import PropTypes from 'prop-types';
 import Panel from './Panel';
 import { useVisualEngineContext } from '../../context/VisualEngineContext';
 import { EFFECT_MANIFEST } from '../../config/EffectManifest';
-import SignalBus from '../../utils/SignalBus'; // Import SignalBus for high-freq updates
+import SignalBus from '../../utils/SignalBus'; 
 import './PanelStyles/ModulationPanel.css';
 
 // Define available signal sources
 const SIGNAL_SOURCES = [
-    { value: '', label: '+ Add Modulation...' },
+    { value: '', label: '+ MODULATE...' }, // Shortened label
     { label: '--- AUDIO ---', options: [
         { value: 'audio.bass', label: 'Audio Bass' },
         { value: 'audio.mid', label: 'Audio Mid' },
@@ -34,7 +34,6 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
 
     // Subscribe to Modulation Engine Updates via SignalBus
     useEffect(() => {
-        // Only run this logic for float/int sliders that need animation
         if (def.type !== 'float' && def.type !== 'int') return;
 
         const handleUpdate = (allValues) => {
@@ -44,7 +43,7 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
             // 1. Update the visual bar width
             if (visualizerRef.current) {
                 const range = def.max - def.min;
-                const safeRange = range === 0 ? 1 : range; // Prevent div by zero
+                const safeRange = range === 0 ? 1 : range; 
                 const percent = Math.max(0, Math.min(100, ((liveValue - def.min) / safeRange) * 100));
                 visualizerRef.current.style.width = `${percent}%`;
             }
@@ -61,7 +60,7 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
 
     const handleAddClick = () => {
         if (!selectedSource) return;
-        onAddPatch(selectedSource, paramId, 0.5); // Default amount
+        onAddPatch(selectedSource, paramId, 0.5); 
         setSelectedSource('');
     };
 
@@ -71,13 +70,15 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
     const renderInput = () => {
         if (def.type === 'bool') {
             return (
-                <div style={{display:'flex', alignItems:'center', gap:'8px', height:'20px'}}>
-                    <input 
-                        type="checkbox" 
-                        checked={currentValue > 0.5} 
-                        onChange={(e) => onUpdateBase(paramId, e.target.checked ? 1 : 0)}
-                        style={{accentColor:'var(--color-primary)'}}
-                    />
+                <div className="checkbox-wrapper">
+                    <label className="toggle-switch">
+                        <input 
+                            type="checkbox" 
+                            checked={currentValue > 0.5} 
+                            onChange={(e) => onUpdateBase(paramId, e.target.checked ? 1 : 0)} 
+                        />
+                        <span className="toggle-slider"></span>
+                    </label>
                     <span className="param-value-display">{currentValue > 0.5 ? 'ON' : 'OFF'}</span>
                 </div>
             );
@@ -86,10 +87,9 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
         if (def.type === 'select') {
             return (
                 <select 
-                    className="source-select" 
+                    className="custom-select" 
                     value={Math.floor(currentValue)} 
                     onChange={(e) => onUpdateBase(paramId, parseInt(e.target.value))}
-                    style={{width:'100%'}}
                 >
                     {def.options.map((opt, idx) => (
                         <option key={idx} value={idx}>{opt}</option>
@@ -101,18 +101,20 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
         // Float/Int with Visualizer
         return (
             <div className="slider-wrapper">
-                {/* The "Ghost" Bar showing real-time modulation */}
-                <div ref={visualizerRef} className="mod-visualizer-bar"></div>
+                {/* Visualizer Background Bar */}
+                <div className="slider-track-bg">
+                    <div ref={visualizerRef} className="mod-visualizer-bar"></div>
+                </div>
                 
-                {/* The Interactive Slider (Controls Base Value) */}
+                {/* Actual Input */}
                 <input 
                     type="range" 
-                    className="base-slider"
+                    className="base-slider" 
                     min={def.min} 
                     max={def.max} 
-                    step={def.type === 'int' ? 1 : 0.01}
-                    value={currentValue}
-                    onChange={(e) => onUpdateBase(paramId, parseFloat(e.target.value))}
+                    step={def.type === 'int' ? 1 : 0.01} 
+                    value={currentValue} 
+                    onChange={(e) => onUpdateBase(paramId, parseFloat(e.target.value))} 
                 />
             </div>
         );
@@ -122,18 +124,12 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
         <div className="param-block">
             <div className="param-header">
                 <span className="param-name">{def.label}</span>
-                {/* Use ref for high-freq text updates to avoid React renders */}
                 {(def.type === 'float' || def.type === 'int') ? (
-                    <span ref={valueDisplayRef} className="param-value-display">
-                        {Number(currentValue).toFixed(2)}
-                    </span>
+                    <span ref={valueDisplayRef} className="param-value-display">{Number(currentValue).toFixed(2)}</span>
                 ) : null}
             </div>
             
-            {/* BASE VALUE CONTROL */}
-            <div style={{marginBottom: '4px'}}>
-                {renderInput()}
-            </div>
+            <div className="param-control-row">{renderInput()}</div>
 
             {/* ACTIVE PATCHES */}
             {myPatches.length > 0 && (
@@ -141,16 +137,18 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
                     {myPatches.map(patch => (
                         <div key={patch.id} className="patch-row">
                             <span className="patch-source-name" title={patch.source}>
-                                {patch.source.replace('audio.', 'A.').replace('lfo.', 'L.')}
+                                {patch.source.replace('audio.', 'A.').replace('lfo.', 'L.').replace('event.', 'E.')}
                             </span>
-                            <input 
-                                type="range" 
-                                className="patch-amount-slider"
-                                min="-2.0" max="2.0" step="0.1"
-                                value={patch.amount}
-                                onChange={(e) => onUpdatePatch(patch.source, paramId, parseFloat(e.target.value))}
-                                title={`Modulation Amount: ${patch.amount}`}
-                            />
+                            <div className="patch-slider-container">
+                                <input 
+                                    type="range" 
+                                    className="patch-amount-slider" 
+                                    min="-2.0" max="2.0" step="0.1" 
+                                    value={patch.amount} 
+                                    onChange={(e) => onUpdatePatch(patch.source, paramId, parseFloat(e.target.value))} 
+                                    title={`Depth: ${patch.amount}`} 
+                                />
+                            </div>
                             <button className="btn-remove-patch" onClick={() => onRemovePatch(patch.id)}>×</button>
                         </div>
                     ))}
@@ -160,7 +158,7 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
             {/* ADD PATCH UI */}
             <div className="add-patch-ui">
                 <select 
-                    className="source-select" 
+                    className="custom-select source-select" 
                     value={selectedSource} 
                     onChange={(e) => setSelectedSource(e.target.value)}
                 >
@@ -175,8 +173,8 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
                 <button 
                     className="btn-add-patch" 
                     onClick={handleAddClick} 
-                    disabled={!selectedSource}
-                    title="Connect Wire"
+                    disabled={!selectedSource} 
+                    title="Add Modulation"
                 >
                     +
                 </button>
@@ -197,16 +195,7 @@ ParamControl.propTypes = {
 };
 
 const ModulationPanel = ({ onClose }) => {
-    // Access the new store slices via Context
-    const { 
-        baseValues, 
-        patches, 
-        updateEffectConfig, // Used for Base Values
-        addPatch, 
-        removePatch 
-    } = useVisualEngineContext();
-
-    // Local state for accordion
+    const { baseValues, patches, updateEffectConfig, addPatch, removePatch } = useVisualEngineContext();
     const [expandedGroup, setExpandedGroup] = useState(null);
 
     const toggleGroup = (key) => {
@@ -217,47 +206,45 @@ const ModulationPanel = ({ onClose }) => {
 
     return (
         <Panel title="MODULATION MATRIX" onClose={onClose} className="panel-from-toolbar modulation-panel events-panel-custom-scroll">
-            <div className="mod-header">
-                <h4 className="mod-section-title">Global FX Routing</h4>
-            </div>
+            <div className="mod-list-container">
+                {effectEntries.map(([effectKey, config]) => {
+                    const isExpanded = expandedGroup === effectKey;
+                    
+                    // Check if effect is "Active"
+                    const enabledParamId = config.params.enabled ? config.params.enabled.id : null;
+                    const isEnabled = enabledParamId ? (baseValues[enabledParamId] > 0.5) : false;
 
-            {effectEntries.map(([effectKey, config]) => {
-                const isExpanded = expandedGroup === effectKey;
-                
-                // Check if effect is "Active" (enabled param > 0.5)
-                // We look for a param named "enabled" inside this effect group
-                const enabledParamId = config.params.enabled ? config.params.enabled.id : null;
-                const isEnabled = enabledParamId ? (baseValues[enabledParamId] > 0.5) : false;
-
-                return (
-                    <div key={effectKey} className={`effect-group ${isExpanded ? 'active' : ''}`}>
-                        <div className="effect-group-header" onClick={() => toggleGroup(effectKey)}>
-                            <span className="effect-label" style={{color: isEnabled ? 'var(--color-primary)' : 'var(--color-text-muted)'}}>
-                                {config.label}
-                            </span>
-                            <span className="effect-toggle">{isExpanded ? '▼' : '▶'}</span>
-                        </div>
-                        
-                        {isExpanded && (
-                            <div className="effect-params-container">
-                                {Object.values(config.params).map(paramDef => (
-                                    <ParamControl 
-                                        key={paramDef.id}
-                                        paramId={paramDef.id}
-                                        def={paramDef}
-                                        currentValue={baseValues[paramDef.id] ?? paramDef.default}
-                                        patches={patches}
-                                        onUpdateBase={(id, val) => updateEffectConfig(effectKey, id.split('.')[1], val)}
-                                        onAddPatch={addPatch}
-                                        onRemovePatch={removePatch}
-                                        onUpdatePatch={addPatch} // addPatch handles updates if ID exists
-                                    />
-                                ))}
+                    return (
+                        <div key={effectKey} className={`effect-group ${isExpanded ? 'expanded' : ''} ${isEnabled ? 'active-effect' : ''}`}>
+                            <div className="effect-group-header" onClick={() => toggleGroup(effectKey)}>
+                                <div className="effect-header-left">
+                                    <span className={`effect-status-dot ${isEnabled ? 'on' : 'off'}`}></span>
+                                    <span className="effect-label">{config.label}</span>
+                                </div>
+                                <span className="effect-toggle">{isExpanded ? '−' : '+'}</span>
                             </div>
-                        )}
-                    </div>
-                );
-            })}
+                            
+                            {isExpanded && (
+                                <div className="effect-params-container">
+                                    {Object.values(config.params).map(paramDef => (
+                                        <ParamControl 
+                                            key={paramDef.id} 
+                                            paramId={paramDef.id} 
+                                            def={paramDef} 
+                                            currentValue={baseValues[paramDef.id] ?? paramDef.default} 
+                                            patches={patches} 
+                                            onUpdateBase={(id, val) => updateEffectConfig(effectKey, id.split('.')[1], val)} 
+                                            onAddPatch={addPatch} 
+                                            onRemovePatch={removePatch} 
+                                            onUpdatePatch={addPatch} 
+                                        />
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
         </Panel>
     );
 };

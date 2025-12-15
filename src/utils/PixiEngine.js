@@ -1,3 +1,4 @@
+// src/utils/PixiEngine.js
 import { Application, RenderTexture, Mesh, PlaneGeometry, Container } from 'pixi.js';
 import { PixiEffectsManager } from './pixi/PixiEffectsManager';
 import { useEngineStore } from '../store/useEngineStore'; 
@@ -11,6 +12,7 @@ import { CrossfaderSystem } from './pixi/systems/CrossfaderSystem.js';
 
 import { ModulationEngine } from './ModulationEngine';
 import { LFO } from './LFO';
+import { EventSignalGenerator } from './EventSignalGenerator';
 
 export default class PixiEngine {
   constructor(canvasElement) {
@@ -21,6 +23,7 @@ export default class PixiEngine {
 
     this.modulationEngine = new ModulationEngine();
     this.lfo = new LFO();
+    this.eventSignalGenerator = new EventSignalGenerator();
 
     this.effectsManager = new PixiEffectsManager();
     this.audioReactor = new AudioReactor();
@@ -37,6 +40,13 @@ export default class PixiEngine {
     
     this._resizeHandler = this.handleResize.bind(this);
     this._updateLoop = this.update.bind(this);
+    
+    // Bind Event Listener
+    this._onEventTrigger = (data) => {
+        if(this.eventSignalGenerator) {
+            this.eventSignalGenerator.trigger(data.type);
+        }
+    };
   }
 
   async init() {
@@ -75,6 +85,9 @@ export default class PixiEngine {
     this.handleResize(); 
     this.app.ticker.add(this._updateLoop);
     
+    // Listen to Signal Bus for Events
+    SignalBus.on('event:trigger', this._onEventTrigger);
+    
     // Sync Initial State
     const state = useEngineStore.getState();
     if (state.baseValues) {
@@ -88,8 +101,13 @@ export default class PixiEngine {
         });
     }
 
-    const initialSignals = this.lfo.update();
-    const initialParams = this.modulationEngine.compute({ ...initialSignals, 'audio.bass': 0, 'audio.mid': 0, 'audio.treble': 0, 'audio.level': 0 });
+    // Initial modulation compute to prevent jump
+    const initialSignals = {
+        ...this.lfo.update(),
+        ...this.eventSignalGenerator.update(0),
+        'audio.bass': 0, 'audio.mid': 0, 'audio.treble': 0, 'audio.level': 0 
+    };
+    const initialParams = this.modulationEngine.compute(initialSignals);
     
     if (this.feedbackSystem && initialParams['feedback.enabled'] !== undefined) {
         this.feedbackSystem.updateConfig('enabled', initialParams['feedback.enabled'] > 0.5);
@@ -181,8 +199,11 @@ export default class PixiEngine {
     // 1. SIGNALS
     const lfoSignals = this.lfo.update();
     const audioData = this.audioReactor.getAudioData();
+    const eventSignals = this.eventSignalGenerator.update(deltaTime); // Update events
+
     const signals = {
         ...lfoSignals,
+        ...eventSignals,
         'audio.bass': audioData.frequencyBands.bass,
         'audio.mid':  audioData.frequencyBands.mid,
         'audio.treble': audioData.frequencyBands.treble,
@@ -278,6 +299,7 @@ export default class PixiEngine {
 
   destroy() { 
       this._isDestroyed = true;
+      SignalBus.off('event:trigger', this._onEventTrigger);
       this.audioReactor.destroy();
       this.layerManager.destroy();
       this.feedbackSystem.destroy();

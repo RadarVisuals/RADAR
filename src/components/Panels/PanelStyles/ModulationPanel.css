@@ -1,63 +1,90 @@
 /* src/components/Panels/PanelStyles/ModulationPanel.css */
 @import "../../../styles/variables.css";
 
-.modulation-panel {
+.modulation-panel .panel-content {
+    padding: var(--space-sm);
     display: flex;
     flex-direction: column;
-    gap: var(--space-md);
+    gap: var(--space-xs);
 }
 
-.mod-header {
-    margin-bottom: var(--space-sm);
-    padding-bottom: var(--space-xs);
-    border-bottom: 1px solid var(--color-border);
+.mod-list-container {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
 
-.mod-section-title {
-    font-size: var(--font-size-sm);
-    color: var(--color-primary);
-    text-transform: uppercase;
-    font-weight: 800;
-    letter-spacing: 1px;
-    margin: 0;
-}
-
-/* Effect Group (Accordion style container) */
+/* --- Effect Group (Rack Module Style) --- */
 .effect-group {
-    background: var(--color-primary-a05);
+    background: var(--color-bg-inset); /* Darker background */
     border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-sm);
     overflow: hidden;
     transition: all var(--transition-fast);
 }
 
-.effect-group.active {
+.effect-group.active-effect {
     border-color: var(--color-primary-a30);
-    background: rgba(0, 20, 30, 0.6);
+    background: rgba(0, 243, 255, 0.03); /* Subtle tint when active */
+}
+
+.effect-group.expanded {
+    border-color: var(--color-primary-a50);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    margin-bottom: var(--space-sm); /* Push neighbours away when open */
 }
 
 .effect-group-header {
-    padding: var(--space-sm);
     display: flex;
     justify-content: space-between;
     align-items: center;
+    padding: 8px 10px;
     cursor: pointer;
     background: rgba(255, 255, 255, 0.02);
+    transition: background 0.2s;
+    user-select: none;
 }
 
 .effect-group-header:hover {
     background: rgba(255, 255, 255, 0.05);
 }
 
+.effect-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.effect-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--color-text-dim);
+    box-shadow: none;
+    transition: all 0.3s;
+}
+
+.effect-status-dot.on {
+    background-color: var(--color-primary);
+    box-shadow: 0 0 6px var(--color-primary);
+}
+
 .effect-label {
-    font-weight: bold;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
     color: var(--color-text);
-    font-size: var(--font-size-sm);
+    letter-spacing: 0.5px;
+}
+
+.effect-group.active-effect .effect-label {
+    color: var(--color-primary);
 }
 
 .effect-toggle {
-    font-size: 10px;
+    font-size: 12px;
     color: var(--color-text-muted);
+    font-weight: bold;
 }
 
 .effect-params-container {
@@ -66,224 +93,271 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-md);
+    background: rgba(0, 0, 0, 0.2);
 }
 
-/* Parameter Row */
+/* --- Parameter Block --- */
 .param-block {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    padding-left: 4px;
-    border-left: 2px solid var(--color-border);
 }
 
 .param-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    margin-bottom: 2px;
 }
 
 .param-name {
-    font-size: 10px;
+    font-size: 9px;
+    font-weight: bold;
+    color: var(--color-text-muted);
     text-transform: uppercase;
-    color: var(--color-text-dim);
-    font-weight: 600;
 }
 
 .param-value-display {
-    font-size: 10px;
+    font-size: 9px;
     font-family: monospace;
     color: var(--color-primary);
+    background: rgba(0,0,0,0.3);
+    padding: 1px 4px;
+    border-radius: 2px;
 }
 
-/* --- ANIMATED SLIDER STYLES START --- */
+.param-control-row {
+    margin-bottom: 4px;
+}
 
-/* Container to hold both the slider and the visualizer */
+/* --- Toggle Switch (Checkbox) --- */
+.checkbox-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 32px;
+    height: 16px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: var(--color-bg-light);
+    border: 1px solid var(--color-border);
+    transition: .3s;
+    border-radius: 16px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 10px;
+    width: 10px;
+    left: 2px;
+    bottom: 2px;
+    background-color: var(--color-text-muted);
+    transition: .3s;
+    border-radius: 50%;
+}
+
+input:checked + .toggle-slider {
+    background-color: var(--color-primary-a15);
+    border-color: var(--color-primary-a50);
+}
+
+input:checked + .toggle-slider:before {
+    transform: translateX(16px);
+    background-color: var(--color-primary);
+    box-shadow: 0 0 5px var(--color-primary);
+}
+
+/* --- Sliders --- */
 .slider-wrapper {
     position: relative;
     width: 100%;
-    height: 14px; /* Sufficient height for touch targets */
+    height: 16px;
     display: flex;
     align-items: center;
 }
 
-/* The Live Modulation Visualizer Bar */
-.mod-visualizer-bar {
+/* The visualizer bar sits BEHIND the slider */
+.slider-track-bg {
     position: absolute;
     top: 50%;
-    left: 0;
     transform: translateY(-50%);
-    height: 6px;
-    background: var(--color-primary-a30); /* Semi-transparent cyan */
+    width: 100%;
+    height: 4px;
+    background: var(--color-primary-a15); /* Faint track */
     border-radius: 2px;
-    pointer-events: none; /* Let clicks pass through to input */
+    overflow: hidden;
     z-index: 0;
-    width: 0%; /* JS will update this */
-    transition: width 0.05s linear; /* Smooth it slightly */
-    box-shadow: 0 0 5px var(--color-primary-a15);
 }
 
-/* Base Slider styling override */
+.mod-visualizer-bar {
+    height: 100%;
+    background: var(--color-primary); /* Bright bar showing modulation */
+    width: 0%;
+    transition: width 0.05s linear;
+    opacity: 0.6;
+}
+
+/* The actual input range sits ON TOP but is transparent except for thumb */
 .base-slider {
-    position: relative;
-    z-index: 1;
+    -webkit-appearance: none;
+    appearance: none;
     width: 100%;
     height: 100%;
     background: transparent;
-    -webkit-appearance: none;
-    appearance: none;
     outline: none;
     cursor: pointer;
+    z-index: 1;
     margin: 0;
-    padding: 0;
 }
 
-/* Slider Track - Faint background */
-.base-slider::-webkit-slider-runnable-track {
-    width: 100%;
-    height: 4px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 2px;
-    border: none;
-}
-
-.base-slider::-moz-range-track {
-    width: 100%;
-    height: 4px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 2px;
-    border: none;
-}
-
-/* Slider Thumb - The knob */
 .base-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
     width: 12px;
     height: 12px;
+    background: var(--color-primary);
     border-radius: 50%;
-    background: var(--color-text);
     cursor: pointer;
-    box-shadow: 0 0 5px rgba(0,0,0,0.5);
-    margin-top: -4px; /* Align thumb with track */
-    position: relative;
-    z-index: 2;
-}
-
-.base-slider::-moz-range-thumb {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: var(--color-text);
-    cursor: pointer;
-    border: none;
-    box-shadow: 0 0 5px rgba(0,0,0,0.5);
-    position: relative;
-    z-index: 2;
+    box-shadow: 0 0 0 2px var(--color-bg-dark), 0 0 5px rgba(0, 0, 0, 0.5);
+    margin-top: 0; 
 }
 
 .base-slider:hover::-webkit-slider-thumb {
-    background: var(--color-primary);
+    transform: scale(1.1);
+    background: #fff;
 }
 
-/* --- ANIMATED SLIDER STYLES END --- */
-
-/* Patch List */
+/* --- Patches (Wires) --- */
 .active-patches {
-    margin-top: 4px;
+    margin-bottom: 6px;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 3px;
 }
 
 .patch-row {
     display: grid;
-    grid-template-columns: 70px 1fr 20px; /* Source Name | Amount Slider | Delete */
+    grid-template-columns: 70px 1fr 16px;
     align-items: center;
     gap: 8px;
-    background: rgba(0, 0, 0, 0.2);
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 9px;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 3px 6px;
+    border-radius: 3px;
+    border: 1px solid var(--color-border-dark);
 }
 
 .patch-source-name {
+    font-size: 8px;
     color: var(--color-warning);
+    font-weight: bold;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    text-transform: uppercase;
+}
+
+.patch-slider-container {
+    display: flex;
+    align-items: center;
 }
 
 .patch-amount-slider {
+    -webkit-appearance: none;
     width: 100%;
     height: 2px;
-    background: rgba(255, 255, 255, 0.1);
-    -webkit-appearance: none;
-    appearance: none;
+    background: var(--color-border);
     outline: none;
+    border-radius: 1px;
 }
 
 .patch-amount-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     width: 8px;
     height: 8px;
-    border-radius: 50%;
     background: var(--color-warning);
+    border-radius: 50%;
     cursor: pointer;
 }
 
 .btn-remove-patch {
     background: none;
     border: none;
-    color: var(--color-error-a70);
-    cursor: pointer;
-    font-size: 10px;
+    color: var(--color-error-a50);
+    font-size: 14px;
+    line-height: 1;
     padding: 0;
+    cursor: pointer;
     display: flex;
-    justify-content: flex-end;
+    align-items: center;
+    justify-content: center;
 }
 
 .btn-remove-patch:hover {
     color: var(--color-error);
 }
 
-/* Add Patch UI */
+/* --- Add Modulation Dropdown --- */
 .add-patch-ui {
     display: flex;
     gap: 4px;
-    margin-top: 4px;
-    height: 20px;
+    height: 22px;
 }
 
-.source-select {
+.add-patch-ui .source-select {
     flex-grow: 1;
-    background: rgba(0,0,0,0.3);
+    font-size: 10px;
+    padding: 0 4px;
+    height: 100%;
+    background-color: var(--color-bg-inset);
     border: 1px solid var(--color-border);
     color: var(--color-text-muted);
-    font-size: 9px;
-    border-radius: 3px;
-    padding-left: 4px;
-    outline: none;
+}
+
+.add-patch-ui .source-select:hover {
+    border-color: var(--color-primary-a30);
+    color: var(--color-primary);
 }
 
 .btn-add-patch {
-    background: var(--color-primary-a10);
-    border: 1px solid var(--color-primary-a30);
-    color: var(--color-primary);
-    font-size: 10px;
-    width: 20px;
+    width: 22px;
+    height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
+    background: var(--color-primary-a10);
+    border: 1px solid var(--color-primary-a30);
+    color: var(--color-primary);
+    font-size: 14px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
-    border-radius: 3px;
+    padding: 0;
+    line-height: 1;
 }
 
 .btn-add-patch:hover:not(:disabled) {
     background: var(--color-primary-a30);
+    color: #fff;
 }
 
 .btn-add-patch:disabled {
     opacity: 0.3;
     cursor: not-allowed;
+    border-color: var(--color-border);
+    color: var(--color-text-muted);
 }
