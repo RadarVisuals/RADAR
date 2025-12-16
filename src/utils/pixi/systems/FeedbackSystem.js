@@ -1,5 +1,6 @@
 // src/utils/pixi/systems/FeedbackSystem.js
 import { RenderTexture, Sprite, ColorMatrixFilter } from 'pixi.js';
+import { RGBSplitFilter } from 'pixi-filters'; // Import RGBSplit
 import { useEngineStore } from '../../../store/useEngineStore';
 
 export class FeedbackSystem {
@@ -15,6 +16,11 @@ export class FeedbackSystem {
             xOffset: 0, 
             yOffset: 0,
             hueShift: 0,
+            satShift: 0,
+            contrast: 0,
+            sway: 0, // Replaces shake
+            chroma: 0, // New
+            invert: false,
             renderOnTop: false 
         };
         
@@ -23,7 +29,9 @@ export class FeedbackSystem {
         
         this.feedbackSprite = null; 
         this.displaySprite = null;
+        
         this.colorMatrix = new ColorMatrixFilter();
+        this.rgbFilter = new RGBSplitFilter({ red: {x:0, y:0}, green: {x:0, y:0}, blue: {x:0, y:0} }); // Initialize Chroma Filter
         
         this.isInitialized = false;
         
@@ -61,7 +69,9 @@ export class FeedbackSystem {
 
             this.feedbackSprite = new Sprite(this.buffers[0]);
             this.feedbackSprite.anchor.set(0.5);
-            this.feedbackSprite.filters = [this.colorMatrix];
+            
+            // Chain: Color Effects -> Geometric/Warp Effects (RGB Split)
+            this.feedbackSprite.filters = [this.colorMatrix, this.rgbFilter];
             
             this.displaySprite = new Sprite(this.buffers[1]);
             this.displaySprite.anchor.set(0.5);
@@ -119,22 +129,58 @@ export class FeedbackSystem {
             const xOff = Number(this.config.xOffset) || 0;
             const yOff = Number(this.config.yOffset) || 0;
             const hueShift = Number(this.config.hueShift) || 0;
+            const satShift = Number(this.config.satShift) || 0;
+            const contrast = Number(this.config.contrast) || 0;
+            const sway = Number(this.config.sway) || 0;
+            const chroma = Number(this.config.chroma) || 0;
+            const invert = Boolean(this.config.invert);
             const renderOnTop = this.config.renderOnTop;
 
             // 1. Configure Color Matrix
+            this.colorMatrix.reset(); 
+
             if (Math.abs(hueShift) > 0.001) {
                 this.colorMatrix.hue(hueShift * 30, false);
-            } else {
-                this.colorMatrix.reset();
+            }
+            
+            if (Math.abs(satShift) > 0.001) {
+                this.colorMatrix.saturate(1 + satShift, true);
             }
 
-            // 2. Setup Feedback Sprite (Previous Frame)
+            if (contrast > 0.001) {
+                this.colorMatrix.contrast(contrast * 2, true);
+            }
+
+            if (invert) {
+                this.colorMatrix.negative(true);
+            }
+
+            // 2. Configure Chroma Filter (RGB Split)
+            if (Math.abs(chroma) > 0.001) {
+                // Diagonal split for maximum visual impact
+                this.rgbFilter.red = { x: chroma, y: chroma };
+                this.rgbFilter.blue = { x: -chroma, y: -chroma };
+                this.rgbFilter.enabled = true;
+            } else {
+                this.rgbFilter.enabled = false;
+            }
+
+            // 3. Setup Feedback Sprite (Previous Frame)
             this.feedbackSprite.texture = inputTexture;
             this.feedbackSprite.alpha = amt;
             this.feedbackSprite.rotation = rot;
             
-            const targetX = (outputTexture.width / 2) + xOff;
-            const targetY = (outputTexture.height / 2) + yOff;
+            // Apply Sway (Sinusoidal Movement)
+            let swayX = 0;
+            let swayY = 0;
+            if (sway > 0) {
+                const t = Date.now() * 0.002; // Slow-ish time base
+                swayX = Math.sin(t) * sway;
+                swayY = Math.cos(t * 0.8) * sway; // Different freq for organic non-circle look
+            }
+
+            const targetX = (outputTexture.width / 2) + xOff + swayX;
+            const targetY = (outputTexture.height / 2) + yOff + swayY;
             
             this.feedbackSprite.position.set(
                 isNaN(targetX) ? 0 : targetX, 
@@ -145,39 +191,48 @@ export class FeedbackSystem {
                 isNaN(scl) ? 1 : scl
             );
 
-            // 3. Render Loop (Order Switching logic)
-            // Ensure Source is momentarily visible for the render pass
+            // 4. Prepare Source for Rendering (Apply Glitch to Source too!)
+            const originalFilters = sourceContainer.filters || [];
+            
+            // We apply both ColorMatrix AND Chroma to the source so it matches the tunnel style immediately
+            const activeFilters = [];
+            const hasColorGlitch = Math.abs(hueShift) > 0.001 || Math.abs(satShift) > 0.001 || contrast > 0.001 || invert;
+            const hasChromaGlitch = Math.abs(chroma) > 0.001;
+
+            if (hasColorGlitch) activeFilters.push(this.colorMatrix);
+            if (hasChromaGlitch) activeFilters.push(this.rgbFilter);
+
+            if (activeFilters.length > 0) {
+                sourceContainer.filters = [...originalFilters, ...activeFilters];
+            }
+
+            // Ensure source is visible for the render pass
             const wasVisible = sourceContainer.visible;
             sourceContainer.visible = true;
             sourceContainer.renderable = true;
 
+            // 5. Render Loop
             if (renderOnTop) {
-                // "Upward Tunnel": Render Asset first, then Trails on Top
-                
-                // Draw Source (Clear Buffer)
+                // "Upward Tunnel"
                 renderer.render({
                     container: sourceContainer,
                     target: outputTexture,
                     clear: true
                 });
 
-                // Draw Feedback Trails (No Clear)
                 renderer.render({
                     container: this.feedbackSprite,
                     target: outputTexture,
                     clear: false
                 });
             } else {
-                // "Standard Tunnel": Render Trails first, then Asset on Top
-                
-                // Draw Feedback Trails (Clear Buffer)
+                // "Standard Tunnel"
                 renderer.render({
                     container: this.feedbackSprite,
                     target: outputTexture,
                     clear: true
                 });
 
-                // Draw Source (No Clear)
                 renderer.render({
                     container: sourceContainer,
                     target: outputTexture,
@@ -185,13 +240,16 @@ export class FeedbackSystem {
                 });
             }
             
-            // Restore visibility state
+            // 6. Restore Source State
             sourceContainer.visible = wasVisible; 
+            if (activeFilters.length > 0) {
+                sourceContainer.filters = originalFilters;
+            }
             
-            // 4. Update Display
+            // 7. Update Display
             this.displaySprite.texture = outputTexture;
 
-            // 5. Swap for next frame
+            // 8. Swap for next frame
             this.activeBufferIndex = outputIndex;
 
         } catch (err) {

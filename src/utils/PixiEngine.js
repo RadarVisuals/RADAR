@@ -230,6 +230,12 @@ export default class PixiEngine {
         this._signals[key] = eventSignals[key];
     }
 
+    // --- ADDED: EMIT RAW SIGNALS FOR DEBUGGER ---
+    if (import.meta.env.DEV) {
+        SignalBus.emit('signals:update', this._signals);
+    }
+    // --------------------------------------------
+
     const finalParams = this.modulationEngine.compute(this._signals);
     SignalBus.emit('modulation:update', finalParams);
 
@@ -254,8 +260,8 @@ export default class PixiEngine {
             const isEnabled = finalParams['feedback.enabled'] > 0.5;
             this.feedbackSystem.updateConfig('enabled', isEnabled); 
         }
-        // --- UPDATED: added 'renderOnTop' to the update list ---
-        ['amount', 'scale', 'rotation', 'xOffset', 'yOffset', 'hueShift', 'renderOnTop'].forEach(p => {
+        // --- UPDATED: replaced shake with sway, added chroma ---
+        ['amount', 'scale', 'rotation', 'xOffset', 'yOffset', 'hueShift', 'satShift', 'contrast', 'sway', 'chroma', 'invert', 'renderOnTop'].forEach(p => {
             if (finalParams[`feedback.${p}`] !== undefined) {
                 this.feedbackSystem.updateConfig(p, finalParams[`feedback.${p}`]);
             }

@@ -51,17 +51,22 @@ export const EFFECT_MANIFEST = {
         label: 'Infinity Trails (Feedback)',
         params: {
             enabled:  { id: 'feedback.enabled',  label: 'Active',   type: 'bool',  min: 0, max: 1,    default: 0 },
-            amount:   { id: 'feedback.amount',   label: 'Decay',    type: 'float', min: 0.5, max: 0.99, default: 0.9, hardMin: 0.0, hardMax: 0.999 }, // Never hit 1.0 (freeze)
-            // Expanded Scale: 0.8 allows for receding tunnels, 1.2 for approaching
+            amount:   { id: 'feedback.amount',   label: 'Decay',    type: 'float', min: 0.5, max: 0.99, default: 0.9, hardMin: 0.0, hardMax: 0.999 },
             scale:    { id: 'feedback.scale',    label: 'Tunnel Zoom', type: 'float', min: 0.8, max: 1.2,  default: 1.01, hardMin: 0.1, hardMax: 2.0 }, 
             rotation: { id: 'feedback.rotation', label: 'Spin',     type: 'float', min: -1.0, max: 1.0, default: 0.0, hardMin: -5.0, hardMax: 5.0 },
-            // Expanded Offsets: Allows shifting the "Infinity Point" further
             xOffset:  { id: 'feedback.xOffset',  label: 'Shift X',  type: 'float', min: -50, max: 50,   default: 0.0, hardMin: -500, hardMax: 500 },
             yOffset:  { id: 'feedback.yOffset',  label: 'Shift Y',  type: 'float', min: -50, max: 50,   default: 0.0, hardMin: -500, hardMax: 500 },
-            // NEW: Rainbow Effect
-            hueShift: { id: 'feedback.hueShift', label: 'Rainbow',  type: 'float', min: 0, max: 1.0, default: 0.0, hardMin: 0, hardMax: 1.0 },
-            // NEW: Toggle to flip the rendering order (Asset vs Trails Z-Index)
             renderOnTop: { id: 'feedback.renderOnTop', label: 'Trails on Top', type: 'bool', min: 0, max: 1, default: 0 },
+            
+            // --- UPDATED "SICK STUFF" PARAMETERS ---
+            hueShift: { id: 'feedback.hueShift', label: 'Rainbow',  type: 'float', min: 0, max: 1.0, default: 0.0, hardMin: 0, hardMax: 1.0 },
+            satShift: { id: 'feedback.satShift', label: 'Fried Color', type: 'float', min: -1.0, max: 1.0, default: 0.0, hardMin: -5.0, hardMax: 5.0 },
+            contrast: { id: 'feedback.contrast', label: 'Deep Fry', type: 'float', min: 0, max: 1.0, default: 0.0, hardMin: 0, hardMax: 2.0 },
+            invert:   { id: 'feedback.invert',   label: 'Strobe',   type: 'bool',  min: 0, max: 1, default: 0 },
+            
+            // Replaced 'Shake' with 'Sway' and 'Chroma'
+            sway:     { id: 'feedback.sway',     label: 'Snake/Sway', type: 'float', min: 0, max: 50.0, default: 0.0, hardMin: 0, hardMax: 500.0 },
+            chroma:   { id: 'feedback.chroma',   label: 'Warp (RGB)', type: 'float', min: 0, max: 10.0, default: 0.0, hardMin: -50, hardMax: 50.0 },
         }
     },
 
@@ -118,7 +123,6 @@ export const EFFECT_MANIFEST = {
         label: 'Pixelate (Bitcrush)',
         params: {
             enabled: { id: 'pixelate.enabled', label: 'Active', type: 'bool', min: 0, max: 1, default: 0 },
-            // Size < 1 causes divide by zero issues in some shaders
             size:    { id: 'pixelate.size',    label: 'Block Size', type: 'int', min: 2, max: 100, default: 10, hardMin: 1, hardMax: 500 },
         }
     },
@@ -164,7 +168,6 @@ export const EFFECT_MANIFEST = {
     kaleidoscope: {
         label: 'Kaleidoscope',
         params: {
-            // Sides > 32 starts to look like a blur circle
             sides: { id: 'kaleidoscope.sides', label: 'Segments', type: 'int',   min: 0, max: 32,   default: 0, hardMin: 0, hardMax: 64 },
             angle: { id: 'kaleidoscope.angle', label: 'Rotation', type: 'float', min: 0, max: 6.28, default: 0, hardMin: -100, hardMax: 100 },
         }

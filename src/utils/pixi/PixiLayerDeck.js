@@ -52,6 +52,7 @@ export class PixiLayerDeck {
     this.modulatedValues = {}; 
 
     this.tokenId = null;
+    this.currentTexture = null; // Track the active texture for cleanup
     this._loadingTokenId = null;
 
     this._reusableRenderState = {
@@ -107,22 +108,47 @@ export class PixiLayerDeck {
   async setTexture(imageSrc, tokenId) {
     if (this.tokenId === tokenId) return;
     this._loadingTokenId = tokenId;
+
     if (!imageSrc) {
         this.tokenId = tokenId;
         this.quadrants.forEach(q => q.setTexture(Texture.EMPTY));
+        
+        // Cleanup old texture if it exists
+        if (this.currentTexture) {
+            this.currentTexture.destroy(false); // false = Don't destroy source (managed by ImageDecoder)
+            this.currentTexture = null;
+        }
         return;
     }
+
     try {
       const imageBitmap = await getDecodedImage(imageSrc);
+      
+      // Ensure we are still loading the same token (async race condition check)
       if (this._loadingTokenId === tokenId) {
+          
+          // Cleanup previous texture before assigning new one
+          if (this.currentTexture) {
+              this.currentTexture.destroy(false);
+          }
+
           this.tokenId = tokenId;
+          // Create new texture wrapper around the cached bitmap
           const texture = Texture.from(imageBitmap);
+          this.currentTexture = texture;
+          
           this.quadrants.forEach(q => q.setTexture(texture));
       }
     } catch (e) { 
         console.warn(`[PixiLayerDeck] Failed texture load for ${tokenId}`);
         if (this._loadingTokenId === tokenId) {
             this.quadrants.forEach(q => q.setTexture(Texture.EMPTY));
+            
+            // Cleanup on error state
+            if (this.currentTexture) {
+                this.currentTexture.destroy(false);
+                this.currentTexture = null;
+            }
         }
     }
   }

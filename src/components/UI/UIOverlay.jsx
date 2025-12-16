@@ -17,11 +17,11 @@ import GlobalMIDIStatus from '../MIDI/GlobalMIDIStatus';
 import AudioStatusIcon from '../Audio/AudioStatusIcon';
 import SceneSelectorBar from './SceneSelectorBar';
 import LibraryPanel from '../Panels/LibraryPanel';
-// --- CHANGED IMPORTS ---
-import ModulationPanel from '../Panels/ModulationPanel'; // New Panel
+import ModulationPanel from '../Panels/ModulationPanel'; 
 import Crossfader from './Crossfader';
 import WorkspaceSelectorDots from './WorkspaceSelectorDots';
-// Removed: IndustrialPanel, EffectsPanel
+// --- ADDED: SignalDebugger ---
+import SignalDebugger from '../Debug/SignalDebugger';
 
 import { useSetManagementState, useProfileSessionState } from '../../hooks/configSelectors';
 import { useVisualEngineContext } from '../../context/VisualEngineContext';
@@ -92,10 +92,8 @@ const ActivePanelRenderer = (props) => {
         case "whitelist":
             return ( <PanelWrapper key="whitelist-panel" className={panelWrapperClassName}><LibraryPanel onClose={closePanel} /></PanelWrapper> );
         
-        // --- NEW CASE ---
         case "modulation":
             return ( <PanelWrapper key="modulation-panel" className={panelWrapperClassName}><ModulationPanel onClose={closePanel} /></PanelWrapper> );
-        // Removed 'fx' and 'industrial' cases
         
         case "tokens":
             return ( <TokenSelectorOverlay key="token-selector-overlay" isOpen={activePanel === "tokens"} onClose={handleTokenSelectorClose} onTokenApplied={updateTokenAssignment} /> );
@@ -179,6 +177,10 @@ function UIOverlay({
   
   return (
     <>
+      {/* --- ADDED: Signal Debugger (Dev Mode Only) --- */}
+      {import.meta.env.DEV && <SignalDebugger />}
+      {/* ---------------------------------------------- */}
+
       {isReady && <MemoizedTopRightControls
         isRadarProjectAdmin={isRadarProjectAdmin}
         isHostProfileOwner={isHostProfileOwner}

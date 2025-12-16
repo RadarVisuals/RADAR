@@ -5,6 +5,8 @@ import { useProjectStore } from '../store/useProjectStore';
 import { useEngineStore } from '../store/useEngineStore';
 import fallbackConfig from '../config/fallback-config.js';
 import SignalBus from '../utils/SignalBus';
+// --- FIX: Use local debounce utility instead of lodash-es ---
+import debounce from '../utils/debounce'; 
 
 const VisualEngineContext = createContext(null);
 const AUTO_FADE_DURATION_MS = 1000;
@@ -388,39 +390,69 @@ export const useVisualEngineContext = () => {
     
     const storeActions = useEngineStore.getState();
 
-    // --- UPDATED: WRAPPERS THAT TRIGGER DIRTY FLAG ---
+    // --- DEBOUNCED UPDATERS FOR STORE ---
+    // These functions update the Zustand store (and thus React) but are debounced
+    // to prevent thrashing during high-frequency slider dragging.
     
     const markAsDirty = () => useProjectStore.setState({ hasPendingChanges: true });
 
+    // Memoize the debounced functions so they persist across renders
+    const debouncedSetEffectBaseValue = useMemo(
+        () => debounce((paramId, value) => {
+            storeActions.setEffectBaseValue(paramId, value);
+            markAsDirty();
+        }, 300), // 300ms debounce
+        [storeActions]
+    );
+
+    const debouncedAddPatch = useMemo(
+        () => debounce((source, target, amount) => {
+            storeActions.addPatch(source, target, amount);
+            markAsDirty();
+        }, 300),
+        [storeActions]
+    );
+
+    // --- WRAPPERS ---
+    
     const setModulationValueWrapper = useCallback((paramId, value) => {
-        storeActions.setEffectBaseValue(paramId, value);
+        // 1. FAST PATH: Update Engine Immediately
         const engine = context.managerInstancesRef.current?.current?.engine;
         if (engine) engine.setModulationValue(paramId, value);
-        markAsDirty(); // <--- Dirty
-    }, [context.managerInstancesRef, storeActions]);
+        
+        // 2. SLOW PATH: Debounced Store Update
+        debouncedSetEffectBaseValue(paramId, value);
+    }, [context.managerInstancesRef, debouncedSetEffectBaseValue]);
 
     const addPatchWrapper = useCallback((source, target, amount) => {
-        storeActions.addPatch(source, target, amount);
+        // 1. FAST PATH: Update Engine Immediately
         const engine = context.managerInstancesRef.current?.current?.engine;
         if (engine) engine.addModulationPatch(source, target, amount);
-        markAsDirty(); // <--- Dirty
-    }, [context.managerInstancesRef, storeActions]);
+        
+        // 2. SLOW PATH: Debounced Store Update
+        debouncedAddPatch(source, target, amount);
+    }, [context.managerInstancesRef, debouncedAddPatch]);
 
     const removePatchWrapper = useCallback((patchId) => {
+        // Immediate update for removal (user click)
         storeActions.removePatch(patchId);
         const engine = context.managerInstancesRef.current?.current?.engine;
         if (engine) engine.removeModulationPatch(patchId);
-        markAsDirty(); // <--- Dirty
+        markAsDirty();
     }, [context.managerInstancesRef, storeActions]);
 
     const clearPatchesWrapper = useCallback(() => {
+        // Immediate update for clear (user click)
         storeActions.clearAllPatches();
         const engine = context.managerInstancesRef.current?.current?.engine;
         if (engine) engine.clearModulationPatches();
-        markAsDirty(); // <--- Dirty
+        markAsDirty();
     }, [context.managerInstancesRef, storeActions]);
 
     const setLfoSettingWrapper = useCallback((lfoId, param, value) => {
+        // LFO settings are usually sliders too, but less frequent. 
+        // For consistency, we could debounce, but direct is okay for now 
+        // as they aren't as heavy as the matrix patches.
         storeActions.setLfoSetting(lfoId, param, value);
         const engine = context.managerInstancesRef.current?.current?.engine;
         if (engine && engine.lfo) {
@@ -439,16 +471,18 @@ export const useVisualEngineContext = () => {
         baseValues: storeState.baseValues,
         patches: storeState.patches,
         transitionMode: storeState.transitionMode,
-        lfoSettings: storeState.lfoSettings, // Exposed
+        lfoSettings: storeState.lfoSettings, 
         
         handleCrossfaderChange: context.handleCrossfaderChange, 
         handleCrossfaderCommit: storeActions.setCrossfader,
-        setModulationValue: setModulationValueWrapper,
+        
+        setModulationValue: setModulationValueWrapper, // Debounced
+        addPatch: addPatchWrapper, // Debounced
+        
         toggleTransitionMode: () => storeActions.setTransitionMode(storeState.transitionMode === 'crossfade' ? 'flythrough' : 'crossfade'),
         
-        addPatch: addPatchWrapper,
         removePatch: removePatchWrapper,
         clearAllPatches: clearPatchesWrapper,
-        setLfoSetting: setLfoSettingWrapper // Exposed
+        setLfoSetting: setLfoSettingWrapper
     };
 };
