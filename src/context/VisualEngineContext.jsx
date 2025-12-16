@@ -5,7 +5,6 @@ import { useProjectStore } from '../store/useProjectStore';
 import { useEngineStore } from '../store/useEngineStore';
 import fallbackConfig from '../config/fallback-config.js';
 import SignalBus from '../utils/SignalBus';
-// --- FIX: Use local debounce utility instead of lodash-es ---
 import debounce from '../utils/debounce'; 
 
 const VisualEngineContext = createContext(null);
@@ -449,6 +448,14 @@ export const useVisualEngineContext = () => {
         markAsDirty();
     }, [context.managerInstancesRef, storeActions]);
 
+    // --- NEW: Reset Knobs Wrapper ---
+    const resetBaseValuesWrapper = useCallback(() => {
+        storeActions.resetBaseValues();
+        const engine = context.managerInstancesRef.current?.current?.engine;
+        if (engine) engine.modulationEngine.resetToDefaults();
+        markAsDirty();
+    }, [context.managerInstancesRef, storeActions]);
+
     const setLfoSettingWrapper = useCallback((lfoId, param, value) => {
         // LFO settings are usually sliders too, but less frequent. 
         // For consistency, we could debounce, but direct is okay for now 
@@ -483,6 +490,7 @@ export const useVisualEngineContext = () => {
         
         removePatch: removePatchWrapper,
         clearAllPatches: clearPatchesWrapper,
+        resetBaseValues: resetBaseValuesWrapper, // New export
         setLfoSetting: setLfoSettingWrapper
     };
 };

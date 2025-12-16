@@ -83,6 +83,9 @@ export const useEngineStore = create(
 
     clearAllPatches: () => set({ patches: [] }),
 
+    // --- NEW ACTION: Reset knobs to default without removing wires ---
+    resetBaseValues: () => set({ baseValues: getInitialBaseValues() }),
+
     // --- SMART LOAD ACTION (Persistence + Schema Migration) ---
     loadModulationState: (savedBaseValues, savedPatches) => set((state) => {
         // 1. Get Authoritative Definitions (The current code)

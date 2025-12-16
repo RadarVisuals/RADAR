@@ -11,7 +11,8 @@
 .mod-list-container {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 8px;
+    padding-bottom: 20px;
 }
 
 /* --- LFO Generator Section --- */
@@ -20,18 +21,24 @@
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
     padding: var(--space-sm);
-    margin-bottom: var(--space-md);
+    margin-bottom: var(--space-sm);
+}
+
+.section-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--color-border);
+    padding-bottom: 4px;
+    margin-bottom: 8px;
 }
 
 .section-title-small {
     font-size: 10px;
     color: var(--color-primary);
     text-transform: uppercase;
-    border-bottom: 1px solid var(--color-border);
-    padding-bottom: 4px;
-    margin-bottom: 8px;
     font-weight: bold;
-    margin-top: 0;
+    margin: 0;
 }
 
 .lfo-config-row {
@@ -40,16 +47,42 @@
     justify-content: space-between;
     gap: 8px;
     margin-bottom: 6px;
-    padding: 4px;
-    background: rgba(255,255,255,0.02);
+    padding: 4px 6px;
+    background: rgba(255,255,255,0.03);
     border-radius: 4px;
+}
+
+.lfo-header-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 80px;
+}
+
+.lfo-visualizer {
+    width: 14px;
+    height: 14px;
+    background: rgba(0,0,0,0.5);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+.lfo-dot-live {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-text);
+    transition: transform 0.05s linear; /* Fast for smooth anim */
 }
 
 .lfo-label {
     font-size: 10px;
     font-weight: bold;
     color: var(--color-text-muted);
-    width: 35px;
 }
 
 .lfo-controls {
@@ -60,8 +93,8 @@
 }
 
 .lfo-type-select {
-    width: 60px !important;
-    padding: 2px 4px !important;
+    width: 55px !important;
+    padding: 2px 2px !important;
     font-size: 9px !important;
     height: 18px;
     background-color: var(--color-bg);
@@ -70,64 +103,119 @@
 .lfo-speed-container {
     flex-grow: 1;
     display: flex;
-    flex-direction: column;
-    justify-content: center;
-}
-
-.lfo-speed-label {
-    font-size: 8px;
-    color: var(--color-primary);
-    line-height: 1;
-    margin-bottom: 2px;
-    font-family: monospace;
+    align-items: center;
 }
 
 .lfo-speed-slider {
     width: 100%;
-    height: 2px;
+    height: 4px;
     -webkit-appearance: none;
     appearance: none;
     background: var(--color-primary-a15);
     outline: none;
     cursor: pointer;
+    border-radius: 2px;
 }
 .lfo-speed-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
     background: var(--color-primary);
     cursor: pointer;
+    box-shadow: 0 0 5px rgba(0,0,0,0.5);
 }
 
-.lfo-visualizer {
-    width: 12px;
-    height: 12px;
-    background: rgba(0,0,0,0.5);
-    border-radius: 50%;
+/* --- Action Buttons Row --- */
+.mod-actions-row {
     display: flex;
+    justify-content: flex-end; /* Align to right */
     align-items: center;
-    justify-content: center;
+    gap: 12px;
+    margin-bottom: var(--space-sm);
+    padding-right: 4px;
+    padding-top: 4px;
 }
 
-.lfo-dot-anim {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--color-text);
-    opacity: 0.3;
-    animation: lfo-pulse infinite ease-in-out;
+.vertical-divider {
+    width: 1px;
+    height: 12px;
+    background-color: var(--color-border);
 }
 
-@keyframes lfo-pulse {
-    0% { transform: scale(0.5); opacity: 0.3; }
-    50% { transform: scale(1.2); opacity: 1; }
-    100% { transform: scale(0.5); opacity: 0.3; }
+.btn-link-action {
+    background: none;
+    border: none;
+    color: var(--color-primary-a70);
+    font-size: 10px;
+    cursor: pointer;
+    text-transform: uppercase;
+    font-weight: bold;
+    padding: 0;
+    transition: color 0.2s;
+}
+.btn-link-action:hover {
+    color: var(--color-primary);
+    text-decoration: underline;
+}
+
+.btn-link-danger {
+    background: none;
+    border: none;
+    color: var(--color-error-a70);
+    font-size: 10px;
+    cursor: pointer;
+    text-transform: uppercase;
+    font-weight: bold;
+    padding: 0;
+    transition: color 0.2s;
+}
+.btn-link-danger:hover {
+    color: var(--color-error);
+    text-decoration: underline;
+}
+
+/* --- Categories --- */
+.category-block {
+    margin-bottom: 2px;
+}
+
+.category-header {
+    font-size: 11px;
+    font-weight: bold;
+    color: var(--color-text-dim);
+    text-transform: uppercase;
+    padding: 6px 8px;
+    background: rgba(255, 255, 255, 0.05);
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.category-header:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--color-text);
+}
+
+.category-header.open {
+    color: var(--color-primary);
+    background: var(--color-primary-a05);
+}
+
+.category-content {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 0 8px 8px;
+    border-left: 1px solid var(--color-border-dark);
+    margin-left: 8px;
 }
 
 /* --- Effect Group (Rack Module Style) --- */
 .effect-group {
-    background: var(--color-bg-inset); /* Darker background */
+    background: var(--color-bg-inset);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
     overflow: hidden;
@@ -136,20 +224,20 @@
 
 .effect-group.active-effect {
     border-color: var(--color-primary-a30);
-    background: rgba(0, 243, 255, 0.03); /* Subtle tint when active */
+    background: rgba(0, 243, 255, 0.03);
 }
 
 .effect-group.expanded {
     border-color: var(--color-primary-a50);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    margin-bottom: var(--space-sm); /* Push neighbours away when open */
+    margin-bottom: 4px;
 }
 
 .effect-group-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 10px;
+    padding: 6px 10px;
     cursor: pointer;
     background: rgba(255, 255, 255, 0.02);
     transition: background 0.2s;
@@ -171,7 +259,6 @@
     height: 6px;
     border-radius: 50%;
     background-color: var(--color-text-dim);
-    box-shadow: none;
     transition: all 0.3s;
 }
 
@@ -180,9 +267,18 @@
     box-shadow: 0 0 6px var(--color-primary);
 }
 
+.mod-badge {
+    font-size: 8px;
+    background: var(--color-warning-a30);
+    color: var(--color-warning);
+    padding: 1px 3px;
+    border-radius: 2px;
+    font-weight: bold;
+}
+
 .effect-label {
-    font-size: 11px;
-    font-weight: 700;
+    font-size: 10px;
+    font-weight: 600;
     text-transform: uppercase;
     color: var(--color-text);
     letter-spacing: 0.5px;
@@ -203,7 +299,7 @@
     border-top: 1px solid var(--color-border-dark);
     display: flex;
     flex-direction: column;
-    gap: var(--space-md);
+    gap: 8px;
     background: rgba(0, 0, 0, 0.2);
 }
 
@@ -235,82 +331,32 @@
     background: rgba(0,0,0,0.3);
     padding: 1px 4px;
     border-radius: 2px;
+    min-width: 25px;
+    text-align: right;
 }
 
 .param-control-row {
     margin-bottom: 4px;
 }
 
-/* --- Toggle Switch (Checkbox) --- */
-.checkbox-wrapper {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.toggle-switch {
-    position: relative;
-    display: inline-block;
-    width: 32px;
-    height: 16px;
-}
-
-.toggle-switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-}
-
-.toggle-slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background-color: var(--color-bg-light);
-    border: 1px solid var(--color-border);
-    transition: .3s;
-    border-radius: 16px;
-}
-
-.toggle-slider:before {
-    position: absolute;
-    content: "";
-    height: 10px;
-    width: 10px;
-    left: 2px;
-    bottom: 2px;
-    background-color: var(--color-text-muted);
-    transition: .3s;
-    border-radius: 50%;
-}
-
-input:checked + .toggle-slider {
-    background-color: var(--color-primary-a15);
-    border-color: var(--color-primary-a50);
-}
-
-input:checked + .toggle-slider:before {
-    transform: translateX(16px);
-    background-color: var(--color-primary);
-    box-shadow: 0 0 5px var(--color-primary);
-}
-
 /* --- Sliders --- */
 .slider-wrapper {
     position: relative;
     width: 100%;
-    height: 16px;
+    height: 14px;
     display: flex;
     align-items: center;
 }
 
-/* The visualizer bar sits BEHIND the slider */
+/* Background visualizer */
 .slider-track-bg {
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
     width: 100%;
     height: 4px;
-    background: var(--color-primary-a15); /* Faint track */
+    background: var(--color-bg-dark);
+    border: 1px solid var(--color-border-dark);
     border-radius: 2px;
     overflow: hidden;
     z-index: 0;
@@ -318,13 +364,13 @@ input:checked + .toggle-slider:before {
 
 .mod-visualizer-bar {
     height: 100%;
-    background: var(--color-primary); /* Bright bar showing modulation */
+    background: var(--color-primary);
     width: 0%;
-    transition: width 0.05s linear;
+    transition: width 0s; /* Instant updates from SignalBus */
     opacity: 0.6;
 }
 
-/* The actual input range sits ON TOP but is transparent except for thumb */
+/* Foreground interaction slider */
 .base-slider {
     -webkit-appearance: none;
     appearance: none;
@@ -340,37 +386,34 @@ input:checked + .toggle-slider:before {
 .base-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 12px;
-    height: 12px;
-    background: var(--color-primary);
+    width: 10px;
+    height: 10px;
+    background: #fff;
+    border: 2px solid var(--color-bg-dark);
     border-radius: 50%;
     cursor: pointer;
-    box-shadow: 0 0 0 2px var(--color-bg-dark), 0 0 5px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 0 4px rgba(0,0,0,0.5);
     margin-top: 0; 
 }
 
-.base-slider:hover::-webkit-slider-thumb {
-    transform: scale(1.1);
-    background: #fff;
-}
-
-/* --- Patches (Wires) --- */
+/* --- Active Patches List --- */
 .active-patches {
     margin-bottom: 6px;
     display: flex;
     flex-direction: column;
     gap: 3px;
+    padding-left: 8px;
+    border-left: 2px solid var(--color-border-dark);
 }
 
 .patch-row {
     display: grid;
-    grid-template-columns: 70px 1fr 16px;
+    grid-template-columns: 60px 1fr 16px;
     align-items: center;
     gap: 8px;
-    background: rgba(0, 0, 0, 0.3);
+    background: rgba(255, 255, 255, 0.03);
     padding: 3px 6px;
     border-radius: 3px;
-    border: 1px solid var(--color-border-dark);
 }
 
 .patch-source-name {
@@ -384,8 +427,19 @@ input:checked + .toggle-slider:before {
 }
 
 .patch-slider-container {
+    position: relative;
     display: flex;
     align-items: center;
+    height: 12px;
+}
+
+.center-tick {
+    position: absolute;
+    left: 50%;
+    height: 4px;
+    width: 1px;
+    background: var(--color-text-dim);
+    pointer-events: none;
 }
 
 .patch-amount-slider {
@@ -396,6 +450,7 @@ input:checked + .toggle-slider:before {
     background: var(--color-border);
     outline: none;
     border-radius: 1px;
+    cursor: ew-resize;
 }
 
 .patch-amount-slider::-webkit-slider-thumb {
@@ -405,6 +460,7 @@ input:checked + .toggle-slider:before {
     background: var(--color-warning);
     border-radius: 50%;
     cursor: pointer;
+    border: none;
 }
 
 .btn-remove-patch {
@@ -419,21 +475,18 @@ input:checked + .toggle-slider:before {
     align-items: center;
     justify-content: center;
 }
+.btn-remove-patch:hover { color: var(--color-error); }
 
-.btn-remove-patch:hover {
-    color: var(--color-error);
-}
-
-/* --- Add Modulation Dropdown --- */
+/* --- Add Modulation UI --- */
 .add-patch-ui {
     display: flex;
     gap: 4px;
-    height: 22px;
+    height: 20px;
 }
 
 .add-patch-ui .source-select {
     flex-grow: 1;
-    font-size: 10px;
+    font-size: 9px;
     padding: 0 4px;
     height: 100%;
     background-color: var(--color-bg-inset);
@@ -447,7 +500,7 @@ input:checked + .toggle-slider:before {
 }
 
 .btn-add-patch {
-    width: 22px;
+    width: 20px;
     height: 100%;
     display: flex;
     align-items: center;
@@ -472,4 +525,57 @@ input:checked + .toggle-slider:before {
     cursor: not-allowed;
     border-color: var(--color-border);
     color: var(--color-text-muted);
+}
+
+/* Boolean Toggle Switch */
+.checkbox-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 28px;
+    height: 14px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: var(--color-bg-light);
+    border: 1px solid var(--color-border);
+    transition: .2s;
+    border-radius: 14px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 8px;
+    width: 8px;
+    left: 2px;
+    bottom: 2px;
+    background-color: var(--color-text-muted);
+    transition: .2s;
+    border-radius: 50%;
+}
+
+input:checked + .toggle-slider {
+    background-color: var(--color-primary-a15);
+    border-color: var(--color-primary-a50);
+}
+
+input:checked + .toggle-slider:before {
+    transform: translateX(14px);
+    background-color: var(--color-primary);
+    box-shadow: 0 0 5px var(--color-primary);
 }
