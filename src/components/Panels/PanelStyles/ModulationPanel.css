@@ -6,6 +6,11 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-xs);
+    
+    /* --- FIX: PREVENT LAYOUT SHIFT --- */
+    overflow-y: auto;
+    scrollbar-gutter: stable; 
+    /* -------------------------------- */
 }
 
 .mod-list-container {
@@ -177,7 +182,10 @@
 
 /* --- Categories --- */
 .category-block {
-    margin-bottom: 2px;
+    margin-bottom: 4px;
+    background: rgba(0,0,0,0.2);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
 }
 
 .category-header {
@@ -185,32 +193,34 @@
     font-weight: bold;
     color: var(--color-text-dim);
     text-transform: uppercase;
-    padding: 6px 8px;
-    background: rgba(255, 255, 255, 0.05);
+    padding: 8px 10px;
+    background: rgba(255, 255, 255, 0.03);
     cursor: pointer;
     display: flex;
     justify-content: space-between;
-    border-radius: 4px;
     transition: all 0.2s;
+    border: 1px solid transparent;
 }
 
 .category-header:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.08);
     color: var(--color-text);
 }
 
 .category-header.open {
     color: var(--color-primary);
     background: var(--color-primary-a05);
+    border-bottom-color: var(--color-border-dark);
 }
 
 .category-content {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    padding: 4px 0 8px 8px;
-    border-left: 1px solid var(--color-border-dark);
-    margin-left: 8px;
+    /* --- FIX: AESTHETIC ALIGNMENT --- */
+    padding: 6px;
+    background: rgba(0, 0, 0, 0.15); /* Subtle dimming instead of border line */
+    /* Removed border-left and margin-left to prevent "weird line" look */
 }
 
 /* --- Effect Group (Rack Module Style) --- */
@@ -402,8 +412,11 @@
     display: flex;
     flex-direction: column;
     gap: 3px;
-    padding-left: 8px;
-    border-left: 2px solid var(--color-border-dark);
+    /* --- FIX: REMOVED BORDER-LEFT --- */
+    padding: 4px;
+    background: rgba(0,0,0,0.2);
+    border-radius: var(--radius-sm);
+    /* -------------------------------- */
 }
 
 .patch-row {

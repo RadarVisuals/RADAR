@@ -89,24 +89,6 @@ export const EFFECT_MANIFEST = {
         }
     },
 
-    colorMatrix: {
-        label: 'Video Nasty (Color)',
-        params: {
-            threshold: { id: 'colorMatrix.threshold', label: '1-Bit Threshold', type: 'float', min: 0, max: 1.0, default: 0.0, hardMin: 0, hardMax: 1.0 },
-            invert:    { id: 'colorMatrix.invert',    label: 'Invert',          type: 'bool',  min: 0, max: 1,   default: 0 },
-        }
-    },
-
-    oldFilm: {
-        label: 'Old Film (Vintage)',
-        params: {
-            sepia:      { id: 'oldFilm.sepia',      label: 'Sepia',      type: 'float', min: 0, max: 1, default: 0.0, hardMin: 0, hardMax: 1.0 },
-            noise:      { id: 'oldFilm.noise',      label: 'Grain',      type: 'float', min: 0, max: 1, default: 0.0, hardMin: 0, hardMax: 1.0 },
-            scratch:    { id: 'oldFilm.scratch',    label: 'Scratches',  type: 'float', min: 0, max: 1, default: 0.0, hardMin: 0, hardMax: 1.0 },
-            vignetting: { id: 'oldFilm.vignetting', label: 'Vignette',   type: 'float', min: 0, max: 1, default: 0.0, hardMin: 0, hardMax: 1.0 },
-        }
-    },
-
     volumetric: {
         label: 'Volumetric Light',
         params: {
@@ -135,25 +117,6 @@ export const EFFECT_MANIFEST = {
             bands:      { id: 'adversarial.bands',      label: 'Bands',       type: 'float', min: 1, max: 64,  default: 24, hardMin: 1, hardMax: 128 },
             noiseScale: { id: 'adversarial.noiseScale', label: 'Noise Scale', type: 'float', min: 0.1, max: 12, default: 3.0, hardMin: 0.01, hardMax: 50 },
             chromatic:  { id: 'adversarial.chromatic',  label: 'RGB Split',   type: 'float', min: 0, max: 10,  default: 1.5, hardMin: 0, hardMax: 100 },
-        }
-    },
-
-    glitch: {
-        label: 'Slice Glitch',
-        params: {
-            slices:    { id: 'glitch.slices',    label: 'Slices',    type: 'int',   min: 0, max: 20,  default: 0, hardMin: 0, hardMax: 100 },
-            offset:    { id: 'glitch.offset',    label: 'Offset',    type: 'float', min: 0, max: 100, default: 20, hardMin: -500, hardMax: 500 },
-            direction: { id: 'glitch.direction', label: 'Direction', type: 'float', min: 0, max: 360, default: 0, hardMin: -3600, hardMax: 3600 },
-        }
-    },
-
-    twist: {
-        label: 'Void Vortex (Twist)',
-        params: {
-            radius: { id: 'twist.radius', label: 'Radius', type: 'float', min: 100, max: 1000, default: 400, hardMin: 10, hardMax: 5000 },
-            angle:  { id: 'twist.angle',  label: 'Force',  type: 'float', min: -10, max: 10,   default: 0.0, hardMin: -50, hardMax: 50 },
-            x:      { id: 'twist.x',      label: 'Center X', type: 'float', min: 0,   max: 1.0,  default: 0.5, hardMin: -2.0, hardMax: 3.0 },
-            y:      { id: 'twist.y',      label: 'Center Y', type: 'float', min: 0,   max: 1.0,  default: 0.5, hardMin: -2.0, hardMax: 3.0 }
         }
     },
 

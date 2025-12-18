@@ -31,8 +31,8 @@ const SIGNAL_SOURCES = [
 const CATEGORIES = {
     'Core Physics': ['layer1', 'layer2', 'layer3'],
     'Global': ['global', 'feedback'],
-    'Light & Color': ['bloom', 'volumetric', 'rgb', 'colorMatrix', 'oldFilm'],
-    'Distortion': ['glitch', 'adversarial', 'pixelate', 'twist', 'waveDistort', 'zoomBlur', 'shockwave'],
+    'Light & Color': ['bloom', 'volumetric', 'rgb'],
+    'Distortion': ['adversarial', 'pixelate', 'waveDistort', 'zoomBlur', 'shockwave'],
     'Texture & Geo': ['liquid', 'ascii', 'kaleidoscope', 'crt']
 };
 

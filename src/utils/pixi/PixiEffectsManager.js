@@ -3,14 +3,10 @@ import {
     AdvancedBloomFilter, 
     RGBSplitFilter, 
     PixelateFilter,
-    TwistFilter,
     ZoomBlurFilter,
     CRTFilter,
     ShockwaveFilter, 
-    GlitchFilter,
-    OldFilmFilter 
 } from 'pixi-filters';
-import { ColorMatrixFilter } from 'pixi.js';
 import { 
     VolumetricLightFilter, 
     LiquidFilter, 
@@ -25,18 +21,15 @@ export class PixiEffectsManager {
     constructor() {
         this.filters = {
             bloom: null, rgb: null, pixelate: null,
-            twist: null, zoomBlur: null,
+            zoomBlur: null,
             crt: null, kaleidoscope: null,
             volumetric: null, waveDistort: null, liquid: null,
-            shockwave: null, glitch: null,
+            shockwave: null,
             adversarial: null,
             ascii: null,
-            oldFilm: null, 
-            colorMatrix: null,
             feedback: null 
         };
 
-        this.colorMatrixState = { threshold: 0, invert: 0 };
         this._activeOneShotEffects = [];
         this.screen = null;
         this.res = 1;
@@ -68,15 +61,6 @@ export class PixiEffectsManager {
                 if (val > 0.1 && !filter.enabled) filter.enabled = true;
             },
             
-            // Twist: Convert normalized coords + Auto Enable
-            'twist.x': (filter, val) => { filter.offset.x = val * this.screen.width; },
-            'twist.y': (filter, val) => { filter.offset.y = val * this.screen.height; },
-            'twist.angle': (filter, val) => {
-                filter.angle = val;
-                // Auto-enable if there is a visible twist
-                if (Math.abs(val) > 0.1 && !filter.enabled) filter.enabled = true;
-            },
-
             // ZoomBlur: Auto Enable
             'zoomBlur.strength': (filter, val) => {
                 filter.strength = val;
@@ -89,10 +73,6 @@ export class PixiEffectsManager {
                 filter.sides = val;
                 filter.enabled = val > 0;
             },
-
-            // Color Matrix: Local State
-            'colorMatrix.threshold': (_, val) => { this.colorMatrixState.threshold = val; },
-            'colorMatrix.invert': (_, val) => { this.colorMatrixState.invert = val; },
         };
     }
 
@@ -105,7 +85,6 @@ export class PixiEffectsManager {
             case 'bloom': this.filters.bloom = new AdvancedBloomFilter({ threshold: 0.5, bloomScale: 1.0, brightness: 1.0, blur: 8, quality: 5, resolution: res }); break;
             case 'rgb': this.filters.rgb = new RGBSplitFilter({ red: {x:0,y:0}, green: {x:0,y:0}, blue: {x:0,y:0}, resolution: res }); break;
             case 'pixelate': this.filters.pixelate = new PixelateFilter(1); this.filters.pixelate.resolution = res; break;
-            case 'twist': this.filters.twist = new TwistFilter({ radius: 400, angle: 4, padding: 20, resolution: res }); break;
             case 'zoomBlur': this.filters.zoomBlur = new ZoomBlurFilter({ strength: 0.1, innerRadius: 50, resolution: res }); break;
             case 'crt': this.filters.crt = new CRTFilter({ curvature: 0, lineWidth: 0, lineContrast: 0, noise: 0, vignetting: 0, vignettingAlpha: 0, resolution: res }); break;
             case 'kaleidoscope': this.filters.kaleidoscope = new KaleidoscopeFilter(); this.filters.kaleidoscope.resolution = res; break;
@@ -114,10 +93,7 @@ export class PixiEffectsManager {
             case 'liquid': this.filters.liquid = new LiquidFilter(); break;
             case 'adversarial': this.filters.adversarial = new AdversarialGlitchFilter(); break;
             case 'ascii': this.filters.ascii = new AsciiFilter(); break;
-            case 'colorMatrix': this.filters.colorMatrix = new ColorMatrixFilter(); break;
             case 'shockwave': this.filters.shockwave = new ShockwaveFilter({ center: { x: 0, y: 0 }, speed: 500, amplitude: 30, wavelength: 160, radius: -1 }); break;
-            case 'glitch': this.filters.glitch = new GlitchFilter({ slices: 10, offset: 10, direction: 0, fillMode: 2 }); break;
-            case 'oldFilm': this.filters.oldFilm = new OldFilmFilter({ sepia: 0, noise: 0, scratch: 0, vignetting: 0 }, 0); break;
         }
 
         if (this.filters[name]) {
@@ -185,34 +161,6 @@ export class PixiEffectsManager {
             this.filters.adversarial.seed = Math.random(); 
         }
 
-        if (this.filters.oldFilm?.enabled) {
-            this.filters.oldFilm.seed = Math.random();
-            this.filters.oldFilm.time += ticker.deltaTime * 0.1;
-        }
-
-        if (this.filters.glitch?.enabled) {
-            this.filters.glitch.seed = Math.random();
-        }
-
-        if (this.filters.colorMatrix) {
-            const cm = this.filters.colorMatrix;
-            const { threshold, invert } = this.colorMatrixState;
-            
-            if (threshold > 0.01 || invert > 0.5) {
-                cm.enabled = true;
-                cm.reset(); 
-                if (threshold > 0.01) {
-                    cm.desaturate();
-                    cm.contrast(threshold * 5, false); 
-                }
-                if (invert > 0.5) {
-                    cm.negative(false);
-                }
-            } else {
-                cm.enabled = false;
-            }
-        }
-
         const logicalW = renderer.width / renderer.resolution;
         const logicalH = renderer.height / renderer.resolution;
         
@@ -236,13 +184,6 @@ export class PixiEffectsManager {
             filter.enabled = true;
             this._activeOneShotEffects.push({ type: 'shockwave', startTime: now, duration, maxRadius, filter });
         }
-        else if (type === 'glitch') {
-            const filter = this.ensureFilter('glitch');
-            filter.enabled = true;
-            filter.slices = config.slices || 15;
-            filter.offset = config.offset || 50;
-            this._activeOneShotEffects.push({ type: 'glitch', startTime: now, duration: config.duration || 600, filter });
-        }
         else if (type === 'bloomFlash') {
             const filter = this.ensureFilter('bloom');
             if (!filter.enabled) { filter.enabled = true; filter._wasDisabled = true; }
@@ -264,10 +205,6 @@ export class PixiEffectsManager {
                     const fade = (1.0 - progress) / 0.2;
                     effect.filter.amplitude = fade * 30;
                 }
-            }
-            else if (effect.type === 'glitch') {
-                effect.filter.seed = Math.random();
-                effect.filter.offset = (1.0 - progress) * 50;
             }
             else if (effect.type === 'bloomFlash') {
                 const current = lerp(effect.peakIntensity, effect.baseIntensity, progress);
