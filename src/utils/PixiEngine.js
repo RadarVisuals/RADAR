@@ -9,9 +9,8 @@ import { FeedbackSystem } from './pixi/systems/FeedbackSystem';
 import { LayerManager } from './pixi/systems/LayerManager';
 import { CrossfaderSystem } from './pixi/systems/CrossfaderSystem.js';
 
-import { ModulationEngine } from './ModulationEngine';
-import { LFO } from './LFO';
-import { EventSignalGenerator } from './EventSignalGenerator';
+// --- NEW IMPORT ---
+import { LogicController } from './LogicController';
 
 export default class PixiEngine {
   constructor(canvasElement) {
@@ -20,10 +19,10 @@ export default class PixiEngine {
     this.isReady = false;
     this._isDestroyed = false;
 
-    this.modulationEngine = new ModulationEngine();
-    this.lfo = new LFO();
-    this.eventSignalGenerator = new EventSignalGenerator();
+    // --- LOGIC CONTROLLER (The Brain) ---
+    this.logic = new LogicController();
 
+    // --- RENDER SYSTEMS (The Body) ---
     this.effectsManager = new PixiEffectsManager();
     this.audioReactor = new AudioReactor();
     
@@ -36,21 +35,12 @@ export default class PixiEngine {
     this.renderTexture = null;
     this.projectionMesh = null;
     
-    // Zero-allocation signal container
-    this._signals = {
-        'audio.bass': 0, 'audio.mid': 0, 'audio.treble': 0, 'audio.level': 0,
-        'lfo.slow.sine': 0, 'lfo.mid.sine': 0, 'lfo.fast.sine': 0,
-        'lfo.slow.saw': 0, 'lfo.fast.saw': 0,
-        'lfo.pulse': 0, 'lfo.chaos': 0,
-        'event.any': 0
-    };
-    
     this._resizeHandler = this.handleResize.bind(this);
     this._updateLoop = this.update.bind(this);
     
     this._onEventTrigger = (data) => {
-        if(this.eventSignalGenerator) {
-            this.eventSignalGenerator.trigger(data.type);
+        if(this.logic) {
+            this.logic.triggerEvent(data.type);
         }
     };
   }
@@ -92,25 +82,22 @@ export default class PixiEngine {
     
     SignalBus.on('event:trigger', this._onEventTrigger);
     
+    // --- SYNC INITIAL STATE TO LOGIC CONTROLLER ---
     const state = useEngineStore.getState();
     if (state.baseValues) {
         Object.entries(state.baseValues).forEach(([fullId, value]) => {
-            this.modulationEngine.setBaseValue(fullId, value);
+            this.logic.setBaseValue(fullId, value);
         });
     }
     if (state.patches) {
         state.patches.forEach(patch => {
-            this.modulationEngine.addPatch(patch.source, patch.target, patch.amount);
+            this.logic.addPatch(patch.source, patch.target, patch.amount);
         });
     }
 
-    const lfoData = this.lfo.update();
-    Object.assign(this._signals, lfoData);
-    
-    const eventData = this.eventSignalGenerator.update(0);
-    Object.assign(this._signals, eventData);
-
-    const initialParams = this.modulationEngine.compute(this._signals);
+    // Run one logic cycle to initialize visual state
+    const audioData = { level: 0, frequencyBands: { bass: 0, mid: 0, treble: 0 } };
+    const initialParams = this.logic.update(0, audioData);
     
     if (this.feedbackSystem && initialParams['feedback.enabled'] !== undefined) {
         this.feedbackSystem.updateConfig('enabled', initialParams['feedback.enabled'] > 0.5);
@@ -146,7 +133,6 @@ export default class PixiEngine {
     if (this.layerManager) this.layerManager.resize();
   }
 
-  // --- NEW: Fade Command exposed to React ---
   fadeTo(targetValue, duration, onComplete) {
       if (this.crossfaderSystem) {
           this.crossfaderSystem.fadeTo(targetValue, duration, onComplete);
@@ -163,14 +149,17 @@ export default class PixiEngine {
       if (this.crossfaderSystem) this.crossfaderSystem.crossfadeValue = value; 
   }
   
-  setModulationValue(paramId, value) {
-      this.modulationEngine.setBaseValue(paramId, value);
-  }
-
-  addModulationPatch(source, target, amount) { this.modulationEngine.addPatch(source, target, amount); }
-  removeModulationPatch(patchId) { this.modulationEngine.removePatch(patchId); }
-  clearModulationPatches() { this.modulationEngine.clearAllPatches(); }
+  // --- PROXY METHODS TO LOGIC CONTROLLER ---
+  setModulationValue(paramId, value) { this.logic.setBaseValue(paramId, value); }
+  addModulationPatch(source, target, amount) { this.logic.addPatch(source, target, amount); }
+  removeModulationPatch(patchId) { this.logic.removePatch(patchId); }
+  clearModulationPatches() { this.logic.clearPatches(); }
   
+  // --- EXPOSE MODULATION ENGINE FOR CONTEXT (Backwards Compatibility) ---
+  // The VisualEngineContext accesses engine.modulationEngine directly in some reset logic
+  get modulationEngine() { return this.logic.modulationEngine; }
+  get lfo() { return this.logic.lfo; }
+
   async setTexture(layerId, deckSide, imageSrc, tokenId) {
       if (this.layerManager) await this.layerManager.setTexture(layerId, deckSide, imageSrc, tokenId);
   }
@@ -208,39 +197,23 @@ export default class PixiEngine {
       }
   }
 
+  // --- MAIN RENDER LOOP ---
   update(ticker) {
     if (this._isDestroyed) return;
 
     const now = performance.now();
     const deltaTime = ticker.deltaTime * 0.01666; 
 
-    const lfoSignals = this.lfo.update();
-    for (const key in lfoSignals) {
-        this._signals[key] = lfoSignals[key];
-    }
-
+    // 1. GET AUDIO DATA
     const audioData = this.audioReactor.getAudioData();
-    this._signals['audio.bass'] = audioData.frequencyBands.bass;
-    this._signals['audio.mid'] = audioData.frequencyBands.mid;
-    this._signals['audio.treble'] = audioData.frequencyBands.treble;
-    this._signals['audio.level'] = audioData.level;
 
-    const eventSignals = this.eventSignalGenerator.update(deltaTime);
-    for (const key in eventSignals) {
-        this._signals[key] = eventSignals[key];
-    }
+    // 2. COMPUTE LOGIC (The Brain)
+    const finalParams = this.logic.update(ticker.deltaTime, audioData);
 
-    // --- ADDED: EMIT RAW SIGNALS FOR DEBUGGER ---
-    if (import.meta.env.DEV) {
-        SignalBus.emit('signals:update', this._signals);
-    }
-    // --------------------------------------------
+    // 3. APPLY TO RENDER SYSTEMS (The Body)
 
-    const finalParams = this.modulationEngine.compute(this._signals);
-    SignalBus.emit('modulation:update', finalParams);
-
-    // --- Priority Logic for Crossfader ---
-    if (this.modulationEngine.patches.some(p => p.target === 'global.crossfader')) {
+    // A. Crossfader Priority Override
+    if (this.logic.modulationEngine.patches.some(p => p.target === 'global.crossfader')) {
         if (finalParams['global.crossfader'] !== undefined) {
             const modValue = Math.max(0, Math.min(1, finalParams['global.crossfader']));
             this.crossfaderSystem.crossfadeValue = modValue;
@@ -248,19 +221,21 @@ export default class PixiEngine {
         }
     }
 
+    // B. Effects
     this.effectsManager.applyValues(finalParams);
     
+    // C. Layer Physics
     if (this.layerManager) {
         this.layerManager.applyModulations(finalParams);
     }
     
+    // D. Feedback
     let isFeedbackOn = false;
     if (this.feedbackSystem) {
         if (finalParams['feedback.enabled'] !== undefined) { 
             const isEnabled = finalParams['feedback.enabled'] > 0.5;
             this.feedbackSystem.updateConfig('enabled', isEnabled); 
         }
-        // --- UPDATED: replaced shake with sway, added chroma ---
         ['amount', 'scale', 'rotation', 'xOffset', 'yOffset', 'hueShift', 'satShift', 'contrast', 'sway', 'chroma', 'invert', 'renderOnTop'].forEach(p => {
             if (finalParams[`feedback.${p}`] !== undefined) {
                 this.feedbackSystem.updateConfig(p, finalParams[`feedback.${p}`]);
@@ -269,6 +244,7 @@ export default class PixiEngine {
         isFeedbackOn = this.feedbackSystem.config.enabled;
     }
 
+    // 4. SCENE GRAPH MANAGEMENT
     if (this.layerManager) {
         const mainGroup = this.layerManager.mainLayerGroup;
         this.rootContainer.filters = this.effectsManager.getFilterList();
@@ -294,9 +270,11 @@ export default class PixiEngine {
         }
     }
 
+    // 5. UPDATE SYSTEMS
     this.effectsManager.update(ticker, this.app.renderer);
     this.crossfaderSystem.update(deltaTime, now, this.app.screen);
 
+    // 6. RENDER
     if (isFeedbackOn) {
         this.feedbackSystem.render(this.layerManager.mainLayerGroup);
     } 

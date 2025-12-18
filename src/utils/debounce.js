@@ -1,38 +1,56 @@
 // src/utils/debounce.js
 
 /**
- * Creates a debounced function that delays invoking the provided function (`func`)
- * until `wait` milliseconds have elapsed since the last time the debounced function
- * was invoked. Useful for limiting the rate at which a function fires, e.g.,
- * on window resize or input events. The debounced function is invoked with the
- * arguments and `this` context of the last call.
+ * Creates a debounced function that delays invoking `func` until `wait` ms have elapsed.
+ * Includes a `flush()` method to execute any pending call immediately.
  *
  * @param {Function} func The function to debounce.
  * @param {number} wait The number of milliseconds to delay execution.
- * @returns {(...args: any[]) => void} The new debounced function.
+ * @returns {Function & { flush: () => void, cancel: () => void }}
  */
 function debounce(func, wait) {
-  /** @type {ReturnType<typeof setTimeout> | null} */
   let timeout = null;
+  let args = null;
+  let context = null;
 
-  /**
-   * The debounced version of the input function.
-   * @param  {...any} args Arguments to pass to the original function.
-   */
-  return function executedFunction(...args) {
-    // `this` context will be preserved from where `executedFunction` is called.
-    const context = this;
+  function executedFunction(...params) {
+    context = this;
+    args = params;
 
     const later = () => {
-      timeout = null; // Indicate debounce ended, allowing next call to set a new timeout
-      func.apply(context, args); // Execute original function with preserved context and arguments
+      timeout = null;
+      if (args) {
+        func.apply(context, args);
+        context = args = null;
+      }
     };
 
     if (timeout !== null) {
-      clearTimeout(timeout); // Clear previous timer if one was set
+      clearTimeout(timeout);
     }
-    timeout = setTimeout(later, wait); // Set new timer
+    timeout = setTimeout(later, wait);
+  }
+
+  executedFunction.cancel = () => {
+    if (timeout !== null) {
+      clearTimeout(timeout);
+      timeout = null;
+      context = args = null;
+    }
   };
+
+  executedFunction.flush = () => {
+    if (timeout !== null) {
+      clearTimeout(timeout);
+      timeout = null;
+      if (args) {
+        func.apply(context, args);
+        context = args = null;
+      }
+    }
+  };
+
+  return executedFunction;
 }
 
 export default debounce;

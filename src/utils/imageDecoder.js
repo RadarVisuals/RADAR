@@ -51,9 +51,16 @@ class ImageBitmapCache {
     const val = this.map.get(key);
     if (val) {
       // CRITICAL: Release GPU memory immediately
-      if (typeof val.close === 'function') {
-        val.close();
+      // ImageBitmap.close() is essential for WebGL performance stability
+      try {
+        if (typeof val.close === 'function') {
+          val.close();
+        }
+      } catch (e) {
+        // Ignore errors if already closed or not supported
+        if (import.meta.env.DEV) console.warn("Error closing ImageBitmap:", e);
       }
+      
       this.map.delete(key);
       if (import.meta.env.DEV) {
         console.log(`[ImageDecoder] Evicted & Closed texture: ${key.slice(-20)}`);
@@ -103,6 +110,7 @@ export const getDecodedImage = (src) => {
 
     img.onload = async () => {
       try {
+        // createImageBitmap is much faster than standard texture uploads and doesn't block the main thread as much
         const imageBitmap = await createImageBitmap(img);
         decodedImageCache.set(src, imageBitmap); // Store in LRU
         resolve(imageBitmap);

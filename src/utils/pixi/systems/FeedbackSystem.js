@@ -1,6 +1,6 @@
 // src/utils/pixi/systems/FeedbackSystem.js
 import { RenderTexture, Sprite, ColorMatrixFilter } from 'pixi.js';
-import { RGBSplitFilter } from 'pixi-filters'; // Import RGBSplit
+import { RGBSplitFilter } from 'pixi-filters';
 import { useEngineStore } from '../../../store/useEngineStore';
 
 export class FeedbackSystem {
@@ -18,8 +18,8 @@ export class FeedbackSystem {
             hueShift: 0,
             satShift: 0,
             contrast: 0,
-            sway: 0, // Replaces shake
-            chroma: 0, // New
+            sway: 0, 
+            chroma: 0,
             invert: false,
             renderOnTop: false 
         };
@@ -31,7 +31,7 @@ export class FeedbackSystem {
         this.displaySprite = null;
         
         this.colorMatrix = new ColorMatrixFilter();
-        this.rgbFilter = new RGBSplitFilter({ red: {x:0, y:0}, green: {x:0, y:0}, blue: {x:0, y:0} }); // Initialize Chroma Filter
+        this.rgbFilter = new RGBSplitFilter({ red: {x:0, y:0}, green: {x:0, y:0}, blue: {x:0, y:0} });
         
         this.isInitialized = false;
         
@@ -44,7 +44,10 @@ export class FeedbackSystem {
         if (!this.app || !this.app.renderer) return;
 
         const { width, height } = this.app.screen;
-        const res = this.app.renderer.resolution;
+        
+        // PERFORMANCE OPTIMIZATION: Cap feedback resolution to 1.0
+        // Feedback loops accumulate noise, high resolution is wasted VRAM/Fillrate here.
+        const res = Math.min(this.app.renderer.resolution, 1.0);
 
         if (this.buffers.length > 0) {
             this.buffers.forEach(b => b.destroy(true));
@@ -194,7 +197,6 @@ export class FeedbackSystem {
             // 4. Prepare Source for Rendering (Apply Glitch to Source too!)
             const originalFilters = sourceContainer.filters || [];
             
-            // We apply both ColorMatrix AND Chroma to the source so it matches the tunnel style immediately
             const activeFilters = [];
             const hasColorGlitch = Math.abs(hueShift) > 0.001 || Math.abs(satShift) > 0.001 || contrast > 0.001 || invert;
             const hasChromaGlitch = Math.abs(chroma) > 0.001;

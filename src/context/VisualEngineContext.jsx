@@ -17,6 +17,7 @@ function usePrevious(value) {
 }
 
 export const VisualEngineProvider = ({ children }) => {
+    // ... [Keep existing ProjectStore selections]
     const { 
         stagedWorkspace: stagedActiveWorkspace, 
         activeSceneName, 
@@ -46,6 +47,11 @@ export const VisualEngineProvider = ({ children }) => {
     const managerInstancesRef = useRef(null);
     const canvasUpdateFnsRef = useRef({});
     
+    // --- REFS FOR FLUSHING ---
+    // We need refs to access the debounced functions from outside
+    const debouncedSetEffectBaseValueRef = useRef(null);
+    const debouncedAddPatchRef = useRef(null);
+
     const registerManagerInstancesRef = useCallback((ref) => { managerInstancesRef.current = ref; }, []);
     const registerCanvasUpdateFns = useCallback((fns) => { canvasUpdateFnsRef.current = fns; }, []);
 
@@ -57,7 +63,6 @@ export const VisualEngineProvider = ({ children }) => {
     }, []);
 
     // --- SYNC MODULATION LOAD (HOT SWAP) ---
-    // This connects the ProjectStore's load action to the PixiEngine's internals
     useEffect(() => {
         const unsub = useEngineStore.subscribe(
             (state) => state.modulationLoadNonce,
@@ -66,17 +71,15 @@ export const VisualEngineProvider = ({ children }) => {
                 const store = useEngineStore.getState();
                 
                 if (engine) {
-                    // 1. Wipe existing wires in the Engine
+                    // Engine method names updated to match LogicController proxy
                     engine.clearModulationPatches();
                     
-                    // 2. Apply Base Values (The positions of the sliders)
                     if (store.baseValues) {
                         Object.entries(store.baseValues).forEach(([key, val]) => {
                             engine.setModulationValue(key, val);
                         });
                     }
                     
-                    // 3. Re-connect wires (The Patches)
                     if (store.patches) {
                         store.patches.forEach(p => {
                             engine.addModulationPatch(p.source, p.target, p.amount);
@@ -88,19 +91,16 @@ export const VisualEngineProvider = ({ children }) => {
         return () => unsub();
     }, []);
 
-    // --- LISTEN FOR DOCKING EVENTS (The DJ Logic) ---
+    // --- LISTEN FOR DOCKING EVENTS ---
     useEffect(() => {
         const handleDock = (side) => {
             const store = useEngineStore.getState();
-            
-            // Ignore if auto-fading (sequencer handles this)
             if (store.isAutoFading) return;
 
             const visibleDeckKey = side === 'A' ? 'sideA' : 'sideB';
             const visibleConfig = store[visibleDeckKey]?.config;
             
             if (visibleConfig?.name) {
-                // Update React State to reflect visibility
                 if (useProjectStore.getState().activeSceneName !== visibleConfig.name) {
                     setActiveSceneName(visibleConfig.name);
                 }
@@ -121,7 +121,6 @@ export const VisualEngineProvider = ({ children }) => {
         const store = useEngineStore.getState();
         const isStoreEmpty = !store.sideA.config && !store.sideB.config;
 
-        // 1. Initial Load Fallback
         if (initialLoadJustFinished || (isFullyLoaded && isStoreEmpty)) {
             if (!isLoading && (!fullSceneList || fullSceneList.length === 0)) {
                 const baseScene = { 
@@ -160,33 +159,26 @@ export const VisualEngineProvider = ({ children }) => {
                 }
             }
         } 
-        // 2. Active Scene Changed (Clicked in list OR Arrived via Crossfader)
         else if ((sceneNameChanged || sceneListChanged) && isFullyLoaded && !store.isAutoFading) {
             if (!activeSceneName || !fullSceneList || fullSceneList.length === 0) return;
             
             const currentSideA = store.sideA.config;
             const currentSideB = store.sideB.config;
 
-            // Determine where the active scene currently lives
             const isOnDeckA = currentSideA?.name === activeSceneName;
             const isOnDeckB = currentSideB?.name === activeSceneName;
 
-            // Scenario A: User clicked a scene that is NOT on either deck.
             if (!isOnDeckA && !isOnDeckB) {
                 const newActiveSceneData = fullSceneList.find(scene => scene.name === activeSceneName);
                 if (!newActiveSceneData) return;
 
-                // Load onto the INACTIVE deck (the one hidden by crossfader)
                 const activeDeckIsA = renderedValueRef.current < 0.5;
-                const deckToSet = activeDeckIsA ? 'B' : 'A'; // Load on inactive
+                const deckToSet = activeDeckIsA ? 'B' : 'A';
                 store.setDeckConfig(deckToSet, JSON.parse(JSON.stringify(newActiveSceneData)));
                 return;
             }
 
-            // Scenario B: Progressive Loading (Pre-load the NEXT scene)
             let targetDeckForNext = null;
-            
-            // Prioritize A if both match, otherwise pick the one that matches
             if (isOnDeckA) targetDeckForNext = 'B';
             else if (isOnDeckB) targetDeckForNext = 'A';
 
@@ -196,10 +188,8 @@ export const VisualEngineProvider = ({ children }) => {
                 
                 const nextIndex = (currentIndex + 1) % fullSceneList.length;
                 const nextSceneData = fullSceneList[nextIndex];
-                
                 const currentTargetConfig = targetDeckForNext === 'A' ? currentSideA : currentSideB;
                 
-                // Only load if not already there
                 if (currentTargetConfig?.name !== nextSceneData.name) {
                     const engine = managerInstancesRef.current?.current?.engine;
                     if (engine) {
@@ -335,6 +325,7 @@ export const VisualEngineProvider = ({ children }) => {
         useEngineStore.getState().setDeckConfig(activeDeck === 'A' ? 'B' : 'A', JSON.parse(JSON.stringify(scene)));
     }, [fullSceneList]);
 
+    // --- CONTEXT VALUE ---
     const contextValue = useMemo(() => ({
         handleSceneSelect,
         updateLayerConfig,
@@ -353,7 +344,10 @@ export const VisualEngineProvider = ({ children }) => {
             state.setRenderedCrossfader(val); 
             SignalBus.emit('crossfader:set', val);
             state.setEffectBaseValue('global.crossfader', val); 
-        }
+        },
+        // EXPOSE REFS FOR FLUSHING
+        debouncedSetEffectBaseValueRef,
+        debouncedAddPatchRef
     }), [
         handleSceneSelect,
         updateLayerConfig,
@@ -384,27 +378,24 @@ export const useVisualEngineContext = () => {
         transitionMode: state.transitionMode,
         baseValues: state.baseValues,
         patches: state.patches,
-        lfoSettings: state.lfoSettings // Added here
+        lfoSettings: state.lfoSettings
     })));
     
     const storeActions = useEngineStore.getState();
 
-    // --- DEBOUNCED UPDATERS FOR STORE ---
-    // These functions update the Zustand store (and thus React) but are debounced
-    // to prevent thrashing during high-frequency slider dragging.
-    
     const markAsDirty = () => useProjectStore.setState({ hasPendingChanges: true });
 
-    // Memoize the debounced functions so they persist across renders
-    const debouncedSetEffectBaseValue = useMemo(
+    // --- DEBOUNCED UPDATERS FOR STORE ---
+    // Memoized with references stored in Context for global access if needed
+    context.debouncedSetEffectBaseValueRef.current = useMemo(
         () => debounce((paramId, value) => {
             storeActions.setEffectBaseValue(paramId, value);
             markAsDirty();
-        }, 300), // 300ms debounce
+        }, 300),
         [storeActions]
     );
 
-    const debouncedAddPatch = useMemo(
+    context.debouncedAddPatchRef.current = useMemo(
         () => debounce((source, target, amount) => {
             storeActions.addPatch(source, target, amount);
             markAsDirty();
@@ -420,20 +411,21 @@ export const useVisualEngineContext = () => {
         if (engine) engine.setModulationValue(paramId, value);
         
         // 2. SLOW PATH: Debounced Store Update
-        debouncedSetEffectBaseValue(paramId, value);
-    }, [context.managerInstancesRef, debouncedSetEffectBaseValue]);
+        if (context.debouncedSetEffectBaseValueRef.current) {
+            context.debouncedSetEffectBaseValueRef.current(paramId, value);
+        }
+    }, [context.managerInstancesRef]);
 
     const addPatchWrapper = useCallback((source, target, amount) => {
-        // 1. FAST PATH: Update Engine Immediately
         const engine = context.managerInstancesRef.current?.current?.engine;
         if (engine) engine.addModulationPatch(source, target, amount);
         
-        // 2. SLOW PATH: Debounced Store Update
-        debouncedAddPatch(source, target, amount);
-    }, [context.managerInstancesRef, debouncedAddPatch]);
+        if (context.debouncedAddPatchRef.current) {
+            context.debouncedAddPatchRef.current(source, target, amount);
+        }
+    }, [context.managerInstancesRef]);
 
     const removePatchWrapper = useCallback((patchId) => {
-        // Immediate update for removal (user click)
         storeActions.removePatch(patchId);
         const engine = context.managerInstancesRef.current?.current?.engine;
         if (engine) engine.removeModulationPatch(patchId);
@@ -441,31 +433,36 @@ export const useVisualEngineContext = () => {
     }, [context.managerInstancesRef, storeActions]);
 
     const clearPatchesWrapper = useCallback(() => {
-        // Immediate update for clear (user click)
         storeActions.clearAllPatches();
         const engine = context.managerInstancesRef.current?.current?.engine;
         if (engine) engine.clearModulationPatches();
         markAsDirty();
     }, [context.managerInstancesRef, storeActions]);
 
-    // --- NEW: Reset Knobs Wrapper ---
     const resetBaseValuesWrapper = useCallback(() => {
         storeActions.resetBaseValues();
         const engine = context.managerInstancesRef.current?.current?.engine;
-        if (engine) engine.modulationEngine.resetToDefaults();
+        if (engine && engine.modulationEngine) engine.modulationEngine.resetToDefaults();
         markAsDirty();
     }, [context.managerInstancesRef, storeActions]);
 
     const setLfoSettingWrapper = useCallback((lfoId, param, value) => {
-        // LFO settings are usually sliders too, but less frequent. 
-        // For consistency, we could debounce, but direct is okay for now 
-        // as they aren't as heavy as the matrix patches.
         storeActions.setLfoSetting(lfoId, param, value);
         const engine = context.managerInstancesRef.current?.current?.engine;
         if (engine && engine.lfo) {
             engine.lfo.setConfig(lfoId, param, value);
         }
     }, [context.managerInstancesRef, storeActions]);
+
+    // --- NEW: FLUSH FUNCTION ---
+    const flushPendingUpdates = useCallback(() => {
+        if (context.debouncedSetEffectBaseValueRef.current?.flush) {
+            context.debouncedSetEffectBaseValueRef.current.flush();
+        }
+        if (context.debouncedAddPatchRef.current?.flush) {
+            context.debouncedAddPatchRef.current.flush();
+        }
+    }, []);
 
     return {
         ...context,
@@ -483,14 +480,16 @@ export const useVisualEngineContext = () => {
         handleCrossfaderChange: context.handleCrossfaderChange, 
         handleCrossfaderCommit: storeActions.setCrossfader,
         
-        setModulationValue: setModulationValueWrapper, // Debounced
-        addPatch: addPatchWrapper, // Debounced
+        setModulationValue: setModulationValueWrapper,
+        addPatch: addPatchWrapper,
         
         toggleTransitionMode: () => storeActions.setTransitionMode(storeState.transitionMode === 'crossfade' ? 'flythrough' : 'crossfade'),
         
         removePatch: removePatchWrapper,
         clearAllPatches: clearPatchesWrapper,
-        resetBaseValues: resetBaseValuesWrapper, // New export
-        setLfoSetting: setLfoSettingWrapper
+        resetBaseValues: resetBaseValuesWrapper,
+        setLfoSetting: setLfoSettingWrapper,
+        
+        flushPendingUpdates // Expose to UI
     };
 };
