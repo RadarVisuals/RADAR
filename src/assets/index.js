@@ -52,3 +52,4 @@ export { default as setsIcon } from './sets.webp';
 export { default as R } from './R.webp';
 export { default as parallaxIcon } from './parallax.webp';
 export { default as fxIcon } from './FX.webp';
+export const projectorIcon = `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9ImN1cnJlbnRDb2xvciIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxyZWN0IHg9IjIiIHk9IjgiIHdpZHRoPSIyMCIgaGVpZ2h0PSIxMCIgcng9IjIiLz48Y2lyY2xlIGN4PSIxNyIgY3k9IjEzIiByPSIyIi8+PHBhdGggZD0iTTcgMTNoLjAxTTExIDEzaC4wMU0yIDEydjJNMTQgMTJoMiIvPjwvc3ZnPg==`;

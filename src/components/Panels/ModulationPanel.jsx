@@ -30,10 +30,10 @@ const SIGNAL_SOURCES = [
 
 const CATEGORIES = {
     'Core Physics': ['layer1', 'layer2', 'layer3'],
-    'Global': ['global', 'feedback'],
+    'Global': ['feedback'],
     'Light & Color': ['bloom', 'volumetric', 'rgb'],
     'Distortion': ['adversarial', 'pixelate', 'waveDistort', 'zoomBlur', 'shockwave'],
-    'Texture & Geo': ['liquid', 'ascii', 'kaleidoscope', 'crt']
+    'Texture & Geo': ['liquid', 'ascii', 'kaleidoscope']
 };
 
 // --- SUB-COMPONENTS ---
@@ -111,9 +111,14 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
     const visualizerRef = useRef(null);
     const valueDisplayRef = useRef(null);
 
+    // Determine if this parameter supports modulation
+    // We only allow modulation on Floats (Sliders) and Ints (Steppers)
+    // Booleans (Toggles) and Selects (Dropdowns) are excluded.
+    const isModulatable = def.type === 'float' || def.type === 'int';
+
     // Live Modulation Feedback (Zero-Render)
     useEffect(() => {
-        if (def.type !== 'float' && def.type !== 'int') return;
+        if (!isModulatable) return;
 
         const handleUpdate = (allValues) => {
             const liveValue = allValues[paramId];
@@ -146,7 +151,7 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
 
         const unsubscribe = SignalBus.on('modulation:update', handleUpdate);
         return () => unsubscribe();
-    }, [paramId, def]);
+    }, [paramId, def, isModulatable]);
 
     const handleAddClick = () => {
         if (!selectedSource) return;
@@ -213,17 +218,18 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
         <div className="param-block">
             <div className="param-header">
                 <span className="param-name" title={paramId}>{def.label}</span>
-                {(def.type === 'float' || def.type === 'int') ? (
+                {/* Only show numeric value for modulatable types */}
+                {isModulatable && (
                     <span ref={valueDisplayRef} className="param-value-display">
                         {Number(currentValue).toFixed(def.type === 'int' ? 0 : 2)}
                     </span>
-                ) : null}
+                )}
             </div>
             
             <div className="param-control-row">{renderInput()}</div>
 
-            {/* List of active modulations for this param */}
-            {myPatches.length > 0 && (
+            {/* List of active modulations for this param - ONLY IF MODULATABLE */}
+            {isModulatable && myPatches.length > 0 && (
                 <div className="active-patches">
                     {myPatches.map(patch => (
                         <div key={patch.id} className="patch-row">
@@ -248,30 +254,32 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
                 </div>
             )}
 
-            {/* Add New Patch Dropdown */}
-            <div className="add-patch-ui">
-                <select 
-                    className="custom-select source-select" 
-                    value={selectedSource} 
-                    onChange={(e) => setSelectedSource(e.target.value)}
-                >
-                    {SIGNAL_SOURCES.map((group, idx) => (
-                        group.options ? (
-                            <optgroup key={idx} label={group.label}>
-                                {group.options.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                            </optgroup>
-                        ) : <option key={idx} value={group.value}>{group.label}</option>
-                    ))}
-                </select>
-                <button 
-                    className="btn-add-patch" 
-                    onClick={handleAddClick} 
-                    disabled={!selectedSource} 
-                    title="Add Connection"
-                >
-                    +
-                </button>
-            </div>
+            {/* Add New Patch Dropdown - ONLY IF MODULATABLE */}
+            {isModulatable && (
+                <div className="add-patch-ui">
+                    <select 
+                        className="custom-select source-select" 
+                        value={selectedSource} 
+                        onChange={(e) => setSelectedSource(e.target.value)}
+                    >
+                        {SIGNAL_SOURCES.map((group, idx) => (
+                            group.options ? (
+                                <optgroup key={idx} label={group.label}>
+                                    {group.options.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                                </optgroup>
+                            ) : <option key={idx} value={group.value}>{group.label}</option>
+                        ))}
+                    </select>
+                    <button 
+                        className="btn-add-patch" 
+                        onClick={handleAddClick} 
+                        disabled={!selectedSource} 
+                        title="Add Connection"
+                    >
+                        +
+                    </button>
+                </div>
+            )}
         </div>
     );
 };
@@ -295,7 +303,7 @@ const ModulationPanel = ({ onClose }) => {
         addPatch, removePatch, 
         lfoSettings, setLfoSetting,
         clearAllPatches,
-        resetBaseValues // <--- Import the new function
+        resetBaseValues 
     } = useVisualEngineContext();
     
     // Categorize Effects

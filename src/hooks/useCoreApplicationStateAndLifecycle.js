@@ -8,8 +8,8 @@ import { useAnimationLifecycleManager } from './useAnimationLifecycleManager';
 import { usePLockSequencer } from './usePLockSequencer';
 import { useVisualEngineContext } from '../context/VisualEngineContext';
 import { useUpProvider } from '../context/UpProvider';
-import { useProjectStore } from '../store/useProjectStore'; // New Import
-import { useWalletStore } from '../store/useWalletStore'; // New Import
+import { useProjectStore } from '../store/useProjectStore'; 
+import { useWalletStore } from '../store/useWalletStore'; 
 
 export const useCoreApplicationStateAndLifecycle = (props) => {
   const {
@@ -17,12 +17,10 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
     animatingPanel,
   } = props;
 
-  // --- REFACTOR: Use Store ---
   const isInitiallyResolved = useProjectStore(s => !!s.setlist);
   const loadError = useProjectStore(s => s.error);
   const isFullyLoaded = useProjectStore(s => !s.isLoading && !!s.activeWorkspaceName);
   const isLoading = useProjectStore(s => s.isLoading);
-  // --- END REFACTOR ---
 
   const {
     sideA,
@@ -34,10 +32,7 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
   } = useVisualEngineContext();
 
   const { upInitializationError, upFetchStateError } = useUpProvider();
-  
-  // --- REFACTOR: Use Store ---
   const currentProfileAddress = useWalletStore(s => s.hostProfileAddress);
-  // --- END REFACTOR ---
 
   const isMountedRef = useRef(false);
   const internalResetLifecycleRef = useRef(null);

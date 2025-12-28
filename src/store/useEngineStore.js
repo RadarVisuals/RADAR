@@ -12,8 +12,6 @@ const DEFAULT_AUDIO_SETTINGS = {
 
 const DEFAULT_SEQUENCER_INTERVAL = 2000;
 
-// Helper: Flatten Manifest Defaults into a simple key-value object
-// Exported so we can generate fresh defaults during load
 export const getInitialBaseValues = () => {
     const values = {};
     Object.values(EFFECT_MANIFEST).forEach(effect => {
@@ -50,11 +48,8 @@ export const useEngineStore = create(
     // =========================================
     // 2. MODULATION SYSTEM
     // =========================================
-    
     baseValues: getInitialBaseValues(),
     patches: [],
-    
-    // Used to signal VisualEngineContext that a bulk load happened (Hot Swap)
     modulationLoadNonce: 0, 
 
     setEffectBaseValue: (paramId, value) => set((state) => ({
@@ -64,17 +59,12 @@ export const useEngineStore = create(
     addPatch: (sourceId, targetId, amount = 1.0) => set((state) => {
         const patchId = `${sourceId}->${targetId}`;
         const existingIndex = state.patches.findIndex(p => p.id === patchId);
-        
         if (existingIndex !== -1) {
-            // Update in place
             const updatedPatches = [...state.patches];
             updatedPatches[existingIndex] = { ...updatedPatches[existingIndex], amount };
             return { patches: updatedPatches };
         }
-        
-        return {
-            patches: [...state.patches, { id: patchId, source: sourceId, target: targetId, amount }]
-        };
+        return { patches: [...state.patches, { id: patchId, source: sourceId, target: targetId, amount }] };
     }),
 
     removePatch: (patchId) => set((state) => ({
@@ -82,34 +72,17 @@ export const useEngineStore = create(
     })),
 
     clearAllPatches: () => set({ patches: [] }),
-
-    // --- NEW ACTION: Reset knobs to default without removing wires ---
     resetBaseValues: () => set({ baseValues: getInitialBaseValues() }),
 
-    // --- SMART LOAD ACTION (Persistence + Schema Migration) ---
     loadModulationState: (savedBaseValues, savedPatches) => set((state) => {
-        // 1. Get Authoritative Definitions (The current code)
         const freshDefaults = getInitialBaseValues();
-        
-        // 2. Prepare new Base Values starting with Defaults
         const mergedBaseValues = { ...freshDefaults };
-
-        // 3. Merge Saved Data (Only if key still exists in code)
         if (savedBaseValues) {
             Object.keys(savedBaseValues).forEach(key => {
-                if (freshDefaults.hasOwnProperty(key)) {
-                    mergedBaseValues[key] = savedBaseValues[key];
-                }
+                if (freshDefaults.hasOwnProperty(key)) mergedBaseValues[key] = savedBaseValues[key];
             });
         }
-
-        // 4. Sanitize Patches (Remove wires to deleted effects)
-        const validPatches = (savedPatches || []).filter(patch => {
-            const targetExists = freshDefaults.hasOwnProperty(patch.target);
-            return targetExists; 
-        });
-
-        // 5. Update State & Trigger Nonce for Engine Sync
+        const validPatches = (savedPatches || []).filter(patch => freshDefaults.hasOwnProperty(patch.target));
         return {
             baseValues: mergedBaseValues,
             patches: validPatches,
@@ -123,39 +96,17 @@ export const useEngineStore = create(
     isAudioActive: false,
     audioSettings: DEFAULT_AUDIO_SETTINGS,
     analyzerData: { level: 0, frequencyBands: { bass: 0, mid: 0, treble: 0 } },
-
-    setIsAudioActive: (input) => set((state) => ({ 
-        isAudioActive: typeof input === 'function' ? input(state.isAudioActive) : input 
-    })),
-    
-    setAudioSettings: (settingsOrFn) => set((state) => ({
-        audioSettings: typeof settingsOrFn === 'function' 
-            ? settingsOrFn(state.audioSettings) 
-            : settingsOrFn
-    })),
-    
+    setIsAudioActive: (input) => set((state) => ({ isAudioActive: typeof input === 'function' ? input(state.isAudioActive) : input })),
+    setAudioSettings: (settingsOrFn) => set((state) => ({ audioSettings: typeof settingsOrFn === 'function' ? settingsOrFn(state.audioSettings) : settingsOrFn })),
     updateAnalyzerData: (data) => set({ analyzerData: data }),
 
     // =========================================
     // 4. SEQUENCER
     // =========================================
-    sequencerState: {
-        active: false,
-        intervalMs: DEFAULT_SEQUENCER_INTERVAL,
-        nextIndex: 0,
-    },
-
-    setSequencerActive: (isActive) => set((state) => ({
-        sequencerState: { ...state.sequencerState, active: isActive }
-    })),
-
-    setSequencerInterval: (ms) => set((state) => ({
-        sequencerState: { ...state.sequencerState, intervalMs: Math.max(100, ms) }
-    })),
-
-    setSequencerNextIndex: (index) => set((state) => ({
-        sequencerState: { ...state.sequencerState, nextIndex: index }
-    })),
+    sequencerState: { active: false, intervalMs: DEFAULT_SEQUENCER_INTERVAL, nextIndex: 0 },
+    setSequencerActive: (isActive) => set((state) => ({ sequencerState: { ...state.sequencerState, active: isActive } })),
+    setSequencerInterval: (ms) => set((state) => ({ sequencerState: { ...state.sequencerState, intervalMs: Math.max(100, ms) } })),
+    setSequencerNextIndex: (index) => set((state) => ({ sequencerState: { ...state.sequencerState, nextIndex: index } })),
 
     // =========================================
     // 5. MIDI SYSTEM
@@ -174,8 +125,7 @@ export const useEngineStore = create(
 
     setMidiAccess: (access) => set({ midiAccess: access }),
     setMidiInputs: (inputs) => set({ midiInputs: inputs }),
-    setMidiConnectionStatus: (isConnected, isConnecting, error = null) => 
-        set({ isConnected, isConnecting, midiError: error }),
+    setMidiConnectionStatus: (isConnected, isConnecting, error = null) => set({ isConnected, isConnecting, midiError: error }),
     setMidiLearning: (learningState) => set({ midiLearning: learningState }),
     setLearningLayer: (layer) => set({ learningLayer: layer }),
     setSelectedChannel: (channel) => set({ selectedChannel: channel }),
@@ -185,29 +135,16 @@ export const useEngineStore = create(
         return { midiMonitorData: updated.length > 50 ? updated.slice(-50) : updated };
     }),
     clearMidiMonitorData: () => set({ midiMonitorData: [] }),
-    queueMidiAction: (action) => set((state) => ({
-        pendingActions: [...state.pendingActions, action]
-    })),
+    queueMidiAction: (action) => set((state) => ({ pendingActions: [...state.pendingActions, action] })),
     clearPendingActions: () => set({ pendingActions: [] }),
 
-    // =========================================
-    // 6. LFO CONFIGURATION
-    // =========================================
     lfoSettings: {
         'lfo_1': { frequency: 0.2, type: 'sine' },
         'lfo_2': { frequency: 1.0, type: 'sine' },
         'lfo_3': { frequency: 4.0, type: 'pulse' },
     },
-
     setLfoSetting: (lfoId, param, value) => set((state) => ({
-        lfoSettings: {
-            ...state.lfoSettings,
-            [lfoId]: {
-                ...state.lfoSettings[lfoId],
-                [param]: value
-            }
-        }
+        lfoSettings: { ...state.lfoSettings, [lfoId]: { ...state.lfoSettings[lfoId], [param]: value } }
     })),
-
   }))
 );

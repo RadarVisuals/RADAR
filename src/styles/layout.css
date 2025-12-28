@@ -5,19 +5,17 @@
 .main-view {
   width: 100%;
   height: 100%;
-  background: none; /* Background is on canvas-container now */
+  background: none; 
   position: relative;
   overflow: hidden;
   display: block;
 }
 
-/* Canvas Container Layout */
 .canvas-container {
   width: 100%;
   height: 100%;
   position: relative;
   overflow: hidden;
-  /* background, opacity, and transition for dimming are now in Mainview.css */
   z-index: var(--z-background);
 }
 
@@ -32,7 +30,7 @@
   background-size: 20px 20px;
   pointer-events: none;
   opacity: 1;
-  z-index: 0; /* Behind canvases, but within canvas-container */
+  z-index: 0; 
 }
 
 /* Centered Logo */
@@ -42,7 +40,7 @@
   left: 50%;
   transform: translateX(-50%);
   max-width: 200px;
-  z-index: var(--z-ui); /* Above canvas container */
+  z-index: var(--z-ui); 
   opacity: 1;
   transition: all var(--transition-slow) ease;
 }
@@ -90,7 +88,7 @@
   background: var(--color-warning-a50, rgba(255, 165, 0, 0.5));
 }
 
-/* Main UI Container - for toolbars, panels etc. */
+/* Main UI Container */
 .ui-elements-container {
   position: absolute;
   top: 0;
@@ -98,7 +96,7 @@
   width: 100%;
   height: 100%;
   pointer-events: none;
-  z-index: var(--z-ui); /* Above canvas container */
+  z-index: var(--z-ui); 
   opacity: 1;
   visibility: visible;
   transition: opacity 0.5s ease-in-out, visibility 0s linear 0s;
@@ -117,16 +115,6 @@
   transition: opacity 0.5s ease-in-out 0s, visibility 0s linear 0.5s;
   pointer-events: none !important;
 }
-.ui-elements-container.hidden-by-opacity > * {
-  pointer-events: none !important;
-}
-.ui-elements-container.visible .panel-wrapper,
-.ui-elements-container.visible .vertical-toolbar-icon,
-.ui-elements-container.visible .bottom-right-icons,
-.ui-elements-container.visible .preset-selector-bar {
-  pointer-events: auto;
-}
-
 
 /* UI Controls Layout */
 .bottom-center-controls {
@@ -142,7 +130,7 @@
 }
 
 
-/* Status Display (Loading/Error/Idle Messages) */
+/* Status Display */
 .status-display {
   position: fixed;
   top: 20%;
@@ -193,15 +181,7 @@
   font-weight: bold;
   text-transform: uppercase;
 }
-.status-display .retry-render-button:hover:not(:disabled) {
-  background: var(--color-error-a50, rgba(255, 165, 0, 0.5));
-}
-.status-display .retry-render-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
 
-/* --- START: NEW LOADING PILL STYLES --- */
 .loading-indicator-pill {
   position: fixed;
   top: 50%;
@@ -244,8 +224,6 @@
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
-/* --- END: NEW LOADING PILL STYLES --- */
-
 
 /* FPS Counter */
 .fps-counter {
@@ -266,11 +244,6 @@
   font-family: monospace;
   text-align: center;
   opacity: 0.7;
-}
-
-/* Custom Cursor */
-#fullscreen-root.radar-cursor {
-  cursor: url('/assets/cursors/radar-dot.svg') 8 8, auto;
 }
 
 /* Click Ping Effect */
@@ -294,40 +267,10 @@
   stroke-opacity: 1;
   fill: none;
 }
-.ping-svg-animation .click-ping-svg circle {
-  animation: ping-circle-anim 0.7s cubic-bezier(0.1, 0.7, 0.3, 1) forwards;
-}
 @keyframes ping-circle-anim {
   0% { r: 2; stroke-opacity: 1; transform: scale(0.5); }
   70% { r: 15; stroke-opacity: 0.7; transform: scale(1.2); }
   100% { r: 20; stroke-opacity: 0; transform: scale(1.5); }
-}
-
-
-/* Hidden Audio Analyzer Element */
-.hidden-audio-analyzer {
-  position: absolute;
-  width: 0;
-  height: 0;
-  overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
-}
-
-/* Maximize/Fullscreen Button */
-.maximize-button {
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  padding: 8px 12px;
-  cursor: pointer;
-  font-size: 14px;
-  backdrop-filter: blur(4px);
-  transition: all 0.3s ease;
-}
-.maximize-button:hover {
-  background: rgba(255, 255, 255, 0.2);
 }
 
 /* Bottom Right Icons Container */
@@ -337,13 +280,12 @@
   right: var(--space-lg);
   z-index: var(--z-controls);
   display: flex;
-  flex-direction: column-reverse; /* Stack vertically, bottom-to-top */
-  align-items: center; /* Center items horizontally in the stack */
-  gap: var(--space-sm); /* Vertical spacing between icons */
+  flex-direction: column-reverse; 
+  align-items: center; 
+  gap: var(--space-sm); 
   pointer-events: auto;
 }
 
-/* Sequencer/Randomizer Button Styles */
 .bottom-right-icons .toolbar-icon.sequencer-toggle-button {
   order: -1;
   width: var(--icon-size-lg);
@@ -377,26 +319,6 @@
   filter: drop-shadow(0 0 5px var(--color-primary));
 }
 
-/* Disabled state for all toolbar icons in bottom-right */
-.bottom-right-icons .toolbar-icon:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  background: var(--color-button-secondary-a80);
-  border-color: var(--color-primary-a50);
-}
-
-.bottom-right-icons .toolbar-icon:disabled:hover {
-  transform: none;
-  background: var(--color-button-secondary-a80);
-  border-color: var(--color-primary-a50);
-}
-
-.bottom-right-icons .toolbar-icon:disabled .icon-image {
-  color: var(--color-text-muted);
-  filter: none;
-}
-
-/* General Connect Pill Style */
 .general-connect-pill {
   position: fixed;
   bottom: calc(var(--space-md) + 36px + var(--space-sm));

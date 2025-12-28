@@ -14,7 +14,6 @@ import {
 } from "../../assets";
 
 const TopRightControls = ({
-  isRadarProjectAdmin = false,
   isHostProfileOwner = false,
   onWhitelistClick,
   showInfo = true,
@@ -26,9 +25,10 @@ const TopRightControls = ({
   isUiVisible = true,
   isParallaxEnabled,
   onToggleParallax,
-  transitionMode,        // Prop for state
-  onToggleTransitionMode // Prop for toggle function
+  transitionMode,
+  onToggleTransitionMode
 }) => {
+
   return (
     <div className={`top-right-controls-container ${!isUiVisible ? "ui-hidden" : ""}`}>
       
@@ -62,7 +62,6 @@ const TopRightControls = ({
         </button>
       )}
 
-      {/* --- PARALLAX TOGGLE --- */}
       {isUiVisible && (
         <button
           className={`toolbar-icon ${isParallaxEnabled ? "active" : ""}`}
@@ -78,7 +77,6 @@ const TopRightControls = ({
         </button>
       )}
 
-      {/* --- TRANSITION MODE TOGGLE (Moved Next to Parallax) --- */}
       {isUiVisible && onToggleTransitionMode && (
         <button
           className={`toolbar-icon transition-mode-btn ${transitionMode === 'flythrough' ? "active" : ""}`}
@@ -87,7 +85,6 @@ const TopRightControls = ({
           aria-label={transitionMode === 'flythrough' ? "Switch to Interpolate Mode" : "Switch to Hyperdrift Mode"}
         >
           {transitionMode === 'flythrough' ? (
-            /* Reduced padding to 3px makes the icon appear larger */
             <RocketLaunchIcon className="icon-image" style={{ padding: '3px' }} />
           ) : (
             <ArrowsRightLeftIcon className="icon-image" style={{ padding: '3px' }} />

@@ -4,7 +4,6 @@ import {
     RGBSplitFilter, 
     PixelateFilter,
     ZoomBlurFilter,
-    CRTFilter,
     ShockwaveFilter, 
 } from 'pixi-filters';
 import { 
@@ -22,7 +21,7 @@ export class PixiEffectsManager {
         this.filters = {
             bloom: null, rgb: null, pixelate: null,
             zoomBlur: null,
-            crt: null, kaleidoscope: null,
+            kaleidoscope: null,
             volumetric: null, waveDistort: null, liquid: null,
             shockwave: null,
             adversarial: null,
@@ -86,7 +85,6 @@ export class PixiEffectsManager {
             case 'rgb': this.filters.rgb = new RGBSplitFilter({ red: {x:0,y:0}, green: {x:0,y:0}, blue: {x:0,y:0}, resolution: res }); break;
             case 'pixelate': this.filters.pixelate = new PixelateFilter(1); this.filters.pixelate.resolution = res; break;
             case 'zoomBlur': this.filters.zoomBlur = new ZoomBlurFilter({ strength: 0.1, innerRadius: 50, resolution: res }); break;
-            case 'crt': this.filters.crt = new CRTFilter({ curvature: 0, lineWidth: 0, lineContrast: 0, noise: 0, vignetting: 0, vignettingAlpha: 0, resolution: res }); break;
             case 'kaleidoscope': this.filters.kaleidoscope = new KaleidoscopeFilter(); this.filters.kaleidoscope.resolution = res; break;
             case 'volumetric': this.filters.volumetric = new VolumetricLightFilter(); break;
             case 'waveDistort': this.filters.waveDistort = new WaveDistortFilter(); break;
@@ -112,7 +110,6 @@ export class PixiEffectsManager {
 
     updateConfig(effectName, param, value) {
         if (effectName === 'feedback') return;
-        if (effectName === 'global') return;
 
         const filter = this.ensureFilter(effectName);
         if (!filter) return;
@@ -151,7 +148,6 @@ export class PixiEffectsManager {
         const now = performance.now();
         const filterDelta = ticker.deltaTime * 0.01;
 
-        if (this.filters.crt?.enabled) this.filters.crt.time += ticker.deltaTime * 0.1;
         if (this.filters.liquid?.enabled) this.filters.liquid.time += filterDelta;
         if (this.filters.waveDistort?.enabled) this.filters.waveDistort.time += filterDelta;
         if (this.filters.ascii?.enabled) this.filters.ascii.time += filterDelta;

@@ -1,3 +1,4 @@
+// src/components/Main/Mainview.jsx
 import React, { useRef, useEffect, useMemo, useState, useCallback } from "react";
 import PropTypes from "prop-types";
 import { useShallow } from 'zustand/react/shallow';
@@ -8,7 +9,7 @@ import { useAppInteractions } from '../../hooks/useAppInteractions';
 import { useVisualEngineContext } from "../../context/VisualEngineContext";
 import { useEngineStore } from "../../store/useEngineStore";
 import { useProjectStore } from "../../store/useProjectStore";
-import { useSceneSequencer } from "../../hooks/useSceneSequencer"; // NEW IMPORT
+import { useSceneSequencer } from "../../hooks/useSceneSequencer";
 
 import ToastContainer from "../Notifications/ToastContainer";
 import UIOverlay from '../UI/UIOverlay';
@@ -86,14 +87,12 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   const toggleParallax = useCallback(() => setIsParallaxEnabled(prev => !prev), []);
   const [crossfadeDurationMs, setCrossfadeDurationMs] = useState(DEFAULT_CROSSFADE_DURATION);
 
-  // --- USE NEW SEQUENCER HOOK ---
   const { 
       isSequencerActive, 
       toggleSequencer, 
       sequencerIntervalMs, 
       setSequencerInterval 
   } = useSceneSequencer(crossfadeDurationMs);
-  // ------------------------------
 
   const [localAnimatingPanel, setLocalAnimatingPanel] = useState(null);
   const [localIsBenignOverlayActive, setLocalIsBenignOverlayActive] = useState(false);
@@ -231,16 +230,15 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     setLocalIsBenignOverlayActive(newIsBenign);
   }, [ uiStateHook.animatingPanel, uiStateHook.activePanel, uiStateHook.infoOverlayOpen ]);
 
-  const criticalErrorContent = (
+  const criticalErrorDisplay = (
     <CriticalErrorDisplay initializationError={upInitializationError} fetchStateError={upFetchStateError} publicClient={publicClient} walletClient={walletClient} />
   );
-  if (criticalErrorContent.props.initializationError || (criticalErrorContent.props.fetchStateError && !criticalErrorContent.props.publicClient && !criticalErrorContent.props.walletClient)) {
-    return criticalErrorContent;
+  if (upInitializationError || (upFetchStateError && !publicClient && !walletClient)) {
+    return criticalErrorDisplay;
   }
   
   const showFpsCounter = useMemo(() => renderState === 'rendered' && isContainerObservedVisible, [renderState, isContainerObservedVisible]);
 
-  // Update actions to include sequencer logic from hook
   const actionsForUIOverlay = useMemo(() => ({
     onEnhancedView: enterFullscreen,
     onToggleParallax: toggleParallax,
@@ -263,7 +261,9 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     animationDataRef: sequencer.animationDataRef,
   }), [sequencer, handleTogglePLock]);
 
-  const containerClass = `canvas-container ${isTransitioning ? 'transitioning-active' : ''} ${isWorkspaceTransitioning ? 'workspace-fading-out' : ''}`;
+  const containerClass = `canvas-container 
+    ${isTransitioning ? 'transitioning-active' : ''} 
+    ${isWorkspaceTransitioning ? 'workspace-fading-out' : ''}`;
   
   const isReadyToRender = renderState === 'rendered';
   const showLoadingIndicator = !!loadingMessage;
@@ -322,5 +322,6 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     </>
   );
 };
+
 MainView.propTypes = { blendModes: PropTypes.arrayOf(PropTypes.string) };
 export default MainView;

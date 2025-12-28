@@ -255,7 +255,7 @@ export class KaleidoscopeFilter extends Filter {
     set screenSize(value) { this.resources.kaleidoscopeUniforms.uniforms.uScreenSize = value; }
 }
 
-// --- ADVERSARIAL GLITCH ---
+// --- ADVERSARIAL GLITCH (Data Mosh) ---
 const adversarialFragment = `
     #version 300 es
     precision highp float;
@@ -266,7 +266,7 @@ const adversarialFragment = `
     uniform vec4 uInputSize; 
     
     uniform float uTime;
-    uniform float uIntensity;
+    uniform float uIntensity; // Acts as "Power"
     uniform float uBands;
     uniform float uShift;
     uniform float uNoiseScale;
@@ -320,12 +320,14 @@ const adversarialFragment = `
 
     vec2 bandShift(vec2 uv) {
         float m = bandMask(uv);
-        float shift = (m - 0.5) * 0.002 * uShift; 
+        // Scale shift by uIntensity to allow full fade out
+        float shift = (m - 0.5) * 0.002 * uShift * uIntensity; 
         return uv + vec2(shift, 0.0);
     }
 
     vec3 sampleChromatic(vec2 uv) {
-        vec2 cOff = vec2(0.001 * uChromatic, 0.0); 
+        // Scale chromatic split by uIntensity
+        vec2 cOff = vec2(0.001 * uChromatic * uIntensity, 0.0); 
         float r = texture(uTexture, uv + cOff).r;
         float g = texture(uTexture, uv).g;
         float b = texture(uTexture, uv - cOff).b;
@@ -334,11 +336,16 @@ const adversarialFragment = `
 
     vec3 postProcess(vec2 uv, vec3 col) {
         float scan = 0.5 + 0.5 * sin(uv.y * 500.0 * 3.14159);
-        col *= mix(1.0, 1.0 + uScanline * (scan - 0.5), uScanline);
         
-        if(uQNoise > 0.0) {
-            vec3 q = floor(col * (256.0 - uQNoise) + noise(uv * 1024.0) * uQNoise) / (256.0 - uQNoise);
-            col = mix(col, q, uQNoise / 8.0);
+        // Scale scanline opacity by clamped intensity (0-1)
+        float scanStrength = uScanline * clamp(uIntensity, 0.0, 1.0);
+        col *= mix(1.0, 1.0 + scanStrength * (scan - 0.5), scanStrength);
+        
+        // Scale quantization by intensity
+        float qMix = uQNoise * uIntensity;
+        if(qMix > 0.0) {
+            vec3 q = floor(col * (256.0 - qMix) + noise(uv * 1024.0) * qMix) / (256.0 - qMix);
+            col = mix(col, q, clamp(qMix / 8.0, 0.0, 1.0));
         }
         return col;
     }
@@ -348,8 +355,10 @@ const adversarialFragment = `
         vec2 uvWarp = perturb(uv);
         vec2 uvGlitch = bandShift(uvWarp);
         vec3 col = sampleChromatic(uvGlitch);
+        
         float n = noise(uvGlitch * (uNoiseScale * 0.5 + 0.001 + uIntensity * 0.5));
         col += (n - 0.5) * 0.02 * uIntensity;
+        
         col = postProcess(uvGlitch, col);
         finalColor = vec4(col, 1.0);
     }

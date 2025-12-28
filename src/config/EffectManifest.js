@@ -153,16 +153,6 @@ export const EFFECT_MANIFEST = {
         }
     },
 
-    crt: {
-        label: 'CRT Monitor',
-        params: {
-            curvature:    { id: 'crt.curvature',    label: 'Curve',       type: 'float', min: 0, max: 10.0, default: 0.0, hardMin: 0, hardMax: 20.0 },
-            lineWidth:    { id: 'crt.lineWidth',    label: 'Scanlines',   type: 'float', min: 0, max: 5.0,  default: 0.0, hardMin: 0, hardMax: 20.0 },
-            noise:        { id: 'crt.noise',        label: 'Static',      type: 'float', min: 0, max: 1.0,  default: 0.0, hardMin: 0, hardMax: 5.0 },
-            vignetting:   { id: 'crt.vignetting',   label: 'Vignette',    type: 'float', min: 0, max: 1.0,  default: 0.0, hardMin: 0, hardMax: 1.0 },
-        }
-    },
-
     ascii: {
         label: 'ASCII / Terminal',
         params: {
@@ -173,14 +163,6 @@ export const EFFECT_MANIFEST = {
             colorMode: { id: 'ascii.colorMode', label: 'Color',     type: 'select', min: 0, max: 4, default: 0, options: ['Original', 'Matrix', 'Amber', 'Cyan', 'B&W'] },
         }
     },
-
-    // --- GLOBAL ---
-    global: {
-        label: 'Global Controls',
-        params: {
-            crossfader: { id: 'global.crossfader', label: 'Crossfader', type: 'float', min: 0, max: 1.0, default: 0.0, hardMin: 0, hardMax: 1.0 },
-        }
-    }
 };
 
 export const getAllParamIds = () => {

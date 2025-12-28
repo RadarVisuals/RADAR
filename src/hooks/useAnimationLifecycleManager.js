@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { globalAnimationFlags } from "../utils/globalAnimationFlags"; // Local utility
 
 const ANIMATION_RESTART_DELAY = 16; // ms
+const TRANSITION_GRACE_PERIOD = 1000; // 1 second of immunity from stopping
 
 /**
  * Manages the lifecycle of canvas animations based on component mount state,
@@ -21,6 +22,7 @@ const ANIMATION_RESTART_DELAY = 16; // ms
  * @param {string} params.renderState - The current rendering state of the visual component (e.g., "rendered", "loading").
  * @param {boolean} params.isContainerObservedVisible - Flag indicating if the main visual container is visible, typically determined by an IntersectionObserver.
  * @param {boolean} params.isBenignOverlayActive - Flag indicating if a non-blocking overlay (e.g., toasts, temporary messages) is currently active, which might warrant continued animation.
+ * @param {boolean} params.isMappingActive - Flag indicating if Video Mapping mode is active. If true, animation MUST run regardless of visibility observers (as projection might happen on a second screen or obscured window).
  * @param {string | null} params.animatingPanel - Identifier of any UI panel that is currently undergoing an open/close animation. (Logged for debugging; not directly used in the core animation start/stop decision logic of this hook version).
  * @param {boolean} params.isTransitioning - Flag indicating if a visual preset transition or an initial load animation sequence is active. Animations should generally run during transitions.
  * @param {() => void} params.restartCanvasAnimations - Callback function to be invoked when animations should (re)start.
@@ -32,7 +34,8 @@ export function useAnimationLifecycleManager({
   renderState,
   isContainerObservedVisible,
   isBenignOverlayActive,
-  animatingPanel, // Keep for logging, though not in core logic here
+  isMappingActive,
+  animatingPanel,
   isTransitioning,
   restartCanvasAnimations,
   stopCanvasAnimations,
@@ -41,12 +44,23 @@ export function useAnimationLifecycleManager({
   const animationStartTimerRef = useRef(null);
   /** @type {React.RefObject<'start' | 'stop' | null>} */
   const lastActionRef = useRef(null); // Tracks the last action taken by this hook
+  
+  // Track the last time a critical state changed to provide immunity
+  const lastCriticalStateChangeRef = useRef(performance.now());
+
+  // Reset immunity timer when critical states change
+  useEffect(() => {
+      lastCriticalStateChangeRef.current = performance.now();
+  }, [isMappingActive, isTransitioning, renderState]);
 
   useEffect(() => {
     const timestamp = performance.now();
+    const timeSinceCriticalChange = timestamp - lastCriticalStateChangeRef.current;
+    const isInGracePeriod = timeSinceCriticalChange < TRANSITION_GRACE_PERIOD;
+
     if (import.meta.env.DEV) {
         // Updated log to show last commanded action by this hook
-        console.log(`[AnimLC ${timestamp.toFixed(0)}] EFFECT RUN. LastCmd: ${lastActionRef.current}, isTokenSelectorOpening: ${globalAnimationFlags.isTokenSelectorOpening}, IOVisible: ${isContainerObservedVisible}, BenignActive: ${isBenignOverlayActive}, AnimPanel: ${animatingPanel}, IsTransitioning: ${isTransitioning}, RenderState: ${renderState}`);
+        console.log(`[AnimLC ${timestamp.toFixed(0)}] EFFECT RUN. LastCmd: ${lastActionRef.current}, Mapping: ${isMappingActive}, GracePeriod: ${isInGracePeriod}, IOVisible: ${isContainerObservedVisible}, RenderState: ${renderState}`);
     }
 
     if (!isMounted || !restartCanvasAnimations || !stopCanvasAnimations) {
@@ -64,24 +78,30 @@ export function useAnimationLifecycleManager({
 
     let shouldRunAnimations;
     // Determine if animations should be running based on current state
-    if (globalAnimationFlags.isTokenSelectorOpening) {
+    if (isMappingActive) {
+      shouldRunAnimations = true; // Always run in mapping
+      if (import.meta.env.DEV) console.log(`[AnimLC] Condition Eval: RUN (Mapping Mode Active)`);
+    } else if (globalAnimationFlags.isTokenSelectorOpening) {
       shouldRunAnimations = true;
-      if (import.meta.env.DEV) console.log(`[AnimLC ${timestamp.toFixed(0)}] Condition Eval: RUN (GlobalFlag Override: isTokenSelectorOpening)`);
+      if (import.meta.env.DEV) console.log(`[AnimLC] Condition Eval: RUN (GlobalFlag Override: isTokenSelectorOpening)`);
     } else if (isTransitioning) {
       shouldRunAnimations = true;
-      if (import.meta.env.DEV) console.log(`[AnimLC ${timestamp.toFixed(0)}] Condition Eval: RUN (Preset Transition active)`);
+      if (import.meta.env.DEV) console.log(`[AnimLC] Condition Eval: RUN (Preset Transition active)`);
     } else if (isBenignOverlayActive) {
       shouldRunAnimations = true;
-      if (import.meta.env.DEV) console.log(`[AnimLC ${timestamp.toFixed(0)}] Condition Eval: RUN (Benign Overlay Active)`);
+      if (import.meta.env.DEV) console.log(`[AnimLC] Condition Eval: RUN (Benign Overlay Active)`);
     } else {
       shouldRunAnimations = renderState === "rendered" && isContainerObservedVisible;
-      if (import.meta.env.DEV) console.log(`[AnimLC ${timestamp.toFixed(0)}] Condition Eval: ${shouldRunAnimations ? "RUN" : "STOP"} (General: RenderState=${renderState}, IOVisible=${isContainerObservedVisible})`);
+      if (import.meta.env.DEV && !shouldRunAnimations) {
+          console.log(`[AnimLC] Condition Eval: STOP (General: RenderState=${renderState}, IOVisible=${isContainerObservedVisible})`);
+      }
     }
     
     const isInFullscreen = !!document.fullscreenElement;
+    
     // Logic to determine if animations should definitely stop:
-    // They should stop if `shouldRunAnimations` is false AND we are not in fullscreen.
-    const shouldStopLogic = !shouldRunAnimations && !isInFullscreen;
+    // They should stop if `shouldRunAnimations` is false AND we are not in fullscreen AND not in grace period.
+    const shouldStopLogic = !shouldRunAnimations && !isInFullscreen && !isInGracePeriod;
 
     if (shouldRunAnimations) {
       // If animations should run, but this hook's last command wasn't 'start'
@@ -90,8 +110,9 @@ export function useAnimationLifecycleManager({
         
         animationStartTimerRef.current = setTimeout(() => {
           // Re-check conditions inside timeout as state might have changed during the delay
-          let currentShouldRunAgain;
-          if (globalAnimationFlags.isTokenSelectorOpening) currentShouldRunAgain = true;
+          let currentShouldRunAgain = false;
+          if (isMappingActive) currentShouldRunAgain = true;
+          else if (globalAnimationFlags.isTokenSelectorOpening) currentShouldRunAgain = true;
           else if (isTransitioning) currentShouldRunAgain = true;
           else if (isBenignOverlayActive) currentShouldRunAgain = true;
           else currentShouldRunAgain = renderState === "rendered" && isContainerObservedVisible;
@@ -101,13 +122,10 @@ export function useAnimationLifecycleManager({
             restartCanvasAnimations();
             lastActionRef.current = 'start'; // Update last action
           } else {
-            if (import.meta.env.DEV) console.log(`[AnimLC ${performance.now().toFixed(0)}] setTimeout: Conditions changed, NOT RESTARTING (isMounted=${isMounted}, currentShouldRunAgain=${currentShouldRunAgain}). Last cmd remains: ${lastActionRef.current}`);
+            if (import.meta.env.DEV) console.log(`[AnimLC ${performance.now().toFixed(0)}] setTimeout: Conditions changed, NOT RESTARTING. Last cmd remains: ${lastActionRef.current}`);
           }
           animationStartTimerRef.current = null; // Clear ref after execution or if not run
         }, ANIMATION_RESTART_DELAY);
-      } else {
-          // Animations should run and last command was 'start', so do nothing.
-          if (import.meta.env.DEV) console.log(`[AnimLC ${timestamp.toFixed(0)}] No Action: Conditions indicate RUN, and last command was 'start'.`);
       }
     } else if (shouldStopLogic) {
       // If animations should stop, but this hook's last command wasn't 'stop'
@@ -115,27 +133,15 @@ export function useAnimationLifecycleManager({
         if (import.meta.env.DEV) console.log(`[AnimLC ${timestamp.toFixed(0)}] Action: EXECUTING STOP (last cmd: ${lastActionRef.current})`);
         stopCanvasAnimations();
         lastActionRef.current = 'stop'; // Update last action
-      } else {
-        // Animations should stop and last command was 'stop', so do nothing.
-        if (import.meta.env.DEV) console.log(`[AnimLC ${timestamp.toFixed(0)}] No Action: Conditions indicate STOP, and last command was 'stop'.`);
       }
     } else {
-        // This block covers cases where:
-        // 1. `shouldRunAnimations` is false, BUT `isInFullscreen` is true (so `shouldStopLogic` is false).
-        //    In this case, we don't stop animations. `lastActionRef` remains what it was.
-        //    If `lastActionRef` was 'start', animations continue (correct for fullscreen).
-        //    If `lastActionRef` was 'stop' (e.g. from a previous non-fullscreen stop), and now it's fullscreen but conditions like IOVisible are false,
-        //    it won't try to restart them here, which seems correct. The expectation is usually that fullscreen implies visible content.
-        if (import.meta.env.DEV) {
-            if (!shouldRunAnimations && isInFullscreen) {
-                 console.log(`[AnimLC ${timestamp.toFixed(0)}] No Action: Conditions suggest STOP, but fullscreen is active. Last cmd: ${lastActionRef.current}. Animation continues if it was 'start'.`);
-            } else {
-                 // This case should ideally not be hit if logic is exhaustive.
-                 // It might mean `shouldRunAnimations` is true, but `lastActionRef.current` was already 'start'. (Covered by specific log above)
-                 // Or `shouldRunAnimations` is false, `isInFullscreen` is false (so `shouldStopLogic` is true), but `lastActionRef.current` was already 'stop'. (Covered by specific log above)
-                 console.log(`[AnimLC ${timestamp.toFixed(0)}] No Action: Uncategorized state or conditions met current command. shouldRunAnimations: ${shouldRunAnimations}, shouldStopLogic: ${shouldStopLogic}, last cmd: ${lastActionRef.current}.`);
-            }
-        }
+       // If we are here, it means we probably *should* stop, but Grace Period or Fullscreen is saving us.
+       // Ensure we are running if we aren't already.
+       if (lastActionRef.current !== 'start' && isInGracePeriod) {
+           if (import.meta.env.DEV) console.log(`[AnimLC ${timestamp.toFixed(0)}] Grace Period Protection: Forcing Start.`);
+           restartCanvasAnimations();
+           lastActionRef.current = 'start';
+       }
     }
 
     // Cleanup function for the useEffect
@@ -147,10 +153,9 @@ export function useAnimationLifecycleManager({
     };
   }, [
     isMounted, renderState, isContainerObservedVisible, isBenignOverlayActive,
-    animatingPanel, // Kept for logging consistency, even if not in core decision logic
+    isMappingActive,
+    animatingPanel,
     isTransitioning,
     restartCanvasAnimations, stopCanvasAnimations,
-    // lastActionRef is a ref, its changes don't re-trigger useEffect.
-    // globalAnimationFlags is external, its changes don't re-trigger useEffect.
   ]);
 }
