@@ -17,8 +17,6 @@ export default class PixiEngine {
     this.canvas = canvasElement;
     this.isReady = false;
     this._isDestroyed = false;
-    
-    // BOOTSTRAP GUARD: Prevents any physics/movement before scene data arrives
     this.bootstrapped = false;
 
     this.logic = new LogicController();
@@ -37,11 +35,17 @@ export default class PixiEngine {
         if(this.logic) this.logic.triggerEvent(data.type);
     };
 
+    /**
+     * HIGH-SPEED MIDI BYPASS
+     * This listener captures 'param:update' signals directly from the MidiManager.
+     * It bypasses the React lifecycle to ensure zero-latency interpolation.
+     */
     this._onParamUpdate = (data) => {
         const { layerId, param, value, isNormalized } = data;
-        if (!this.layerManager || !this.bootstrapped) return;
+        if (!this.layerManager) return;
 
         let finalValue = value;
+        // If the value is raw 0.0-1.0 from MIDI, scale it to the physics range
         if (isNormalized) {
             const config = sliderParams.find(p => p.prop === param);
             if (config) {
@@ -49,6 +53,7 @@ export default class PixiEngine {
             }
         }
 
+        // Apply to the deck currently being controlled
         const activeDeck = this.crossfaderSystem.crossfadeValue < 0.5 ? 'A' : 'B';
         this.layerManager.updateConfig(layerId, param, finalValue, activeDeck);
     };
@@ -57,8 +62,7 @@ export default class PixiEngine {
   async init() {
     if (this.isReady || this._isDestroyed) return;
     
-    const maxRes = 1.5; 
-    const resolution = Math.min(window.devicePixelRatio || 1, maxRes);
+    const resolution = Math.min(window.devicePixelRatio || 1, 1.5);
     
     await this.app.init({
       canvas: this.canvas,
@@ -87,23 +91,11 @@ export default class PixiEngine {
     this.handleResize(); 
     this.app.ticker.add(this._updateLoop);
     
+    // Wire up the High-Speed signals
     SignalBus.on('event:trigger', this._onEventTrigger);
     SignalBus.on('param:update', this._onParamUpdate);
     
-    const state = useEngineStore.getState();
-    if (state.baseValues) {
-        Object.entries(state.baseValues).forEach(([id, val]) => {
-            this.logic.setBaseValue(id, val);
-        });
-    }
-    if (state.patches) {
-        state.patches.forEach(patch => {
-            this.logic.addPatch(patch.source, patch.target, patch.amount);
-        });
-    }
-
     this.isReady = true;
-    console.log("[PixiEngine] ✅ Rendering Pipeline Online.");
   }
 
   handleResize() {
@@ -134,7 +126,6 @@ export default class PixiEngine {
   }
   snapConfig(layerId, fullConfig, deckSide = 'A') {
       if (this.layerManager) {
-          // ACTIVATE ENGINE PHYSICS ONLY ON FIRST VALID SNAP
           this.bootstrapped = true;
           this.layerManager.snapConfig(layerId, fullConfig, deckSide);
       }
@@ -171,9 +162,9 @@ export default class PixiEngine {
 
     try {
         const now = performance.now();
-        const deltaTime = Math.min(ticker.deltaTime, 1.1); 
+        const deltaTime = Math.min(ticker.deltaTime, 1.5); 
 
-        // 1. UPDATE BRAIN (Signals always run)
+        // 1. UPDATE BRAIN
         const audioData = this.audioReactor.getAudioData();
         const finalParams = this.logic.update(deltaTime, audioData);
 
@@ -181,7 +172,22 @@ export default class PixiEngine {
         this.effectsManager.applyValues(finalParams);
         if (this.layerManager) this.layerManager.applyModulations(finalParams);
         
-        // 3. CONFIGURE FEEDBACK
+        // 3. BROADCAST INTERPOLATED PHYSICS TO UI
+        // This ensures the slider handles in the UI move smoothly
+        if (this.layerManager && this.bootstrapped) {
+            const activeDeckSide = this.crossfaderSystem.crossfadeValue < 0.5 ? 'A' : 'B';
+            ['1', '2', '3'].forEach(layerId => {
+                const deck = this.layerManager.getDeck(layerId, activeDeckSide);
+                if (deck) {
+                    for (const prop in deck.interpolators) {
+                        const smoothedValue = deck.interpolators[prop].currentValue;
+                        SignalBus.emit(`ui:smooth_update:${layerId}:${prop}`, smoothedValue);
+                    }
+                }
+            });
+        }
+
+        // 4. CONFIGURE FEEDBACK
         let isFeedbackOn = false;
         if (this.feedbackSystem) {
             if (finalParams['feedback.enabled'] !== undefined) { 
@@ -193,14 +199,13 @@ export default class PixiEngine {
             isFeedbackOn = this.feedbackSystem.config.enabled;
         }
 
-        // 4. STEP WORLD PHYSICS
-        // ONLY run physics/crossfading if we have received a scene config
+        // 5. STEP WORLD PHYSICS
         if (this.bootstrapped) {
             this.effectsManager.update(ticker, this.app.renderer);
             this.crossfaderSystem.update(deltaTime * 0.01666, now, this.app.screen);
         }
 
-        // 5. RENDER PREPARATION
+        // 6. RENDER PREPARATION
         if (this.layerManager) {
             const mainGroup = this.layerManager.mainLayerGroup;
             this.rootContainer.filters = this.effectsManager.getFilterList();

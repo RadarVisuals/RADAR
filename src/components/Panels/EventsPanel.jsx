@@ -30,7 +30,7 @@ const EventsPanel = ({
 }) => {
   const { addToast } = useToast();
   const { canSaveToHostProfile } = useProfileSessionState();
-  const { processEffect } = useVisualEngine(); // Get effect trigger from new engine hook
+  const { processEffect } = useVisualEngine(); 
   
   const {
     savedReactions,
@@ -171,7 +171,6 @@ const EventsPanel = ({
       effectId: `preview_${Date.now()}`,
     };
 
-    // processEffect is an async function in useVisualEffects
     processEffect(effectToPreview)
       .then(() => {
         setPreviewStatus("Preview triggered!");

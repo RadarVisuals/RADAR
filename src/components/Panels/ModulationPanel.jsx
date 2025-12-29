@@ -7,8 +7,6 @@ import { EFFECT_MANIFEST } from '../../config/EffectManifest';
 import SignalBus from '../../utils/SignalBus'; 
 import './PanelStyles/ModulationPanel.css';
 
-// --- CONFIGURATION ---
-
 const SIGNAL_SOURCES = [
     { value: '', label: '+ MODULATE...' }, 
     { label: '--- AUDIO (0 to 1) ---', options: [
@@ -35,8 +33,6 @@ const CATEGORIES = {
     'Distortion': ['adversarial', 'pixelate', 'waveDistort', 'zoomBlur', 'shockwave'],
     'Texture & Geo': ['liquid', 'ascii', 'kaleidoscope']
 };
-
-// --- SUB-COMPONENTS ---
 
 const LfoConfigurator = ({ lfoId, label, settings, onChange }) => {
     const { frequency, type } = settings || { frequency: 1, type: 'sine' };
@@ -87,7 +83,6 @@ const LfoConfigurator = ({ lfoId, label, settings, onChange }) => {
                         value={frequency}
                         onChange={(e) => onChange(lfoId, 'frequency', parseFloat(e.target.value))}
                         className="lfo-speed-slider"
-                        title={`Frequency: ${frequency.toFixed(2)} Hz`}
                     />
                 </div>
             </div>
@@ -95,48 +90,27 @@ const LfoConfigurator = ({ lfoId, label, settings, onChange }) => {
     );
 };
 
-LfoConfigurator.propTypes = {
-    lfoId: PropTypes.string.isRequired,
-    label: PropTypes.string.isRequired,
-    settings: PropTypes.object,
-    onChange: PropTypes.func.isRequired
-};
-
 const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAddPatch, onRemovePatch, onUpdatePatch }) => {
     const [selectedSource, setSelectedSource] = useState('');
-    
     const visualizerRef = useRef(null);
     const valueDisplayRef = useRef(null);
-
     const isModulatable = def.type === 'float' || def.type === 'int';
 
     useEffect(() => {
         if (!isModulatable) return;
-
         const handleUpdate = (allValues) => {
             const liveValue = allValues[paramId];
             if (liveValue === undefined) return;
-
             if (valueDisplayRef.current) {
                 valueDisplayRef.current.innerText = def.type === 'int' ? Math.floor(liveValue) : liveValue.toFixed(2);
             }
-
             if (visualizerRef.current) {
                 const range = def.max - def.min;
                 const safeRange = range === 0 ? 1 : range;
                 let percent = ((liveValue - def.min) / safeRange) * 100;
-                
-                if (percent < 0 || percent > 100) {
-                    visualizerRef.current.style.backgroundColor = 'var(--color-error)';
-                } else {
-                    visualizerRef.current.style.backgroundColor = 'var(--color-primary)';
-                }
-                
-                percent = Math.max(0, Math.min(100, percent));
-                visualizerRef.current.style.width = `${percent}%`;
+                visualizerRef.current.style.width = `${Math.max(0, Math.min(100, percent))}%`;
             }
         };
-
         const unsubscribe = SignalBus.on('modulation:update', handleUpdate);
         return () => unsubscribe();
     }, [paramId, def, isModulatable]);
@@ -149,60 +123,10 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
 
     const myPatches = patches.filter(p => p.target === paramId);
 
-    const renderInput = () => {
-        if (def.type === 'bool') {
-            return (
-                <div className="checkbox-wrapper">
-                    <label className="toggle-switch">
-                        <input 
-                            type="checkbox" 
-                            checked={currentValue > 0.5} 
-                            onChange={(e) => onUpdateBase(paramId, e.target.checked ? 1 : 0)} 
-                        />
-                        <span className="toggle-slider"></span>
-                    </label>
-                    <span className="param-value-display">{currentValue > 0.5 ? 'ON' : 'OFF'}</span>
-                </div>
-            );
-        }
-        
-        if (def.type === 'select') {
-            return (
-                <select 
-                    className="custom-select" 
-                    value={Math.floor(currentValue)} 
-                    onChange={(e) => onUpdateBase(paramId, parseInt(e.target.value))}
-                >
-                    {def.options.map((opt, idx) => (
-                        <option key={idx} value={idx}>{opt}</option>
-                    ))}
-                </select>
-            );
-        }
-
-        return (
-            <div className="slider-wrapper">
-                <div className="slider-track-bg">
-                    <div ref={visualizerRef} className="mod-visualizer-bar"></div>
-                </div>
-                
-                <input 
-                    type="range" 
-                    className="base-slider" 
-                    min={def.min} 
-                    max={def.max} 
-                    step={def.type === 'int' ? 1 : (def.step || 0.01)} 
-                    value={currentValue} 
-                    onChange={(e) => onUpdateBase(paramId, parseFloat(e.target.value))} 
-                />
-            </div>
-        );
-    };
-
     return (
         <div className="param-block">
             <div className="param-header">
-                <span className="param-name" title={paramId}>{def.label}</span>
+                <span className="param-name">{def.label}</span>
                 {isModulatable && (
                     <span ref={valueDisplayRef} className="param-value-display">
                         {Number(currentValue).toFixed(def.type === 'int' ? 0 : 2)}
@@ -210,15 +134,51 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
                 )}
             </div>
             
-            <div className="param-control-row">{renderInput()}</div>
+            <div className="param-control-row">
+                {def.type === 'bool' ? (
+                    <div className="checkbox-wrapper">
+                        <label className="toggle-switch">
+                            <input 
+                                type="checkbox" 
+                                checked={currentValue > 0.5} 
+                                onChange={(e) => onUpdateBase(paramId, e.target.checked ? 1 : 0)} 
+                            />
+                            <span className="toggle-slider"></span>
+                        </label>
+                    </div>
+                ) : def.type === 'select' ? (
+                    <select 
+                        className="custom-select" 
+                        value={Math.floor(currentValue)} 
+                        onChange={(e) => onUpdateBase(paramId, parseInt(e.target.value))}
+                    >
+                        {def.options.map((opt, idx) => (
+                            <option key={idx} value={idx}>{opt}</option>
+                        ))}
+                    </select>
+                ) : (
+                    <div className="slider-wrapper">
+                        <div className="slider-track-bg">
+                            <div ref={visualizerRef} className="mod-visualizer-bar"></div>
+                        </div>
+                        <input 
+                            type="range" 
+                            className="base-slider" 
+                            min={def.min} 
+                            max={def.max} 
+                            step={def.type === 'int' ? 1 : 0.01} 
+                            value={currentValue} 
+                            onChange={(e) => onUpdateBase(paramId, parseFloat(e.target.value))} 
+                        />
+                    </div>
+                )}
+            </div>
 
             {isModulatable && myPatches.length > 0 && (
                 <div className="active-patches">
                     {myPatches.map(patch => (
                         <div key={patch.id} className="patch-row">
-                            <span className="patch-source-name" title={patch.source}>
-                                {patch.source.replace('audio.', 'A.').replace('lfo_', 'LFO ')}
-                            </span>
+                            <span className="patch-source-name">{patch.source.replace('audio.', 'A.').replace('lfo_', 'LFO ')}</span>
                             <div className="patch-slider-container">
                                 <input 
                                     type="range" 
@@ -226,11 +186,9 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
                                     min="-2.0" max="2.0" step="0.01" 
                                     value={patch.amount} 
                                     onChange={(e) => onUpdatePatch(patch.source, paramId, parseFloat(e.target.value))} 
-                                    title={`Modulation Depth: ${patch.amount.toFixed(2)}`} 
                                 />
-                                <div className="center-tick"></div>
                             </div>
-                            <button className="btn-remove-patch" onClick={() => onRemovePatch(patch.id)} title="Remove Modulation">×</button>
+                            <button className="btn-remove-patch" onClick={() => onRemovePatch(patch.id)}>×</button>
                         </div>
                     ))}
                 </div>
@@ -251,29 +209,11 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
                             ) : <option key={idx} value={group.value}>{group.label}</option>
                         ))}
                     </select>
-                    <button 
-                        className="btn-add-patch" 
-                        onClick={handleAddClick} 
-                        disabled={!selectedSource} 
-                        title="Add Connection"
-                    >
-                        +
-                    </button>
+                    <button className="btn-add-patch" onClick={handleAddClick} disabled={!selectedSource}>+</button>
                 </div>
             )}
         </div>
     );
-};
-
-ParamControl.propTypes = {
-    paramId: PropTypes.string.isRequired,
-    def: PropTypes.object.isRequired,
-    currentValue: PropTypes.number.isRequired,
-    patches: PropTypes.array.isRequired,
-    onUpdateBase: PropTypes.func.isRequired,
-    onAddPatch: PropTypes.func.isRequired,
-    onRemovePatch: PropTypes.func.isRequired,
-    onUpdatePatch: PropTypes.func.isRequired,
 };
 
 const ModulationPanel = ({ onClose }) => {
@@ -301,64 +241,31 @@ const ModulationPanel = ({ onClose }) => {
             }
             if (!found) result['Other'].push({ key, config });
         });
-        
         return Object.entries(result).filter(([_, items]) => items.length > 0);
     }, []);
 
     const [expandedCategories, setExpandedCategories] = useState({ 'Core Physics': true });
-    const toggleCategory = (cat) => setExpandedCategories(prev => ({ ...prev, [cat]: !prev[cat] }));
-
     const [expandedEffects, setExpandedEffects] = useState({});
-    const toggleEffect = (key) => setExpandedEffects(prev => ({ ...prev, [key]: !prev[key] }));
-
-    const handleClearWires = useCallback(() => {
-        if (window.confirm('Remove all modulation wires? (Knobs will stay set)')) {
-            clearAllPatches();
-        }
-    }, [clearAllPatches]);
-
-    const handleResetKnobs = useCallback(() => {
-        if (window.confirm('Reset all effect knobs to defaults? (Wires will stay connected)')) {
-            resetBaseValues();
-        }
-    }, [resetBaseValues]);
 
     return (
         <Panel title="MODULATION MATRIX" onClose={onClose} className="panel-from-toolbar modulation-panel events-panel-custom-scroll">
             <div className="lfo-generator-section section-box">
-                <div className="section-header-row">
-                    <h4 className="section-title-small">LFO Generators</h4>
-                </div>
+                <h4 className="section-title-small">LFO Generators</h4>
                 <LfoConfigurator lfoId="lfo_1" label="LFO 1" settings={lfoSettings['lfo_1']} onChange={setLfoSetting} />
                 <LfoConfigurator lfoId="lfo_2" label="LFO 2" settings={lfoSettings['lfo_2']} onChange={setLfoSetting} />
                 <LfoConfigurator lfoId="lfo_3" label="LFO 3" settings={lfoSettings['lfo_3']} onChange={setLfoSetting} />
             </div>
 
             <div className="mod-actions-row">
-                <button 
-                    className="btn-link-action" 
-                    onClick={handleResetKnobs}
-                    title="Reset all sliders to zero/default"
-                >
-                    Clear Effects
-                </button>
+                <button className="btn-link-action" onClick={resetBaseValues}>Clear Effects</button>
                 <div className="vertical-divider"></div>
-                <button 
-                    className="btn-link-danger" 
-                    onClick={handleClearWires}
-                    title="Remove all modulation connections"
-                >
-                    Clear Modulation
-                </button>
+                <button className="btn-link-danger" onClick={clearAllPatches}>Clear Modulation</button>
             </div>
 
             <div className="mod-list-container">
                 {categorizedEffects.map(([categoryName, effects]) => (
                     <div key={categoryName} className="category-block">
-                        <div 
-                            className={`category-header ${expandedCategories[categoryName] ? 'open' : ''}`}
-                            onClick={() => toggleCategory(categoryName)}
-                        >
+                        <div className={`category-header ${expandedCategories[categoryName] ? 'open' : ''}`} onClick={() => setExpandedCategories(p => ({...p, [categoryName]: !p[categoryName]}))}>
                             <span>{categoryName}</span>
                             <span className="chevron">{expandedCategories[categoryName] ? '▼' : '▶'}</span>
                         </div>
@@ -368,16 +275,14 @@ const ModulationPanel = ({ onClose }) => {
                                 {effects.map(({ key: effectKey, config }) => {
                                     const isExpanded = expandedEffects[effectKey];
                                     const enabledParamId = config.params.enabled ? config.params.enabled.id : null;
-                                    const isEnabled = enabledParamId ? (baseValues[enabledParamId] > 0.5) : false;
-                                    const hasModulation = patches.some(p => p.target.startsWith(effectKey));
+                                    const isEnabled = enabledParamId ? (baseValues[enabledParamId] > 0.5) : true;
 
                                     return (
                                         <div key={effectKey} className={`effect-group ${isExpanded ? 'expanded' : ''} ${isEnabled ? 'active-effect' : ''}`}>
-                                            <div className="effect-group-header" onClick={() => toggleEffect(effectKey)}>
+                                            <div className="effect-group-header" onClick={() => setExpandedEffects(p => ({...p, [effectKey]: !p[effectKey]}))}>
                                                 <div className="effect-header-left">
                                                     <span className={`effect-status-dot ${isEnabled ? 'on' : 'off'}`}></span>
                                                     <span className="effect-label">{config.label}</span>
-                                                    {hasModulation && <span className="mod-badge">MOD</span>}
                                                 </div>
                                                 <span className="effect-toggle">{isExpanded ? '−' : '+'}</span>
                                             </div>
@@ -411,8 +316,5 @@ const ModulationPanel = ({ onClose }) => {
     );
 };
 
-ModulationPanel.propTypes = {
-    onClose: PropTypes.func.isRequired,
-};
-
+ModulationPanel.propTypes = { onClose: PropTypes.func.isRequired };
 export default React.memo(ModulationPanel);

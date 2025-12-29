@@ -3,7 +3,7 @@ import { Container, Sprite, Texture, Graphics } from 'pixi.js';
 import ValueInterpolator from '../ValueInterpolator';
 import { sliderParams } from '../../config/sliderParams';
 import { getDecodedImage } from '../imageDecoder';
-import { MAX_TOTAL_OFFSET, MIDI_INTERPOLATION_DURATION, BLEND_MODE_MAP } from './PixiConstants';
+import { MAX_TOTAL_OFFSET, BLEND_MODE_MAP } from './PixiConstants';
 
 const BASE_SCALE_MODIFIER = 0.5;
 
@@ -44,12 +44,9 @@ export class PixiLayerDeck {
     ];
     
     this.config = this.getDefaultConfig();
-    
-    // FORCE ZERO START: Prevents "Initial Spin"
-    this.config.speed = 0; 
     this.continuousAngle = 0;
-    
     this.driftState = { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
+    
     this.interpolators = {};
     this.playbackValues = {}; 
     this.modulatedValues = {}; 
@@ -65,10 +62,19 @@ export class PixiLayerDeck {
         totalAngleRad: 0, driftX: 0, driftY: 0
     };
 
+    /**
+     * TUNING: GLOBAL HIGH-SPEED SMOOTHING (0.9)
+     * At 0.9, we achieve 90% travel per frame. 
+     * This provides the "Instant Response" feel while the math 
+     * handles the sub-frame interpolation required to hide MIDI steps.
+     */
     sliderParams.forEach(param => {
-      // Speed always starts at 0 for the interpolator too
-      const startVal = param.prop === 'speed' ? 0 : (this.config[param.prop] || 0);
-      this.interpolators[param.prop] = new ValueInterpolator(startVal, MIDI_INTERPOLATION_DURATION);
+      const startVal = this.config[param.prop] || 0;
+      
+      // Global setting for instant but smooth response
+      const smoothing = 0.9; 
+
+      this.interpolators[param.prop] = new ValueInterpolator(startVal, smoothing);
     });
   }
 
@@ -98,10 +104,7 @@ export class PixiLayerDeck {
     
     Object.keys(this.interpolators).forEach(key => {
         if (otherDeck.interpolators[key]) {
-            this.interpolators[key].currentValue = otherDeck.interpolators[key].currentValue;
-            this.interpolators[key].startValue = otherDeck.interpolators[key].currentValue;
-            this.interpolators[key].targetValue = otherDeck.interpolators[key].targetValue;
-            this.interpolators[key].isInterpolating = otherDeck.interpolators[key].isInterpolating;
+            this.interpolators[key].snap(otherDeck.interpolators[key].currentValue);
         }
     });
   }
@@ -139,15 +142,10 @@ export class PixiLayerDeck {
     }
   }
 
-  /**
-   * Snaps configuration values. Used during scene loads.
-   * Logic is now stripped of "clever" resets to prevent lurching.
-   */
   snapConfig(fullConfig) {
     for (const key in fullConfig) {
         const newValue = fullConfig[key];
         this.config[key] = newValue;
-
         if (this.interpolators[key]) {
             this.interpolators[key].snap(newValue);
         }
@@ -156,7 +154,7 @@ export class PixiLayerDeck {
 
   stepPhysics(deltaTime, now) {
     for (const key in this.interpolators) {
-        this.interpolators[key].update(now);
+        this.interpolators[key].update(deltaTime);
     }
     
     const getVal = (k) => {
@@ -171,7 +169,6 @@ export class PixiLayerDeck {
     const drift = getVal('drift');
     const driftSpeed = getVal('driftSpeed');
 
-    // ONLY rotate if speed is present. Prevents boot-up spinning.
     if (Math.abs(speed) > 0.00001) {
         this.continuousAngle += (speed * direction * deltaTime * 600);
     }
@@ -180,8 +177,8 @@ export class PixiLayerDeck {
         this.driftState.phase += deltaTime * driftSpeed * 1.0;
         const xVal = Math.sin(this.driftState.phase) * drift * 1.5;
         const yVal = Math.cos(this.driftState.phase * 0.7 + 0.785398) * drift * 1.5; 
-        this.driftState.x = xVal < -MAX_TOTAL_OFFSET ? -MAX_TOTAL_OFFSET : (xVal > MAX_TOTAL_OFFSET ? MAX_TOTAL_OFFSET : xVal);
-        this.driftState.y = yVal < -MAX_TOTAL_OFFSET ? -MAX_TOTAL_OFFSET : (yVal > MAX_TOTAL_OFFSET ? MAX_TOTAL_OFFSET : yVal);
+        this.driftState.x = Math.max(-MAX_TOTAL_OFFSET, Math.min(MAX_TOTAL_OFFSET, xVal));
+        this.driftState.y = Math.max(-MAX_TOTAL_OFFSET, Math.min(MAX_TOTAL_OFFSET, yVal));
     } else {
         this.driftState.x *= 0.95; 
         this.driftState.y *= 0.95;

@@ -3,6 +3,7 @@ import { useCallback, useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useProjectStore } from '../store/useProjectStore';
 import { useEngineStore } from '../store/useEngineStore';
+import { useVisualEffects } from './useVisualEffects'; 
 import { getPixiEngine } from './usePixiOrchestrator';
 import SignalBus from '../utils/SignalBus';
 
@@ -15,13 +16,25 @@ const AUTO_FADE_DURATION_MS = 1000;
  */
 export const useVisualEngine = () => {
     // 1. PROJECT STORE SELECTORS (Workspace & Scene management)
-    const stagedWorkspace = useProjectStore(s => s.stagedWorkspace);
-    const activeSceneName = useProjectStore(s => s.activeSceneName);
-    const isLoading = useProjectStore(s => s.isLoading);
-    const activeWorkspaceName = useProjectStore(s => s.activeWorkspaceName);
-    const setActiveSceneName = useProjectStore(s => s.setActiveSceneName);
-    const loadWorkspace = useProjectStore(s => s.loadWorkspace);
-    const preloadWorkspace = useProjectStore(s => s.preloadWorkspace);
+    const { 
+        stagedWorkspace, 
+        activeSceneName, 
+        isLoading, 
+        activeWorkspaceName,
+        setActiveSceneName,
+        loadWorkspace,
+        preloadWorkspace,
+        setHasPendingChanges 
+    } = useProjectStore(useShallow(s => ({
+        stagedWorkspace: s.stagedWorkspace,
+        activeSceneName: s.activeSceneName,
+        isLoading: s.isLoading,
+        activeWorkspaceName: s.activeWorkspaceName,
+        setActiveSceneName: s.setActiveSceneName,
+        loadWorkspace: s.loadWorkspace,
+        preloadWorkspace: s.preloadWorkspace,
+        setHasPendingChanges: s.setHasPendingChanges
+    })));
 
     // 2. ENGINE STORE SELECTORS (Live visual state & Modulation)
     const engineState = useEngineStore(useShallow(s => ({
@@ -39,6 +52,25 @@ export const useVisualEngine = () => {
     const isFullyLoaded = !isLoading && !!activeWorkspaceName;
 
     /**
+     * Update Layer Parameter
+     */
+    const updateLayerConfig = useCallback((layerId, key, value, isMidiUpdate = false, skipStoreUpdate = false) => {
+        const engine = getPixiEngine();
+        const activeDeck = engineState.crossfader < 0.5 ? 'A' : 'B';
+        if (engine) {
+            if (isMidiUpdate) engine.updateConfig(layerId, key, value, activeDeck);
+            else engine.snapConfig(layerId, { [key]: value }, activeDeck);
+        }
+        if (!skipStoreUpdate) {
+            storeActions.updateActiveDeckConfig(layerId, key, value);
+            setHasPendingChanges(true);
+        }
+    }, [engineState.crossfader, storeActions, setHasPendingChanges]);
+
+    // 3. INTEGRATE EFFECTS PROCESSOR
+    const { processEffect, createDefaultEffect } = useVisualEffects(updateLayerConfig);
+
+    /**
      * SCENE SELECTION (Transition Logic)
      */
     const handleSceneSelect = useCallback((sceneName, duration = AUTO_FADE_DURATION_MS) => {
@@ -51,8 +83,6 @@ export const useVisualEngine = () => {
         const activeDeckIsA = crossfader < 0.5;
         const currentConfig = activeDeckIsA ? sideA.config : sideB.config;
         
-        // --- UPDATED LOGIC: Allow scene re-selection if UI activeSceneName is null (fresh workspace) ---
-        // We only block if both the Engine config AND the UI state agree we are already on this scene.
         if (currentConfig?.name === sceneName && activeSceneName === sceneName) return; 
 
         storeActions.setTargetSceneName(sceneName);
@@ -85,7 +115,6 @@ export const useVisualEngine = () => {
     }, [stagedWorkspace, setActiveSceneName, storeActions, activeSceneName]);
 
     return {
-        // --- LIVE VISUAL STATE ---
         ...engineState,
         stagedWorkspace, 
         activeSceneName, 
@@ -94,48 +123,55 @@ export const useVisualEngine = () => {
         loadWorkspace, 
         preloadWorkspace,
         renderedCrossfaderValue: engineState.crossfader, 
-        // Derived active config for UI binding
         uiControlConfig: (engineState.crossfader < 0.5) ? engineState.sideA.config : engineState.sideB.config,
         
-        isFullyLoaded, // Exposed for lifecycle hook
+        isFullyLoaded, 
 
-        // --- MODULATION ENGINE INTERFACE ---
+        processEffect,
+        createDefaultEffect,
+
+        // MODULATION ENGINE INTERFACE
+        // Fixed: Mapping to PixiEngine.setModulationValue correctly
         setModulationValue: (paramId, value) => {
             const engine = getPixiEngine();
             if (engine) engine.setModulationValue(paramId, value);
             storeActions.setEffectBaseValue(paramId, value);
+            setHasPendingChanges(true);
         },
         addPatch: (source, target, amount) => {
             const engine = getPixiEngine();
             if (engine) engine.addModulationPatch(source, target, amount);
             storeActions.addPatch(source, target, amount);
+            setHasPendingChanges(true);
         },
         removePatch: (patchId) => {
             const engine = getPixiEngine();
             if (engine) engine.removeModulationPatch(patchId);
             storeActions.removePatch(patchId);
+            setHasPendingChanges(true);
         },
         clearAllPatches: () => {
             const engine = getPixiEngine();
             if (engine) engine.clearModulationPatches();
             storeActions.clearAllPatches();
+            setHasPendingChanges(true);
         },
         resetBaseValues: () => {
             storeActions.resetBaseValues();
             const engine = getPixiEngine();
             if (engine) {
-                // Get fresh defaults from store after reset and push to Pixi
                 const defaults = storeActions.baseValues;
                 Object.entries(defaults).forEach(([id, val]) => engine.setModulationValue(id, val));
             }
+            setHasPendingChanges(true);
         },
         setLfoSetting: (lfoId, param, value) => {
             const engine = getPixiEngine();
             if (engine) engine.lfo.setConfig(lfoId, param, value);
             storeActions.setLfoSetting(lfoId, param, value);
+            setHasPendingChanges(true);
         },
 
-        // --- UI ACTIONS ---
         handleSceneSelect,
         handleCrossfaderChange: (val) => {
             const engine = getPixiEngine();
@@ -143,7 +179,6 @@ export const useVisualEngine = () => {
             storeActions.setCrossfader(val);
             storeActions.setRenderedCrossfader(val); 
             SignalBus.emit('crossfader:set', val);
-            // Link crossfader to the modulation matrix global source
             storeActions.setEffectBaseValue('global.crossfader', val); 
         },
         handleCrossfaderCommit: (val) => storeActions.setCrossfader(val),
@@ -151,36 +186,15 @@ export const useVisualEngine = () => {
             engineState.transitionMode === 'crossfade' ? 'flythrough' : 'crossfade'
         ),
 
-        /**
-         * Update Layer Parameter
-         * Bridges: React Slider -> Engine Store -> imperative Pixi Engine
-         */
-        updateLayerConfig: (layerId, key, value, isMidiUpdate = false, skipStoreUpdate = false) => {
-            const engine = getPixiEngine();
-            const activeDeck = engineState.crossfader < 0.5 ? 'A' : 'B';
-            if (engine) {
-                // MIDI updates are interpolated, manual slider updates are snapped
-                if (isMidiUpdate) engine.updateConfig(layerId, key, value, activeDeck);
-                else engine.snapConfig(layerId, { [key]: value }, activeDeck);
-            }
-            if (!skipStoreUpdate) {
-                storeActions.updateActiveDeckConfig(layerId, key, value);
-                useProjectStore.setState({ hasPendingChanges: true });
-            }
-        },
+        updateLayerConfig,
 
-        /**
-         * Update Layer Texture (Token)
-         */
         updateTokenAssignment: async (token, layerId) => {
             const engine = getPixiEngine();
             if (!engine) return;
             const activeSide = engineState.crossfader < 0.5 ? 'A' : 'B';
             
-            // Push to GPU
             await engine.setTexture(String(layerId), activeSide, token.metadata?.image, token.id);
             
-            // Persist to Store
             const currentDeck = activeSide === 'A' ? engineState.sideA : engineState.sideB;
             if (currentDeck.config) {
                 const newConfig = JSON.parse(JSON.stringify(currentDeck.config));
@@ -188,7 +202,7 @@ export const useVisualEngine = () => {
                 newConfig.tokenAssignments[String(layerId)] = { id: token.id, src: token.metadata?.image };
                 storeActions.setDeckConfig(activeSide, newConfig);
             }
-            useProjectStore.setState({ hasPendingChanges: true });
+            setHasPendingChanges(true);
         }
     };
 };

@@ -1,9 +1,8 @@
 // src/hooks/usePixiOrchestrator.js
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import PixiEngine from '../utils/PixiEngine';
 import { resolveImageUrl } from '../utils/imageDecoder';
 
-// SINGLETON REGISTRY
 let globalEngineInstance = null;
 export const getPixiEngine = () => globalEngineInstance;
 
@@ -15,24 +14,24 @@ export function usePixiOrchestrator({
   isReady 
 }) {
   const [isEngineReady, setIsEngineReady] = useState(false);
+  
+  // Track the last processed scene names to prevent "Sync-Back" stuttering.
+  // This ensures we only call snapConfig (which kills smoothing) during 
+  // actual scene loads, not during manual MIDI slider tweaks.
+  const lastProcessedSceneA = useRef(null);
+  const lastProcessedSceneB = useRef(null);
 
   useEffect(() => {
     if (canvasRef.current && !globalEngineInstance) {
-      console.log("[Orchestrator] Initializing Global PixiEngine...");
       const engine = new PixiEngine(canvasRef.current);
-      
       engine.init().then(() => {
         globalEngineInstance = engine;
         setIsEngineReady(true);
-        
-        if (sideA?.config) syncDeckConfig(engine, sideA.config, 'A');
-        if (sideB?.config) syncDeckConfig(engine, sideB.config, 'B');
       });
     }
 
     return () => {
       if (globalEngineInstance) {
-        console.log("[Orchestrator] Destroying Global PixiEngine...");
         globalEngineInstance.destroy();
         globalEngineInstance = null;
         setIsEngineReady(false);
@@ -40,12 +39,17 @@ export function usePixiOrchestrator({
     };
   }, [canvasRef]); 
 
-  const syncDeckConfig = (engine, configWrapper, side) => {
+  const syncDeckConfig = (engine, configWrapper, side, forceSnap = false) => {
     if (!configWrapper) return;
-    const { layers, tokenAssignments } = configWrapper;
+    const { layers, tokenAssignments, name } = configWrapper;
     
     ['1', '2', '3'].forEach(layerId => {
-        if (layers?.[layerId]) engine.snapConfig(layerId, layers[layerId], side);
+        // Only perform a hard "snap" if the scene name changed or we are forcing it.
+        // This preserves the "ValueInterpolator" glide during manual MIDI edits.
+        if (layers?.[layerId] && forceSnap) {
+            engine.snapConfig(layerId, layers[layerId], side);
+        }
+
         if (tokenAssignments?.[layerId]) {
             const token = tokenAssignments[layerId];
             const src = resolveImageUrl(token);
@@ -55,15 +59,25 @@ export function usePixiOrchestrator({
     });
   };
 
+  // Sync Side A only when the Scene reference or name changes
   useEffect(() => { 
       if (isEngineReady && globalEngineInstance && sideA?.config) {
-          syncDeckConfig(globalEngineInstance, sideA.config, 'A'); 
+          const newName = sideA.config.name;
+          const forceSnap = lastProcessedSceneA.current !== newName;
+          
+          syncDeckConfig(globalEngineInstance, sideA.config, 'A', forceSnap);
+          lastProcessedSceneA.current = newName;
       }
   }, [sideA, isEngineReady]);
 
+  // Sync Side B only when the Scene reference or name changes
   useEffect(() => { 
       if (isEngineReady && globalEngineInstance && sideB?.config) {
-          syncDeckConfig(globalEngineInstance, sideB.config, 'B'); 
+          const newName = sideB.config.name;
+          const forceSnap = lastProcessedSceneB.current !== newName;
+
+          syncDeckConfig(globalEngineInstance, sideB.config, 'B', forceSnap);
+          lastProcessedSceneB.current = newName;
       }
   }, [sideB, isEngineReady]);
 

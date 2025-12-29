@@ -27,6 +27,12 @@ const PerformanceSlider = ({
       return () => { isMountedRef.current = false; };
   }, []);
 
+  /**
+   * SCENE SYNC
+   * We only update the handle position from the 'value' prop if the Scene changed.
+   * This prevents the "Sync-Back Loop" where standard manual MIDI moves 
+   * would otherwise cause the slider to snap back and jitter.
+   */
   useEffect(() => {
     if (!inputRef.current) return;
     if (activeSceneName !== lastProcessedSceneRef.current) {
@@ -35,22 +41,25 @@ const PerformanceSlider = ({
     }
   }, [value, activeSceneName]);
 
+  /**
+   * HIGH-FREQUENCY LISTENER:
+   * Listens to the Pixi Engine's internal interpolated values for buttery-smooth handle movement.
+   * This is what shows you the "Glide" visually in the UI.
+   */
   useEffect(() => {
-    const handleParamUpdate = (data) => {
+    const handleSmoothUpdate = (smoothedValue) => {
       if (!isMountedRef.current || !inputRef.current) return;
-      const { layerId: targetLayer, param, value: newValue, isNormalized } = data;
       
-      if (targetLayer === String(layerId) && param === name) {
-         let displayValue = newValue;
-         if (isNormalized) {
-            displayValue = Number(min) + (newValue * (Number(max) - Number(min)));
-         }
-         inputRef.current.value = displayValue;
-      }
+      // IMPORTANT: Update DOM directly to bypass React render overhead 
+      // and prevent the "Value Sync" loop from stuttering the handle.
+      inputRef.current.value = smoothedValue;
     };
-    const unsubscribe = SignalBus.on('param:update', handleParamUpdate);
+
+    const eventName = `ui:smooth_update:${layerId}:${name}`;
+    const unsubscribe = SignalBus.on(eventName, handleSmoothUpdate);
+    
     return () => unsubscribe();
-  }, [layerId, name, min, max]);
+  }, [layerId, name]);
 
   const handleInput = useCallback((e) => {
     const val = parseFloat(e.target.value);

@@ -1,65 +1,64 @@
 // src/utils/ValueInterpolator.js
-const lerp = (start, end, t) => start * (1 - t) + end * t;
 
+/**
+ * ValueInterpolator: Professional Slew-Rate Limiter
+ * 
+ * Bridging the gap between 7-bit MIDI (128 steps) and high-def rendering.
+ * Uses exponential decay to provide a "liquid" feel while maintaining 
+ * high-speed responsiveness.
+ */
 class ValueInterpolator {
-    currentValue = 0;
-    startValue = 0;
-    targetValue = 0;
-    duration = 300; // ms
-    startTime = 0;
-    isInterpolating = false;
-
-    constructor(initialValue, duration = 300) {
+    constructor(initialValue, smoothing = 0.2) {
         this.currentValue = initialValue;
-        this.startValue = initialValue;
         this.targetValue = initialValue;
-        this.duration = duration;
+        this.smoothing = smoothing;
         this.isInterpolating = false;
+        
+        // Epsilon: 0.001 is the "Sweet Spot" for precision vs performance
+        this.epsilon = 0.001; 
     }
 
-    setTarget(newTargetValue) {
-        // Epsilon check to prevent re-triggering for tiny jitter
-        if (Math.abs(newTargetValue - this.targetValue) < 0.0001) return;
-
-        this.startTime = performance.now();
-        this.startValue = this.currentValue;
-        this.targetValue = newTargetValue;
+    setTarget(val) {
+        // Prevent unnecessary processing for micro-changes
+        if (Math.abs(val - this.targetValue) < 0.000001) return;
+        this.targetValue = val;
         this.isInterpolating = true;
     }
 
-    update(currentTime) {
-        if (!this.isInterpolating) return;
-
-        const elapsed = currentTime - this.startTime;
-        let progress = this.duration > 0 ? elapsed / this.duration : 1;
-
-        if (progress >= 1) {
-            progress = 1;
-            this.isInterpolating = false;
-            this.currentValue = this.targetValue;
-        } else {
-            this.currentValue = lerp(this.startValue, this.targetValue, progress);
-        }
+    snap(val) {
+        this.currentValue = val;
+        this.targetValue = val;
+        this.isInterpolating = false;
     }
 
     /**
-     * Absolute snap: used during scene loads and initialization.
-     * Kills any active interpolation instantly to prevent "fighting" the store.
+     * Frame-rate independent update
+     * deltaTime usually fluctuates between 0.9 and 1.1 at 60fps
      */
-    snap(newValue) {
-        this.isInterpolating = false;
-        this.currentValue = newValue;
-        this.targetValue = newValue;
-        this.startValue = newValue;
-        this.startTime = 0;
+    update(deltaTime = 1) {
+        if (!this.isInterpolating) return;
+
+        const diff = this.targetValue - this.currentValue;
+
+        // Termination condition
+        if (Math.abs(diff) < this.epsilon) {
+            this.currentValue = this.targetValue;
+            this.isInterpolating = false;
+            return;
+        }
+
+        /**
+         * WEIGHTED SPEED CALCULATION
+         * This formula ensures the slider moves 
+         * faster when the gap is large, and slows down 
+         * perfectly as it approaches the target.
+         */
+        const lerpFactor = 1 - Math.pow(1 - this.smoothing, deltaTime);
+        this.currentValue += diff * lerpFactor;
     }
 
     getCurrentValue() {
         return this.currentValue;
-    }
-
-    isCurrentlyInterpolating() {
-        return this.isInterpolating;
     }
 }
 

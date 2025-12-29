@@ -270,6 +270,17 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
           noPingSelectors={NO_PING_SELECTORS}
         />
 
+        {/* 
+            STABILIZED AUDIO ANALYZER:
+            Moved outside the conditional {isReadyToRender} block.
+            This ensures the component stays mounted and the microphone 
+            connection remains stable during scene transitions and UI resets.
+        */}
+        <AudioAnalyzerWrapper
+          isAudioActive={audioState.isAudioActive}
+          managerInstancesRef={managerInstancesRef}
+        />
+
         {isReadyToRender && (
           <>
             <FpsDisplay showFpsCounter={showFpsCounter} isFullscreenActive={isFullscreenActive} portalContainer={portalContainerNode} />
@@ -294,14 +305,6 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
                 loadingStatusMessage={renderLifecycleMessage}
                 showRetryButton={showRetryButton}
                 onManualRetry={handleManualRetry}
-            />
-            <AudioAnalyzerWrapper
-              isAudioActive={audioState.isAudioActive}
-              managersReady={managersReady}
-              layerConfigs={uiControlConfig?.layers} 
-              audioSettings={audioState.audioSettings}
-              configLoadNonce={0}
-              managerInstancesRef={managerInstancesRef}
             />
           </>
         )}

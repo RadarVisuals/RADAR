@@ -7,9 +7,8 @@ import { resolveImageUrl, preloadImages } from '../utils/imageDecoder';
 import fallbackConfig from '../config/fallback-config';
 import { RADAR_OFFICIAL_ADMIN_ADDRESS, IPFS_GATEWAY } from "../config/global-config";
 import { keccak256, stringToBytes } from "viem";
-import { useEngineStore } from './useEngineStore'; // Import Engine Store
+import { useEngineStore } from './useEngineStore';
 
-// Initial Empty States
 const EMPTY_SETLIST = {
   defaultWorkspaceName: null,
   workspaces: {},
@@ -22,7 +21,7 @@ const EMPTY_SETLIST = {
 const EMPTY_WORKSPACE = {
   presets: {},
   defaultPresetName: null,
-  modulation: { baseValues: {}, patches: [] } // Standard Structure
+  modulation: { baseValues: {}, patches: [] }
 };
 
 const OFFICIAL_WHITELIST_KEY = keccak256(stringToBytes("RADAR.OfficialWhitelist"));
@@ -53,8 +52,11 @@ export const useProjectStore = create(devtools((set, get) => ({
   lastTokenFetchTimestamp: 0,
 
   // =========================================
-  // 2. INITIALIZATION ACTIONS
+  // 2. ACTIONS
   // =========================================
+  
+  setHasPendingChanges: (val) => set({ hasPendingChanges: val }),
+
   initService: (provider, walletClient, publicClient) => {
     const service = new ConfigurationService(provider, walletClient, publicClient);
     const isReady = service.checkReadyForRead();
@@ -78,9 +80,6 @@ export const useProjectStore = create(devtools((set, get) => ({
     });
   },
 
-  // =========================================
-  // 3. ASSET ACTIONS
-  // =========================================
   refreshOfficialWhitelist: async () => {
     const { configService } = get();
     if (!configService || !configService.checkReadyForRead()) return;
@@ -161,10 +160,6 @@ export const useProjectStore = create(devtools((set, get) => ({
       set({ isFetchingTokens: false, tokenFetchProgress: { ...get().tokenFetchProgress, loading: false } });
     }
   },
-
-  // =========================================
-  // 4. ASYNC LOADING ACTIONS
-  // =========================================
 
   loadSetlist: async (profileAddress, visitorContext = null) => {
     const { configService } = get();
@@ -249,7 +244,6 @@ export const useProjectStore = create(devtools((set, get) => ({
       });
       if (imageUrls.size > 0) await preloadImages(Array.from(imageUrls));
 
-      // --- HYDRATE MODULATION ENGINE ---
       const engineStore = useEngineStore.getState();
       if (workspaceData.modulation) {
           engineStore.loadModulationState(workspaceData.modulation.baseValues, workspaceData.modulation.patches);
@@ -257,12 +251,10 @@ export const useProjectStore = create(devtools((set, get) => ({
           engineStore.loadModulationState(null, null); 
       }
 
-      // --- UPDATED: Set activeSceneName to NULL when switching workspaces ---
-      // This prevents "Scene 1" from being auto-selected visually while the visuals might be on "Scene X"
       set({
         stagedWorkspace: workspaceData,
         activeWorkspaceName: workspaceName,
-        activeSceneName: null, // Clear active scene selection
+        activeSceneName: null, 
         isLoading: false,
         loadingMessage: ""
       });
@@ -276,63 +268,75 @@ export const useProjectStore = create(devtools((set, get) => ({
     }
   },
 
-  // 5. SYNCHRONOUS ACTIONS
   setActiveSceneName: (name) => set({ activeSceneName: name }),
+  
   addScene: (sceneName, sceneData) => set((state) => {
     const newWorkspace = JSON.parse(JSON.stringify(state.stagedWorkspace));
     if (!newWorkspace.presets) newWorkspace.presets = {};
     newWorkspace.presets[sceneName] = sceneData;
     return { stagedWorkspace: newWorkspace, hasPendingChanges: true, activeSceneName: sceneName };
   }),
+  
   deleteScene: (sceneName) => set((state) => {
     const newWorkspace = JSON.parse(JSON.stringify(state.stagedWorkspace));
     delete newWorkspace.presets[sceneName];
     if (newWorkspace.defaultPresetName === sceneName) newWorkspace.defaultPresetName = null;
     return { stagedWorkspace: newWorkspace, hasPendingChanges: true };
   }),
+  
   setDefaultScene: (sceneName) => set((state) => {
     const newWorkspace = { ...state.stagedWorkspace, defaultPresetName: sceneName };
     return { stagedWorkspace: newWorkspace, hasPendingChanges: true };
   }),
+  
   updateGlobalMidiMap: (newMap) => set((state) => ({ stagedSetlist: { ...state.stagedSetlist, globalUserMidiMap: newMap }, hasPendingChanges: true })),
+  
   updateGlobalEventReactions: (eventType, reactionData) => set((state) => {
     const newReactions = { ...state.stagedSetlist.globalEventReactions, [eventType]: reactionData };
     return { stagedSetlist: { ...state.stagedSetlist, globalEventReactions: newReactions }, hasPendingChanges: true };
   }),
+  
   deleteGlobalEventReaction: (eventType) => set((state) => {
     const newReactions = { ...state.stagedSetlist.globalEventReactions };
     delete newReactions[eventType];
     return { stagedSetlist: { ...state.stagedSetlist, globalEventReactions: newReactions }, hasPendingChanges: true };
   }),
+  
   addPalette: (name) => set((state) => {
     const newPalettes = { ...state.stagedSetlist.userPalettes, [name]: [] };
     return { stagedSetlist: { ...state.stagedSetlist, userPalettes: newPalettes }, hasPendingChanges: true };
   }),
+  
   removePalette: (name) => set((state) => {
     const newPalettes = { ...state.stagedSetlist.userPalettes };
     delete newPalettes[name];
     return { stagedSetlist: { ...state.stagedSetlist, userPalettes: newPalettes }, hasPendingChanges: true };
   }),
+  
   addTokenToPalette: (paletteName, tokenId) => set((state) => {
     const current = state.stagedSetlist.userPalettes[paletteName] || [];
     if (current.includes(tokenId)) return {};
     const newPalettes = { ...state.stagedSetlist.userPalettes, [paletteName]: [...current, tokenId] };
     return { stagedSetlist: { ...state.stagedSetlist, userPalettes: newPalettes }, hasPendingChanges: true };
   }),
+  
   removeTokenFromPalette: (paletteName, tokenId) => set((state) => {
     const current = state.stagedSetlist.userPalettes[paletteName] || [];
     const newPalettes = { ...state.stagedSetlist.userPalettes, [paletteName]: current.filter(id => id !== tokenId) };
     return { stagedSetlist: { ...state.stagedSetlist, userPalettes: newPalettes }, hasPendingChanges: true };
   }),
+  
   addCollectionToLibrary: (collection) => set((state) => {
     const currentLib = state.stagedSetlist.personalCollectionLibrary || [];
     if (currentLib.some(c => c.address.toLowerCase() === collection.address.toLowerCase())) return {};
     return { stagedSetlist: { ...state.stagedSetlist, personalCollectionLibrary: [...currentLib, collection] }, hasPendingChanges: true };
   }),
+  
   removeCollectionFromLibrary: (address) => set((state) => {
     const currentLib = state.stagedSetlist.personalCollectionLibrary || [];
     return { stagedSetlist: { ...state.stagedSetlist, personalCollectionLibrary: currentLib.filter(c => c.address.toLowerCase() !== address.toLowerCase()) }, hasPendingChanges: true };
   }),
+  
   createNewWorkspace: async (name) => {
     const state = get();
     if (state.stagedSetlist.workspaces[name]) throw new Error("Workspace name exists");
@@ -359,12 +363,14 @@ export const useProjectStore = create(devtools((set, get) => ({
         set({ isLoading: false, error: err.message });
     }
   },
+  
   deleteWorkspaceFromSet: (name) => set((state) => {
     const newSetlist = JSON.parse(JSON.stringify(state.stagedSetlist));
     delete newSetlist.workspaces[name];
     if (newSetlist.defaultWorkspaceName === name) newSetlist.defaultWorkspaceName = null;
     return { stagedSetlist: newSetlist, hasPendingChanges: true };
   }),
+  
   renameWorkspaceInSet: (oldName, newName) => set((state) => {
     const newSetlist = JSON.parse(JSON.stringify(state.stagedSetlist));
     newSetlist.workspaces[newName] = newSetlist.workspaces[oldName];
@@ -378,25 +384,27 @@ export const useProjectStore = create(devtools((set, get) => ({
     }
     return { stagedSetlist: newSetlist, activeWorkspaceName: activeName, hasPendingChanges: true };
   }),
+  
   setDefaultWorkspaceInSet: (name) => set((state) => ({ stagedSetlist: { ...state.stagedSetlist, defaultWorkspaceName: name }, hasPendingChanges: true })),
   
   duplicateActiveWorkspace: async (newName) => {
     const state = get();
     if (state.stagedSetlist.workspaces[newName]) { alert("A workspace with this name already exists."); return { success: false }; }
-    set({ activeWorkspaceName: newName, hasPendingChanges: true });
+    
     const newSetlist = JSON.parse(JSON.stringify(state.stagedSetlist));
     newSetlist.workspaces[newName] = { cid: null, lastModified: Date.now() }; 
+    
     if (state.workspaceCache.has(state.activeWorkspaceName)) {
         const data = JSON.parse(JSON.stringify(state.workspaceCache.get(state.activeWorkspaceName)));
         state.workspaceCache.set(newName, data);
     } else {
         state.workspaceCache.set(newName, JSON.parse(JSON.stringify(state.stagedWorkspace)));
     }
+    
     set({ activeWorkspaceName: newName, stagedSetlist: newSetlist, hasPendingChanges: true });
     return { success: true };
   },
 
-  // 6. SAVE CHANGES
   saveChanges: async (targetProfileAddress) => {
     const state = get();
     if (!state.configService) return { success: false, error: "Service not ready" };

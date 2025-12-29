@@ -2,28 +2,20 @@
 import React, { useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { useEngineStore } from "../../store/useEngineStore";
+import { useProjectStore } from "../../store/useProjectStore";
 import SignalBus from "../../utils/SignalBus";
 
-const DEFAULT_LAYER_VALUES = { size: 1.0 };
 const FFT_SIZE = 2048;
 
-const AudioAnalyzer = ({
-  layerConfigs: layerConfigsProp,
-  configLoadNonce,
-  managerInstancesRef,
-}) => {
-  // Read state from store (Only settings, NOT the high-frequency data updater)
+const AudioAnalyzer = ({ managerInstancesRef }) => {
+  // Read state directly from store to avoid parent re-render interference
   const isActive = useEngineStore((state) => state.isAudioActive);
   const audioSettings = useEngineStore((state) => state.audioSettings);
+  
+  // We grab layerConfigs from ProjectStore directly
+  const layerConfigs = useProjectStore((state) => state.stagedWorkspace?.layers);
 
   const audioSettingsRef = useRef(audioSettings);
-  const baseLayerValuesRef = useRef({
-      '1': { size: DEFAULT_LAYER_VALUES.size },
-      '2': { size: DEFAULT_LAYER_VALUES.size },
-      '3': { size: DEFAULT_LAYER_VALUES.size },
-  });
-  const capturedNonceRef = useRef(-1);
-  
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
   const sourceRef = useRef(null);
@@ -32,6 +24,7 @@ const AudioAnalyzer = ({
   const streamRef = useRef(null);
   const isCleanupScheduledRef = useRef(false);
 
+  // Keep settings ref up to date for the processing loop
   useEffect(() => {
     audioSettingsRef.current = audioSettings;
     if (analyserRef.current && audioContextRef.current && audioContextRef.current.state === "running") {
@@ -43,18 +36,6 @@ const AudioAnalyzer = ({
         }
     }
   }, [audioSettings]);
-
-  useEffect(() => {
-    if (layerConfigsProp && configLoadNonce !== capturedNonceRef.current) {
-        const newBaseValues = {};
-        ['1', '2', '3'].forEach(id => {
-            const config = layerConfigsProp[id] || {};
-            newBaseValues[id] = { size: config.size ?? DEFAULT_LAYER_VALUES.size };
-        });
-        baseLayerValuesRef.current = newBaseValues;
-        capturedNonceRef.current = configLoadNonce;
-    }
-  }, [configLoadNonce, layerConfigsProp]);
 
   const applyAudioToLayers = useCallback((bands, level) => {
     const managers = managerInstancesRef?.current;
@@ -68,11 +49,12 @@ const AudioAnalyzer = ({
     const midFactor = 1 + (bands.mid * 1.0 * midIntensity);
     const trebleFactor = 1 + (bands.treble * 2.0 * trebleIntensity);
 
-    // Apply directly to PIXI managers (Zero-Render)
+    // Apply to Pixi Managers via Proxy
     if (managers['1']) managers['1'].setAudioFrequencyFactor(Math.max(0.1, bassFactor));
     if (managers['2']) managers['2'].setAudioFrequencyFactor(Math.max(0.1, midFactor));
     if (managers['3']) managers['3'].setAudioFrequencyFactor(Math.max(0.1, trebleFactor));
 
+    // Beat Pulse logic
     if (level > 0.4 && bands.bass > 0.6) {
       const pulseMultiplier = 1 + level * 0.8;
       if (managers['1']) managers['1'].triggerBeatPulse(Math.max(0.1, pulseMultiplier), 80);
@@ -105,10 +87,8 @@ const AudioAnalyzer = ({
     
     const newFrequencyBands = { bass, mid, treble };
     
-    // 1. Apply logic to Visuals
     applyAudioToLayers(newFrequencyBands, averageLevel);
 
-    // 2. SIGNAL BUS UPDATE (Replaces window.dispatchEvent)
     SignalBus.emit('audio:analysis', { 
         level: averageLevel, 
         frequencyBands: newFrequencyBands 
@@ -141,9 +121,8 @@ const AudioAnalyzer = ({
         analyserRef.current = audioContextRef.current.createAnalyser();
       }
 
-      const initialSmoothing = audioSettingsRef.current?.smoothingFactor ?? 0.6;
       analyserRef.current.fftSize = FFT_SIZE;
-      analyserRef.current.smoothingTimeConstant = Math.max(0, Math.min(1, initialSmoothing));
+      analyserRef.current.smoothingTimeConstant = audioSettingsRef.current?.smoothingFactor ?? 0.6;
       analyserRef.current.minDecibels = -90;
       analyserRef.current.maxDecibels = -10;
 
@@ -151,7 +130,7 @@ const AudioAnalyzer = ({
       dataArrayRef.current = new Uint8Array(bufferLength);
 
       if (sourceRef.current) {
-        try { sourceRef.current.disconnect(); } catch(e) { /* ignore */ }
+        try { sourceRef.current.disconnect(); } catch(e) {}
       }
       sourceRef.current = audioContextRef.current.createMediaStreamSource(stream);
       sourceRef.current.connect(analyserRef.current);
@@ -188,13 +167,8 @@ const AudioAnalyzer = ({
       animationFrameRef.current = null;
     }
 
-    const managers = managerInstancesRef?.current;
-    if (managers && managers['1']) {
-        managers['1'].resetAudioModifications(); 
-    }
-
     if (sourceRef.current) {
-      try { sourceRef.current.disconnect(); } catch(e) { /* ignore */ }
+      try { sourceRef.current.disconnect(); } catch(e) {}
       sourceRef.current = null;
     }
 
@@ -210,12 +184,15 @@ const AudioAnalyzer = ({
     } else {
         isCleanupScheduledRef.current = false;
     }
-  }, [managerInstancesRef]);
+  }, []);
 
+  // ONLY restart/cleanup when the global "isActive" flag changes
   useEffect(() => {
-    if (isActive) requestMicrophoneAccess();
-    else cleanupAudio();
-    return () => { if (isActive) cleanupAudio(); };
+    if (isActive) {
+        if (!streamRef.current) requestMicrophoneAccess();
+    } else {
+        cleanupAudio();
+    }
   }, [isActive, requestMicrophoneAccess, cleanupAudio]);
 
   useEffect(() => {
@@ -232,9 +209,7 @@ const AudioAnalyzer = ({
 };
 
 AudioAnalyzer.propTypes = {
-  layerConfigs: PropTypes.object,
-  configLoadNonce: PropTypes.number,
   managerInstancesRef: PropTypes.object.isRequired,
 };
 
-export default AudioAnalyzer;
+export default React.memo(AudioAnalyzer);
