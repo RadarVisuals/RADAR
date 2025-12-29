@@ -252,19 +252,17 @@ export const useProjectStore = create(devtools((set, get) => ({
       // --- HYDRATE MODULATION ENGINE ---
       const engineStore = useEngineStore.getState();
       if (workspaceData.modulation) {
-          // console.log("[ProjectStore] Loading Modulation Data:", workspaceData.modulation);
           engineStore.loadModulationState(workspaceData.modulation.baseValues, workspaceData.modulation.patches);
       } else {
-          // console.log("[ProjectStore] No Modulation Data found, resetting to defaults.");
           engineStore.loadModulationState(null, null); 
       }
 
-      const initialScene = workspaceData.defaultPresetName || Object.keys(workspaceData.presets || {})[0] || null;
-      
+      // --- UPDATED: Set activeSceneName to NULL when switching workspaces ---
+      // This prevents "Scene 1" from being auto-selected visually while the visuals might be on "Scene X"
       set({
         stagedWorkspace: workspaceData,
         activeWorkspaceName: workspaceName,
-        activeSceneName: initialScene,
+        activeSceneName: null, // Clear active scene selection
         isLoading: false,
         loadingMessage: ""
       });
@@ -341,7 +339,6 @@ export const useProjectStore = create(devtools((set, get) => ({
     set({ isLoading: true, loadingMessage: "Creating Workspace...", error: null });
     
     const newWorkspaceData = JSON.parse(JSON.stringify(fallbackConfig));
-    // Initialize modulation structure for new workspaces
     newWorkspaceData.modulation = { baseValues: {}, patches: [] };
     
     const imageUrls = new Set();
@@ -410,8 +407,6 @@ export const useProjectStore = create(devtools((set, get) => ({
     try {
       const workspaceToUpload = JSON.parse(JSON.stringify(state.stagedWorkspace));
       
-      // --- CAPTURE CURRENT ENGINE STATE ---
-      // Merge live matrix data into the workspace snapshot
       const engineState = useEngineStore.getState();
       workspaceToUpload.modulation = {
           baseValues: engineState.baseValues,

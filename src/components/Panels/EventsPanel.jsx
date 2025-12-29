@@ -4,9 +4,9 @@ import PropTypes from "prop-types";
 
 import Panel from "./Panel";
 import { EVENT_TYPE_MAP } from "../../config/global-config";
-import { useToast } from "../../hooks/useToast"; // UPDATED IMPORT
-// REFACTORED: Import from selectors
+import { useToast } from "../../hooks/useToast";
 import { useInteractionSettingsState, useProfileSessionState } from "../../hooks/configSelectors";
+import { useVisualEngine } from "../../hooks/useVisualEngine";
 
 import "./PanelStyles/Eventspanel.css";
 
@@ -27,13 +27,13 @@ const generateEventOptions = () => {
 
 const EventsPanel = ({
   onClose,
-  onPreviewEffect,
 }) => {
   const { addToast } = useToast();
-  // REFACTORED: Use selectors
   const { canSaveToHostProfile } = useProfileSessionState();
+  const { processEffect } = useVisualEngine(); // Get effect trigger from new engine hook
+  
   const {
-    savedReactions, // Formerly accessed via stagedSetlist
+    savedReactions,
     updateSavedReaction,
     deleteSavedReaction,
   } = useInteractionSettingsState();
@@ -155,7 +155,7 @@ const EventsPanel = ({
 
   const handlePreview = useCallback(() => {
     setPreviewStatus("");
-    if (typeof onPreviewEffect !== "function") {
+    if (!processEffect) {
       setPreviewStatus("Preview function unavailable.");
       setTimeout(() => setPreviewStatus(""), 3000);
       return;
@@ -170,9 +170,11 @@ const EventsPanel = ({
         } : {},
       effectId: `preview_${Date.now()}`,
     };
-    onPreviewEffect(effectToPreview)
-      .then((effectId) => {
-        setPreviewStatus(effectId ? "Preview triggered!" : "Preview failed to apply.");
+
+    // processEffect is an async function in useVisualEffects
+    processEffect(effectToPreview)
+      .then(() => {
+        setPreviewStatus("Preview triggered!");
         setTimeout(() => setPreviewStatus(""), 2000);
       })
       .catch((error) => {
@@ -180,7 +182,7 @@ const EventsPanel = ({
         setPreviewStatus("Preview error occurred.");
         setTimeout(() => setPreviewStatus(""), 3000);
       });
-  }, [onPreviewEffect, selectedEffect, effectConfig]);
+  }, [processEffect, selectedEffect, effectConfig]);
 
   return (
     <Panel
@@ -230,7 +232,7 @@ const EventsPanel = ({
         )}
 
         <div className="form-actions">
-          <button className="btn btn-secondary btn-preview" onClick={handlePreview} disabled={readOnly || typeof onPreviewEffect !== "function"} title="Trigger a preview of the current effect settings" > PREVIEW EFFECT </button>
+          <button className="btn btn-secondary btn-preview" onClick={handlePreview} disabled={readOnly} title="Trigger a preview of the current effect settings" > PREVIEW EFFECT </button>
           <button className="btn btn-primary btn-save-reaction" onClick={handleStageLocally} disabled={readOnly || typeof onSaveReaction !== "function"} title={ readOnly ? "Cannot stage in read-only mode" : "Stage this reaction (must save globally via Save Panel)" } > STAGE REACTION </button>
         </div>
 
@@ -280,7 +282,6 @@ const EventsPanel = ({
 
 EventsPanel.propTypes = {
   onClose: PropTypes.func.isRequired,
-  onPreviewEffect: PropTypes.func,
 };
 
 export default React.memo(EventsPanel);

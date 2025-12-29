@@ -3,8 +3,6 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import { UpProvider } from "./context/UpProvider.jsx";
-import { VisualEngineProvider } from "./context/VisualEngineContext.jsx";
-import { MIDIProvider } from "./context/MIDIContext.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import "./index.css";
 import { initializeHostUPConnector } from "./context/UpServerProvider.js";
@@ -27,11 +25,8 @@ if (!inIframe) {
 const AppTree = (
   <ErrorBoundary>
     <UpProvider>
-      <MIDIProvider>
-        <VisualEngineProvider>
-          <App />
-        </VisualEngineProvider>
-      </MIDIProvider>
+      {/* MIDIProvider removed as logic is now in Zustand */}
+      <App />
     </UpProvider>
   </ErrorBoundary>
 );

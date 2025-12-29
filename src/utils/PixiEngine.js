@@ -3,6 +3,7 @@ import { Application, Container } from 'pixi.js';
 import { PixiEffectsManager } from './pixi/PixiEffectsManager';
 import { useEngineStore } from '../store/useEngineStore'; 
 import SignalBus from '../utils/SignalBus';
+import { sliderParams } from '../config/sliderParams';
 
 import { AudioReactor } from './pixi/systems/AudioReactor';
 import { FeedbackSystem } from './pixi/systems/FeedbackSystem';
@@ -10,25 +11,21 @@ import { LayerManager } from './pixi/systems/LayerManager';
 import { CrossfaderSystem } from './pixi/systems/CrossfaderSystem.js';
 import { LogicController } from './LogicController';
 
-/**
- * PixiEngine
- * The central orchestrator for the RADAR visual synthesizer.
- * Coordinates logic, physics, audio reactivity, and output routing.
- */
 export default class PixiEngine {
   constructor(canvasElement) {
     this.app = new Application();
     this.canvas = canvasElement;
     this.isReady = false;
     this._isDestroyed = false;
+    
+    // BOOTSTRAP GUARD: Prevents any physics/movement before scene data arrives
+    this.bootstrapped = false;
 
-    // Core Logic Systems
     this.logic = new LogicController();
     this.effectsManager = new PixiEffectsManager();
     this.audioReactor = new AudioReactor();
     
-    // Scenograph structure
-    this.rootContainer = new Container(); // The visual "Engine"
+    this.rootContainer = new Container(); 
     this.layerManager = null; 
     this.feedbackSystem = null; 
     this.crossfaderSystem = null; 
@@ -36,15 +33,27 @@ export default class PixiEngine {
     this._resizeHandler = this.handleResize.bind(this);
     this._updateLoop = this.update.bind(this);
     
-    // Global Event Listener
     this._onEventTrigger = (data) => {
         if(this.logic) this.logic.triggerEvent(data.type);
     };
+
+    this._onParamUpdate = (data) => {
+        const { layerId, param, value, isNormalized } = data;
+        if (!this.layerManager || !this.bootstrapped) return;
+
+        let finalValue = value;
+        if (isNormalized) {
+            const config = sliderParams.find(p => p.prop === param);
+            if (config) {
+                finalValue = config.min + (value * (config.max - config.min));
+            }
+        }
+
+        const activeDeck = this.crossfaderSystem.crossfadeValue < 0.5 ? 'A' : 'B';
+        this.layerManager.updateConfig(layerId, param, finalValue, activeDeck);
+    };
   }
 
-  /**
-   * Initializes the WebGL context and all visual subsystems
-   */
   async init() {
     if (this.isReady || this._isDestroyed) return;
     
@@ -69,21 +78,18 @@ export default class PixiEngine {
 
     this.app.stage.addChild(this.rootContainer);
 
-    // Initialize Subsystems
     this.effectsManager.init(this.app.screen);
     this.layerManager = new LayerManager(this.app, this.effectsManager);
     this.feedbackSystem = new FeedbackSystem(this.app, this.rootContainer); 
     this.crossfaderSystem = new CrossfaderSystem(this.layerManager, this.audioReactor);
 
-    // Setup Render Hooks
     this.app.renderer.on('resize', this._resizeHandler);
     this.handleResize(); 
     this.app.ticker.add(this._updateLoop);
     
-    // Connect Global Bus
     SignalBus.on('event:trigger', this._onEventTrigger);
+    SignalBus.on('param:update', this._onParamUpdate);
     
-    // Hydrate Logic with current store state
     const state = useEngineStore.getState();
     if (state.baseValues) {
         Object.entries(state.baseValues).forEach(([id, val]) => {
@@ -104,12 +110,10 @@ export default class PixiEngine {
     if (this._isDestroyed || !this.app || !this.app.renderer) return;
     const w = this.app.screen.width;
     const h = this.app.screen.height;
-    
     if (this.feedbackSystem) this.feedbackSystem.resize(w, h);
     if (this.layerManager) this.layerManager.resize();
   }
 
-  // --- External Control Proxies ---
   fadeTo(target, duration, onComplete) { 
       if (this.crossfaderSystem) this.crossfaderSystem.fadeTo(target, duration, onComplete); 
   }
@@ -129,11 +133,11 @@ export default class PixiEngine {
       if (this.layerManager) this.layerManager.updateConfig(layerId, key, value, deckSide);
   }
   snapConfig(layerId, fullConfig, deckSide = 'A') {
-      if (this.layerManager) this.layerManager.snapConfig(layerId, fullConfig, deckSide);
-  }
-  getState(layerId, deckSide) {
-      const deck = this.layerManager?.getDeck(layerId, deckSide);
-      return deck ? deck.getState() : null;
+      if (this.layerManager) {
+          // ACTIVATE ENGINE PHYSICS ONLY ON FIRST VALID SNAP
+          this.bootstrapped = true;
+          this.layerManager.snapConfig(layerId, fullConfig, deckSide);
+      }
   }
   setAudioFactors(factors) { this.audioReactor.setAudioFactors(factors); }
   triggerBeatPulse(factor, duration) { this.audioReactor.triggerBeatPulse(factor, duration); }
@@ -167,9 +171,9 @@ export default class PixiEngine {
 
     try {
         const now = performance.now();
-        const deltaTime = ticker.deltaTime; 
+        const deltaTime = Math.min(ticker.deltaTime, 1.1); 
 
-        // 1. UPDATE BRAIN
+        // 1. UPDATE BRAIN (Signals always run)
         const audioData = this.audioReactor.getAudioData();
         const finalParams = this.logic.update(deltaTime, audioData);
 
@@ -190,8 +194,11 @@ export default class PixiEngine {
         }
 
         // 4. STEP WORLD PHYSICS
-        this.effectsManager.update(ticker, this.app.renderer);
-        this.crossfaderSystem.update(deltaTime * 0.01666, now, this.app.screen);
+        // ONLY run physics/crossfading if we have received a scene config
+        if (this.bootstrapped) {
+            this.effectsManager.update(ticker, this.app.renderer);
+            this.crossfaderSystem.update(deltaTime * 0.01666, now, this.app.screen);
+        }
 
         // 5. RENDER PREPARATION
         if (this.layerManager) {
@@ -223,19 +230,14 @@ export default class PixiEngine {
   destroy() { 
       this._isDestroyed = true;
       this.isReady = false; 
-
       SignalBus.off('event:trigger', this._onEventTrigger);
-      
+      SignalBus.off('param:update', this._onParamUpdate);
       if (this.audioReactor) this.audioReactor.destroy();
       if (this.layerManager) this.layerManager.destroy();
       if (this.feedbackSystem) this.feedbackSystem.destroy();
-      
       this.rootContainer.destroy({ children: false });
-
       if (this.app) {
-          if (this.app.renderer) { 
-              this.app.renderer.off('resize', this._resizeHandler); 
-          }
+          if (this.app.renderer) { this.app.renderer.off('resize', this._resizeHandler); }
           this.app.ticker.remove(this._updateLoop);
           this.app.destroy(true, { children: true, texture: true }); 
       }

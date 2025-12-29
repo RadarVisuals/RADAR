@@ -1,17 +1,17 @@
 // src/components/Panels/EnhancedControlPanel.jsx
 import React, { useCallback, useMemo, useState, useEffect } from "react";
 import PropTypes from "prop-types";
+import { useShallow } from 'zustand/react/shallow';
 
 import Panel from "./Panel";
 import PLockController from './PLockController';
 import PerformanceSlider from "../UI/PerformanceSlider"; 
 
-// REFACTORED: Use selectors
 import { useProfileSessionState, useSetManagementState } from "../../hooks/configSelectors";
-import { useMIDI } from "../../context/MIDIContext";
-import { useVisualEngineContext } from "../../context/VisualEngineContext";
-import { useEngineStore } from "../../store/useEngineStore";
-import { useToast } from "../../hooks/useToast"; // UPDATED IMPORT
+import { useEngineStore } from "../../store/useEngineStore"; 
+import { useProjectStore } from "../../store/useProjectStore"; 
+import { useVisualEngine } from "../../hooks/useVisualEngine";
+import { useToast } from "../../hooks/useToast";
 import { BLEND_MODES } from "../../config/global-config";
 import { sliderParams } from "../../config/sliderParams";
 
@@ -48,7 +48,6 @@ const EnhancedControlPanel = ({
   crossfadeDurationMs,
   onSetCrossfadeDuration,
 }) => {
-  // REFACTORED: Hooks
   const { isProfileOwner } = useProfileSessionState();
   const { addToast } = useToast();
   
@@ -61,24 +60,28 @@ const EnhancedControlPanel = ({
     setDefaultSceneInStagedWorkspace,
     isSaving,
     setActiveSceneName,
-  } = useSetManagementState(); // Uses consolidated selector
+  } = useSetManagementState();
 
   const {
     handleSceneSelect: onSceneSelect,
     updateLayerConfig: onLayerConfigChange,
-    managerInstancesRef,
-    renderedCrossfaderValue,
     uiControlConfig 
-  } = useVisualEngineContext();
+  } = useVisualEngine();
 
+  // --- STABLE SELECTORS FOR MIDI ACTIONS ---
   const isAutoFading = useEngineStore(state => state.isAutoFading);
+  const isConnected = useEngineStore(state => state.isConnected);
+  const midiLearning = useEngineStore(state => state.midiLearning);
+  const learningLayer = useEngineStore(state => state.learningLayer);
 
-  const {
-    isConnected: midiConnected, midiLearning, learningLayer,
-    startMIDILearn, startLayerMIDILearn,
-    midiMap, layerMappings,
-    startGlobalMIDILearn,
-  } = useMIDI();
+  // Get stable action references from store to avoid infinite loops
+  const setMidiLearning = useEngineStore(state => state.setMidiLearning);
+  const setLearningLayer = useEngineStore(state => state.setLearningLayer);
+
+  const stagedSetlist = useProjectStore(s => s.stagedSetlist);
+  const midiMap = stagedSetlist?.globalUserMidiMap || {};
+  const layerMappings = midiMap.layerSelects || {};
+  // -----------------------------------------
 
   const [newSceneName, setNewSceneName] = useState("");
   const [localIntervalInput, setLocalIntervalInput] = useState(sequencerIntervalMs / 1000);
@@ -118,16 +121,12 @@ const EnhancedControlPanel = ({
   const activeLayerConfigs = uiControlConfig?.layers;
   const config = useMemo(() => activeLayerConfigs?.[activeLayer] || getDefaultLayerConfigTemplate(), [activeLayerConfigs, activeLayer]);
   
-  // --- PERFORMANCE OPTIMIZATION HANDLERS ---
-  
-  // 1. FAST: Updates visual engine immediately, skips React/Zustand store
   const handleSliderInput = useCallback((name, value) => {
-    onLayerConfigChange(activeLayer, name, value, false, true); // skipStoreUpdate = true
+    onLayerConfigChange(activeLayer, name, value, false, true);
   }, [onLayerConfigChange, activeLayer]);
 
-  // 2. SLOW: Commits final value to Store on release
   const handleSliderCommit = useCallback((name, value) => {
-    onLayerConfigChange(activeLayer, name, value, false, false); // skipStoreUpdate = false
+    onLayerConfigChange(activeLayer, name, value, false, false);
   }, [onLayerConfigChange, activeLayer]);
 
   const handleCreateScene = useCallback(() => {
@@ -136,37 +135,8 @@ const EnhancedControlPanel = ({
       addToast("Scene name cannot be empty.", "warning");
       return;
     }
-    if (savedSceneList.some(p => p.name === name)) {
-      if (!window.confirm(`A scene named "${name}" already exists. Do you want to overwrite it?`)) {
-        return;
-      }
-    }
     
-    const managers = managerInstancesRef.current?.current;
-    const activeDeckIsA = renderedCrossfaderValue < 0.5;
-    const activeDeckChar = activeDeckIsA ? 'A' : 'B';
-    let liveLayersConfig = {};
-
-    if (managers && Object.keys(managers).length > 0) {
-      for (const layerId in managers) {
-        const manager = managers[layerId];
-        const currentState = manager.getState ? manager.getState(activeDeckChar) : null;
-        if (!currentState) continue;
-        
-        const liveConfig = JSON.parse(JSON.stringify(currentState.config));
-        liveConfig.angle = (currentState.config.angle + currentState.continuousRotationAngle) % 360;
-        liveConfig.driftState = JSON.parse(JSON.stringify(currentState.driftState));
-        
-        if (currentState.playbackValues) {
-            for (const key in currentState.playbackValues) {
-                liveConfig[key] = currentState.playbackValues[key];
-            }
-        }
-        liveLayersConfig[layerId] = liveConfig;
-      }
-    } else {
-      liveLayersConfig = JSON.parse(JSON.stringify(uiControlConfig.layers));
-    }
+    const liveLayersConfig = JSON.parse(JSON.stringify(uiControlConfig.layers));
 
     const newSceneData = {
       name,
@@ -181,29 +151,29 @@ const EnhancedControlPanel = ({
     addToast(`Scene "${name}" created and staged.`, "success");
     setNewSceneName("");
     
-  }, [newSceneName, savedSceneList, uiControlConfig, addNewSceneToStagedWorkspace, addToast, managerInstancesRef, renderedCrossfaderValue, setActiveSceneName]);
+  }, [newSceneName, uiControlConfig, addNewSceneToStagedWorkspace, addToast, setActiveSceneName]);
 
   const handleDeleteScene = useCallback((nameToDelete) => {
-    if (window.confirm(`Are you sure you want to delete the scene "${nameToDelete}"? This will be staged for the next save.`)) {
+    if (window.confirm(`Are you sure you want to delete the scene "${nameToDelete}"?`)) {
       deleteSceneFromStagedWorkspace(nameToDelete);
-      addToast(`Scene "${nameToDelete}" was deleted. Save your workspace to confirm.`, "info");
+      addToast(`Scene "${nameToDelete}" was deleted.`, "info");
     }
   }, [deleteSceneFromStagedWorkspace, addToast]);
 
   const handleEnterMIDILearnMode = useCallback((paramName) => {
-    if (!isProfileOwner || !midiConnected) return;
-    startMIDILearn(paramName, activeLayer);
-  }, [isProfileOwner, midiConnected, startMIDILearn, activeLayer]);
+    if (!isProfileOwner || !isConnected) return;
+    setMidiLearning({ type: 'param', param: paramName, layer: activeLayer });
+  }, [isProfileOwner, isConnected, setMidiLearning, activeLayer]);
 
   const handleEnterLayerMIDILearnMode = useCallback((layer) => {
-    if (!isProfileOwner || !midiConnected) return;
-    startLayerMIDILearn(layer);
-  }, [isProfileOwner, midiConnected, startLayerMIDILearn]);
+    if (!isProfileOwner || !isConnected) return;
+    setLearningLayer(layer);
+  }, [isProfileOwner, isConnected, setLearningLayer]);
 
   const handleEnterGlobalMIDILearnMode = useCallback((controlName) => {
-    if (!isProfileOwner || !midiConnected) return;
-    startGlobalMIDILearn(controlName);
-  }, [isProfileOwner, midiConnected, startGlobalMIDILearn]);
+    if (!isProfileOwner || !isConnected) return;
+    setMidiLearning({ type: 'global', control: controlName });
+  }, [isProfileOwner, isConnected, setMidiLearning]);
 
   const displayGlobalMidiMapping = useCallback((controlName) => {
     const mapping = midiMap?.global?.[controlName];
@@ -227,7 +197,8 @@ const EnhancedControlPanel = ({
   const handleDirectionToggle = useCallback(() => onLayerConfigChange(activeLayer, "direction", - (config.direction || 1), false), [onLayerConfigChange, activeLayer, config.direction]);
   const handleEnabledToggle = useCallback((e) => onLayerConfigChange(activeLayer, "enabled", e.target.checked, false), [onLayerConfigChange, activeLayer]);
   
-  const isLearning = (type, control) => midiLearning?.type === type && midiLearning?.control === control;
+  const stopMIDILearn = useCallback(() => setMidiLearning(null), [setMidiLearning]);
+  const stopLayerMIDILearn = useCallback(() => setLearningLayer(null), [setLearningLayer]);
 
   return (
     <Panel title={`Layer ${activeLayer} Controls`} onClose={onToggleMinimize} className="panel-from-toolbar enhanced-control-panel">
@@ -253,19 +224,19 @@ const EnhancedControlPanel = ({
                   <span className="slider-label">{isLocked && <span className="plock-indicator" title="Parameter Locked">●</span>}{label}</span>
                   <div className="slider-controls">
                     <span className="slider-value">{formatValue(config[prop] ?? defaultValue, formatDecimals)}</span>
-                    {midiConnected && isProfileOwner && (<button type="button" className={`midi-btn small-action-button ${isLearningThis ? "learning" : ""}`} onClick={() => handleEnterMIDILearnMode(prop)} disabled={!midiConnected || !!learningLayer || (midiLearning !== null && !isLearningThis)} title={`Map MIDI to ${label}`}> {isLearningThis ? "..." : "M"} </button>)}
+                    {isConnected && isProfileOwner && (<button type="button" className={`midi-btn small-action-button ${isLearningThis ? "learning" : ""}`} onClick={() => handleEnterMIDILearnMode(prop)} disabled={!isConnected || !!learningLayer || (midiLearning !== null && !isLearningThis)} title={`Map MIDI to ${label}`}> {isLearningThis ? "..." : "M"} </button>)}
                   </div>
                 </div>
                 
                 <PerformanceSlider 
                     name={prop}
-                    layerId={activeLayer} // --- ADDED: Pass layerId for event filtering ---
+                    layerId={activeLayer}
                     min={min}
                     max={max}
                     step={step}
                     value={config[prop] ?? defaultValue}
-                    onChange={handleSliderInput}   // FAST Update
-                    onCommit={handleSliderCommit}  // SLOW Update
+                    onChange={handleSliderInput} 
+                    onCommit={handleSliderCommit}
                     disabled={isLearningThis || isLocked}
                     className="horizontal-slider"
                     ariaLabel={label}
@@ -360,7 +331,7 @@ const EnhancedControlPanel = ({
         </div>
       </div>
 
-      {midiConnected && (
+      {isConnected && (
         <div className="midi-mappings-section">
           <h4 className="midi-section-title">Global & Layer MIDI Mappings</h4>
           <div className="global-mapping-grid">
@@ -368,42 +339,42 @@ const EnhancedControlPanel = ({
               <div className="global-mapping-label">Crossfader</div>
               <div className="global-mapping-controls">
                 <span className="layer-mapping-text" title={displayGlobalMidiMapping('crossfader')}>{displayGlobalMidiMapping('crossfader')}</span>
-                <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'crossfader') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('crossfader')} disabled={!isProfileOwner || !midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Crossfader">{isLearning('global', 'crossfader') ? "..." : "Map"}</button>
+                <button type="button" className={`midi-learn-btn small-action-button ${midiLearning?.control === 'crossfader' ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('crossfader')} disabled={!isProfileOwner || !isConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Crossfader">{midiLearning?.control === 'crossfader' ? "..." : "Map"}</button>
               </div>
             </div>
             <div className="global-mapping-item">
               <div className="global-mapping-label">P-Lock Toggle</div>
               <div className="global-mapping-controls">
                 <span className="layer-mapping-text" title={displayGlobalMidiMapping('pLockToggle')}>{displayGlobalMidiMapping('pLockToggle')}</span>
-                <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'pLockToggle') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('pLockToggle')} disabled={!isProfileOwner || !midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to P-Lock Toggle">{isLearning('global', 'pLockToggle') ? "..." : "Map"}</button>
+                <button type="button" className={`midi-learn-btn small-action-button ${midiLearning?.control === 'pLockToggle' ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('pLockToggle')} disabled={!isProfileOwner || !isConnected || !!midiLearning || !!learningLayer} title="Map MIDI to P-Lock Toggle">{midiLearning?.control === 'pLockToggle' ? "..." : "Map"}</button>
               </div>
             </div>
             <div className="global-mapping-item">
               <div className="global-mapping-label">Previous Scene</div>
               <div className="global-mapping-controls">
                 <span className="layer-mapping-text" title={displayGlobalMidiMapping('prevScene')}>{displayGlobalMidiMapping('prevScene')}</span>
-                <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'prevScene') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('prevScene')} disabled={!isProfileOwner || !midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Previous Scene">{isLearning('global', 'prevScene') ? "..." : "Map"}</button>
+                <button type="button" className={`midi-learn-btn small-action-button ${midiLearning?.control === 'prevScene' ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('prevScene')} disabled={!isProfileOwner || !isConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Previous Scene">{midiLearning?.control === 'prevScene' ? "..." : "Map"}</button>
               </div>
             </div>
             <div className="global-mapping-item">
               <div className="global-mapping-label">Next Scene</div>
               <div className="global-mapping-controls">
                 <span className="layer-mapping-text" title={displayGlobalMidiMapping('nextScene')}>{displayGlobalMidiMapping('nextScene')}</span>
-                <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'nextScene') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('nextScene')} disabled={!isProfileOwner || !midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Next Scene">{isLearning('global', 'nextScene') ? "..." : "Map"}</button>
+                <button type="button" className={`midi-learn-btn small-action-button ${midiLearning?.control === 'nextScene' ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('nextScene')} disabled={!isProfileOwner || !isConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Next Scene">{midiLearning?.control === 'nextScene' ? "..." : "Map"}</button>
               </div>
             </div>
             <div className="global-mapping-item">
               <div className="global-mapping-label">Previous Workspace</div>
               <div className="global-mapping-controls">
                 <span className="layer-mapping-text" title={displayGlobalMidiMapping('prevWorkspace')}>{displayGlobalMidiMapping('prevWorkspace')}</span>
-                <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'prevWorkspace') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('prevWorkspace')} disabled={!isProfileOwner || !midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Previous Workspace">{isLearning('global', 'prevWorkspace') ? "..." : "Map"}</button>
+                <button type="button" className={`midi-learn-btn small-action-button ${midiLearning?.control === 'prevWorkspace' ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('prevWorkspace')} disabled={!isProfileOwner || !isConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Previous Workspace">{midiLearning?.control === 'prevWorkspace' ? "..." : "Map"}</button>
               </div>
             </div>
             <div className="global-mapping-item">
               <div className="global-mapping-label">Next Workspace</div>
               <div className="global-mapping-controls">
                 <span className="layer-mapping-text" title={displayGlobalMidiMapping('nextWorkspace')}>{displayGlobalMidiMapping('nextWorkspace')}</span>
-                <button type="button" className={`midi-learn-btn small-action-button ${isLearning('global', 'nextWorkspace') ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('nextWorkspace')} disabled={!isProfileOwner || !midiConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Next Workspace">{isLearning('global', 'nextWorkspace') ? "..." : "Map"}</button>
+                <button type="button" className={`midi-learn-btn small-action-button ${midiLearning?.control === 'nextWorkspace' ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('nextWorkspace')} disabled={!isProfileOwner || !isConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Next Workspace">{midiLearning?.control === 'nextWorkspace' ? "..." : "Map"}</button>
               </div>
             </div>
           </div>
@@ -413,12 +384,21 @@ const EnhancedControlPanel = ({
                 <div className="layer-mapping-label">Layer {layerNum} Select</div>
                 <div className="layer-mapping-controls">
                   <span className="layer-mapping-text" title={displayLayerMidiMapping(String(layerNum))}>{displayLayerMidiMapping(String(layerNum))}</span>
-                  {isProfileOwner && (<button type="button" className={`midi-learn-btn small-action-button ${learningLayer === layerNum ? "learning" : ""}`} onClick={() => handleEnterLayerMIDILearnMode(layerNum)} disabled={!midiConnected || !!midiLearning || (learningLayer !== null && learningLayer !== layerNum)} title={`Map MIDI to select Layer ${layerNum}`}> {learningLayer === layerNum ? "..." : "Map"} </button>)}
+                  {isProfileOwner && (<button type="button" className={`midi-learn-btn small-action-button ${learningLayer === layerNum ? "learning" : ""}`} onClick={() => handleEnterLayerMIDILearnMode(layerNum)} disabled={!isConnected || !!midiLearning || (learningLayer !== null && learningLayer !== layerNum)} title={`Map MIDI to select Layer ${layerNum}`}> {learningLayer === layerNum ? "..." : "Map"} </button>)}
                 </div>
               </div>
             ))}
           </div>
         </div>
+      )}
+
+      {/* Manual learning reset UI */}
+      {(midiLearning || learningLayer) && (
+          <div className="midi-learning-global-cancel">
+              <button className="btn btn-sm btn-block btn-secondary" onClick={() => { stopMIDILearn(); stopLayerMIDILearn(); }}>
+                  Cancel MIDI Learning
+              </button>
+          </div>
       )}
     </Panel>
   );

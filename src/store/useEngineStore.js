@@ -2,6 +2,7 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import { EFFECT_MANIFEST } from '../config/EffectManifest';
+import { midiManager } from '../utils/MidiManager';
 
 const DEFAULT_AUDIO_SETTINGS = {
   bassIntensity: 1.0,
@@ -12,6 +13,9 @@ const DEFAULT_AUDIO_SETTINGS = {
 
 const DEFAULT_SEQUENCER_INTERVAL = 2000;
 
+/**
+ * Helper to generate initial base values for all parameters defined in the manifest.
+ */
 export const getInitialBaseValues = () => {
     const values = {};
     Object.values(EFFECT_MANIFEST).forEach(effect => {
@@ -19,6 +23,7 @@ export const getInitialBaseValues = () => {
             values[param.id] = param.default;
         });
     });
+    values['global.crossfader'] = 0.0;
     return values;
 };
 
@@ -45,8 +50,37 @@ export const useEngineStore = create(
       [side === 'A' ? 'sideA' : 'sideB']: { config } 
     })),
 
+    /**
+     * Optimized Configuration Update
+     * Replaces expensive deep clones (JSON.parse) with shallow target updates.
+     * This is crucial for zero-latency MIDI performance.
+     */
+    updateActiveDeckConfig: (layerId, key, value) => {
+        const { crossfader } = get();
+        const activeSideKey = crossfader < 0.5 ? 'sideA' : 'sideB';
+        const currentDeck = get()[activeSideKey];
+
+        if (!currentDeck?.config) return;
+
+        // Shallow clone the layers map and the specific modified layer
+        const newLayers = { ...currentDeck.config.layers };
+        newLayers[layerId] = { 
+            ...newLayers[layerId], 
+            [key]: value 
+        };
+
+        set({
+            [activeSideKey]: {
+                config: {
+                    ...currentDeck.config,
+                    layers: newLayers
+                }
+            }
+        });
+    },
+
     // =========================================
-    // 2. MODULATION SYSTEM
+    // 2. MODULATION SYSTEM (The Missing Functions)
     // =========================================
     baseValues: getInitialBaseValues(),
     patches: [],
@@ -74,15 +108,26 @@ export const useEngineStore = create(
     clearAllPatches: () => set({ patches: [] }),
     resetBaseValues: () => set({ baseValues: getInitialBaseValues() }),
 
+    /**
+     * Hydrates the modulation engine when a workspace is loaded.
+     * This was the function causing your TypeError.
+     */
     loadModulationState: (savedBaseValues, savedPatches) => set((state) => {
         const freshDefaults = getInitialBaseValues();
         const mergedBaseValues = { ...freshDefaults };
+        
         if (savedBaseValues) {
             Object.keys(savedBaseValues).forEach(key => {
-                if (freshDefaults.hasOwnProperty(key)) mergedBaseValues[key] = savedBaseValues[key];
+                if (Object.prototype.hasOwnProperty.call(freshDefaults, key)) {
+                    mergedBaseValues[key] = savedBaseValues[key];
+                }
             });
         }
-        const validPatches = (savedPatches || []).filter(patch => freshDefaults.hasOwnProperty(patch.target));
+
+        const validPatches = (savedPatches || []).filter(patch => 
+            Object.prototype.hasOwnProperty.call(freshDefaults, patch.target)
+        );
+
         return {
             baseValues: mergedBaseValues,
             patches: validPatches,
@@ -111,11 +156,10 @@ export const useEngineStore = create(
     // =========================================
     // 5. MIDI SYSTEM
     // =========================================
-    midiAccess: null,
-    midiInputs: [],
     isConnected: false,
     isConnecting: false,
     midiError: null,
+    midiInputs: [],
     midiLearning: null, 
     learningLayer: null, 
     selectedChannel: 0,
@@ -123,16 +167,30 @@ export const useEngineStore = create(
     midiMonitorData: [],
     pendingActions: [], 
 
-    setMidiAccess: (access) => set({ midiAccess: access }),
+    connectMIDI: async () => {
+      if (get().isConnecting) return;
+      set({ isConnecting: true, midiError: null });
+      try {
+        await midiManager.connect();
+        set({ isConnected: true, isConnecting: false });
+      } catch (err) {
+        set({ isConnected: false, isConnecting: false, midiError: err.message });
+      }
+    },
+
+    disconnectMIDI: () => {
+      midiManager.disconnect();
+      set({ isConnected: false, midiInputs: [] });
+    },
+
     setMidiInputs: (inputs) => set({ midiInputs: inputs }),
-    setMidiConnectionStatus: (isConnected, isConnecting, error = null) => set({ isConnected, isConnecting, midiError: error }),
-    setMidiLearning: (learningState) => set({ midiLearning: learningState }),
-    setLearningLayer: (layer) => set({ learningLayer: layer }),
-    setSelectedChannel: (channel) => set({ selectedChannel: channel }),
-    setShowMidiMonitor: (show) => set({ showMidiMonitor: show }),
+    setMidiLearning: (val) => set({ midiLearning: val }),
+    setLearningLayer: (val) => set({ learningLayer: val }),
+    setSelectedChannel: (ch) => set({ selectedChannel: ch }),
+    setShowMidiMonitor: (val) => set({ showMidiMonitor: val }),
     addMidiMonitorData: (entry) => set((state) => {
-        const updated = [...state.midiMonitorData, entry];
-        return { midiMonitorData: updated.length > 50 ? updated.slice(-50) : updated };
+        const updated = [entry, ...state.midiMonitorData];
+        return { midiMonitorData: updated.length > 50 ? updated.slice(0, 50) : updated };
     }),
     clearMidiMonitorData: () => set({ midiMonitorData: [] }),
     queueMidiAction: (action) => set((state) => ({ pendingActions: [...state.pendingActions, action] })),

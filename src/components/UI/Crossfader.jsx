@@ -4,43 +4,93 @@ import PropTypes from 'prop-types';
 import SignalBus from '../../utils/SignalBus';
 import './Crossfader.css';
 
+/**
+ * Crossfader: Zero-Snap Smooth Animation Edition
+ * 
+ * This component remains uncontrolled to prevent React-loop snapping,
+ * but listens to the High-Frequency 'crossfader:update' signal to 
+ * animate smoothly during auto-fades and scene transitions.
+ */
 const Crossfader = ({ value, onInput, onChange, disabled = false }) => {
   const inputRef = useRef(null);
-  const isDragging = useRef(false);
+  const isDraggingRef = useRef(false);
+  const lastInteractionTimeRef = useRef(0);
+  
+  // How long to ignore store updates after a manual MIDI/Mouse event (ms)
+  const AUTHORITY_WINDOW = 1000;
 
-  // 1. Listen for high-frequency updates from VisualEngineContext (Zero-Render)
+  /**
+   * STORE SYNC (Slow Path)
+   * Only allows the Store to move the slider if we haven't touched it 
+   * via MIDI or Mouse recently. This prevents the "Tug-of-war" snap.
+   */
   useEffect(() => {
-    // SIGNAL BUS LISTENER
+    if (!inputRef.current) return;
+
+    const now = performance.now();
+    const timeSinceInteraction = now - lastInteractionTimeRef.current;
+
+    // 1. If we are dragging with a mouse, ignore store props
+    if (isDraggingRef.current) return;
+
+    // 2. If we touched this via MIDI in the last second, ignore store props
+    if (timeSinceInteraction < AUTHORITY_WINDOW) {
+        return;
+    }
+
+    // 3. Otherwise, allow external resets (like Workspace loads)
+    inputRef.current.value = value;
+  }, [value]);
+
+  /**
+   * SIGNAL BUS LISTENERS (Fast Path)
+   */
+  useEffect(() => {
+    // 1. Handle Frame-by-Frame Updates (For smooth animation during auto-fades)
     const handleUpdate = (val) => {
-      // Only update DOM if user isn't currently dragging the handle
-      if (!isDragging.current && inputRef.current) {
+      if (!inputRef.current) return;
+
+      // Crucial: Only animate the handle if the user isn't physically fighting it
+      if (!isDraggingRef.current) {
+        inputRef.current.value = val;
+      }
+    };
+
+    // 2. Handle Absolute Set Commands (For instant snaps/resets)
+    const handleSet = (val) => {
+      if (!inputRef.current) return;
+      
+      // Update authority timestamp so incoming props don't override this jump
+      lastInteractionTimeRef.current = performance.now();
+
+      if (!isDraggingRef.current) {
         inputRef.current.value = val;
       }
     };
     
-    const unsubscribe = SignalBus.on('crossfader:update', handleUpdate);
-    return () => unsubscribe();
+    // Listen for high-frequency frames from CrossfaderSystem.js
+    const unsubUpdate = SignalBus.on('crossfader:update', handleUpdate);
+    // Listen for absolute jumps from MidiManager or Logic
+    const unsubSet = SignalBus.on('crossfader:set', handleSet);
+    
+    return () => {
+        unsubUpdate();
+        unsubSet();
+    };
   }, []);
 
-  // 2. Sync with initial/low-frequency React prop updates (e.g. on load)
-  useEffect(() => {
-    if (!isDragging.current && inputRef.current) {
-      inputRef.current.value = value;
-    }
-  }, [value]);
-
   const handleOnInput = (e) => {
-    isDragging.current = true;
+    isDraggingRef.current = true;
+    lastInteractionTimeRef.current = performance.now();
     if (onInput) {
-      // Pass value directly to engine
       onInput(e.target.valueAsNumber);
     }
   };
 
   const handleOnChange = (e) => {
-    isDragging.current = false;
+    isDraggingRef.current = false;
+    lastInteractionTimeRef.current = performance.now();
     if (onChange) {
-      // Commit final value
       onChange(e.target.valueAsNumber);
     }
   };
@@ -53,7 +103,7 @@ const Crossfader = ({ value, onInput, onChange, disabled = false }) => {
         min="0"
         max="1"
         step="0.001"
-        defaultValue={value} 
+        defaultValue={value} // Keep uncontrolled to prevent React re-render snapping
         onInput={handleOnInput}
         onChange={handleOnChange} 
         onPointerUp={handleOnChange} 

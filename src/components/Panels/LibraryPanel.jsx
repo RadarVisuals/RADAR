@@ -2,14 +2,14 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import PropTypes from "prop-types";
 import Panel from "./Panel";
-import { useAssetContext } from "../../hooks/useAssetContext"; // UPDATED IMPORT
-import { useToast } from "../../hooks/useToast"; // UPDATED IMPORT
+import { useAssetContext } from "../../hooks/useAssetContext";
+import { useToast } from "../../hooks/useToast";
 import { isAddress, stringToHex, keccak256, stringToBytes } from "viem";
 import { uploadJsonToPinata } from "../../services/PinataService";
 import { RADAR_OFFICIAL_ADMIN_ADDRESS } from "../../config/global-config";
 
-// REFACTORED: Use selectors
 import { useSetManagementState, useProfileSessionState } from "../../hooks/configSelectors";
+import { useVisualEngine } from "../../hooks/useVisualEngine";
 
 import "./PanelStyles/LibraryPanel.css";
 
@@ -71,15 +71,14 @@ CollectionCard.propTypes = {
 };
 
 const LibraryPanel = ({ onClose }) => {
-  // REFACTORED: Use selectors
   const { isRadarProjectAdmin, isHostProfileOwner } = useProfileSessionState();
   const {
     stagedSetlist,
     addCollectionToPersonalLibrary,
     removeCollectionFromPersonalLibrary,
-    configService, 
   } = useSetManagementState();
   
+  const { configService } = useVisualEngine(); // Get service from new unified hook
   const { officialWhitelist, refreshOfficialWhitelist } = useAssetContext();
   const { addToast } = useToast();
   

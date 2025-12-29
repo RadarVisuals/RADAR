@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useProjectStore } from '../store/useProjectStore';
 import { useWalletStore } from '../store/useWalletStore';
-import { useVisualEngineContext } from '../context/VisualEngineContext';
+import { useVisualEngine } from './useVisualEngine'; 
 import { useUpProvider } from '../context/UpProvider';
 
 // --- Session Selectors ---
@@ -27,20 +27,19 @@ export const useProfileSessionState = () => {
 
 // --- Visual Layer State ---
 export const useVisualLayerState = () => {
-  const visualEngineCtx = useVisualEngineContext();
+  const visualEngine = useVisualEngine();
+  
   return {
-    layerConfigs: visualEngineCtx.uiControlConfig?.layers,
-    tokenAssignments: visualEngineCtx.uiControlConfig?.tokenAssignments,
-    updateLayerConfig: visualEngineCtx.updateLayerConfig,
-    updateTokenAssignment: visualEngineCtx.updateTokenAssignment,
+    layerConfigs: visualEngine.uiControlConfig?.layers,
+    tokenAssignments: visualEngine.uiControlConfig?.tokenAssignments,
+    updateLayerConfig: visualEngine.updateLayerConfig,
+    updateTokenAssignment: visualEngine.updateTokenAssignment,
   };
 };
 
-// --- Set Management (PERFORMANCE FIX: Explicit Selection) ---
+// --- Set Management ---
 export const useSetManagementState = () => {
-  // 1. Select only specific fields/actions from the Store
   const projectData = useProjectStore(useShallow(s => ({
-    // Data
     stagedWorkspace: s.stagedWorkspace,
     activeWorkspaceName: s.activeWorkspaceName,
     isLoading: s.isLoading,
@@ -49,8 +48,6 @@ export const useSetManagementState = () => {
     stagedSetlist: s.stagedSetlist,
     activeSceneName: s.activeSceneName,
     configService: s.configService,
-    
-    // Actions (Workspace)
     loadWorkspace: s.loadWorkspace,
     createNewWorkspace: s.createNewWorkspace,
     deleteWorkspaceFromSet: s.deleteWorkspaceFromSet,
@@ -59,20 +56,15 @@ export const useSetManagementState = () => {
     saveChanges: s.saveChanges,
     duplicateActiveWorkspace: s.duplicateActiveWorkspace,
     preloadWorkspace: s.preloadWorkspace,
-    
-    // Actions (Scene)
     addScene: s.addScene,
     deleteScene: s.deleteScene,
     setDefaultScene: s.setDefaultScene,
-    
-    // Actions (Library)
     addCollectionToLibrary: s.addCollectionToLibrary,
     removeCollectionFromLibrary: s.removeCollectionFromLibrary,
   })));
 
   const session = useProfileSessionState();
   
-  // 2. Memoize derived list
   const fullSceneList = useMemo(() => {
     const presets = projectData.stagedWorkspace?.presets || {};
     return Object.values(presets).sort((a, b) => 
@@ -82,18 +74,13 @@ export const useSetManagementState = () => {
 
   return {
     ...projectData,
-    
-    // Aliases for compatibility
     stagedActiveWorkspace: projectData.stagedWorkspace,
     addNewSceneToStagedWorkspace: projectData.addScene,
     deleteSceneFromStagedWorkspace: projectData.deleteScene,
     setDefaultSceneInStagedWorkspace: projectData.setDefaultScene,
     addCollectionToPersonalLibrary: projectData.addCollectionToLibrary,
     removeCollectionFromPersonalLibrary: projectData.removeCollectionFromLibrary,
-
     fullSceneList,
-    
-    // Session Mix-ins
     canSaveToHostProfile: session.canSaveToHostProfile,
     hostProfileAddress: session.hostProfileAddress,
     isHostProfileOwner: session.isHostProfileOwner,
@@ -102,7 +89,6 @@ export const useSetManagementState = () => {
 
 // --- Interaction Settings ---
 export const useInteractionSettingsState = () => {
-  // These selectors are already quite specific, but let's wrap them just in case
   const { stagedSetlist, updateGlobalEventReactions, deleteGlobalEventReaction, updateGlobalMidiMap } = useProjectStore(useShallow(s => ({
       stagedSetlist: s.stagedSetlist,
       updateGlobalEventReactions: s.updateGlobalEventReactions,

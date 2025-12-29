@@ -2,8 +2,7 @@
 import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
 import './WorkspaceSelectorDots.css';
-// REFACTORED: Use selector
-import { useSetManagementState } from '../../hooks/configSelectors';
+import { useVisualEngine } from '../../hooks/useVisualEngine';
 
 const WorkspaceSelectorDots = ({
   workspaces = [],
@@ -11,8 +10,8 @@ const WorkspaceSelectorDots = ({
   onSelectWorkspace,
   isLoading,
 }) => {
-  // REFACTORED: Get preload function from new hook
-  const { preloadWorkspace } = useSetManagementState();
+  // Use new hook to get preloading logic
+  const { preloadWorkspace } = useVisualEngine();
 
   const sortedWorkspaces = useMemo(() => workspaces, [workspaces]);
 

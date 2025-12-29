@@ -5,9 +5,8 @@ import { toplayerIcon, middlelayerIcon, bottomlayerIcon } from "../../assets";
 import { demoAssetMap } from "../../assets/DemoLayers/initLayers";
 import { manageOverlayDimmingEffect } from "../../utils/performanceHelpers";
 import { globalAnimationFlags } from "../../utils/globalAnimationFlags";
-import { useAssetContext } from "../../hooks/useAssetContext"; // UPDATED IMPORT
-import { useVisualEngineContext } from "../../context/VisualEngineContext";
-// REFACTORED: Import selectors
+import { useAssetContext } from "../../hooks/useAssetContext";
+import { useVisualEngine } from "../../hooks/useVisualEngine";
 import { useProfileSessionState, useSetManagementState } from "../../hooks/configSelectors";
 import TokenGrid from "./TokenGrid";
 import LazyLoadImage from "./LazyLoadImage";
@@ -47,14 +46,13 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
     refreshOfficialWhitelist, 
   } = useAssetContext();
 
-  const { updateTokenAssignment } = useVisualEngineContext();
+  const { updateTokenAssignment } = useVisualEngine();
   const { isHostProfileOwner, hostProfileAddress } = useProfileSessionState();
 
   const isMountedRef = useRef(false);
   const overlayContentRef = useRef(null);
   const tokenDisplayAreaRef = useRef(null);
 
-  // --- REFRESH HANDLER ---
   const handleManualRefresh = useCallback(() => {
     refreshOfficialWhitelist();
     refreshOwnedTokens(true); 
@@ -76,7 +74,7 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
          }
       }
     }
-  }, [isOpen]); 
+  }, [isOpen, officialWhitelist, ownedTokenIdentifiers, refreshOfficialWhitelist, refreshOwnedTokens, tokenFetchProgress.loading]); 
 
   const demoTokens = useMemo(() => {
     return Object.entries(demoAssetMap).map(([key, src]) => ({
@@ -116,6 +114,7 @@ const TokenSelectorOverlay = ({ isOpen, onClose, readOnly = false }) => {
     fetchMissingPaletteTokens();
   }, [isOpen, userPalettes, configService, loadedTokens]);
 
+  // FIX: corrected combinedCollectionsMap ReferenceError
   const combinedCollectionLibrary = useMemo(() => {
     const collectionMap = new Map();
     (officialWhitelist || []).forEach(c => {

@@ -20,11 +20,10 @@ import LibraryPanel from '../Panels/LibraryPanel';
 import ModulationPanel from '../Panels/ModulationPanel'; 
 import Crossfader from './Crossfader';
 import WorkspaceSelectorDots from './WorkspaceSelectorDots';
-// --- ADDED: SignalDebugger ---
 import SignalDebugger from '../Debug/SignalDebugger';
 
 import { useSetManagementState, useProfileSessionState } from '../../hooks/configSelectors';
-import { useVisualEngineContext } from '../../context/VisualEngineContext';
+import { useVisualEngine } from '../../hooks/useVisualEngine';
 import { useNotificationContext } from '../../hooks/useNotificationContext';
 
 import { useToast } from '../../hooks/useToast';
@@ -54,7 +53,7 @@ const ActivePanelRenderer = (props) => {
     const { activePanel, animatingPanel, activeLayerTab, closePanel, setActiveLayerTab } = uiState;
     const { isAudioActive, audioSettings, analyzerData, setIsAudioActive, setAudioSettings } = audioState;
     
-    const { handleSceneSelect, updateTokenAssignment, isAutoFading, uiControlConfig, updateLayerConfig } = useVisualEngineContext();
+    const { handleSceneSelect, updateTokenAssignment, isAutoFading, uiControlConfig, updateLayerConfig } = useVisualEngine();
     
     const handleTokenSelectorClose = useCallback(() => closePanel(), [closePanel]);
     const panelWrapperClassName = useMemo(() => animatingPanel === "closing" ? "animating closing" : animatingPanel ? "animating" : "", [animatingPanel]);
@@ -96,7 +95,7 @@ const ActivePanelRenderer = (props) => {
             return ( <PanelWrapper key="modulation-panel" className={panelWrapperClassName}><ModulationPanel onClose={closePanel} /></PanelWrapper> );
         
         case "tokens":
-            return ( <TokenSelectorOverlay key="token-selector-overlay" isOpen={activePanel === "tokens"} onClose={handleTokenSelectorClose} onTokenApplied={updateTokenAssignment} /> );
+            return ( <TokenSelectorOverlay key="token-selector-overlay" isOpen={activePanel === "tokens"} onClose={handleTokenSelectorClose} /> );
         default:
             return null;
     }
@@ -132,8 +131,6 @@ function UIOverlay({
   crossfadeDurationMs,
   onSetCrossfadeDuration,
 }) {
-  const { addToast } = useToast();
-  
   const { 
     stagedSetlist, 
     loadWorkspace, 
@@ -143,7 +140,7 @@ function UIOverlay({
     fullSceneList: savedSceneList 
   } = useSetManagementState();
   
-  const { renderedCrossfaderValue, isAutoFading, handleSceneSelect, handleCrossfaderChange, handleCrossfaderCommit, transitionMode, toggleTransitionMode } = useVisualEngineContext();
+  const { renderedCrossfaderValue, isAutoFading, handleSceneSelect, handleCrossfaderChange, handleCrossfaderCommit, transitionMode, toggleTransitionMode } = useVisualEngine();
   
   const { unreadCount } = useNotificationContext();
   
@@ -177,9 +174,7 @@ function UIOverlay({
   
   return (
     <>
-      {/* --- ADDED: Signal Debugger (Dev Mode Only) --- */}
       {import.meta.env.DEV && <SignalDebugger />}
-      {/* ---------------------------------------------- */}
 
       {isReady && <MemoizedTopRightControls
         isRadarProjectAdmin={isRadarProjectAdmin}

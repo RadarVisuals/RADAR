@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import Panel from './Panel';
-import { useVisualEngineContext } from '../../context/VisualEngineContext';
+import { useVisualEngine } from '../../hooks/useVisualEngine';
 import { EFFECT_MANIFEST } from '../../config/EffectManifest';
 import SignalBus from '../../utils/SignalBus'; 
 import './PanelStyles/ModulationPanel.css';
@@ -42,17 +42,14 @@ const LfoConfigurator = ({ lfoId, label, settings, onChange }) => {
     const { frequency, type } = settings || { frequency: 1, type: 'sine' };
     const dotRef = useRef(null);
 
-    // Live Visualizer for LFO
     useEffect(() => {
         const handleSignal = (signals) => {
             if (!dotRef.current) return;
             const val = signals[lfoId] || 0;
-            // Map -1...1 to Opacity 0.2...1.0 and Scale
             const norm = (val + 1) / 2; 
             dotRef.current.style.opacity = 0.3 + (norm * 0.7);
             dotRef.current.style.transform = `scale(${0.8 + (norm * 0.4)})`;
             
-            // Color shift based on polarity
             if (val > 0) dotRef.current.style.backgroundColor = 'var(--color-primary)';
             else dotRef.current.style.backgroundColor = 'var(--color-warning)';
         };
@@ -111,12 +108,8 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
     const visualizerRef = useRef(null);
     const valueDisplayRef = useRef(null);
 
-    // Determine if this parameter supports modulation
-    // We only allow modulation on Floats (Sliders) and Ints (Steppers)
-    // Booleans (Toggles) and Selects (Dropdowns) are excluded.
     const isModulatable = def.type === 'float' || def.type === 'int';
 
-    // Live Modulation Feedback (Zero-Render)
     useEffect(() => {
         if (!isModulatable) return;
 
@@ -124,20 +117,15 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
             const liveValue = allValues[paramId];
             if (liveValue === undefined) return;
 
-            // Update Numeric Display
             if (valueDisplayRef.current) {
                 valueDisplayRef.current.innerText = def.type === 'int' ? Math.floor(liveValue) : liveValue.toFixed(2);
             }
 
-            // Update Ghost Bar
             if (visualizerRef.current) {
                 const range = def.max - def.min;
                 const safeRange = range === 0 ? 1 : range;
-                
-                // Calculate percentage relative to slider min/max
                 let percent = ((liveValue - def.min) / safeRange) * 100;
                 
-                // Allow bar to go red if out of bounds (clamping indication)
                 if (percent < 0 || percent > 100) {
                     visualizerRef.current.style.backgroundColor = 'var(--color-error)';
                 } else {
@@ -192,15 +180,12 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
             );
         }
 
-        // Float/Int Slider
         return (
             <div className="slider-wrapper">
-                {/* Visualizer Background Track */}
                 <div className="slider-track-bg">
                     <div ref={visualizerRef} className="mod-visualizer-bar"></div>
                 </div>
                 
-                {/* Interactive Slider (Base Value) */}
                 <input 
                     type="range" 
                     className="base-slider" 
@@ -218,7 +203,6 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
         <div className="param-block">
             <div className="param-header">
                 <span className="param-name" title={paramId}>{def.label}</span>
-                {/* Only show numeric value for modulatable types */}
                 {isModulatable && (
                     <span ref={valueDisplayRef} className="param-value-display">
                         {Number(currentValue).toFixed(def.type === 'int' ? 0 : 2)}
@@ -228,7 +212,6 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
             
             <div className="param-control-row">{renderInput()}</div>
 
-            {/* List of active modulations for this param - ONLY IF MODULATABLE */}
             {isModulatable && myPatches.length > 0 && (
                 <div className="active-patches">
                     {myPatches.map(patch => (
@@ -245,7 +228,6 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
                                     onChange={(e) => onUpdatePatch(patch.source, paramId, parseFloat(e.target.value))} 
                                     title={`Modulation Depth: ${patch.amount.toFixed(2)}`} 
                                 />
-                                {/* Center tick for bipolar visual ref */}
                                 <div className="center-tick"></div>
                             </div>
                             <button className="btn-remove-patch" onClick={() => onRemovePatch(patch.id)} title="Remove Modulation">×</button>
@@ -254,7 +236,6 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
                 </div>
             )}
 
-            {/* Add New Patch Dropdown - ONLY IF MODULATABLE */}
             {isModulatable && (
                 <div className="add-patch-ui">
                     <select 
@@ -295,8 +276,6 @@ ParamControl.propTypes = {
     onUpdatePatch: PropTypes.func.isRequired,
 };
 
-// --- MAIN PANEL COMPONENT ---
-
 const ModulationPanel = ({ onClose }) => {
     const { 
         baseValues, patches, setModulationValue, 
@@ -304,12 +283,10 @@ const ModulationPanel = ({ onClose }) => {
         lfoSettings, setLfoSetting,
         clearAllPatches,
         resetBaseValues 
-    } = useVisualEngineContext();
+    } = useVisualEngine();
     
-    // Categorize Effects
     const categorizedEffects = useMemo(() => {
         const result = {};
-        // Initialize categories
         Object.keys(CATEGORIES).forEach(k => result[k] = []);
         result['Other'] = [];
 
@@ -325,33 +302,22 @@ const ModulationPanel = ({ onClose }) => {
             if (!found) result['Other'].push({ key, config });
         });
         
-        // Filter out empty categories
         return Object.entries(result).filter(([_, items]) => items.length > 0);
     }, []);
 
-    // Accordion State
     const [expandedCategories, setExpandedCategories] = useState({ 'Core Physics': true });
     const toggleCategory = (cat) => setExpandedCategories(prev => ({ ...prev, [cat]: !prev[cat] }));
 
-    // Effect State (within category)
     const [expandedEffects, setExpandedEffects] = useState({});
     const toggleEffect = (key) => setExpandedEffects(prev => ({ ...prev, [key]: !prev[key] }));
 
     const handleClearWires = useCallback(() => {
-        if (!clearAllPatches) {
-            console.error("[ModulationPanel] clearAllPatches is not available in context!");
-            return;
-        }
         if (window.confirm('Remove all modulation wires? (Knobs will stay set)')) {
             clearAllPatches();
         }
     }, [clearAllPatches]);
 
     const handleResetKnobs = useCallback(() => {
-        if (!resetBaseValues) {
-            console.error("[ModulationPanel] resetBaseValues is not available in context!");
-            return;
-        }
         if (window.confirm('Reset all effect knobs to defaults? (Wires will stay connected)')) {
             resetBaseValues();
         }
@@ -359,8 +325,6 @@ const ModulationPanel = ({ onClose }) => {
 
     return (
         <Panel title="MODULATION MATRIX" onClose={onClose} className="panel-from-toolbar modulation-panel events-panel-custom-scroll">
-            
-            {/* LFO RACK */}
             <div className="lfo-generator-section section-box">
                 <div className="section-header-row">
                     <h4 className="section-title-small">LFO Generators</h4>
@@ -370,7 +334,6 @@ const ModulationPanel = ({ onClose }) => {
                 <LfoConfigurator lfoId="lfo_3" label="LFO 3" settings={lfoSettings['lfo_3']} onChange={setLfoSetting} />
             </div>
 
-            {/* ACTION BUTTONS ROW */}
             <div className="mod-actions-row">
                 <button 
                     className="btn-link-action" 
@@ -389,7 +352,6 @@ const ModulationPanel = ({ onClose }) => {
                 </button>
             </div>
 
-            {/* EFFECT RACKS */}
             <div className="mod-list-container">
                 {categorizedEffects.map(([categoryName, effects]) => (
                     <div key={categoryName} className="category-block">
@@ -405,12 +367,8 @@ const ModulationPanel = ({ onClose }) => {
                             <div className="category-content">
                                 {effects.map(({ key: effectKey, config }) => {
                                     const isExpanded = expandedEffects[effectKey];
-                                    
-                                    // Check if effect is enabled
                                     const enabledParamId = config.params.enabled ? config.params.enabled.id : null;
                                     const isEnabled = enabledParamId ? (baseValues[enabledParamId] > 0.5) : false;
-                                    
-                                    // Check if modulated (has active patches)
                                     const hasModulation = patches.some(p => p.target.startsWith(effectKey));
 
                                     return (

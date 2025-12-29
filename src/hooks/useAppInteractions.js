@@ -1,16 +1,16 @@
 // src/hooks/useAppInteractions.js
 import { useCallback, useEffect, useMemo } from 'react';
 import { useUIState } from './useUIState';
-// 1. RESTORED: We need this for the specific color pulse overlays
 import { useVisualEffects } from './useVisualEffects';
 import { useLsp1Events } from './useLsp1Events';
-import { useMIDI } from '../context/MIDIContext';
+import { useEngineStore } from '../store/useEngineStore'; // Updated
 import { useProfileSessionState, useInteractionSettingsState } from './configSelectors'; 
-import { useVisualEngineContext } from '../context/VisualEngineContext';
+import { useVisualEngine } from './useVisualEngine';
 import { useNotificationContext } from './useNotificationContext'; 
 import { sliderParams } from '../config/sliderParams';
 import { scaleNormalizedValue } from "../utils/helpers";
 import SignalBus from '../utils/SignalBus'; 
+import { useShallow } from 'zustand/react/shallow'; // Added for performance
 
 export const useAppInteractions = (props) => {
   const {
@@ -28,18 +28,17 @@ export const useAppInteractions = (props) => {
   const uiStateHook = useUIState('tab1');
   const { addNotification, unreadCount } = useNotificationContext();
   
-  // 2. RETRIEVED: Get the saved reactions from the Store/ConfigurationService
   const { savedReactions } = useInteractionSettingsState();
   
-  const { updateLayerConfig, updateTokenAssignment, handleCrossfaderChange } = useVisualEngineContext();
+  const { updateLayerConfig, updateTokenAssignment, handleCrossfaderChange } = useVisualEngine();
   
-  // 3. RESTORED: Initialize the effects processor for Color Overlays
   const { processEffect, createDefaultEffect } = useVisualEffects(updateLayerConfig);
   
-  const { 
-    pendingActions,
-    clearPendingActions 
-  } = useMIDI();
+  // --- REFACTORED: Get MIDI actions from Engine Store ---
+  const { pendingActions, clearPendingActions } = useEngineStore(useShallow(s => ({
+    pendingActions: s.pendingActions,
+    clearPendingActions: s.clearPendingActions
+  })));
   
   const applyPlaybackValueToManager = useCallback((layerId, key, value) => {
     const manager = managerInstancesRef.current?.[String(layerId)];
@@ -48,42 +47,31 @@ export const useAppInteractions = (props) => {
     }
   }, [managerInstancesRef]);
 
-  // --- DUAL PATH EVENT HANDLER ---
   const handleEventReceived = useCallback((event) => {
     if (!isMountedRef.current || !event?.typeId) return;
     
-    // Path 1: UI Notification (Toasts/Panel)
     if (addNotification) addNotification(event);
 
-    // Path 2: Modulation Matrix Signal
     if (event.type) {
-        // This sends the raw signal (0->1) to the Matrix
         SignalBus.emit('event:trigger', { type: event.type });
     }
 
-    // Path 3: Saved Event Reactions (The "Events Panel" logic)
     const reactionsMap = savedReactions || {};
-    const typeIdToMatch = event.typeId.toLowerCase(); // Matches on-chain ID
+    const typeIdToMatch = event.typeId.toLowerCase();
     
-    // Find config saved in Profile
     const matchingReaction = Object.values(reactionsMap).find(
-      r => r?.event?.toLowerCase() === typeIdToMatch || // Match by ID
-           r?.event === event.type // Match by human name (fallback)
+      r => r?.event?.toLowerCase() === typeIdToMatch || 
+           r?.event === event.type 
     );
 
     if (matchingReaction) {
-      // If user has a saved reaction, trigger it (DOM Overlay)
       if (processEffect) processEffect({ ...matchingReaction, originEvent: event });
-    } else if (createDefaultEffect) {
-      // Optional: Trigger default if nothing saved
-      // createDefaultEffect(event.type);
     }
     
-  }, [isMountedRef, addNotification, savedReactions, processEffect, createDefaultEffect]);
+  }, [isMountedRef, addNotification, savedReactions, processEffect]);
 
   useLsp1Events(hostProfileAddress, handleEventReceived);
 
-  // ... (MIDI Handling Effect remains unchanged) ...
   useEffect(() => {
     if (pendingActions && pendingActions.length > 0) {
       pendingActions.forEach(action => {
@@ -164,7 +152,6 @@ export const useAppInteractions = (props) => {
     uiStateHook,
     notificationData: { unreadCount },
     handleTokenApplied,
-    // 4. RESTORED: Return these so the EventsPanel can use them for Previews
     processEffect,
     createDefaultEffect,
     applyPlaybackValueToManager,

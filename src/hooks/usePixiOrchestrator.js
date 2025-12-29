@@ -1,141 +1,85 @@
 // src/hooks/usePixiOrchestrator.js
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import PixiEngine from '../utils/PixiEngine';
 import { resolveImageUrl } from '../utils/imageDecoder';
+
+// SINGLETON REGISTRY
+let globalEngineInstance = null;
+export const getPixiEngine = () => globalEngineInstance;
 
 export function usePixiOrchestrator({ 
   canvasRef, 
   sideA, 
   sideB, 
   crossfaderValue, 
-  isReady,
-  transitionMode
+  isReady 
 }) {
-  const engineRef = useRef(null);
   const [isEngineReady, setIsEngineReady] = useState(false);
 
-  // 1. Initialization
   useEffect(() => {
-    if (canvasRef.current && !engineRef.current) {
-      console.log("[Orchestrator] Creating new PixiEngine instance...");
+    if (canvasRef.current && !globalEngineInstance) {
+      console.log("[Orchestrator] Initializing Global PixiEngine...");
       const engine = new PixiEngine(canvasRef.current);
+      
       engine.init().then(() => {
-        engineRef.current = engine;
+        globalEngineInstance = engine;
         setIsEngineReady(true);
-        console.log("[Orchestrator] Engine ready. Performing initial sync.");
         
-        // Initial Sync
-        if (sideA?.config) {
-            console.log("[Orchestrator] Syncing Initial Side A");
-            syncDeckConfig(engine, sideA.config, 'A');
-        } else {
-            console.warn("[Orchestrator] Initial Side A config is missing/null.");
-        }
-
-        if (sideB?.config) {
-            console.log("[Orchestrator] Syncing Initial Side B");
-            syncDeckConfig(engine, sideB.config, 'B');
-        }
+        if (sideA?.config) syncDeckConfig(engine, sideA.config, 'A');
+        if (sideB?.config) syncDeckConfig(engine, sideB.config, 'B');
       });
     }
+
     return () => {
-      if (engineRef.current) {
-        engineRef.current.destroy();
-        engineRef.current = null;
+      if (globalEngineInstance) {
+        console.log("[Orchestrator] Destroying Global PixiEngine...");
+        globalEngineInstance.destroy();
+        globalEngineInstance = null;
         setIsEngineReady(false);
       }
     };
   }, [canvasRef]); 
 
-  // 2. Helper to sync config changes from React to Pixi
   const syncDeckConfig = (engine, configWrapper, side) => {
     if (!configWrapper) return;
     const { layers, tokenAssignments } = configWrapper;
-    // console.log(`[Orchestrator] Syncing Deck ${side}`, { layers, tokenAssignments });
     
     ['1', '2', '3'].forEach(layerId => {
-        if (layers && layers[layerId]) engine.snapConfig(layerId, layers[layerId], side);
-        if (tokenAssignments && tokenAssignments[layerId]) {
+        if (layers?.[layerId]) engine.snapConfig(layerId, layers[layerId], side);
+        if (tokenAssignments?.[layerId]) {
             const token = tokenAssignments[layerId];
             const src = resolveImageUrl(token);
             const id = typeof token === 'object' ? token.id : token;
-            if (src) {
-                // console.log(`[Orchestrator] Setting Texture for ${side}-L${layerId}: ${id}`);
-                engine.setTexture(layerId, side, src, id);
-            }
+            if (src) engine.setTexture(layerId, side, src, id);
         }
     });
   };
 
-  // 3. Reactive Updates
   useEffect(() => { 
-      if (isEngineReady && engineRef.current && sideA?.config) {
-          syncDeckConfig(engineRef.current, sideA.config, 'A'); 
+      if (isEngineReady && globalEngineInstance && sideA?.config) {
+          syncDeckConfig(globalEngineInstance, sideA.config, 'A'); 
       }
   }, [sideA, isEngineReady]);
 
   useEffect(() => { 
-      if (isEngineReady && engineRef.current && sideB?.config) {
-          syncDeckConfig(engineRef.current, sideB.config, 'B'); 
+      if (isEngineReady && globalEngineInstance && sideB?.config) {
+          syncDeckConfig(globalEngineInstance, sideB.config, 'B'); 
       }
   }, [sideB, isEngineReady]);
 
-  // 4. Expose API for React Components
-  const managerInstancesRef = useMemo(() => {
-    const createLayerProxy = (layerId) => ({
-        getState: (deckSide) => engineRef.current?.getState(layerId, deckSide),
-        
-        updateConfigProperty: (key, value) => engineRef.current?.updateConfig(layerId, key, value, 'A'),
-        updateConfigBProperty: (key, value) => engineRef.current?.updateConfig(layerId, key, value, 'B'),
-        
-        snapProperty: (key, value) => engineRef.current?.snapConfig(layerId, { [key]: value }, 'A'),
-        snapPropertyB: (key, value) => engineRef.current?.snapConfig(layerId, { [key]: value }, 'B'),
-
-        setTargetValue: (key, value) => engineRef.current?.updateConfig(layerId, key, value, 'A'),
-        setTargetValueB: (key, value) => engineRef.current?.updateConfig(layerId, key, value, 'B'),
-        
-        setAudioFrequencyFactor: (factor) => { if (engineRef.current) engineRef.current.setAudioFactors({ [layerId]: factor }); },
-        triggerBeatPulse: (factor, duration) => engineRef.current?.triggerBeatPulse(factor, duration),
-        resetAudioModifications: () => engineRef.current?.setAudioFactors({ '1': 1, '2': 1, '3': 1 }),
-        
-        setParallax: (x, y) => engineRef.current?.setParallax(x, y),
-        
-        applyPlaybackValue: (key, value) => engineRef.current?.applyPlaybackValue(layerId, key, value),
-        clearPlaybackValues: () => engineRef.current?.clearPlaybackValues(),
-        
-        updateEffectConfig: (name, param, value) => engineRef.current?.updateEffectConfig(name, param, value),
-        syncPhysics: (targetDeck) => engineRef.current?.syncDeckPhysics(layerId, targetDeck),
-
-        destroy: () => {},
-        startAnimationLoop: () => {},
-        stopAnimationLoop: () => {}
-    });
-
-    return {
-        current: {
-            '1': createLayerProxy('1'),
-            '2': createLayerProxy('2'),
-            '3': createLayerProxy('3'),
-            updateCrossfade: (val) => engineRef.current?.setRenderedCrossfade(val),
-            get engine() { return engineRef.current; }
-        }
-    };
-  }, []);
-
-  const restartCanvasAnimations = useCallback(() => { if (engineRef.current) engineRef.current.app.ticker.start(); }, []);
-  const stopCanvasAnimations = useCallback(() => { if (engineRef.current) engineRef.current.app.ticker.stop(); }, []);
+  const restartCanvasAnimations = useCallback(() => globalEngineInstance?.app.ticker.start(), []);
+  const stopCanvasAnimations = useCallback(() => globalEngineInstance?.app.ticker.stop(), []);
   
   const setCanvasLayerImage = useCallback(async (layerId, src, tokenId) => {
     const activeDeck = crossfaderValue < 0.5 ? 'A' : 'B';
-    if (engineRef.current) await engineRef.current.setTexture(layerId, activeDeck, src, tokenId);
+    if (globalEngineInstance) await globalEngineInstance.setTexture(layerId, activeDeck, src, tokenId);
   }, [crossfaderValue]);
 
   return {
     isEngineReady,
-    managerInstancesRef,
     restartCanvasAnimations,
     stopCanvasAnimations,
     setCanvasLayerImage,
-    engineRef
+    engine: globalEngineInstance
   };
 }

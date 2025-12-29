@@ -1,57 +1,49 @@
 // src/components/MIDI/GlobalMIDIStatus.jsx
 import React from 'react';
-import { useMIDI } from '../../context/MIDIContext';
-import './MIDIStyles/GlobalMIDIStatus.css';
+import { useEngineStore } from '../../store/useEngineStore';
 import { midiIcon } from '../../assets';
+import './MIDIStyles/GlobalMIDIStatus.css';
 
 /**
  * GlobalMIDIStatus: Displays the current MIDI connection status.
- * Allows initiating connection, disconnecting, or retrying on error.
- * Also shows a small indicator when MIDI learn mode is active.
+ * Directly consumes useEngineStore state and actions.
  */
 const GlobalMIDIStatus = () => {
-  const {
-    isConnected,
-    isConnecting,
-    connectMIDI,
-    disconnectMIDI, // Get disconnectMIDI from context
-    error: midiError,
-    midiLearning,
-    learningLayer,
-  } = useMIDI();
-
-  const hasCriticalError = !!midiError;
+  const isConnected = useEngineStore(s => s.isConnected);
+  const isConnecting = useEngineStore(s => s.isConnecting);
+  const midiError = useEngineStore(s => s.midiError);
+  const midiLearning = useEngineStore(s => s.midiLearning);
+  const learningLayer = useEngineStore(s => s.learningLayer);
+  
+  const connectMIDI = useEngineStore(s => s.connectMIDI);
+  const disconnectMIDI = useEngineStore(s => s.disconnectMIDI);
 
   const handleConnectionClick = () => {
     if (isConnected) {
-      // If connected, disconnect MIDI entirely
-      disconnectMIDI(true); // Pass true for a user-initiated full disconnect
+      disconnectMIDI();
     } else if (!isConnecting) {
-      // If disconnected and not currently connecting, try to connect
-      connectMIDI()
-        .catch(err => {
-          console.error("[GlobalMIDIStatus] connectMIDI promise rejected:", err);
-        });
+      connectMIDI().catch(err => {
+        console.error("[GlobalMIDIStatus] Connect failed:", err);
+      });
     }
-    // If isConnecting, do nothing (connection already in progress)
   };
 
-  const buttonTitle = hasCriticalError ? `MIDI Error: ${midiError?.message || 'Click to retry connection'}`
+  const buttonTitle = midiError ? `MIDI Error: ${midiError}`
                      : isConnecting ? "Connecting MIDI..."
                      : isConnected ? "MIDI Connected - Click to Disconnect"
                      : "MIDI Disconnected - Click to Connect";
 
-  const buttonClass = `toolbar-icon ${hasCriticalError ? 'error' : isConnected ? 'connected' : 'disconnected'} ${isConnecting ? 'connecting' : ''}`;
+  const buttonClass = `toolbar-icon ${midiError ? 'error' : isConnected ? 'connected' : 'disconnected'} ${isConnecting ? 'connecting' : ''}`;
 
   return (
     <div className="global-midi-status">
       <button
         className={buttonClass}
         onClick={handleConnectionClick}
-        disabled={isConnecting && !isConnected} // Disable only if connecting and not yet connected
+        disabled={isConnecting && !isConnected}
         title={buttonTitle}
       >
-        {hasCriticalError ? (
+        {midiError ? (
            <span style={{color: 'var(--color-error, red)', fontSize: '1.2em', fontWeight: 'bold'}}>!</span>
         ) : isConnecting ? (
            <div className="connecting-spinner"></div>
@@ -63,7 +55,7 @@ const GlobalMIDIStatus = () => {
       {(midiLearning || learningLayer !== null) && (
         <div className="midi-learning-indicator">
           {midiLearning ? (
-            <span>Mapping: {midiLearning.param}</span>
+            <span>Mapping: {midiLearning.param || midiLearning.control}</span>
           ) : (
             <span>Mapping: Layer {learningLayer}</span>
           )}

@@ -6,7 +6,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { useUpProvider } from "../../context/UpProvider.jsx";
 import { useCoreApplicationStateAndLifecycle } from '../../hooks/useCoreApplicationStateAndLifecycle';
 import { useAppInteractions } from '../../hooks/useAppInteractions';
-import { useVisualEngineContext } from "../../context/VisualEngineContext";
+import { useVisualEngine } from "../../hooks/useVisualEngine";
 import { useEngineStore } from "../../store/useEngineStore";
 import { useProjectStore } from "../../store/useProjectStore";
 import { useSceneSequencer } from "../../hooks/useSceneSequencer";
@@ -66,11 +66,9 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
   [useProjectStore.getState().stagedWorkspace]);
 
   const {
-    registerManagerInstancesRef,
-    registerCanvasUpdateFns,
     uiControlConfig,
     handleSceneSelect, 
-  } = useVisualEngineContext();
+  } = useVisualEngine();
   
   const audioState = useEngineStore(useShallow(state => ({
       isAudioActive: state.isAudioActive,
@@ -118,23 +116,12 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     isTransitioning,
     handleManualRetry,
     managersReady,
-    setCanvasLayerImage,
     isContainerObservedVisible, 
     isFullscreenActive, 
     enterFullscreen,
     isMountedRef,
     sequencer, 
   } = coreApp;
-
-  useEffect(() => {
-    if (registerManagerInstancesRef) {
-        registerManagerInstancesRef(managerInstancesRef);
-    }
-    if (registerCanvasUpdateFns) {
-        registerCanvasUpdateFns({ setCanvasLayerImage });
-    }
-  }, [registerManagerInstancesRef, registerCanvasUpdateFns, managerInstancesRef, setCanvasLayerImage]);
-
 
   useEffect(() => {
     const handleMouseMove = (e) => {

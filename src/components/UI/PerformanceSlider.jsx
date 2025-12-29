@@ -2,14 +2,8 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import SignalBus from '../../utils/SignalBus';
+import { useProjectStore } from '../../store/useProjectStore';
 
-/**
- * PerformanceSlider (Zero-Render Edition)
- * 
- * Bypasses React state updates entirely during user interaction.
- * Treats input as "uncontrolled" during drag.
- * Listens to SignalBus for high-frequency external updates (P-Lock).
- */
 const PerformanceSlider = ({ 
   name,
   layerId, 
@@ -17,67 +11,56 @@ const PerformanceSlider = ({
   min, 
   max, 
   step, 
-  onChange, // Fast update (Pixi)
-  onCommit, // Slow update (Store)
+  onChange, 
+  onCommit, 
   disabled, 
   className,
   ariaLabel 
 }) => {
   const inputRef = useRef(null);
-  const isDragging = useRef(false);
   const isMountedRef = useRef(false);
+  const activeSceneName = useProjectStore(s => s.activeSceneName);
+  const lastProcessedSceneRef = useRef(activeSceneName);
 
   useEffect(() => {
       isMountedRef.current = true;
       return () => { isMountedRef.current = false; };
   }, []);
 
-  // Sync with external React prop changes (e.g. Scene load, Undo/Redo)
   useEffect(() => {
-    if (!isDragging.current && inputRef.current) {
-      inputRef.current.value = value;
+    if (!inputRef.current) return;
+    if (activeSceneName !== lastProcessedSceneRef.current) {
+        inputRef.current.value = value;
+        lastProcessedSceneRef.current = activeSceneName;
     }
-  }, [value]);
+  }, [value, activeSceneName]);
 
-  // Sync with high-frequency Event updates (P-Lock, MIDI) via SIGNAL BUS
   useEffect(() => {
     const handleParamUpdate = (data) => {
-      // Safety check for unmounted component
       if (!isMountedRef.current || !inputRef.current) return;
-
-      const { layerId: targetLayer, param, value: newValue } = data;
-      // Update only if this event targets this specific slider instance
+      const { layerId: targetLayer, param, value: newValue, isNormalized } = data;
+      
       if (targetLayer === String(layerId) && param === name) {
-         if (!isDragging.current) {
-             inputRef.current.value = newValue;
+         let displayValue = newValue;
+         if (isNormalized) {
+            displayValue = Number(min) + (newValue * (Number(max) - Number(min)));
          }
+         inputRef.current.value = displayValue;
       }
     };
-    
     const unsubscribe = SignalBus.on('param:update', handleParamUpdate);
     return () => unsubscribe();
-  }, [layerId, name]);
+  }, [layerId, name, min, max]);
 
   const handleInput = useCallback((e) => {
-    isDragging.current = true;
     const val = parseFloat(e.target.value);
-    
-    // Direct pass-through to engine. No React Render happens here.
-    if (onChange) {
-      onChange(name, val);
-    }
+    if (onChange) onChange(name, val);
   }, [name, onChange]);
 
   const handleCommit = useCallback((e) => {
-    isDragging.current = false;
     if (!isMountedRef.current) return;
-
     const val = parseFloat(e.target.value);
-
-    // Commit to Zustand/React State ONLY on release/interaction end
-    if (onCommit) {
-      onCommit(name, val);
-    }
+    if (onCommit) onCommit(name, val);
   }, [name, onCommit]);
 
   return (
