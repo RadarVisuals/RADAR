@@ -1,5 +1,5 @@
 // src/components/UI/UIOverlay.jsx
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useEffect } from 'react';
 import PropTypes from 'prop-types';
 
 import TopRightControls from '../Toolbars/TopRightControls';
@@ -11,6 +11,7 @@ import EventsPanel from '../Panels/EventsPanel';
 import EnhancedSavePanel from '../Panels/EnhancedSavePanel';
 import SetsPanel from '../Panels/SetsPanel';
 import AudioControlPanel from '../Audio/AudioControlPanel';
+import MappingPanel from '../Panels/MappingPanel'; 
 import TokenSelectorOverlay from '../Panels/TokenSelectorOverlay';
 import InfoOverlay from '../Panels/InfoOverlay';
 import GlobalMIDIStatus from '../MIDI/GlobalMIDIStatus';
@@ -21,13 +22,14 @@ import ModulationPanel from '../Panels/ModulationPanel';
 import Crossfader from './Crossfader';
 import WorkspaceSelectorDots from './WorkspaceSelectorDots';
 import SignalDebugger from '../Debug/SignalDebugger';
+import VideoMappingOverlay from './VideoMappingOverlay'; 
 
+import { useUIStore } from '../../store/useUIStore'; 
 import { useSetManagementState, useProfileSessionState } from '../../hooks/configSelectors';
 import { useVisualEngine } from '../../hooks/useVisualEngine';
 import { useNotificationContext } from '../../hooks/useNotificationContext';
 
-import { useToast } from '../../hooks/useToast';
-import { ForwardIcon as SequencerIcon } from '@heroicons/react/24/outline';
+import { ForwardIcon as SequencerIcon, ViewfinderCircleIcon } from '@heroicons/react/24/outline';
 import './UIOverlay.css';
 
 const MemoizedTopRightControls = React.memo(TopRightControls);
@@ -53,7 +55,7 @@ const ActivePanelRenderer = (props) => {
     const { activePanel, animatingPanel, activeLayerTab, closePanel, setActiveLayerTab } = uiState;
     const { isAudioActive, audioSettings, analyzerData, setIsAudioActive, setAudioSettings } = audioState;
     
-    const { handleSceneSelect, updateTokenAssignment, isAutoFading, uiControlConfig, updateLayerConfig } = useVisualEngine();
+    const { handleSceneSelect, isAutoFading, uiControlConfig, updateLayerConfig } = useVisualEngine();
     
     const handleTokenSelectorClose = useCallback(() => closePanel(), [closePanel]);
     const panelWrapperClassName = useMemo(() => animatingPanel === "closing" ? "animating closing" : animatingPanel ? "animating" : "", [animatingPanel]);
@@ -90,36 +92,21 @@ const ActivePanelRenderer = (props) => {
             return ( <PanelWrapper key="audio-panel" className={panelWrapperClassName}><AudioControlPanel onClose={closePanel} isAudioActive={isAudioActive} setIsAudioActive={setIsAudioActive} audioSettings={audioSettings} setAudioSettings={setAudioSettings} analyzerData={analyzerData} /></PanelWrapper> );
         case "whitelist":
             return ( <PanelWrapper key="whitelist-panel" className={panelWrapperClassName}><LibraryPanel onClose={closePanel} /></PanelWrapper> );
-        
         case "modulation":
             return ( <PanelWrapper key="modulation-panel" className={panelWrapperClassName}><ModulationPanel onClose={closePanel} /></PanelWrapper> );
-        
+        case "mapping":
+            return ( <PanelWrapper key="mapping-panel" className={panelWrapperClassName}><MappingPanel onClose={closePanel} /></PanelWrapper> );
         case "tokens":
             return ( <TokenSelectorOverlay key="token-selector-overlay" isOpen={activePanel === "tokens"} onClose={handleTokenSelectorClose} /> );
         default:
             return null;
     }
 };
-ActivePanelRenderer.propTypes = {
-    uiState: PropTypes.object.isRequired,
-    audioState: PropTypes.object.isRequired,
-    pLockProps: PropTypes.object.isRequired,
-    onPreviewEffect: PropTypes.func.isRequired,
-    sequencerIntervalMs: PropTypes.number.isRequired,
-    onSetSequencerInterval: PropTypes.func.isRequired,
-    crossfadeDurationMs: PropTypes.number.isRequired,
-    onSetCrossfadeDuration: PropTypes.func.isRequired,
-};
-const MemoizedActivePanelRenderer = React.memo(ActivePanelRenderer);
 
 const OverlayRenderer = ({ uiState }) => {
     const { infoOverlayOpen, toggleInfoOverlay } = uiState;
     return infoOverlayOpen ? <InfoOverlay isOpen={infoOverlayOpen} onClose={toggleInfoOverlay} /> : null;
 };
-OverlayRenderer.propTypes = {
-    uiState: PropTypes.object.isRequired,
-};
-const MemoizedOverlayRenderer = React.memo(OverlayRenderer);
 
 function UIOverlay({
   uiState,
@@ -141,85 +128,118 @@ function UIOverlay({
   } = useSetManagementState();
   
   const { renderedCrossfaderValue, isAutoFading, handleSceneSelect, handleCrossfaderChange, handleCrossfaderCommit, transitionMode, toggleTransitionMode } = useVisualEngine();
-  
   const { unreadCount } = useNotificationContext();
-  
-  const { 
-    isRadarProjectAdmin, 
-    hostProfileAddress: currentProfileAddress, 
-    isHostProfileOwner 
-  } = useProfileSessionState();
+  const { isRadarProjectAdmin, hostProfileAddress: currentProfileAddress, isHostProfileOwner } = useProfileSessionState();
 
-  const { isUiVisible, activePanel, toggleSidePanel, toggleInfoOverlay, toggleUiVisibility } = uiState;
+  // --- VIDEO MAPPING STORE CONNECTIONS ---
+  const isMappingMode = useUIStore(s => s.isMappingMode);
+  const isMappingUiVisible = useUIStore(s => s.isMappingUiVisible);
+  const mappingConfig = useUIStore(s => s.mappingConfig);
+  const toggleMappingMode = useUIStore(s => s.toggleMappingMode);
+  const setMappingUiVisibility = useUIStore(s => s.setMappingUiVisibility);
+  const toggleSidePanel = useUIStore(s => s.togglePanel);
+
+  const { isUiVisible, activePanel, toggleInfoOverlay, toggleUiVisibility, openPanel, closePanel } = uiState;
   const { isAudioActive } = audioState;
   
-  const { 
-      onEnhancedView, onToggleParallax, onPreviewEffect,
-      toggleSequencer, isSequencerActive, sequencerIntervalMs, setSequencerInterval
-  } = actions;
+  const { onEnhancedView, onToggleParallax, onPreviewEffect, toggleSequencer, isSequencerActive, sequencerIntervalMs, setSequencerInterval } = actions;
+
+  // --- KEYBOARD EVENT LISTENER (TAB KEY) ---
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Intercept TAB when in mapping mode to hide/show the interface
+      if (e.key === 'Tab' && isMappingMode) {
+        e.preventDefault(); 
+        setMappingUiVisibility(!isMappingUiVisible);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isMappingMode, isMappingUiVisible, setMappingUiVisibility]);
 
   const workspaceList = useMemo(() => {
     if (!stagedSetlist?.workspaces) return [];
-    return Object.keys(stagedSetlist.workspaces)
-      .map(name => ({ name }));
+    return Object.keys(stagedSetlist.workspaces).map(name => ({ name }));
   }, [stagedSetlist]);
 
-  const shouldShowUI = useMemo(() => isReady, [isReady]);
-  const showSceneBar = useMemo(() => shouldShowUI && isUiVisible && !activePanel && !!currentProfileAddress, [shouldShowUI, isUiVisible, activePanel, currentProfileAddress]);
-  const mainUiContainerClass = `ui-elements-container ${shouldShowUI && isUiVisible ? "visible" : "hidden-by-opacity"}`;
+  // Main UI Visibility Logic: Show interface if UI is ON AND (we aren't mapping OR mapping UI is toggled ON)
+  const shouldShowInterface = isUiVisible && (!isMappingMode || isMappingUiVisible);
+  const showSceneBar = shouldShowInterface && !activePanel && !!currentProfileAddress;
+  const mainUiContainerClass = `ui-elements-container ${shouldShowInterface ? "visible" : "hidden-by-opacity"}`;
 
-  if (!isReady) {
-    return null;
-  }
+  if (!isReady) return null;
   
   return (
     <>
       {import.meta.env.DEV && <SignalDebugger />}
 
-      {isReady && <MemoizedTopRightControls
-        isRadarProjectAdmin={isRadarProjectAdmin}
-        isHostProfileOwner={isHostProfileOwner}
-        showInfo={true} 
-        showToggleUI={true} 
-        showEnhancedView={true}
-        onWhitelistClick={() => toggleSidePanel('whitelist')}
-        onInfoClick={toggleInfoOverlay} 
-        onToggleUI={toggleUiVisibility} 
-        onEnhancedView={onEnhancedView} 
-        isUiVisible={isUiVisible}
-        isParallaxEnabled={configData.isParallaxEnabled}
-        onToggleParallax={onToggleParallax}
-        transitionMode={transitionMode}
-        onToggleTransitionMode={toggleTransitionMode}
-      />}
-      {isUiVisible && <MemoizedActivePanelRenderer
-          uiState={uiState}
-          audioState={audioState}
-          pLockProps={pLockProps}
-          onPreviewEffect={onPreviewEffect}
-          sequencerIntervalMs={sequencerIntervalMs}
-          onSetSequencerInterval={setSequencerInterval}
-          crossfadeDurationMs={crossfadeDurationMs}
-          onSetCrossfadeDuration={onSetCrossfadeDuration}
-      />}
-      <div className={mainUiContainerClass}>
-        {isUiVisible && (
-          <>
+      {/* 1. THE MASK: Always renders if mode is ON, ignoring interface visibility */}
+      <VideoMappingOverlay isVisible={isMappingMode} config={mappingConfig} />
+
+      {/* 2. SAFETY CONTROLS: TopRight always rendered so user can escape or fix UI toggle */}
+      {isReady && (
+        <MemoizedTopRightControls
+          isRadarProjectAdmin={isRadarProjectAdmin}
+          isHostProfileOwner={isHostProfileOwner}
+          onWhitelistClick={() => toggleSidePanel('whitelist')}
+          onInfoClick={toggleInfoOverlay} 
+          onToggleUI={toggleUiVisibility} 
+          onEnhancedView={onEnhancedView} 
+          isUiVisible={shouldShowInterface} 
+          isParallaxEnabled={configData.isParallaxEnabled}
+          onToggleParallax={onToggleParallax}
+          transitionMode={transitionMode}
+          onToggleTransitionMode={toggleTransitionMode}
+          isMappingMode={isMappingMode}
+          onToggleMapping={toggleMappingMode}
+        />
+      )}
+
+      {/* 3. THE INTERACTIVE INTERFACE: This is what TAB toggles */}
+      {shouldShowInterface && (
+        <>
+          <ActivePanelRenderer
+              uiState={uiState}
+              audioState={audioState}
+              pLockProps={pLockProps}
+              onPreviewEffect={onPreviewEffect}
+              sequencerIntervalMs={sequencerIntervalMs}
+              onSetSequencerInterval={setSequencerInterval}
+              crossfadeDurationMs={crossfadeDurationMs}
+              onSetCrossfadeDuration={onSetCrossfadeDuration}
+          />
+
+          <div className={mainUiContainerClass}>
             <div className="bottom-right-icons">
               <MemoizedGlobalMIDIStatus />
               <button
                 className={`toolbar-icon sequencer-toggle-button ${isSequencerActive ? "active" : ""}`}
                 onClick={toggleSequencer} 
                 title={isSequencerActive ? `Stop Scene Sequencer` : `Start Scene Sequencer`}
-                aria-label={isSequencerActive ? "Stop Scene Sequencer" : "Start Scene Sequencer"} disabled={isConfigLoading || !currentProfileAddress}
+                aria-label={isSequencerActive ? "Stop Scene Sequencer" : "Start Scene Sequencer"} 
+                disabled={isConfigLoading || !currentProfileAddress}
               >
                 <SequencerIcon className="icon-image" />
               </button>
-              <MemoizedAudioStatusIcon isActive={isAudioActive} onClick={() => uiState.openPanel('audio')} />
+              
+              {/* Dedicated toggle for the Calibration Panel while Mapping */}
+              {isMappingMode && (
+                 <button 
+                    className={`toolbar-icon ${activePanel === 'mapping' ? 'active' : ''}`}
+                    onClick={() => toggleSidePanel('mapping')}
+                    title="Iris Mask Calibration"
+                 >
+                    <ViewfinderCircleIcon className="icon-image" style={{padding: '4px'}} />
+                 </button>
+              )}
+
+              <MemoizedAudioStatusIcon isActive={isAudioActive} onClick={() => openPanel('audio')} />
             </div>
-            {isReady && <div className="vertical-toolbar-container">
+
+            <div className="vertical-toolbar-container">
               <MemoizedVerticalToolbar activePanel={activePanel} setActivePanel={toggleSidePanel} notificationCount={unreadCount} />
-            </div>}
+            </div>
+
             {showSceneBar && (
               <div className="bottom-center-controls">
                 <WorkspaceSelectorDots
@@ -237,15 +257,18 @@ function UIOverlay({
                 />
 
                 <MemoizedSceneSelectorBar
-                  savedSceneList={savedSceneList} currentSceneName={activeSceneName}
-                  onSceneSelect={(sceneName) => handleSceneSelect(sceneName, crossfadeDurationMs)} isLoading={isAutoFading || isConfigLoading}
+                  savedSceneList={savedSceneList} 
+                  currentSceneName={activeSceneName}
+                  onSceneSelect={(sceneName) => handleSceneSelect(sceneName, crossfadeDurationMs)} 
+                  isLoading={isAutoFading || isConfigLoading}
                 />
               </div>
             )}
-          </>
-        )}
-      </div>
-      <MemoizedOverlayRenderer uiState={uiState} />
+          </div>
+        </>
+      )}
+
+      <OverlayRenderer uiState={uiState} />
       {!currentProfileAddress && ( <GeneralConnectPill /> )}
     </>
   );

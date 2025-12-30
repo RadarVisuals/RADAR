@@ -84,19 +84,56 @@ export const useUIStore = create(
       activeLayerTab: 'tab1', // 'tab1' = Layer 3 (Top), 'tab2' = Layer 2, 'tab3' = Layer 1
       tokenSelectorOpen: false,
 
-      // Actions
+      // =========================================
+      // 4. NEW: VIDEO MAPPING SLICE
+      // =========================================
+      isMappingMode: false,
+      isMappingUiVisible: true,
+      mappingConfig: {
+        radius: 35.0,    // Percentage of screen
+        feather: 2.0,    // Edge softness percentage
+        x: 50.0,         // Center X percentage
+        y: 50.0          // Center Y percentage
+      },
+
+      toggleMappingMode: () => {
+        const currentState = get().isMappingMode;
+        const newState = !currentState;
+        
+        // Auto-fullscreen when entering mode
+        if (newState) {
+          const root = document.getElementById('fullscreen-root');
+          if (root && !document.fullscreenElement) {
+            root.requestFullscreen().catch(err => {
+              console.warn(`[MappingMode] Fullscreen failed: ${err.message}`);
+            });
+          }
+          // Clear open panels to see the calibration
+          get().closePanel();
+        }
+        
+        set({ isMappingMode: newState, isMappingUiVisible: true });
+      },
+
+      setMappingUiVisibility: (visible) => set({ isMappingUiVisible: visible }),
+      
+      updateMappingConfig: (key, value) => set((state) => ({
+        mappingConfig: { ...state.mappingConfig, [key]: value }
+      })),
+
+      resetMappingConfig: () => set({
+        mappingConfig: { radius: 35.0, feather: 2.0, x: 50.0, y: 50.0 }
+      }),
+
+      // --- Actions ---
       toggleUiVisibility: () => set((state) => ({ isUiVisible: !state.isUiVisible })),
       
       toggleInfoOverlay: () => set((state) => ({ infoOverlayOpen: !state.infoOverlayOpen })),
       
       setActiveLayerTab: (tab) => set({ activeLayerTab: tab }),
 
-      // Complex Panel Logic with Animations
       openPanel: (panelName) => {
-        // Clear any existing panel logic
         set({ animatingPanel: panelName, activePanel: panelName });
-        
-        // Simple timeout to clear "animating" status after slide-in
         setTimeout(() => {
           set({ animatingPanel: null });
         }, OPEN_ANIMATION_DURATION);
@@ -104,7 +141,6 @@ export const useUIStore = create(
 
       closePanel: () => {
         set({ animatingPanel: 'closing' });
-        
         setTimeout(() => {
           set({ activePanel: null, animatingPanel: null, tokenSelectorOpen: false });
         }, CLOSE_ANIMATION_DELAY);
@@ -128,10 +164,11 @@ export const useUIStore = create(
       }
     }),
     {
-      name: 'axyz_app_notifications', // Matches your old localStorage key
+      name: 'radar_vj_persistent_config', 
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({ 
-        notifications: state.notifications // Only persist notifications!
+        notifications: state.notifications,
+        mappingConfig: state.mappingConfig // Persist mapping values
       }),
     }
   )

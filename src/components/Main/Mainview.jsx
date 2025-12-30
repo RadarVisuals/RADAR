@@ -9,6 +9,7 @@ import { useAppInteractions } from '../../hooks/useAppInteractions';
 import { useVisualEngine } from "../../hooks/useVisualEngine";
 import { useEngineStore } from "../../store/useEngineStore";
 import { useProjectStore } from "../../store/useProjectStore";
+import { useUIStore } from "../../store/useUIStore"; 
 import { useSceneSequencer } from "../../hooks/useSceneSequencer";
 
 import ToastContainer from "../Notifications/ToastContainer";
@@ -43,6 +44,9 @@ const portalContainerNode = typeof document !== 'undefined' ? document.getElemen
 
 const MainView = ({ blendModes = BLEND_MODES }) => {
   const { publicClient, walletClient, upInitializationError, upFetchStateError } = useUpProvider();
+
+  // MAPPING MODE INTEGRATION
+  const isMappingMode = useUIStore(s => s.isMappingMode);
 
   const {
     stagedSetlist,
@@ -102,6 +106,7 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     canvasRefs: {}, 
     animatingPanel: localAnimatingPanel, 
     isBenignOverlayActive: localIsBenignOverlayActive,
+    isMappingActive: isMappingMode,
   });
 
   const {
@@ -248,9 +253,11 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     animationDataRef: sequencer.animationDataRef,
   }), [sequencer, handleTogglePLock]);
 
+  // ADDED: mapping-active class based on isMappingMode
   const containerClass = `canvas-container 
     ${isTransitioning ? 'transitioning-active' : ''} 
-    ${isWorkspaceTransitioning ? 'workspace-fading-out' : ''}`;
+    ${isWorkspaceTransitioning ? 'workspace-fading-out' : ''}
+    ${isMappingMode ? 'mapping-active' : ''}`;
   
   const isReadyToRender = renderState === 'rendered';
   const showLoadingIndicator = !!loadingMessage;
@@ -270,12 +277,6 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
           noPingSelectors={NO_PING_SELECTORS}
         />
 
-        {/* 
-            STABILIZED AUDIO ANALYZER:
-            Moved outside the conditional {isReadyToRender} block.
-            This ensures the component stays mounted and the microphone 
-            connection remains stable during scene transitions and UI resets.
-        */}
         <AudioAnalyzerWrapper
           isAudioActive={audioState.isAudioActive}
           managerInstancesRef={managerInstancesRef}

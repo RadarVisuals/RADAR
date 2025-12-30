@@ -1,7 +1,7 @@
 // src/components/Toolbars/TopRightControls.jsx
 import React from "react";
 import PropTypes from "prop-types";
-import { RocketLaunchIcon, ArrowsRightLeftIcon } from '@heroicons/react/24/outline';
+import { RocketLaunchIcon, ArrowsRightLeftIcon, ViewfinderCircleIcon } from '@heroicons/react/24/outline';
 
 import "./ToolbarStyles/TopRightControls.css";
 import {
@@ -26,7 +26,9 @@ const TopRightControls = ({
   isParallaxEnabled,
   onToggleParallax,
   transitionMode,
-  onToggleTransitionMode
+  onToggleTransitionMode,
+  isMappingMode = false,
+  onToggleMapping
 }) => {
 
   return (
@@ -43,6 +45,24 @@ const TopRightControls = ({
             src={enlargeIcon}
             alt="Toggle Fullscreen"
             className="enhanced-view-icon icon-image"
+          />
+        </button>
+      )}
+
+      {/* VIDEO MAPPING TRIGGER */}
+      {isUiVisible && onToggleMapping && (
+        <button
+          className={`toolbar-icon ${isMappingMode ? "active" : ""}`}
+          onClick={onToggleMapping}
+          title={isMappingMode ? "Exit Video Mapping Mode" : "Enter Video Mapping Mode"}
+          aria-label="Toggle Video Mapping"
+        >
+          <ViewfinderCircleIcon 
+            className="icon-image" 
+            style={{ 
+              padding: '3px', 
+              color: isMappingMode ? 'var(--color-primary)' : 'inherit' 
+            }} 
           />
         </button>
       )}
@@ -136,6 +156,8 @@ TopRightControls.propTypes = {
   onToggleParallax: PropTypes.func,
   transitionMode: PropTypes.string,
   onToggleTransitionMode: PropTypes.func,
+  isMappingMode: PropTypes.bool,
+  onToggleMapping: PropTypes.func,
 };
 
 export default TopRightControls;

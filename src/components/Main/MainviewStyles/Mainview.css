@@ -26,6 +26,16 @@
   transition: opacity 0.5s ease-in-out; /* This is our fade duration */
 }
 
+/* --- VIDEO MAPPING MODE OVERRIDES --- */
+.canvas-container.mapping-active {
+  background: #000000 !important; /* Force true black background */
+}
+
+.canvas-container.mapping-active .grid-overlay {
+  display: none !important; /* Completely hide the dot grid */
+}
+/* ------------------------------------ */
+
 /* New class for the workspace fade-out state */
 .canvas-container.workspace-fading-out {
   opacity: 0;
@@ -102,21 +112,6 @@
      We set a base scale here. */
   transform: scale(1);
 }
-
-/* --- FIX: The following two rules are the primary cause of the flicker and have been REMOVED --- */
-/*
-.canvas.is-fading-out {
-  opacity: 0 !important;
-  transform: scale(0.95) !important;
-  z-index: 100 !important;
-}
-
-.canvas.is-fading-in {
-  visibility: visible !important;
-}
-*/
-/* --- END FIX --- */
-
 
 /* Entity Logo */
 .entity-logo {
