@@ -4,6 +4,8 @@ import PixiEngine from '../utils/PixiEngine';
 import { resolveImageUrl } from '../utils/imageDecoder';
 
 let globalEngineInstance = null;
+let isInitializing = false; // Async lock to prevent duplicate app creation
+
 export const getPixiEngine = () => globalEngineInstance;
 
 export function usePixiOrchestrator({ 
@@ -15,37 +17,50 @@ export function usePixiOrchestrator({
 }) {
   const [isEngineReady, setIsEngineReady] = useState(false);
   
-  // Track the last processed scene names to prevent "Sync-Back" stuttering.
-  // This ensures we only call snapConfig (which kills smoothing) during 
-  // actual scene loads, not during manual MIDI slider tweaks.
   const lastProcessedSceneA = useRef(null);
   const lastProcessedSceneB = useRef(null);
 
   useEffect(() => {
-    if (canvasRef.current && !globalEngineInstance) {
-      const engine = new PixiEngine(canvasRef.current);
-      engine.init().then(() => {
-        globalEngineInstance = engine;
-        setIsEngineReady(true);
-      });
-    }
+    const startup = async () => {
+      // If engine exists OR is currently booting up, do nothing.
+      if (globalEngineInstance || isInitializing) return;
+
+      if (canvasRef.current) {
+        isInitializing = true;
+        const engine = new PixiEngine(canvasRef.current);
+        
+        try {
+          await engine.init();
+          globalEngineInstance = engine;
+          setIsEngineReady(true);
+        } catch (err) {
+          console.error("[Orchestrator] Startup failed:", err);
+        } finally {
+          isInitializing = false;
+        }
+      }
+    };
+
+    startup();
 
     return () => {
+      // In a production build, we typically want the engine to persist.
+      // If you need a hard reset on unmount, uncomment below.
+      /*
       if (globalEngineInstance) {
-        globalEngineInstance.destroy();
-        globalEngineInstance = null;
-        setIsEngineReady(false);
+          globalEngineInstance.destroy();
+          globalEngineInstance = null;
+          setIsEngineReady(false);
       }
+      */
     };
   }, [canvasRef]); 
 
   const syncDeckConfig = (engine, configWrapper, side, forceSnap = false) => {
     if (!configWrapper) return;
-    const { layers, tokenAssignments, name } = configWrapper;
+    const { layers, tokenAssignments } = configWrapper;
     
     ['1', '2', '3'].forEach(layerId => {
-        // Only perform a hard "snap" if the scene name changed or we are forcing it.
-        // This preserves the "ValueInterpolator" glide during manual MIDI edits.
         if (layers?.[layerId] && forceSnap) {
             engine.snapConfig(layerId, layers[layerId], side);
         }
@@ -59,30 +74,26 @@ export function usePixiOrchestrator({
     });
   };
 
-  // Sync Side A only when the Scene reference or name changes
   useEffect(() => { 
       if (isEngineReady && globalEngineInstance && sideA?.config) {
           const newName = sideA.config.name;
           const forceSnap = lastProcessedSceneA.current !== newName;
-          
           syncDeckConfig(globalEngineInstance, sideA.config, 'A', forceSnap);
           lastProcessedSceneA.current = newName;
       }
   }, [sideA, isEngineReady]);
 
-  // Sync Side B only when the Scene reference or name changes
   useEffect(() => { 
       if (isEngineReady && globalEngineInstance && sideB?.config) {
           const newName = sideB.config.name;
           const forceSnap = lastProcessedSceneB.current !== newName;
-
           syncDeckConfig(globalEngineInstance, sideB.config, 'B', forceSnap);
           lastProcessedSceneB.current = newName;
       }
   }, [sideB, isEngineReady]);
 
-  const restartCanvasAnimations = useCallback(() => globalEngineInstance?.app.ticker.start(), []);
-  const stopCanvasAnimations = useCallback(() => globalEngineInstance?.app.ticker.stop(), []);
+  const restartCanvasAnimations = useCallback(() => globalEngineInstance?.app?.ticker.start(), []);
+  const stopCanvasAnimations = useCallback(() => globalEngineInstance?.app?.ticker.stop(), []);
   
   const setCanvasLayerImage = useCallback(async (layerId, src, tokenId) => {
     const activeDeck = crossfaderValue < 0.5 ? 'A' : 'B';

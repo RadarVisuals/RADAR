@@ -13,7 +13,7 @@ import { LogicController } from './LogicController';
 
 export default class PixiEngine {
   constructor(canvasElement) {
-    this.app = new Application();
+    this.app = null; // Don't create the app here
     this.canvas = canvasElement;
     this.isReady = false;
     this._isDestroyed = false;
@@ -35,17 +35,11 @@ export default class PixiEngine {
         if(this.logic) this.logic.triggerEvent(data.type);
     };
 
-    /**
-     * HIGH-SPEED MIDI BYPASS
-     * This listener captures 'param:update' signals directly from the MidiManager.
-     * It bypasses the React lifecycle to ensure zero-latency interpolation.
-     */
     this._onParamUpdate = (data) => {
         const { layerId, param, value, isNormalized } = data;
-        if (!this.layerManager) return;
+        if (!this.layerManager || !this.crossfaderSystem) return;
 
         let finalValue = value;
-        // If the value is raw 0.0-1.0 from MIDI, scale it to the physics range
         if (isNormalized) {
             const config = sliderParams.find(p => p.prop === param);
             if (config) {
@@ -53,49 +47,55 @@ export default class PixiEngine {
             }
         }
 
-        // Apply to the deck currently being controlled
         const activeDeck = this.crossfaderSystem.crossfadeValue < 0.5 ? 'A' : 'B';
         this.layerManager.updateConfig(layerId, param, finalValue, activeDeck);
     };
   }
 
   async init() {
-    if (this.isReady || this._isDestroyed) return;
+    // Strict Guard: Prevent multiple initialization attempts
+    if (this.isReady || this._isDestroyed || this.app) return;
+    
+    // Instantiate Pixi only once
+    this.app = new Application();
     
     const resolution = Math.min(window.devicePixelRatio || 1, 1.5);
     
-    await this.app.init({
-      canvas: this.canvas,
-      resizeTo: this.canvas.parentElement, 
-      backgroundAlpha: 0,
-      antialias: true,
-      resolution: resolution,
-      autoDensity: true,
-      powerPreference: 'high-performance', 
-      preference: 'webgl',
-    });
+    try {
+      await this.app.init({
+        canvas: this.canvas,
+        resizeTo: this.canvas.parentElement, 
+        backgroundAlpha: 0,
+        antialias: true,
+        resolution: resolution,
+        autoDensity: true,
+        powerPreference: 'high-performance', 
+        preference: 'webgl',
+      });
 
-    if (this._isDestroyed) {
-        this.app.destroy(true);
-        return;
+      if (this._isDestroyed) {
+          this.app.destroy(true);
+          return;
+      }
+
+      this.app.stage.addChild(this.rootContainer);
+
+      this.effectsManager.init(this.app.screen);
+      this.layerManager = new LayerManager(this.app, this.effectsManager);
+      this.feedbackSystem = new FeedbackSystem(this.app, this.rootContainer); 
+      this.crossfaderSystem = new CrossfaderSystem(this.layerManager, this.audioReactor);
+
+      this.app.renderer.on('resize', this._resizeHandler);
+      this.handleResize(); 
+      this.app.ticker.add(this._updateLoop);
+      
+      SignalBus.on('event:trigger', this._onEventTrigger);
+      SignalBus.on('param:update', this._onParamUpdate);
+      
+      this.isReady = true;
+    } catch (e) {
+      console.error("[PixiEngine] Critical Init Error:", e);
     }
-
-    this.app.stage.addChild(this.rootContainer);
-
-    this.effectsManager.init(this.app.screen);
-    this.layerManager = new LayerManager(this.app, this.effectsManager);
-    this.feedbackSystem = new FeedbackSystem(this.app, this.rootContainer); 
-    this.crossfaderSystem = new CrossfaderSystem(this.layerManager, this.audioReactor);
-
-    this.app.renderer.on('resize', this._resizeHandler);
-    this.handleResize(); 
-    this.app.ticker.add(this._updateLoop);
-    
-    // Wire up the High-Speed signals
-    SignalBus.on('event:trigger', this._onEventTrigger);
-    SignalBus.on('param:update', this._onParamUpdate);
-    
-    this.isReady = true;
   }
 
   handleResize() {
@@ -164,16 +164,12 @@ export default class PixiEngine {
         const now = performance.now();
         const deltaTime = Math.min(ticker.deltaTime, 1.5); 
 
-        // 1. UPDATE BRAIN
         const audioData = this.audioReactor.getAudioData();
         const finalParams = this.logic.update(deltaTime, audioData);
 
-        // 2. APPLY PARAMETERS
         this.effectsManager.applyValues(finalParams);
         if (this.layerManager) this.layerManager.applyModulations(finalParams);
         
-        // 3. BROADCAST INTERPOLATED PHYSICS TO UI
-        // This ensures the slider handles in the UI move smoothly
         if (this.layerManager && this.bootstrapped) {
             const activeDeckSide = this.crossfaderSystem.crossfadeValue < 0.5 ? 'A' : 'B';
             ['1', '2', '3'].forEach(layerId => {
@@ -187,7 +183,6 @@ export default class PixiEngine {
             });
         }
 
-        // 4. CONFIGURE FEEDBACK
         let isFeedbackOn = false;
         if (this.feedbackSystem) {
             if (finalParams['feedback.enabled'] !== undefined) { 
@@ -199,13 +194,11 @@ export default class PixiEngine {
             isFeedbackOn = this.feedbackSystem.config.enabled;
         }
 
-        // 5. STEP WORLD PHYSICS
         if (this.bootstrapped) {
             this.effectsManager.update(ticker, this.app.renderer);
             this.crossfaderSystem.update(deltaTime * 0.01666, now, this.app.screen);
         }
 
-        // 6. RENDER PREPARATION
         if (this.layerManager) {
             const mainGroup = this.layerManager.mainLayerGroup;
             this.rootContainer.filters = this.effectsManager.getFilterList();
