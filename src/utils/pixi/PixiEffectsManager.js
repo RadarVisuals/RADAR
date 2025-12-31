@@ -31,43 +31,34 @@ export class PixiEffectsManager {
 
         this._activeOneShotEffects = [];
         this.screen = null;
-        this.res = 1;
+        this.res = 1; // Default
         this.paramTransformers = {};
     }
 
     init(screen) {
         this.screen = screen;
-        this.res = window.devicePixelRatio || 1;
+        // FIX: Force Filter resolution to 1.0. 
+        // Rendering Bloom or Chromatic Aberration at 3x resolution (Mac native) 
+        // is the primary reason for the performance drop.
+        this.res = 1.0; 
 
-        // --- DEFINE TRANSFORMERS ---
-        // Maps "EffectName.ParamName" -> Function(filter, value)
         this.paramTransformers = {
-            // RGB Split: Maps amount to X/Y offsets + Auto Enable
             'rgb.amount': (filter, val) => {
                 filter.red = { x: -val, y: -val };
                 filter.blue = { x: val, y: val };
                 if (val > 0.1 && !filter.enabled) filter.enabled = true;
             },
-            
-            // Pixelate: Safety check
             'pixelate.size': (filter, val) => {
                 filter.size = Math.max(1, val);
             },
-
-            // Bloom: Map generic param to internal prop + Auto Enable
             'bloom.intensity': (filter, val) => { 
                 filter.bloomScale = val; 
                 if (val > 0.1 && !filter.enabled) filter.enabled = true;
             },
-            
-            // ZoomBlur: Auto Enable
             'zoomBlur.strength': (filter, val) => {
                 filter.strength = val;
                 if (val > 0.01 && !filter.enabled) filter.enabled = true;
             },
-
-            // --- FIXED: KALEIDOSCOPE AUTO-ENABLE ---
-            // This restores the logic: if sides > 0, turn it on.
             'kaleidoscope.sides': (filter, val) => {
                 filter.sides = val;
                 filter.enabled = val > 0;
@@ -114,25 +105,19 @@ export class PixiEffectsManager {
         const filter = this.ensureFilter(effectName);
         if (!filter) return;
 
-        // 1. Handle Global Enabled Toggle
         if (param === 'enabled') {
             filter.enabled = value > 0.5;
             return;
         }
 
-        // 2. Check Transformers (Complex mapping & Auto-Enables)
         const transformKey = `${effectName}.${param}`;
         if (this.paramTransformers[transformKey]) {
             this.paramTransformers[transformKey](filter, value);
             return;
         }
 
-        // 3. Default Direct Assignment (1:1 mapping)
         if (param in filter) {
             filter[param] = value;
-            
-            // Implicit Auto-Enables for custom filters
-            // These don't need complex transformers, just a check
             if (effectName === 'liquid' && param === 'intensity') filter.enabled = value > 0.001;
             if (effectName === 'waveDistort' && param === 'intensity') filter.enabled = value > 0.001;
             if (effectName === 'volumetric' && param === 'exposure') filter.enabled = value > 0.01;
@@ -151,7 +136,6 @@ export class PixiEffectsManager {
         if (this.filters.liquid?.enabled) this.filters.liquid.time += filterDelta;
         if (this.filters.waveDistort?.enabled) this.filters.waveDistort.time += filterDelta;
         if (this.filters.ascii?.enabled) this.filters.ascii.time += filterDelta;
-        
         if (this.filters.adversarial?.enabled) {
             this.filters.adversarial.time += filterDelta;
             this.filters.adversarial.seed = Math.random(); 

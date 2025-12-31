@@ -17,24 +17,24 @@
   height: 100%;
   overflow: hidden;
   display: block;
-  transform: translateZ(0);
+  /* FIX: Ensure we have a clean compositing context without overkill scaling */
+  transform: translateZ(0); 
   will-change: opacity;
   opacity: 1;
   visibility: visible;
   background: radial-gradient( circle at center, var(--color-bg-light) 0%, #000000 100% );
   z-index: 1;
-  transition: opacity 0.5s ease-in-out; /* This is our fade duration */
+  transition: opacity 0.5s ease-in-out;
 }
 
 /* --- VIDEO MAPPING MODE OVERRIDES --- */
 .canvas-container.mapping-active {
-  background: #000000 !important; /* Force true black background */
+  background: #000000 !important;
 }
 
 .canvas-container.mapping-active .grid-overlay {
-  display: none !important; /* Completely hide the dot grid */
+  display: none !important;
 }
-/* ------------------------------------ */
 
 /* New class for the workspace fade-out state */
 .canvas-container.workspace-fading-out {
@@ -43,7 +43,7 @@
 
 .main-view.overlay-animating .canvas-container {
   opacity: 0.6;
-  transition: opacity 0.05s linear; /* Fast dim when overlay appears */
+  transition: opacity 0.05s linear; 
 }
 
 .grid-overlay {
@@ -57,70 +57,30 @@
   pointer-events: none;
 }
 
-/* --- START: PARALLAX BORDER FIX --- */
-.canvas {
+/* --- FIX: REMOVED 110% SCALING OVERHEAD --- */
+.pixi-canvas {
   position: absolute;
-  /* Make the canvas larger than the viewport to create a bleed area */
-  width: 110% !important;
-  height: 110% !important;
-  /* Reposition the oversized canvas so it's centered */
-  top: -5%; 
-  left: -5%;
+  /* We match the viewport exactly. 
+     The parallax "bleed" is now handled via internal sprite math, 
+     not by blowing up the HTML element. */
+  width: 100% !important;
+  height: 100% !important;
+  top: 0; 
+  left: 0;
   display: block;
   backface-visibility: hidden;
   will-change: transform, opacity;
-
-  /* Default state: hidden, ready for transition-in */
-  opacity: 0;
-  visibility: hidden;
-  /* The initial transform from the scene fade-in is now just scale */
-  transform: scale(1.15); 
+  transform: translateZ(0);
 }
-/* --- END: PARALLAX BORDER FIX --- */
 
-/* --- START: Layering for A/B canvases --- */
+/* --- DECK LAYERING --- */
 .canvas.layer-1.canvas-deck-a { z-index: 3; }
 .canvas.layer-1.canvas-deck-b { z-index: 4; }
 .canvas.layer-2.canvas-deck-a { z-index: 5; }
 .canvas.layer-2.canvas-deck-b { z-index: 6; }
 .canvas.layer-3.canvas-deck-a { z-index: 7; }
 .canvas.layer-3.canvas-deck-b { z-index: 8; }
-/* --- END: Layering for A/B canvases --- */
 
-
-/*
-  Core transition applied when transform changes.
-  Opacity transitions are now handled exclusively by JS to prevent race conditions.
-*/
-.canvas {
-  /* --- FIX: Removed 'opacity' from transition-property --- */
-  transition-property: transform;
-  transition-duration: 500ms; /* This MUST match CANVAS_FADE_DURATION in JS */
-  transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-/*
-  .visible class is added by JS to set the final visible state.
-  Opacity is now controlled by inline styles from the canvas orchestrator.
-*/
-.canvas.visible {
-  /* --- FIX: Opacity is no longer controlled by this class --- */
-  /* opacity: 1; */
-  visibility: visible;
-  /* The final transform for a visible canvas is its external parallax position,
-     which is handled by inline styles in CanvasManager.js.
-     We set a base scale here. */
-  transform: scale(1);
-}
-
-/* Entity Logo */
-.entity-logo {
-  position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-  height: 40px; z-index: 150;
-  opacity: 1; visibility: visible;
-}
-
-/* Status Display, FPS Counter, etc. */
 .status-display {
   position: fixed;
   top: 75%; 
@@ -145,80 +105,16 @@
   background: rgba(var(--color-warning-rgb), 0.25);
   border: 1px solid var(--color-warning-a50, rgba(255, 165, 0, 0.5));
   color: var(--color-warning, #ffa500);
-  box-shadow: 0 0 12px rgba(var(--color-warning-rgb), 0.4);
 }
 
 .status-display.error-state {
   background: rgba(var(--color-error-rgb), 0.25);
   border: 1px solid var(--color-error-a50, rgba(255, 85, 85, 0.5));
   color: var(--color-error, #ff5555);
-  box-shadow: 0 0 12px rgba(var(--color-error-rgb), 0.4);
 }
 
 .status-display.fade-out {
   opacity: 0;
-}
-
-.status-display .retry-render-button {
-  display: block;
-  margin: var(--space-sm) auto 0;
-  padding: var(--space-xs) var(--space-md);
-  background: var(--color-error-a30);
-  color: var(--color-text);
-  border: 1px solid var(--color-error-a50, rgba(255, 85, 85, 0.5));
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background var(--transition-fast);
-  pointer-events: auto;
-  font-size: var(--font-size-sm);
-  font-family: var(--font-family);
-  font-weight: bold;
-  text-transform: uppercase;
-}
-.status-display .retry-render-button:hover:not(:disabled) {
-  background: var(--color-error-a50, rgba(255, 165, 0, 0.5));
-}
-.status-display .retry-render-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.hidden-audio-analyzer {
-  position: absolute; left: -9999px; top: -9999px;
-  opacity: 0; width: 0; height: 0; overflow: hidden; pointer-events: none;
-}
-
-.fps-counter {
-  position: fixed;
-  bottom: 10px;
-  left: 10px;
-  background: rgba(0, 0, 0, 0.5);
-  color: #00ff99;
-  padding: 5px 10px;
-  font-size: 12px;
-  font-family: monospace;
-  border-radius: 4px;
-  z-index: 1000;
-  pointer-events: none;
-}
-
-.maximize-button {
-  position: fixed;
-  bottom: 20px;
-  left: 20px;
-  z-index: 10000;
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  padding: 8px 12px;
-  cursor: pointer;
-  font-size: 14px;
-  backdrop-filter: blur(4px);
-  transition: all 0.3s ease;
-}
-.maximize-button:hover {
-  background: rgba(255, 255, 255, 0.2);
 }
 
 #fullscreen-root.radar-cursor {
@@ -232,21 +128,6 @@
   height: 40px;
   pointer-events: none;
   z-index: 10001;
-  opacity: 1; 
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.click-ping-svg {
-  width: 100%;
-  height: 100%;
-  overflow: visible !important; 
-}
-
-.click-ping-svg circle {
-  stroke-opacity: 1; 
-  transform-origin: center; 
 }
 
 .ping-svg-animation .click-ping-svg circle {

@@ -13,7 +13,7 @@ import { LogicController } from './LogicController';
 
 export default class PixiEngine {
   constructor(canvasElement) {
-    this.app = null; // Don't create the app here
+    this.app = null;
     this.canvas = canvasElement;
     this.isReady = false;
     this._isDestroyed = false;
@@ -53,20 +53,23 @@ export default class PixiEngine {
   }
 
   async init() {
-    // Strict Guard: Prevent multiple initialization attempts
     if (this.isReady || this._isDestroyed || this.app) return;
     
-    // Instantiate Pixi only once
     this.app = new Application();
     
-    const resolution = Math.min(window.devicePixelRatio || 1, 1.5);
+    // FIX: Force resolution to 1.0. 
+    // High devicePixelRatio (2.0-3.0) on Mac M4 triggers an exponential 
+    // increase in fragment shader work (Filters/Bloom/Feedback).
+    const resolution = 1.0; 
     
     try {
       await this.app.init({
         canvas: this.canvas,
         resizeTo: this.canvas.parentElement, 
         backgroundAlpha: 0,
-        antialias: true,
+        // FIX: Antialias is extremely expensive for the GPU fill-rate.
+        // On Retina displays, the pixel density is so high it is not needed.
+        antialias: false, 
         resolution: resolution,
         autoDensity: true,
         powerPreference: 'high-performance', 
@@ -162,6 +165,7 @@ export default class PixiEngine {
 
     try {
         const now = performance.now();
+        // Limit delta to prevent logic jumping on frame drops
         const deltaTime = Math.min(ticker.deltaTime, 1.5); 
 
         const audioData = this.audioReactor.getAudioData();
