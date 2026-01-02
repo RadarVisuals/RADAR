@@ -53,6 +53,7 @@ export default class WaveDistortEffect extends AbstractShaderEffect {
     static get manifest() {
         return {
             label: 'Wave Distortion',
+            category: 'Distortion', // <-- Categorized
             params: {
                 intensity: { id: 'waveDistort.intensity', label: 'Amplitude', type: 'float', min: 0, max: 2.0, default: 0.0, hardMin: 0, hardMax: 10.0 },
             }

@@ -33,6 +33,7 @@ export default class BloomEffect extends AbstractShaderEffect {
     static get manifest() {
         return {
             label: 'Bloom (Glow)',
+            category: 'Light & Color', // <-- Categorized
             params: {
                 intensity: { id: 'bloom.intensity', label: 'Intensity', type: 'float', min: 0, max: 5.0, default: 0.0, hardMin: 0, hardMax: 10.0 },
                 threshold: { id: 'bloom.threshold', label: 'Threshold', type: 'float', min: 0, max: 1.0, default: 0.5, hardMin: 0, hardMax: 1.0 },

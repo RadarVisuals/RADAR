@@ -26,13 +26,7 @@ const SIGNAL_SOURCES = [
     ]}
 ];
 
-const CATEGORIES = {
-    'Core Physics': ['layer1', 'layer2', 'layer3'],
-    'Global': ['feedback'],
-    'Light & Color': ['bloom', 'volumetric', 'rgb'],
-    'Distortion': ['adversarial', 'pixelate', 'waveDistort', 'zoomBlur', 'shockwave'],
-    'Texture & Geo': ['liquid', 'ascii', 'kaleidoscope']
-};
+// --- Sub-components (Unchanged logic) ---
 
 const LfoConfigurator = ({ lfoId, label, settings, onChange }) => {
     const { frequency, type } = settings || { frequency: 1, type: 'sine' };
@@ -216,6 +210,8 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
     );
 };
 
+// --- Main Panel ---
+
 const ModulationPanel = ({ onClose }) => {
     const { 
         baseValues, patches, setModulationValue, 
@@ -225,23 +221,34 @@ const ModulationPanel = ({ onClose }) => {
         resetBaseValues 
     } = useVisualEngine();
     
+    // --- REFACTORED CATEGORY LOGIC ---
+    // Instead of hardcoded arrays, we group by the 'category' string in the Manifest
     const categorizedEffects = useMemo(() => {
-        const result = {};
-        Object.keys(CATEGORIES).forEach(k => result[k] = []);
-        result['Other'] = [];
+        const groups = {};
+        
+        // Ensure Core Physics comes first
+        groups['Core Physics'] = [];
 
         Object.entries(EFFECT_MANIFEST).forEach(([key, config]) => {
-            let found = false;
-            for (const [catName, keys] of Object.entries(CATEGORIES)) {
-                if (keys.includes(key)) {
-                    result[catName].push({ key, config });
-                    found = true;
-                    break;
-                }
+            if (key.startsWith('layer')) {
+                groups['Core Physics'].push({ key, config });
+            } else {
+                const cat = config.category || 'Other';
+                if (!groups[cat]) groups[cat] = [];
+                groups[cat].push({ key, config });
             }
-            if (!found) result['Other'].push({ key, config });
         });
-        return Object.entries(result).filter(([_, items]) => items.length > 0);
+
+        // Sort keys to ensure 'Core Physics' is first, 'Other' is last
+        const sortedKeys = Object.keys(groups).sort((a, b) => {
+            if (a === 'Core Physics') return -1;
+            if (b === 'Core Physics') return 1;
+            if (a === 'Other') return 1;
+            if (b === 'Other') return -1;
+            return a.localeCompare(b);
+        });
+
+        return sortedKeys.map(k => [k, groups[k]]);
     }, []);
 
     const [expandedCategories, setExpandedCategories] = useState({ 'Core Physics': true });

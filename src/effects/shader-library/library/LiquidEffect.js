@@ -14,7 +14,6 @@ const fragment = `
     uniform float uScale;
     uniform float uIntensity;
 
-    // Simplex Noise helpers
     vec3 permute(vec3 x) { return mod(((x*34.0)+1.0)*x, 289.0); }
     float snoise(vec2 v){
         const vec4 C = vec4(0.211324865405187, 0.366025403784439, -0.577350269189626, 0.024390243902439);
@@ -71,7 +70,6 @@ export default class LiquidEffect extends AbstractShaderEffect {
         switch(key) {
             case 'intensity':
                 uniforms.uIntensity = value;
-                // Auto-enable logic: if intensity is high enough, enable the filter
                 this.active = value > 0.001;
                 this.filter.enabled = this.active;
                 break;
@@ -82,7 +80,6 @@ export default class LiquidEffect extends AbstractShaderEffect {
                 uniforms.uScale = value;
                 break;
             case 'enabled':
-                // Explicit enable/disable override
                 this.active = value > 0.5;
                 this.filter.enabled = this.active;
                 break;
@@ -91,7 +88,6 @@ export default class LiquidEffect extends AbstractShaderEffect {
 
     update(delta) {
         if (this.active) {
-            // Increment time based on ticker delta (approx 1.0 at 60fps)
             this.filter.resources.liquidUniforms.uniforms.uTime += (delta * 0.01);
         }
     }
@@ -99,6 +95,7 @@ export default class LiquidEffect extends AbstractShaderEffect {
     static get manifest() {
         return {
             label: 'Liquid Flow',
+            category: 'Texture & Geo', // <-- Added Category
             params: {
                 intensity: { id: 'liquid.intensity', label: 'Amount', type: 'float', min: 0, max: 0.5, default: 0.0, hardMin: 0, hardMax: 2.0 },
                 scale:     { id: 'liquid.scale',     label: 'Density', type: 'float', min: 0.1, max: 10, default: 3.0, hardMin: 0.01, hardMax: 50 },

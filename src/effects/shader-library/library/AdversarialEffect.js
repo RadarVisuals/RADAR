@@ -1,4 +1,3 @@
-// src/effects/shader-library/library/AdversarialEffect.js
 import { Filter, GlProgram } from 'pixi.js';
 import { AbstractShaderEffect } from '../AbstractShaderEffect';
 import { defaultFilterVertex } from '../ShaderUtils';
@@ -13,7 +12,7 @@ const fragment = `
     uniform vec4 uInputSize; 
     
     uniform float uTime;
-    uniform float uIntensity; // Acts as "Power"
+    uniform float uIntensity; 
     uniform float uBands;
     uniform float uShift;
     uniform float uNoiseScale;
@@ -67,13 +66,11 @@ const fragment = `
 
     vec2 bandShift(vec2 uv) {
         float m = bandMask(uv);
-        // Scale shift by uIntensity to allow full fade out
         float shift = (m - 0.5) * 0.002 * uShift * uIntensity; 
         return uv + vec2(shift, 0.0);
     }
 
     vec3 sampleChromatic(vec2 uv) {
-        // Scale chromatic split by uIntensity
         vec2 cOff = vec2(0.001 * uChromatic * uIntensity, 0.0); 
         float r = texture(uTexture, uv + cOff).r;
         float g = texture(uTexture, uv).g;
@@ -83,12 +80,9 @@ const fragment = `
 
     vec3 postProcess(vec2 uv, vec3 col) {
         float scan = 0.5 + 0.5 * sin(uv.y * 500.0 * 3.14159);
-        
-        // Scale scanline opacity by clamped intensity (0-1)
         float scanStrength = uScanline * clamp(uIntensity, 0.0, 1.0);
         col *= mix(1.0, 1.0 + scanStrength * (scan - 0.5), scanStrength);
         
-        // Scale quantization by intensity
         float qMix = uQNoise * uIntensity;
         if(qMix > 0.0) {
             vec3 q = floor(col * (256.0 - qMix) + noise(uv * 1024.0) * qMix) / (256.0 - qMix);
@@ -141,19 +135,10 @@ export default class AdversarialEffect extends AbstractShaderEffect {
                 this.active = value > 0.5;
                 this.filter.enabled = this.active;
                 break;
-            case 'intensity':
-                uniforms.uIntensity = value;
-                break;
-            case 'bands':
-                uniforms.uBands = value;
-                break;
-            case 'noiseScale':
-                uniforms.uNoiseScale = value;
-                break;
-            case 'chromatic':
-                uniforms.uChromatic = value;
-                break;
-            // These params were in the shader but missing from old UI manifest, mapping them just in case
+            case 'intensity': uniforms.uIntensity = value; break;
+            case 'bands': uniforms.uBands = value; break;
+            case 'noiseScale': uniforms.uNoiseScale = value; break;
+            case 'chromatic': uniforms.uChromatic = value; break;
             case 'shift': uniforms.uShift = value; break;
             case 'scanline': uniforms.uScanline = value; break;
             case 'qNoise': uniforms.uQNoise = value; break;
@@ -164,13 +149,14 @@ export default class AdversarialEffect extends AbstractShaderEffect {
         if (this.active) {
             const uniforms = this.filter.resources.adversarialUniforms.uniforms;
             uniforms.uTime += (delta * 0.01);
-            uniforms.uSeed = Math.random(); // Randomize seed every frame for glitch flicker
+            uniforms.uSeed = Math.random(); 
         }
     }
 
     static get manifest() {
         return {
             label: 'Data Mosh (Adversarial)', 
+            category: 'Distortion', // <-- Added Category
             params: {
                 enabled:    { id: 'adversarial.enabled',    label: 'Active',      type: 'bool',  min: 0, max: 1,   default: 0 },
                 intensity:  { id: 'adversarial.intensity',  label: 'Power',       type: 'float', min: 0, max: 2.0, default: 0.5, hardMin: 0, hardMax: 5.0 },

@@ -10,9 +10,11 @@ import WaveDistortEffect from './library/WaveDistortEffect';
 import KaleidoscopeEffect from './library/KaleidoscopeEffect';
 import AsciiEffect from './library/AsciiEffect';
 import ShockwaveEffect from './library/ShockwaveEffect';
+import CRTEffect from './library/CRTEffect'; // <-- NEW
 
 /**
  * Central registry of all available modular effects.
+ * Keys match the ID used in the Engine Store and Logic Controller.
  */
 export const SHADER_CLASSES = {
     'liquid': LiquidEffect,
@@ -25,7 +27,8 @@ export const SHADER_CLASSES = {
     'waveDistort': WaveDistortEffect,
     'kaleidoscope': KaleidoscopeEffect,
     'ascii': AsciiEffect,
-    'shockwave': ShockwaveEffect
+    'shockwave': ShockwaveEffect,
+    'crt': CRTEffect // <-- NEW
 };
 
 export const generateEffectManifest = (corePhysicsManifest = {}) => {

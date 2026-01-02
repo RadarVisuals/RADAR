@@ -14,7 +14,6 @@ export default class RGBEffect extends AbstractShaderEffect {
 
     setParam(key, value) {
         if (key === 'amount') {
-            // Complex mapping logic preserved from original manager
             this.filter.red = { x: -value, y: -value };
             this.filter.blue = { x: value, y: value };
             
@@ -26,6 +25,7 @@ export default class RGBEffect extends AbstractShaderEffect {
     static get manifest() {
         return {
             label: 'RGB Split (Chromatic)',
+            category: 'Light & Color', // <-- Categorized
             params: {
                 amount: { id: 'rgb.amount', label: 'Offset', type: 'float', min: 0, max: 50.0, default: 0.0, hardMin: -100, hardMax: 100 },
             }

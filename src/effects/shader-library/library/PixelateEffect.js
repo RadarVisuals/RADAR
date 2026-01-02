@@ -20,6 +20,7 @@ export default class PixelateEffect extends AbstractShaderEffect {
     static get manifest() {
         return {
             label: 'Pixelate (Bitcrush)',
+            category: 'Distortion', // <-- Categorized
             params: {
                 enabled: { id: 'pixelate.enabled', label: 'Active', type: 'bool', min: 0, max: 1, default: 0 },
                 size:    { id: 'pixelate.size',    label: 'Block Size', type: 'int', min: 2, max: 100, default: 10, hardMin: 1, hardMax: 500 },

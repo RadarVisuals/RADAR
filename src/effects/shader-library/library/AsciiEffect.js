@@ -136,6 +136,7 @@ export default class AsciiEffect extends AbstractShaderEffect {
     static get manifest() {
         return {
             label: 'ASCII / Terminal',
+            category: 'Texture & Geo', // <-- Categorized
             params: {
                 enabled:   { id: 'ascii.enabled',   label: 'Active',    type: 'bool',  min: 0, max: 1,  default: 0 },
                 size:      { id: 'ascii.size',      label: 'Grid Size', type: 'int',   min: 2, max: 50, default: 10, hardMin: 2, hardMax: 200 },

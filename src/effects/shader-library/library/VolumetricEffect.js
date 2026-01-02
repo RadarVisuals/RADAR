@@ -80,6 +80,7 @@ export default class VolumetricEffect extends AbstractShaderEffect {
     static get manifest() {
         return {
             label: 'Volumetric Light',
+            category: 'Light & Color', // <-- Categorized
             params: {
                 exposure:  { id: 'volumetric.exposure',  label: 'Exposure',  type: 'float', min: 0, max: 1.0, default: 0.0, hardMin: 0, hardMax: 2.0 },
                 decay:     { id: 'volumetric.decay',     label: 'Decay',     type: 'float', min: 0.5, max: 1.0, default: 0.95, hardMin: 0.1, hardMax: 1.0 },

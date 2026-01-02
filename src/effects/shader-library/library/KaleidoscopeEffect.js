@@ -49,7 +49,6 @@ export default class KaleidoscopeEffect extends AbstractShaderEffect {
             },
             resolution: resolution
         });
-        // Important: Pixi filters usually have padding=0 for full screen effects to avoid artifacts
         this.filter.padding = 0;
         return this.filter;
     }
@@ -68,16 +67,6 @@ export default class KaleidoscopeEffect extends AbstractShaderEffect {
         }
     }
 
-    // Special: Needs screen size update from manager
-    update(delta, now) {
-        // Handled by setParam mostly, but if we need screen resize logic:
-        // The manager handles passing screen size via filter properties usually, 
-        // but here we used a uniform. Let's assume the manager might need to call a specific method
-        // or we handle resizing via a separate hook. 
-        // For now, let's expose a setter for screenSize.
-    }
-    
-    // Custom method called by PixiEffectsManager.update()
     setScreenSize(width, height) {
         if(this.filter) {
             this.filter.resources.kaleidoscopeUniforms.uniforms.uScreenSize = { x: width, y: height };
@@ -87,6 +76,7 @@ export default class KaleidoscopeEffect extends AbstractShaderEffect {
     static get manifest() {
         return {
             label: 'Kaleidoscope',
+            category: 'Texture & Geo', // <-- Categorized
             params: {
                 sides: { id: 'kaleidoscope.sides', label: 'Segments', type: 'int',   min: 0, max: 32,   default: 0, hardMin: 0, hardMax: 64 },
                 angle: { id: 'kaleidoscope.angle', label: 'Rotation', type: 'float', min: 0, max: 6.28, default: 0, hardMin: -100, hardMax: 100 },

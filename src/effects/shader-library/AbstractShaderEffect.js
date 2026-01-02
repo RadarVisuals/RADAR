@@ -70,6 +70,7 @@ export class AbstractShaderEffect {
     static get manifest() {
         return {
             label: 'Unknown Effect',
+            category: 'Uncategorized', // Default Category
             params: {}
         };
     }

@@ -1,4 +1,3 @@
-// src/config/EffectManifest.js
 import { generateEffectManifest } from '../effects/shader-library/ShaderRegistry';
 
 export const LAYER_PARAMS_DEF = {
@@ -35,10 +34,10 @@ const CORE_PHYSICS = {
     layer3: { label: 'Layer 3 Physics', params: generateLayerParams(3) },
 };
 
-// Infinity Trails is technically a "System" not a "Shader", so we keep its config here manually for now.
 const SYSTEM_EFFECTS = {
     feedback: {
         label: 'Infinity Trails (Feedback)',
+        category: 'Global', // <-- Categorized
         params: {
             enabled:  { id: 'feedback.enabled',  label: 'Active',   type: 'bool',  min: 0, max: 1,    default: 0 },
             amount:   { id: 'feedback.amount',   label: 'Decay',    type: 'float', min: 0.5, max: 0.99, default: 0.9, hardMin: 0.0, hardMax: 0.999 },

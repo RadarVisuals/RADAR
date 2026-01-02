@@ -21,7 +21,6 @@ export default class ZoomBlurEffect extends AbstractShaderEffect {
         }
     }
 
-    // Special: Requires screen center update
     setCenter(x, y) {
         if (this.filter) {
             this.filter.center = { x, y };
@@ -31,6 +30,7 @@ export default class ZoomBlurEffect extends AbstractShaderEffect {
     static get manifest() {
         return {
             label: 'Warp Drive (Zoom)',
+            category: 'Distortion', // <-- Categorized
             params: {
                 strength:    { id: 'zoomBlur.strength',    label: 'Strength',  type: 'float', min: 0, max: 0.5, default: 0.0, hardMin: 0, hardMax: 2.0 },
                 innerRadius: { id: 'zoomBlur.innerRadius', label: 'Safe Zone', type: 'float', min: 0, max: 200, default: 50, hardMin: 0, hardMax: 1000 },
