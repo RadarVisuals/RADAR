@@ -105,6 +105,13 @@ export default class PixiEngine {
     if (this._isDestroyed || !this.app || !this.app.renderer) return;
     const w = this.app.screen.width;
     const h = this.app.screen.height;
+
+    // --- FIX FOR DRIFTING/CLIPPING ---
+    // Explicitly set the filterArea to the screen dimensions.
+    // This prevents filters (Bloom, Zoom, etc.) from shrinking to fit 
+    // only the visible sprites, which causes coordinate shifts in fullscreen.
+    this.rootContainer.filterArea = this.app.screen; 
+    
     if (this.feedbackSystem) this.feedbackSystem.resize(w, h);
     if (this.layerManager) this.layerManager.resize();
   }

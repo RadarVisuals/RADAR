@@ -141,11 +141,20 @@ export class PixiEffectsManager {
             this.filters.adversarial.seed = Math.random(); 
         }
 
-        const logicalW = renderer.width / renderer.resolution;
-        const logicalH = renderer.height / renderer.resolution;
+        // --- COORDINATE UPDATES ---
+        // We use renderer.screen.width/height directly to ensure we match the current viewport
+        // resolution is handled internally by Pixi filters usually, but if we need logical coords:
+        const screenW = renderer.screen.width;
+        const screenH = renderer.screen.height;
         
-        if (this.filters.kaleidoscope) this.filters.kaleidoscope.screenSize = { x: renderer.width, y: renderer.height };
-        if (this.filters.zoomBlur) this.filters.zoomBlur.center = { x: logicalW/2, y: logicalH/2 };
+        if (this.filters.kaleidoscope) {
+            this.filters.kaleidoscope.screenSize = { x: screenW, y: screenH };
+        }
+        
+        if (this.filters.zoomBlur) {
+            // Zoom blur center needs to be at the exact center of the screen
+            this.filters.zoomBlur.center = { x: screenW / 2, y: screenH / 2 };
+        }
         
         this._updateOneShots(now);
     }
