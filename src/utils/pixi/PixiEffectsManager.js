@@ -1,97 +1,37 @@
 // src/utils/pixi/PixiEffectsManager.js
-import { 
-    AdvancedBloomFilter, 
-    RGBSplitFilter, 
-    PixelateFilter,
-    ZoomBlurFilter,
-    ShockwaveFilter, 
-} from 'pixi-filters';
-import { 
-    VolumetricLightFilter, 
-    LiquidFilter, 
-    WaveDistortFilter, 
-    KaleidoscopeFilter, 
-    AdversarialGlitchFilter, 
-    AsciiFilter 
-} from './PixiFilters';
+import { SHADER_CLASSES } from '../../effects/shader-library/ShaderRegistry';
 import { lerp } from '../helpers';
 
 export class PixiEffectsManager {
     constructor() {
-        this.filters = {
-            bloom: null, rgb: null, pixelate: null,
-            zoomBlur: null,
-            kaleidoscope: null,
-            volumetric: null, waveDistort: null, liquid: null,
-            shockwave: null,
-            adversarial: null,
-            ascii: null,
-            feedback: null 
-        };
-
+        // Map<string, AbstractShaderEffect>
+        this.modularEffects = new Map();
+        
+        // Track one-shot effects (explosions, flashes)
         this._activeOneShotEffects = [];
+        
         this.screen = null;
-        this.res = 1; // Default
-        this.paramTransformers = {};
+        this.res = 1.0; 
     }
 
     init(screen) {
         this.screen = screen;
-        // FIX: Force Filter resolution to 1.0. 
-        // Rendering Bloom or Chromatic Aberration at 3x resolution (Mac native) 
-        // is the primary reason for the performance drop.
+        // Force 1.0 resolution for performance consistency across High-DPI screens
         this.res = 1.0; 
 
-        this.paramTransformers = {
-            'rgb.amount': (filter, val) => {
-                filter.red = { x: -val, y: -val };
-                filter.blue = { x: val, y: val };
-                if (val > 0.1 && !filter.enabled) filter.enabled = true;
-            },
-            'pixelate.size': (filter, val) => {
-                filter.size = Math.max(1, val);
-            },
-            'bloom.intensity': (filter, val) => { 
-                filter.bloomScale = val; 
-                if (val > 0.1 && !filter.enabled) filter.enabled = true;
-            },
-            'zoomBlur.strength': (filter, val) => {
-                filter.strength = val;
-                if (val > 0.01 && !filter.enabled) filter.enabled = true;
-            },
-            'kaleidoscope.sides': (filter, val) => {
-                filter.sides = val;
-                filter.enabled = val > 0;
-            },
-        };
+        // Initialize all modular effects from registry
+        Object.entries(SHADER_CLASSES).forEach(([key, EffectClass]) => {
+            const instance = new EffectClass(key);
+            const filter = instance.init(this.res);
+            filter.enabled = false; 
+            this.modularEffects.set(key, instance);
+        });
     }
 
-    ensureFilter(name) {
-        if (this.filters[name]) return this.filters[name];
-
-        const res = this.res;
-        
-        switch (name) {
-            case 'bloom': this.filters.bloom = new AdvancedBloomFilter({ threshold: 0.5, bloomScale: 1.0, brightness: 1.0, blur: 8, quality: 5, resolution: res }); break;
-            case 'rgb': this.filters.rgb = new RGBSplitFilter({ red: {x:0,y:0}, green: {x:0,y:0}, blue: {x:0,y:0}, resolution: res }); break;
-            case 'pixelate': this.filters.pixelate = new PixelateFilter(1); this.filters.pixelate.resolution = res; break;
-            case 'zoomBlur': this.filters.zoomBlur = new ZoomBlurFilter({ strength: 0.1, innerRadius: 50, resolution: res }); break;
-            case 'kaleidoscope': this.filters.kaleidoscope = new KaleidoscopeFilter(); this.filters.kaleidoscope.resolution = res; break;
-            case 'volumetric': this.filters.volumetric = new VolumetricLightFilter(); break;
-            case 'waveDistort': this.filters.waveDistort = new WaveDistortFilter(); break;
-            case 'liquid': this.filters.liquid = new LiquidFilter(); break;
-            case 'adversarial': this.filters.adversarial = new AdversarialGlitchFilter(); break;
-            case 'ascii': this.filters.ascii = new AsciiFilter(); break;
-            case 'shockwave': this.filters.shockwave = new ShockwaveFilter({ center: { x: 0, y: 0 }, speed: 500, amplitude: 30, wavelength: 160, radius: -1 }); break;
-        }
-
-        if (this.filters[name]) {
-            this.filters[name].enabled = false; 
-        }
-
-        return this.filters[name];
-    }
-
+    /**
+     * Bulk apply parameter updates from the Logic Controller
+     * @param {Object} values - Key/Value pairs (e.g. 'bloom.intensity': 0.5)
+     */
     applyValues(values) {
         Object.entries(values).forEach(([fullId, value]) => {
             const [effectName, param] = fullId.split('.');
@@ -100,112 +40,129 @@ export class PixiEffectsManager {
     }
 
     updateConfig(effectName, param, value) {
+        // Feedback is handled by a separate System, skip it here
         if (effectName === 'feedback') return;
 
-        const filter = this.ensureFilter(effectName);
-        if (!filter) return;
-
-        if (param === 'enabled') {
-            filter.enabled = value > 0.5;
-            return;
-        }
-
-        const transformKey = `${effectName}.${param}`;
-        if (this.paramTransformers[transformKey]) {
-            this.paramTransformers[transformKey](filter, value);
-            return;
-        }
-
-        if (param in filter) {
-            filter[param] = value;
-            if (effectName === 'liquid' && param === 'intensity') filter.enabled = value > 0.001;
-            if (effectName === 'waveDistort' && param === 'intensity') filter.enabled = value > 0.001;
-            if (effectName === 'volumetric' && param === 'exposure') filter.enabled = value > 0.01;
+        const effect = this.modularEffects.get(effectName);
+        if (effect) {
+            effect.setParam(param, value);
         }
     }
 
+    /**
+     * Returns list of PIXI.Filters to apply to the main container
+     */
     getFilterList() {
-        return Object.values(this.filters)
-            .filter(f => f && f.enabled && f !== this.filters.feedback); 
+        return Array.from(this.modularEffects.values())
+            .filter(e => e.active && e.filter)
+            .map(e => e.filter);
     }
 
     update(ticker, renderer) {
         const now = performance.now();
-        const filterDelta = ticker.deltaTime * 0.01;
+        
+        // 1. Update all active modular effects
+        this.modularEffects.forEach(effect => {
+            if (effect.active) {
+                // Handle special case for effects needing screen size (e.g. Kaleidoscope)
+                if (typeof effect.setScreenSize === 'function') {
+                    effect.setScreenSize(renderer.screen.width, renderer.screen.height);
+                }
+                // Handle special case for effects needing center point (e.g. ZoomBlur)
+                if (typeof effect.setCenter === 'function') {
+                    effect.setCenter(renderer.screen.width / 2, renderer.screen.height / 2);
+                }
+                
+                effect.update(ticker.deltaTime, now); 
+            }
+        });
 
-        if (this.filters.liquid?.enabled) this.filters.liquid.time += filterDelta;
-        if (this.filters.waveDistort?.enabled) this.filters.waveDistort.time += filterDelta;
-        if (this.filters.ascii?.enabled) this.filters.ascii.time += filterDelta;
-        if (this.filters.adversarial?.enabled) {
-            this.filters.adversarial.time += filterDelta;
-            this.filters.adversarial.seed = Math.random(); 
-        }
-
-        // --- COORDINATE UPDATES ---
-        // We use renderer.screen.width/height directly to ensure we match the current viewport
-        // resolution is handled internally by Pixi filters usually, but if we need logical coords:
-        const screenW = renderer.screen.width;
-        const screenH = renderer.screen.height;
-        
-        if (this.filters.kaleidoscope) {
-            this.filters.kaleidoscope.screenSize = { x: screenW, y: screenH };
-        }
-        
-        if (this.filters.zoomBlur) {
-            // Zoom blur center needs to be at the exact center of the screen
-            this.filters.zoomBlur.center = { x: screenW / 2, y: screenH / 2 };
-        }
-        
+        // 2. Update One-Shots (Shockwave / BloomFlash)
         this._updateOneShots(now);
     }
 
     triggerOneShot(type, config, screen) {
         const now = performance.now();
+        
         if (type === 'shockwave') {
-            const filter = this.ensureFilter('shockwave');
-            filter.center = { x: Math.random() * screen.width, y: Math.random() * screen.height };
-            filter.time = 0;
-            filter.radius = -1; 
-            filter.amplitude = config.amplitude || 30;
-            filter.wavelength = config.wavelength || 160;
-            const duration = config.duration || 1000;
-            const maxRadius = Math.max(screen.width, screen.height) * 1.5;
-            filter.enabled = true;
-            this._activeOneShotEffects.push({ type: 'shockwave', startTime: now, duration, maxRadius, filter });
+            const effect = this.modularEffects.get('shockwave');
+            if (effect && effect.filter) {
+                const f = effect.filter;
+                f.center = { x: Math.random() * screen.width, y: Math.random() * screen.height };
+                f.time = 0;
+                f.radius = -1;
+                f.amplitude = config.amplitude || 30;
+                f.wavelength = config.wavelength || 160;
+                
+                const duration = config.duration || 1000;
+                const maxRadius = Math.max(screen.width, screen.height) * 1.5;
+                
+                effect.active = true;
+                effect.filter.enabled = true;
+                
+                this._activeOneShotEffects.push({ 
+                    type: 'shockwave', 
+                    startTime: now, 
+                    duration, 
+                    maxRadius, 
+                    effect 
+                });
+            }
         }
         else if (type === 'bloomFlash') {
-            const filter = this.ensureFilter('bloom');
-            if (!filter.enabled) { filter.enabled = true; filter._wasDisabled = true; }
-            const baseIntensity = filter.bloomScale;
-            this._activeOneShotEffects.push({ type: 'bloomFlash', startTime: now, duration: config.duration || 500, baseIntensity, peakIntensity: config.intensity || 6.0, filter });
+            const effect = this.modularEffects.get('bloom');
+            if (effect && effect.filter) {
+                // If bloom wasn't already active, track it so we can disable it after the flash
+                if (!effect.active) {
+                    effect.active = true;
+                    effect.filter.enabled = true;
+                    effect._wasDisabled = true;
+                }
+                const baseIntensity = effect.filter.bloomScale;
+                this._activeOneShotEffects.push({ 
+                    type: 'bloomFlash', 
+                    startTime: now, 
+                    duration: config.duration || 500, 
+                    baseIntensity, 
+                    peakIntensity: config.intensity || 6.0, 
+                    effect 
+                });
+            }
         }
     }
 
     _updateOneShots(now) {
         if (this._activeOneShotEffects.length === 0) return;
         
-        this._activeOneShotEffects = this._activeOneShotEffects.filter(effect => {
-            const elapsed = now - effect.startTime;
-            const progress = Math.max(0, Math.min(elapsed / effect.duration, 1.0));
+        this._activeOneShotEffects = this._activeOneShotEffects.filter(shot => {
+            const elapsed = now - shot.startTime;
+            const progress = Math.max(0, Math.min(elapsed / shot.duration, 1.0));
             
-            if (effect.type === 'shockwave') {
-                effect.filter.radius = effect.maxRadius * progress;
+            if (shot.type === 'shockwave') {
+                shot.effect.filter.radius = shot.maxRadius * progress;
                 if (progress > 0.8) {
+                    // Fade out amplitude at the end
                     const fade = (1.0 - progress) / 0.2;
-                    effect.filter.amplitude = fade * 30;
+                    shot.effect.filter.amplitude = fade * 30;
                 }
             }
-            else if (effect.type === 'bloomFlash') {
-                const current = lerp(effect.peakIntensity, effect.baseIntensity, progress);
-                effect.filter.bloomScale = current;
-                if (progress >= 1.0 && effect.filter._wasDisabled) {
-                    effect.filter.enabled = false;
-                    delete effect.filter._wasDisabled;
+            else if (shot.type === 'bloomFlash') {
+                const current = lerp(shot.peakIntensity, shot.baseIntensity, progress);
+                shot.effect.filter.bloomScale = current;
+                
+                if (progress >= 1.0 && shot.effect._wasDisabled) {
+                    shot.effect.active = false;
+                    shot.effect.filter.enabled = false;
+                    delete shot.effect._wasDisabled;
                 }
             }
             
+            // Cleanup when finished
             if (progress >= 1.0) {
-                if (effect.type !== 'bloomFlash') effect.filter.enabled = false;
+                if (shot.type !== 'bloomFlash') {
+                    shot.effect.active = false;
+                    shot.effect.filter.enabled = false;
+                }
                 return false;
             }
             return true;
