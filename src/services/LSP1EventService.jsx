@@ -22,27 +22,29 @@ import {
 } from "../config/abis";
 
 const DEFAULT_LUKSO_WSS_RPC_URL = "wss://ws-rpc.mainnet.lukso.network";
-const WSS_RPC_URL =
-  import.meta.env.VITE_LUKSO_WSS_RPC_URL || DEFAULT_LUKSO_WSS_RPC_URL;
-const MAX_RECENT_EVENTS = 10; // For duplicate detection
+const WSS_RPC_URL = import.meta.env.VITE_LUKSO_WSS_RPC_URL || DEFAULT_LUKSO_WSS_RPC_URL;
+const MAX_RECENT_EVENTS = 10; 
+const MAX_RECONNECT_ATTEMPTS = 5;
 
 class LSP1EventService {
-  /** @type {Array<(event: ProcessedLsp1Event) => void>} */
+  /** @type {Array<(event: any) => void>} */
   eventCallbacks = [];
   /** @type {import('viem').PublicClient | null} */
   viemClient = null;
-  /** @type {(() => void) | null} Function returned by watchContractEvent to stop watching */
+  /** @type {(() => void) | null} */
   unwatchEvent = null;
-  /** @type {string | null} The address currently being listened to */
+  /** @type {string | null} */
   listeningAddress = null;
   /** @type {boolean} */
   initialized = false;
-  /** @type {boolean} Indicates if setupEventListeners is currently running */
+  /** @type {boolean} */
   isSettingUp = false;
-  /** @type {boolean} Flag indicating if the service *should* be connected (based on valid address) */
+  /** @type {boolean} */
   shouldBeConnected = false;
-  /** @type {string[]} Stores identifiers of recent events to prevent duplicates */
+  /** @type {string[]} */
   recentEvents = [];
+  /** @type {number} */
+  reconnectAttempts = 0;
 
   constructor() {
     this.eventCallbacks = [];
@@ -53,6 +55,7 @@ class LSP1EventService {
     this.isSettingUp = false;
     this.shouldBeConnected = false;
     this.recentEvents = [];
+    this.reconnectAttempts = 0;
   }
 
   async initialize() {
@@ -62,62 +65,51 @@ class LSP1EventService {
   }
 
   async setupEventListeners(address) {
-    const logPrefix = `[LSP1 viem setup Addr:${address?.slice(0, 6)}]`;
+    const logPrefix = `[LSP1 Setup Addr:${address?.slice(0, 6)}]`;
+    
     if (this.isSettingUp) {
-      if (import.meta.env.DEV) {
-        console.warn(`${logPrefix} Setup already in progress. Aborting.`);
-      }
+      if (import.meta.env.DEV) console.warn(`${logPrefix} Setup in progress...`);
       return false;
     }
+    
     if (!address || !isAddress(address)) {
-      if (import.meta.env.DEV) {
-        console.warn(`${logPrefix} Invalid address provided. Aborting setup.`);
-      }
       this.shouldBeConnected = false;
       return false;
     }
 
-    if (
-      this.listeningAddress?.toLowerCase() === address.toLowerCase() &&
-      this.unwatchEvent
-    ) {
+    // If we're already listening to this address and the client is healthy
+    if (this.listeningAddress?.toLowerCase() === address.toLowerCase() && this.unwatchEvent) {
       this.shouldBeConnected = true;
       return true;
     }
 
     this.isSettingUp = true;
     this.shouldBeConnected = true;
-    this.cleanupListeners();
+    this.cleanupListeners(); // Clear any existing instance
     this.listeningAddress = address;
 
     try {
-      const client = createPublicClient({
+      this.viemClient = createPublicClient({
         chain: lukso,
-        transport: webSocket(WSS_RPC_URL, {}),
+        transport: webSocket(WSS_RPC_URL, {
+          keepAlive: true,
+          retryCount: 3,
+          timeout: 40000, // 40s timeout for stability
+        }),
       });
-      this.viemClient = client;
 
       this.unwatchEvent = this.viemClient.watchContractEvent({
         address: this.listeningAddress,
         abi: LSP1_ABI,
         eventName: "UniversalReceiver",
         onLogs: (logs) => {
-          if (import.meta.env.DEV) {
-            console.log(
-              `%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%`
-            );
-            console.log(
-              `%%% VIEM watchContractEvent RECEIVED ${logs.length} LOG(S)! %%%`
-            );
-            console.log(
-              `%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%`
-            );
-          }
+          // Success! Reset reconnect counter
+          this.reconnectAttempts = 0; 
+          
+          if (import.meta.env.DEV) console.log(`${logPrefix} Received ${logs.length} logs.`);
+          
           logs.forEach((log) => {
-            if (log.removed) {
-              return;
-            }
-
+            if (log.removed) return;
             try {
               const decodedLog = decodeEventLog({
                 abi: LSP1_ABI,
@@ -125,49 +117,52 @@ class LSP1EventService {
                 topics: log.topics,
               });
 
-              if (
-                decodedLog.eventName === "UniversalReceiver" &&
-                decodedLog.args
-              ) {
+              if (decodedLog.eventName === "UniversalReceiver" && decodedLog.args) {
                 this.handleUniversalReceiver(decodedLog.args);
-              } else if (import.meta.env.DEV) {
-                console.warn(
-                  `${logPrefix} Decoded log name mismatch or args missing.`
-                );
               }
             } catch (e) {
-              if (import.meta.env.DEV) {
-                console.error(`%%% Error decoding filter log:`, e);
-              }
+              if (import.meta.env.DEV) console.error(`Log decode error:`, e);
             }
           });
         },
         onError: (error) => {
-          if (import.meta.env.DEV) {
-            console.error(
-              `❌ [LSP1 viem watchContractEvent] Error on address ${this.listeningAddress}:`,
-              error
-            );
-          }
-          this.shouldBeConnected = false;
+          console.error(`${logPrefix} WebSocket Stream Error:`, error);
+          this.handleReconnect(address);
         },
       });
-      if (import.meta.env.DEV) {
-        console.log(`${logPrefix} Successfully started watching events.`);
-      }
+
+      if (import.meta.env.DEV) console.log(`${logPrefix} Service active.`);
       this.isSettingUp = false;
       return true;
     } catch (error) {
-      if (import.meta.env.DEV) {
-        console.error(
-          `${logPrefix} Error during viem client creation or watch setup:`,
-          error
-        );
-      }
-      this.cleanupListeners();
+      console.error(`${logPrefix} Initialization Failed:`, error);
+      this.handleReconnect(address);
       this.isSettingUp = false;
       this.shouldBeConnected = false;
       return false;
+    }
+  }
+
+  handleReconnect(address) {
+    // Only attempt reconnect if the app still wants this service alive
+    if (!this.shouldBeConnected) return;
+
+    if (this.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      this.reconnectAttempts++;
+      // Exponential backoff: 1s, 2s, 4s, 8s, 16s... capped at 30s
+      const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
+      
+      if (import.meta.env.DEV) {
+        console.log(`[LSP1] Attempting reconnect ${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${delay}ms...`);
+      }
+
+      setTimeout(() => {
+        if (this.shouldBeConnected) {
+          this.setupEventListeners(address);
+        }
+      }, delay);
+    } else {
+      console.error("[LSP1] Critical: Max reconnection attempts reached. Service dormant.");
     }
   }
 
@@ -179,38 +174,26 @@ class LSP1EventService {
       try {
         this.unwatchEvent();
       } catch (e) {
-        if (import.meta.env.DEV) {
-          console.error(`[LSP1 viem cleanup] Error calling unwatch function:`, e);
-        }
+        // Suppress errors during unwatch
       }
       this.unwatchEvent = null;
     }
     this.viemClient = null;
-    this.listeningAddress = null;
     this.recentEvents = [];
   }
 
   handleUniversalReceiver(eventArgs) {
-    if (!eventArgs || typeof eventArgs !== "object" || !eventArgs.typeId) {
-      if (import.meta.env.DEV) {
-        console.warn(
-          "‼️ [LSP1 handleUniversalReceiver - viem] Invalid or incomplete args received:",
-          eventArgs
-        );
-      }
-      return;
-    }
-    const { from, value, typeId, receivedData, returnedValue } = eventArgs;
+    if (!eventArgs || typeof eventArgs !== "object" || !eventArgs.typeId) return;
+
+    const { from, value, typeId, receivedData } = eventArgs;
     const lowerCaseTypeId = typeId?.toLowerCase();
 
-    if (!lowerCaseTypeId) {
-      return;
-    }
+    if (!lowerCaseTypeId) return;
 
     const stringValue = value?.toString() ?? "0";
-    const eventTypeName =
-      TYPE_ID_TO_EVENT_MAP[lowerCaseTypeId] || "unknown_event";
+    const eventTypeName = TYPE_ID_TO_EVENT_MAP[lowerCaseTypeId] || "unknown_event";
 
+    // Deduplication check
     if (this.isDuplicateEvent(typeId, from, stringValue, receivedData)) {
       return;
     }
@@ -218,43 +201,27 @@ class LSP1EventService {
     let actualSender = from || "0xUNKNOWN";
     let decodedPayload = {};
 
+    // Standard LSP7/LSP8 sender decoding
     if (
-      (eventTypeName === "lsp7_received" ||
-        eventTypeName === "lsp8_received") &&
+      (eventTypeName === "lsp7_received" || eventTypeName === "lsp8_received") &&
       typeof receivedData === "string" &&
       receivedData !== "0x"
     ) {
-      const abiToUse =
-        eventTypeName === "lsp7_received"
-          ? LSP7_RECEIVED_DATA_ABI
-          : LSP8_RECEIVED_DATA_ABI;
+      const abiToUse = eventTypeName === "lsp7_received" ? LSP7_RECEIVED_DATA_ABI : LSP8_RECEIVED_DATA_ABI;
       try {
         const decodedDataArray = decodeAbiParameters(abiToUse, receivedData);
-        if (
-          decodedDataArray &&
-          decodedDataArray.length > 1 &&
-          typeof decodedDataArray[1] === "string" &&
-          isAddress(decodedDataArray[1])
-        ) {
+        if (decodedDataArray && decodedDataArray.length > 1 && isAddress(decodedDataArray[1])) {
           actualSender = getAddress(decodedDataArray[1]);
         }
       } catch (decodeError) {
-        if (import.meta.env.DEV) {
-          console.error(
-            `[LSP1 viem] Error decoding receivedData for ${eventTypeName}:`,
-            decodeError
-          );
-        }
+        if (import.meta.env.DEV) console.error(`[LSP1] receivedData decode failed:`, decodeError);
       }
     }
 
-    if (
-      eventTypeName === "follower_gained" ||
-      eventTypeName === "follower_lost"
-    ) {
+    // Custom follower decoding
+    if (eventTypeName === "follower_gained" || eventTypeName === "follower_lost") {
       if (typeof receivedData === "string" && isAddress(receivedData)) {
-        const followerAddress = getAddress(receivedData);
-        decodedPayload.followerAddress = followerAddress;
+        decodedPayload.followerAddress = getAddress(receivedData);
       }
     }
 
@@ -269,6 +236,7 @@ class LSP1EventService {
       read: false,
       decodedPayload: decodedPayload,
     };
+
     this.notifyEventListeners(eventObj);
   }
 
@@ -314,8 +282,7 @@ class LSP1EventService {
     let readableName;
 
     const typeIdEntryByName = Object.entries(EVENT_TYPE_MAP).find(
-      ([key]) =>
-        key.toLowerCase().replace(/[-_\s]/g, "") === normalizedEventType
+      ([key]) => key.toLowerCase().replace(/[-_\s]/g, "") === normalizedEventType
     );
 
     if (typeIdEntryByName) {
@@ -333,26 +300,11 @@ class LSP1EventService {
       }
     }
 
-    const mockValue = readableName.includes("lyx") ? 1000000000000000000n : 0n;
-    const mockFromField =
-      readableName === "follower_gained" || readableName === "follower_lost"
-        ? "0xf01103E5a9909Fc0DBe8166dA7085e0285daDDcA"
-        : "0xSimulationSender0000000000000000000000";
-
-    let mockReceivedData = "0x";
-    if (
-      readableName === "follower_gained" ||
-      readableName === "follower_lost"
-    ) {
-      const mockFollowerAddress = "0xd8dA6Bf26964AF9D7eed9e03e53415D37aA96045";
-      mockReceivedData = mockFollowerAddress.toLowerCase();
-    }
-
     const simulatedArgs = {
-      from: mockFromField,
-      value: mockValue,
+      from: "0xf01103E5a9909Fc0DBe8166dA7085e0285daDDcA",
+      value: readableName.includes("lyx") ? 1000000000000000000n : 0n,
       typeId: typeId,
-      receivedData: mockReceivedData,
+      receivedData: readableName.includes("follower") ? "0xd8dA6Bf26964AF9D7eed9e03e53415D37aA96045" : "0x",
       returnedValue: "0x",
     };
 

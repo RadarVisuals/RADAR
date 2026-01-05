@@ -1,117 +1,86 @@
 // src/hooks/useLsp1Events.js
 import { useEffect, useRef } from 'react';
-
-import LSP1EventService from '../services/LSP1EventService'; // Local service
-
-import { isAddress } from 'viem'; // Third-party library
+import LSP1EventService from '../services/LSP1EventService';
+import { isAddress } from 'viem';
 
 /**
- * @typedef {object} Lsp1Event - Represents an event received from the LSP1EventService.
- * Structure depends on the specific event type.
+ * HEARTBEAT_INTERVAL: 20 Minutes
+ * Public RPC nodes often drop WebSocket connections if they remain idle.
+ * This timer forces a service refresh to ensure we are always listening.
  */
+const HEARTBEAT_INTERVAL = 1000 * 60 * 20; 
 
-/**
- * Manages the lifecycle of an LSP1EventService instance, automatically
- * initializing, connecting, and cleaning up based on the provided profileAddress.
- * It subscribes to events from the service using the provided `onEventReceived`
- * callback, ensuring the callback reference is kept up-to-date without causing
- * unnecessary effect re-runs.
- *
- * @param {string | null} profileAddress - The address of the Universal Profile to listen to. The service will connect/disconnect as this address changes or becomes null/invalid.
- * @param {(event: Lsp1Event) => void} onEventReceived - Callback function executed when a new LSP1 event is received from the service.
- * @returns {void} This hook does not return a value but manages side effects.
- */
 export function useLsp1Events(profileAddress, onEventReceived) {
-  /** @type {React.RefObject<LSP1EventService | null>} */
   const eventServiceRef = useRef(null);
-  /** @type {React.RefObject<() => void>} */
   const unsubscribeRef = useRef(() => {});
-  /** @type {React.RefObject<(event: Lsp1Event) => void>} */
   const onEventReceivedRef = useRef(onEventReceived);
 
-  // Keep the callback ref updated to avoid adding it to the main effect's dependencies
+  // Keep the callback ref updated
   useEffect(() => {
     onEventReceivedRef.current = onEventReceived;
   }, [onEventReceived]);
 
-  // Effect to manage the service lifecycle based on profileAddress
   useEffect(() => {
-    /** @type {boolean} - Tracks if the component is still mounted to prevent state updates on unmounted components. */
     let isMounted = true;
+    let heartbeatTimer = null;
 
     const initializeAndListen = async (address) => {
-      // Cleanup existing service before creating a new one
+      // 1. Teardown existing instance
       if (eventServiceRef.current) {
-        if (typeof unsubscribeRef.current === 'function') unsubscribeRef.current();
+        unsubscribeRef.current();
         eventServiceRef.current.cleanupListeners();
         eventServiceRef.current = null;
-        unsubscribeRef.current = () => {};
       }
 
+      // 2. Create new Service instance
       const service = new LSP1EventService();
-      eventServiceRef.current = service; // Store the instance immediately
+      eventServiceRef.current = service;
 
       try {
         await service.initialize();
-        if (!isMounted) {
-          // Clean up the newly created service if unmounted during init
-          service.cleanupListeners();
-          eventServiceRef.current = null;
-          return;
-        }
+        if (!isMounted) return;
 
         const success = await service.setupEventListeners(address);
         if (success && isMounted) {
-          // Subscribe using the ref to the latest callback
           unsubscribeRef.current = service.onEvent((event) => {
             if (onEventReceivedRef.current) {
               onEventReceivedRef.current(event);
             }
           });
-        } else if (!success && isMounted) {
-          if (import.meta.env.DEV) {
-            console.warn(`[useLsp1Events] Failed to set up listeners for ${address}.`);
-          }
-          service.cleanupListeners();
-          eventServiceRef.current = null;
-        } else if (!isMounted) {
-           // Clean up if unmounted during listener setup
-           service.cleanupListeners();
-           eventServiceRef.current = null;
         }
       } catch (error) {
         if (import.meta.env.DEV) {
-            console.error(`[useLsp1Events] Error initializing/setting up service for ${address}:`, error);
+            console.error("[useLsp1Events] Failed to initialize/set up service:", error);
         }
-        if (eventServiceRef.current) { // Check ref before cleanup
-            eventServiceRef.current.cleanupListeners();
-            eventServiceRef.current = null;
-        }
-        unsubscribeRef.current = () => {};
       }
     };
 
-    const cleanupService = () => {
-      if (typeof unsubscribeRef.current === 'function') {
-        unsubscribeRef.current();
-        unsubscribeRef.current = () => {};
-      }
-      if (eventServiceRef.current) {
-        eventServiceRef.current.cleanupListeners();
-        eventServiceRef.current = null;
-      }
-    };
-
+    // 3. Execution Logic
     if (profileAddress && isAddress(profileAddress)) {
       initializeAndListen(profileAddress);
+
+      // Start the heartbeat timer
+      heartbeatTimer = setInterval(() => {
+        if (isMounted && profileAddress) {
+          if (import.meta.env.DEV) {
+              console.log("[LSP1 Hook] Heartbeat: Rotating WebSocket connection to maintain health.");
+          }
+          initializeAndListen(profileAddress);
+        }
+      }, HEARTBEAT_INTERVAL);
+
     } else {
-      cleanupService();
+      // Address removed or invalid
+      if (unsubscribeRef.current) unsubscribeRef.current();
+      if (eventServiceRef.current) eventServiceRef.current.cleanupListeners();
     }
 
-    // Cleanup function for when the hook unmounts or profileAddress changes
+    // 4. Cleanup
     return () => {
       isMounted = false;
-      cleanupService();
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      if (unsubscribeRef.current) unsubscribeRef.current();
+      if (eventServiceRef.current) eventServiceRef.current.cleanupListeners();
     };
-  }, [profileAddress]); // Only re-run when the profileAddress changes
+  }, [profileAddress]);
 }

@@ -4,90 +4,71 @@ import PropTypes from "prop-types";
 
 import Panel from "./Panel";
 import { useProfileCache } from "../../hooks/useProfileCache";
-import { useUIStore } from "../../store/useUIStore"; // Updated to use Store
+import { useUIStore } from "../../store/useUIStore"; 
 import { isAddress } from "viem";
 
 import "./PanelStyles/NotificationPanel.css";
 
-// --- Helper Functions & Sub-components ---
+// --- Helper Functions ---
 
 const formatAddress = (address, length = 6) => {
   if (!address || typeof address !== "string" || !address.startsWith("0x")) {
-    return "Unknown Address";
+    return "Unknown";
   }
-  if (address.length <= length * 2 + 2) {
-    return address;
-  }
+  if (address.length <= length * 2 + 2) return address;
   return `${address.substring(0, length + 2)}...${address.substring(address.length - length)}`;
 };
 
 const NotificationItem = ({ notification, onMarkAsRead }) => {
-  const { getCachedProfile, getProfileData } = useProfileCache();
+  const { getProfileData } = useProfileCache();
+  const updateNotification = useUIStore((s) => s.updateNotification);
   
-  // Initialize state
+  // 1. Initial State: 
+  // Priority 1: Already resolved name from LocalStorage
+  // Priority 2: Formatted 0x address (Preventing "Loading..." string flicker)
   const [senderName, setSenderName] = useState(() => {
-    return notification.sender ? formatAddress(notification.sender) : "Unknown Sender";
+    return notification.resolvedSenderName || (notification.sender ? formatAddress(notification.sender) : "Unknown Sender");
   });
 
   const [followerName, setFollowerName] = useState(() => {
-      const addr = notification.decodedPayload?.followerAddress;
-      return addr && isAddress(addr) ? formatAddress(addr) : null;
+    const addr = notification.decodedPayload?.followerAddress;
+    return notification.resolvedFollowerName || (addr && isAddress(addr) ? formatAddress(addr) : null);
   });
 
-  // Effect to fetch and update sender's profile name
+  // 2. Fetch Sender Name (if not already baked into the notification)
   useEffect(() => {
+    if (notification.resolvedSenderName) return;
+
     const senderAddress = notification.sender;
-
     if (senderAddress && isAddress(senderAddress)) {
-      const cachedProfile = getCachedProfile(senderAddress);
-
-      if (cachedProfile?.name) {
-        setSenderName(cachedProfile.name);
-      } else if (cachedProfile?.error) {
-        setSenderName(`Error (${formatAddress(senderAddress, 4)})`);
-      } else {
-        const initialName = formatAddress(senderAddress);
-        setSenderName(initialName);
-        
-        getProfileData(senderAddress).then((profileData) => {
-          if (profileData?.name) {
-            setSenderName(profileData.name);
-          }
-        }).catch(() => {});
-      }
-    } else {
-      setSenderName("Unknown Sender");
+      getProfileData(senderAddress).then((profileData) => {
+        // Only proceed if we get a real name, ignoring the "Loading..." cache placeholder
+        if (profileData?.name && profileData.name !== "Loading...") {
+          setSenderName(profileData.name);
+          // Persist the name to the store/LocalStorage
+          updateNotification(notification.id, { resolvedSenderName: profileData.name });
+        }
+      }).catch(() => {});
     }
-  }, [notification.sender, getProfileData, getCachedProfile]);
+  }, [notification.sender, notification.id, notification.resolvedSenderName, getProfileData, updateNotification]);
 
-  // Effect to fetch and update follower's profile name
+  // 3. Fetch Follower Name (if applicable and not baked)
   useEffect(() => {
+    if (notification.resolvedFollowerName) return;
+
     const followerAddr = notification.decodedPayload?.followerAddress;
     const isFollowerEvent = notification.type === "follower_gained" || notification.type === "follower_lost";
 
     if (isFollowerEvent && followerAddr && isAddress(followerAddr)) {
-      const cachedProfile = getCachedProfile(followerAddr);
-
-      if (cachedProfile?.name) {
-        setFollowerName(cachedProfile.name);
-      } else if (cachedProfile?.error) {
-        setFollowerName(`Error (${formatAddress(followerAddr, 4)})`);
-      } else {
-        const initialName = formatAddress(followerAddr);
-        setFollowerName(initialName);
-        
-        getProfileData(followerAddr).then((profileData) => {
-          if (profileData?.name) {
-            setFollowerName(profileData.name);
-          }
-        }).catch(() => {
-            setFollowerName(`Error (${formatAddress(followerAddr, 4)})`);
-        });
-      }
-    } else {
-      setFollowerName(null);
+      getProfileData(followerAddr).then((profileData) => {
+        if (profileData?.name && profileData.name !== "Loading...") {
+          setFollowerName(profileData.name);
+          // Persist to store/LocalStorage
+          updateNotification(notification.id, { resolvedFollowerName: profileData.name });
+        }
+      }).catch(() => {});
     }
-  }, [notification.type, notification.decodedPayload, getProfileData, getCachedProfile]);
+  }, [notification.type, notification.decodedPayload, notification.id, notification.resolvedFollowerName, getProfileData, updateNotification]);
 
   const getEventTypeClass = (eventType) => {
     if (typeof eventType !== "string") return "contract";
@@ -106,9 +87,9 @@ const NotificationItem = ({ notification, onMarkAsRead }) => {
       case "lyx_received":
         return <>Received LYX from <strong>{senderName}</strong></>;
       case "follower_gained":
-        return <>{currentFollowerName} started following you</>;
+        return <><strong>{currentFollowerName}</strong> started following you</>;
       case "follower_lost":
-        return <>{currentFollowerName} unfollowed you</>;
+        return <><strong>{currentFollowerName}</strong> unfollowed you</>;
       case "lsp7_received":
          return <>Received LSP7 Token from <strong>{senderName}</strong></>;
       case "lsp8_received":
@@ -117,7 +98,7 @@ const NotificationItem = ({ notification, onMarkAsRead }) => {
         const typeLabel = (notification.type || "Event")
           .replace(/_/g, " ")
           .replace(/\b\w/g, (l) => l.toUpperCase());
-        return <>{typeLabel} detected from <strong>{senderName}</strong></>;
+        return <>{typeLabel} from <strong>{senderName}</strong></>;
       }
     }
   }, [notification.type, notification.content, senderName, followerName]);
@@ -135,22 +116,12 @@ const NotificationItem = ({ notification, onMarkAsRead }) => {
       role="button"
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleItemClick();}}
-      aria-live="polite"
-      aria-label={`Notification status: ${notification.read ? 'Read' : 'Unread'}`}
     >
       <div className="notification-header">
         <span className="notification-timestamp">
-          {notification.timestamp
-            ? new Date(notification.timestamp).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit",
-              })
-            : "Unknown time"}
+          {notification.timestamp ? new Date(notification.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
         </span>
-        <span
-          className={`notification-type-tag type-${getEventTypeClass(notification.type)}`}
-        >
+        <span className={`notification-type-tag type-${getEventTypeClass(notification.type)}`}>
           {(notification.type || "EVENT").replace(/_/g, " ").toUpperCase()}
         </span>
       </div>
@@ -161,34 +132,15 @@ const NotificationItem = ({ notification, onMarkAsRead }) => {
   );
 };
 
-NotificationItem.propTypes = {
-  notification: PropTypes.object.isRequired,
-  onMarkAsRead: PropTypes.func,
-};
-
-const MemoizedNotificationItem = React.memo(NotificationItem);
-
-// --- Main Component ---
-
 const NotificationPanel = ({ onClose }) => {
-  // Use Zustand hooks directly
   const notifications = useUIStore((state) => state.notifications);
   const markNotificationRead = useUIStore((state) => state.markNotificationRead);
   const clearAllNotifications = useUIStore((state) => state.clearAllNotifications);
 
   return (
-    <Panel
-      title="NOTIFICATIONS"
-      onClose={onClose}
-      className="panel-from-toolbar notification-panel"
-    >
+    <Panel title="NOTIFICATIONS" onClose={onClose} className="panel-from-toolbar notification-panel">
       <div className="panel-header-actions">
-        <button
-          className="btn btn-sm btn-clear-all"
-          onClick={clearAllNotifications}
-          disabled={notifications.length === 0}
-          aria-label="Clear all notifications"
-        >
+        <button className="btn btn-sm btn-clear-all" onClick={clearAllNotifications} disabled={notifications.length === 0}>
           CLEAR ALL
         </button>
       </div>
@@ -198,7 +150,7 @@ const NotificationPanel = ({ onClose }) => {
           <div className="notification-empty">No notifications yet.</div>
         ) : (
           notifications.map((notification) => (
-            <MemoizedNotificationItem
+            <NotificationItem
               key={notification.id}
               notification={notification}
               onMarkAsRead={markNotificationRead}

@@ -50,6 +50,9 @@ export const useUIStore = create(
           decodedPayload: notificationInput.decodedPayload,
           messageFromInput: notificationInput.message,
           link: notificationInput.link,
+          // Placeholder for names to be persisted later
+          resolvedSenderName: null,
+          resolvedFollowerName: null,
         };
 
         set((state) => ({ 
@@ -61,6 +64,18 @@ export const useUIStore = create(
         set((state) => ({
           notifications: state.notifications.map((n) => 
             n.id === id ? { ...n, read: true } : n
+          ),
+        }));
+      },
+
+      /**
+       * updateNotification: Allows us to "bake" resolved names 
+       * into the notification object in LocalStorage.
+       */
+      updateNotification: (id, updates) => {
+        set((state) => ({
+          notifications: state.notifications.map((n) =>
+            n.id === id ? { ...n, ...updates } : n
           ),
         }));
       },
@@ -85,22 +100,21 @@ export const useUIStore = create(
       tokenSelectorOpen: false,
 
       // =========================================
-      // 4. NEW: VIDEO MAPPING SLICE
+      // 4. VIDEO MAPPING SLICE
       // =========================================
       isMappingMode: false,
       isMappingUiVisible: true,
       mappingConfig: {
-        radius: 35.0,    // Percentage of screen
-        feather: 2.0,    // Edge softness percentage
-        x: 50.0,         // Center X percentage
-        y: 50.0          // Center Y percentage
+        radius: 35.0,
+        feather: 2.0,
+        x: 50.0,
+        y: 50.0
       },
 
       toggleMappingMode: () => {
         const currentState = get().isMappingMode;
         const newState = !currentState;
         
-        // Auto-fullscreen when entering mode
         if (newState) {
           const root = document.getElementById('fullscreen-root');
           if (root && !document.fullscreenElement) {
@@ -108,7 +122,6 @@ export const useUIStore = create(
               console.warn(`[MappingMode] Fullscreen failed: ${err.message}`);
             });
           }
-          // Clear open panels to see the calibration
           get().closePanel();
         }
         
@@ -125,11 +138,8 @@ export const useUIStore = create(
         mappingConfig: { radius: 35.0, feather: 2.0, x: 50.0, y: 50.0 }
       }),
 
-      // --- Actions ---
       toggleUiVisibility: () => set((state) => ({ isUiVisible: !state.isUiVisible })),
-      
       toggleInfoOverlay: () => set((state) => ({ infoOverlayOpen: !state.infoOverlayOpen })),
-      
       setActiveLayerTab: (tab) => set({ activeLayerTab: tab }),
 
       openPanel: (panelName) => {
@@ -168,7 +178,7 @@ export const useUIStore = create(
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({ 
         notifications: state.notifications,
-        mappingConfig: state.mappingConfig // Persist mapping values
+        mappingConfig: state.mappingConfig
       }),
     }
   )
