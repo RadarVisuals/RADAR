@@ -50,11 +50,6 @@ export const useEngineStore = create(
       [side === 'A' ? 'sideA' : 'sideB']: { config } 
     })),
 
-    /**
-     * Optimized Configuration Update
-     * Replaces expensive deep clones (JSON.parse) with shallow target updates.
-     * This is crucial for zero-latency MIDI performance.
-     */
     updateActiveDeckConfig: (layerId, key, value) => {
         const { crossfader } = get();
         const activeSideKey = crossfader < 0.5 ? 'sideA' : 'sideB';
@@ -62,7 +57,6 @@ export const useEngineStore = create(
 
         if (!currentDeck?.config) return;
 
-        // Shallow clone the layers map and the specific modified layer
         const newLayers = { ...currentDeck.config.layers };
         newLayers[layerId] = { 
             ...newLayers[layerId], 
@@ -80,7 +74,7 @@ export const useEngineStore = create(
     },
 
     // =========================================
-    // 2. MODULATION SYSTEM (The Missing Functions)
+    // 2. MODULATION SYSTEM
     // =========================================
     baseValues: getInitialBaseValues(),
     patches: [],
@@ -108,10 +102,6 @@ export const useEngineStore = create(
     clearAllPatches: () => set({ patches: [] }),
     resetBaseValues: () => set({ baseValues: getInitialBaseValues() }),
 
-    /**
-     * Hydrates the modulation engine when a workspace is loaded.
-     * This was the function causing your TypeError.
-     */
     loadModulationState: (savedBaseValues, savedPatches) => set((state) => {
         const freshDefaults = getInitialBaseValues();
         const mergedBaseValues = { ...freshDefaults };
@@ -141,6 +131,7 @@ export const useEngineStore = create(
     isAudioActive: false,
     audioSettings: DEFAULT_AUDIO_SETTINGS,
     analyzerData: { level: 0, frequencyBands: { bass: 0, mid: 0, treble: 0 } },
+    
     setIsAudioActive: (input) => set((state) => ({ isAudioActive: typeof input === 'function' ? input(state.isAudioActive) : input })),
     setAudioSettings: (settingsOrFn) => set((state) => ({ audioSettings: typeof settingsOrFn === 'function' ? settingsOrFn(state.audioSettings) : settingsOrFn })),
     updateAnalyzerData: (data) => set({ analyzerData: data }),
@@ -196,6 +187,9 @@ export const useEngineStore = create(
     queueMidiAction: (action) => set((state) => ({ pendingActions: [...state.pendingActions, action] })),
     clearPendingActions: () => set({ pendingActions: [] }),
 
+    // =========================================
+    // 6. LFO SETTINGS
+    // =========================================
     lfoSettings: {
         'lfo_1': { frequency: 0.2, type: 'sine' },
         'lfo_2': { frequency: 1.0, type: 'sine' },

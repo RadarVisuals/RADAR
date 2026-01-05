@@ -55,7 +55,12 @@ const ActivePanelRenderer = (props) => {
     const { activePanel, animatingPanel, activeLayerTab, closePanel, setActiveLayerTab } = uiState;
     const { isAudioActive, audioSettings, analyzerData, setIsAudioActive, setAudioSettings } = audioState;
     
-    const { handleSceneSelect, isAutoFading, uiControlConfig, updateLayerConfig } = useVisualEngine();
+    const { 
+        handleSceneSelect, 
+        isAutoFading, 
+        uiControlConfig, 
+        updateLayerConfig,
+    } = useVisualEngine();
     
     const handleTokenSelectorClose = useCallback(() => closePanel(), [closePanel]);
     const panelWrapperClassName = useMemo(() => animatingPanel === "closing" ? "animating closing" : animatingPanel ? "animating" : "", [animatingPanel]);
@@ -89,7 +94,18 @@ const ActivePanelRenderer = (props) => {
         case "save":
             return ( <PanelWrapper key="save-panel" className={panelWrapperClassName}><EnhancedSavePanel onClose={closePanel} /></PanelWrapper> );
         case "audio":
-            return ( <PanelWrapper key="audio-panel" className={panelWrapperClassName}><AudioControlPanel onClose={closePanel} isAudioActive={isAudioActive} setIsAudioActive={setIsAudioActive} audioSettings={audioSettings} setAudioSettings={setAudioSettings} analyzerData={analyzerData} /></PanelWrapper> );
+            return ( 
+                <PanelWrapper key="audio-panel" className={panelWrapperClassName}>
+                    <AudioControlPanel 
+                        onClose={closePanel} 
+                        isAudioActive={isAudioActive} 
+                        setIsAudioActive={setIsAudioActive} 
+                        audioSettings={audioSettings} 
+                        setAudioSettings={setAudioSettings} 
+                        analyzerData={analyzerData}
+                    />
+                </PanelWrapper> 
+            );
         case "whitelist":
             return ( <PanelWrapper key="whitelist-panel" className={panelWrapperClassName}><LibraryPanel onClose={closePanel} /></PanelWrapper> );
         case "modulation":
@@ -131,7 +147,6 @@ function UIOverlay({
   const { unreadCount } = useNotificationContext();
   const { isRadarProjectAdmin, hostProfileAddress: currentProfileAddress, isHostProfileOwner } = useProfileSessionState();
 
-  // --- VIDEO MAPPING STORE CONNECTIONS ---
   const isMappingMode = useUIStore(s => s.isMappingMode);
   const isMappingUiVisible = useUIStore(s => s.isMappingUiVisible);
   const mappingConfig = useUIStore(s => s.mappingConfig);
@@ -144,10 +159,8 @@ function UIOverlay({
   
   const { onEnhancedView, onToggleParallax, onPreviewEffect, toggleSequencer, isSequencerActive, sequencerIntervalMs, setSequencerInterval } = actions;
 
-  // --- KEYBOARD EVENT LISTENER (TAB KEY) ---
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Intercept TAB when in mapping mode to hide/show the interface
       if (e.key === 'Tab' && isMappingMode) {
         e.preventDefault(); 
         setMappingUiVisibility(!isMappingUiVisible);
@@ -162,7 +175,6 @@ function UIOverlay({
     return Object.keys(stagedSetlist.workspaces).map(name => ({ name }));
   }, [stagedSetlist]);
 
-  // Main UI Visibility Logic: Show interface if UI is ON AND (we aren't mapping OR mapping UI is toggled ON)
   const shouldShowInterface = isUiVisible && (!isMappingMode || isMappingUiVisible);
   const showSceneBar = shouldShowInterface && !activePanel && !!currentProfileAddress;
   const mainUiContainerClass = `ui-elements-container ${shouldShowInterface ? "visible" : "hidden-by-opacity"}`;
@@ -173,10 +185,8 @@ function UIOverlay({
     <>
       {import.meta.env.DEV && <SignalDebugger />}
 
-      {/* 1. THE MASK: Always renders if mode is ON, ignoring interface visibility */}
       <VideoMappingOverlay isVisible={isMappingMode} config={mappingConfig} />
 
-      {/* 2. SAFETY CONTROLS: TopRight always rendered so user can escape or fix UI toggle */}
       {isReady && (
         <MemoizedTopRightControls
           isRadarProjectAdmin={isRadarProjectAdmin}
@@ -195,7 +205,6 @@ function UIOverlay({
         />
       )}
 
-      {/* 3. THE INTERACTIVE INTERFACE: This is what TAB toggles */}
       {shouldShowInterface && (
         <>
           <ActivePanelRenderer
@@ -222,7 +231,6 @@ function UIOverlay({
                 <SequencerIcon className="icon-image" />
               </button>
               
-              {/* Dedicated toggle for the Calibration Panel while Mapping */}
               {isMappingMode && (
                  <button 
                     className={`toolbar-icon ${activePanel === 'mapping' ? 'active' : ''}`}

@@ -1,5 +1,5 @@
 // src/hooks/useVisualEngine.js
-import { useCallback, useMemo } from 'react';
+import { useCallback } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useProjectStore } from '../store/useProjectStore';
 import { useEngineStore } from '../store/useEngineStore';
@@ -9,13 +9,7 @@ import SignalBus from '../utils/SignalBus';
 
 const AUTO_FADE_DURATION_MS = 1000;
 
-/**
- * useVisualEngine
- * 
- * Provides access to the Visual Engine's state and actions (Scene selection, Layer updates, Crossfader).
- */
 export const useVisualEngine = () => {
-    // 1. PROJECT STORE SELECTORS (Workspace & Scene management)
     const { 
         stagedWorkspace, 
         activeSceneName, 
@@ -36,7 +30,6 @@ export const useVisualEngine = () => {
         setHasPendingChanges: s.setHasPendingChanges
     })));
 
-    // 2. ENGINE STORE SELECTORS (Live visual state & Modulation)
     const engineState = useEngineStore(useShallow(s => ({
         sideA: s.sideA,
         sideB: s.sideB,
@@ -51,9 +44,6 @@ export const useVisualEngine = () => {
     const storeActions = useEngineStore.getState();
     const isFullyLoaded = !isLoading && !!activeWorkspaceName;
 
-    /**
-     * Update Layer Parameter
-     */
     const updateLayerConfig = useCallback((layerId, key, value, isMidiUpdate = false, skipStoreUpdate = false) => {
         const engine = getPixiEngine();
         const activeDeck = engineState.crossfader < 0.5 ? 'A' : 'B';
@@ -67,12 +57,8 @@ export const useVisualEngine = () => {
         }
     }, [engineState.crossfader, storeActions, setHasPendingChanges]);
 
-    // 3. INTEGRATE EFFECTS PROCESSOR
     const { processEffect, createDefaultEffect } = useVisualEffects(updateLayerConfig);
 
-    /**
-     * SCENE SELECTION (Transition Logic)
-     */
     const handleSceneSelect = useCallback((sceneName, duration = AUTO_FADE_DURATION_MS) => {
         const engine = getPixiEngine();
         const { isAutoFading, crossfader, sideA, sideB } = useEngineStore.getState();
@@ -130,8 +116,6 @@ export const useVisualEngine = () => {
         processEffect,
         createDefaultEffect,
 
-        // MODULATION ENGINE INTERFACE
-        // Fixed: Mapping to PixiEngine.setModulationValue correctly
         setModulationValue: (paramId, value) => {
             const engine = getPixiEngine();
             if (engine) engine.setModulationValue(paramId, value);
@@ -203,6 +187,6 @@ export const useVisualEngine = () => {
                 storeActions.setDeckConfig(activeSide, newConfig);
             }
             setHasPendingChanges(true);
-        }
+        },
     };
 };

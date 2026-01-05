@@ -1,7 +1,7 @@
-// src/utils/PixiEngine.js
+//src/utils/PixiEngine.js
+
 import { Application, Container } from 'pixi.js';
 import { PixiEffectsManager } from './pixi/PixiEffectsManager';
-import { useEngineStore } from '../store/useEngineStore'; 
 import SignalBus from '../utils/SignalBus';
 import { sliderParams } from '../config/sliderParams';
 
@@ -28,8 +28,10 @@ export default class PixiEngine {
     this.feedbackSystem = null; 
     this.crossfaderSystem = null; 
 
+    // Bind handlers
     this._resizeHandler = this.handleResize.bind(this);
     this._updateLoop = this.update.bind(this);
+    this._fullscreenHandler = this.handleFullscreenChange.bind(this);
     
     this._onEventTrigger = (data) => {
         if(this.logic) this.logic.triggerEvent(data.type);
@@ -57,20 +59,13 @@ export default class PixiEngine {
     
     this.app = new Application();
     
-    // FIX: Force resolution to 1.0. 
-    // High devicePixelRatio (2.0-3.0) on Mac M4 triggers an exponential 
-    // increase in fragment shader work (Filters/Bloom/Feedback).
-    const resolution = 1.0; 
-    
     try {
       await this.app.init({
         canvas: this.canvas,
         resizeTo: this.canvas.parentElement, 
         backgroundAlpha: 0,
-        // FIX: Antialias is extremely expensive for the GPU fill-rate.
-        // On Retina displays, the pixel density is so high it is not needed.
         antialias: false, 
-        resolution: resolution,
+        resolution: 1.0, 
         autoDensity: true,
         powerPreference: 'high-performance', 
         preference: 'webgl',
@@ -83,12 +78,22 @@ export default class PixiEngine {
 
       this.app.stage.addChild(this.rootContainer);
 
+      // --- LAYERS 1-3 & EFFECTS ---
       this.effectsManager.init(this.app.screen);
       this.layerManager = new LayerManager(this.app, this.effectsManager);
       this.feedbackSystem = new FeedbackSystem(this.app, this.rootContainer); 
       this.crossfaderSystem = new CrossfaderSystem(this.layerManager, this.audioReactor);
 
+      // Renderer resize listener (internal Pixi ResizeObserver)
       this.app.renderer.on('resize', this._resizeHandler);
+      
+      // Global window resize fallback
+      window.addEventListener('resize', this._resizeHandler);
+      
+      // Fullscreen sync
+      document.addEventListener('fullscreenchange', this._fullscreenHandler);
+      document.addEventListener('webkitfullscreenchange', this._fullscreenHandler);
+
       this.handleResize(); 
       this.app.ticker.add(this._updateLoop);
       
@@ -101,24 +106,29 @@ export default class PixiEngine {
     }
   }
 
+  handleFullscreenChange() {
+      // Small delays to ensure browser layout is stable after animation
+      setTimeout(() => this.handleResize(), 100);
+      setTimeout(() => this.handleResize(), 600); 
+  }
+
   handleResize() {
     if (this._isDestroyed || !this.app || !this.app.renderer) return;
-    const w = this.app.screen.width;
-    const h = this.app.screen.height;
 
-    // --- FIX FOR DRIFTING/CLIPPING ---
-    // Explicitly set the filterArea to the screen dimensions.
-    // This prevents filters (Bloom, Zoom, etc.) from shrinking to fit 
-    // only the visible sprites, which causes coordinate shifts in fullscreen.
+    // Pull current screen bounds from the renderer
+    const w = this.app.renderer.screen.width;
+    const h = this.app.renderer.screen.height;
+
+    if (w <= 0 || h <= 0) return;
+
+    // Fix clipping issues
     this.rootContainer.filterArea = this.app.screen; 
     
     if (this.feedbackSystem) this.feedbackSystem.resize(w, h);
     if (this.layerManager) this.layerManager.resize();
   }
 
-  fadeTo(target, duration, onComplete) { 
-      if (this.crossfaderSystem) this.crossfaderSystem.fadeTo(target, duration, onComplete); 
-  }
+  fadeTo(target, duration, onComplete) { if (this.crossfaderSystem) this.crossfaderSystem.fadeTo(target, duration, onComplete); }
   cancelFade() { if (this.crossfaderSystem) this.crossfaderSystem.cancelFade(); }
   setRenderedCrossfade(value) { if (this.crossfaderSystem) this.crossfaderSystem.crossfadeValue = value; }
   setModulationValue(paramId, value) { this.logic.setBaseValue(paramId, value); }
@@ -127,37 +137,22 @@ export default class PixiEngine {
   clearModulationPatches() { this.logic.clearPatches(); }
   get modulationEngine() { return this.logic.modulationEngine; }
   get lfo() { return this.logic.lfo; }
-
-  async setTexture(layerId, deckSide, imageSrc, tokenId) {
-      if (this.layerManager) await this.layerManager.setTexture(layerId, deckSide, imageSrc, tokenId);
-  }
-  updateConfig(layerId, key, value, deckSide = 'A') {
-      if (this.layerManager) this.layerManager.updateConfig(layerId, key, value, deckSide);
-  }
-  snapConfig(layerId, fullConfig, deckSide = 'A') {
-      if (this.layerManager) {
-          this.bootstrapped = true;
-          this.layerManager.snapConfig(layerId, fullConfig, deckSide);
-      }
-  }
+  async setTexture(layerId, deckSide, imageSrc, tokenId) { if (this.layerManager) await this.layerManager.setTexture(layerId, deckSide, imageSrc, tokenId); }
+  updateConfig(layerId, key, value, deckSide = 'A') { if (this.layerManager) this.layerManager.updateConfig(layerId, key, value, deckSide); }
+  snapConfig(layerId, fullConfig, deckSide = 'A') { if (this.layerManager) { this.bootstrapped = true; this.layerManager.snapConfig(layerId, fullConfig, deckSide); } }
   setAudioFactors(factors) { this.audioReactor.setAudioFactors(factors); }
   triggerBeatPulse(factor, duration) { this.audioReactor.triggerBeatPulse(factor, duration); }
   setParallax(x, y) { if (this.crossfaderSystem) this.crossfaderSystem.setParallax(x, y); }
-
+  
   applyPlaybackValue(layerId, key, value) { 
       const deckA = this.layerManager?.getDeck(layerId, 'A');
       const deckB = this.layerManager?.getDeck(layerId, 'B');
       if (deckA) deckA.playbackValues[key] = value;
       if (deckB) deckB.playbackValues[key] = value;
   }
-
-  clearPlaybackValues() { 
-      this.layerManager?.layerList.forEach(l => {
-          l.deckA.playbackValues = {};
-          l.deckB.playbackValues = {};
-      });
-  }
-
+  
+  clearPlaybackValues() { this.layerManager?.layerList.forEach(l => { l.deckA.playbackValues = {}; l.deckB.playbackValues = {}; }); }
+  
   syncDeckPhysics(layerId, targetDeckSide) {
       const deckTarget = this.layerManager?.getDeck(layerId, targetDeckSide);
       const deckSource = this.layerManager?.getDeck(layerId, targetDeckSide === 'A' ? 'B' : 'A');
@@ -172,7 +167,6 @@ export default class PixiEngine {
 
     try {
         const now = performance.now();
-        // Limit delta to prevent logic jumping on frame drops
         const deltaTime = Math.min(ticker.deltaTime, 1.5); 
 
         const audioData = this.audioReactor.getAudioData();
@@ -214,17 +208,19 @@ export default class PixiEngine {
             const mainGroup = this.layerManager.mainLayerGroup;
             this.rootContainer.filters = this.effectsManager.getFilterList();
             
-            if (mainGroup.parent !== this.rootContainer) this.rootContainer.addChildAt(mainGroup, 0);
+            if (mainGroup.parent !== this.rootContainer) {
+                this.rootContainer.addChildAt(mainGroup, 0); // No longer index 1 because Butterchurn is gone
+            }
 
             if (isFeedbackOn) {
-                this.feedbackSystem.render(mainGroup);
-                mainGroup.visible = false; 
+                this.feedbackSystem.render(this.rootContainer);
+                this.rootContainer.visible = false; 
                 this.feedbackSystem.displaySprite.visible = true;
-                if (this.feedbackSystem.displaySprite.parent !== this.rootContainer) {
-                    this.rootContainer.addChild(this.feedbackSystem.displaySprite);
+                if (this.feedbackSystem.displaySprite.parent !== this.app.stage) {
+                    this.app.stage.addChild(this.feedbackSystem.displaySprite);
                 }
             } else {
-                mainGroup.visible = true; 
+                this.rootContainer.visible = true;
                 if (this.feedbackSystem.displaySprite.parent) {
                     this.feedbackSystem.displaySprite.visible = false;
                 }
@@ -239,11 +235,17 @@ export default class PixiEngine {
   destroy() { 
       this._isDestroyed = true;
       this.isReady = false; 
+      
+      window.removeEventListener('resize', this._resizeHandler);
+      document.removeEventListener('fullscreenchange', this._fullscreenHandler);
+      document.removeEventListener('webkitfullscreenchange', this._fullscreenHandler);
+
       SignalBus.off('event:trigger', this._onEventTrigger);
       SignalBus.off('param:update', this._onParamUpdate);
       if (this.audioReactor) this.audioReactor.destroy();
       if (this.layerManager) this.layerManager.destroy();
       if (this.feedbackSystem) this.feedbackSystem.destroy();
+      
       this.rootContainer.destroy({ children: false });
       if (this.app) {
           if (this.app.renderer) { this.app.renderer.off('resize', this._resizeHandler); }

@@ -1,4 +1,5 @@
-// src/components/Audio/AudioAnalyzer.jsx
+//src/components/Audio/AudioAnalyzer.jsx
+
 import React, { useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { useEngineStore } from "../../store/useEngineStore";
@@ -8,11 +9,9 @@ import SignalBus from "../../utils/SignalBus";
 const FFT_SIZE = 2048;
 
 const AudioAnalyzer = ({ managerInstancesRef }) => {
-  // Read state directly from store to avoid parent re-render interference
   const isActive = useEngineStore((state) => state.isAudioActive);
   const audioSettings = useEngineStore((state) => state.audioSettings);
   
-  // We grab layerConfigs from ProjectStore directly
   const layerConfigs = useProjectStore((state) => state.stagedWorkspace?.layers);
 
   const audioSettingsRef = useRef(audioSettings);
@@ -24,7 +23,6 @@ const AudioAnalyzer = ({ managerInstancesRef }) => {
   const streamRef = useRef(null);
   const isCleanupScheduledRef = useRef(false);
 
-  // Keep settings ref up to date for the processing loop
   useEffect(() => {
     audioSettingsRef.current = audioSettings;
     if (analyserRef.current && audioContextRef.current && audioContextRef.current.state === "running") {
@@ -49,12 +47,10 @@ const AudioAnalyzer = ({ managerInstancesRef }) => {
     const midFactor = 1 + (bands.mid * 1.0 * midIntensity);
     const trebleFactor = 1 + (bands.treble * 2.0 * trebleIntensity);
 
-    // Apply to Pixi Managers via Proxy
     if (managers['1']) managers['1'].setAudioFrequencyFactor(Math.max(0.1, bassFactor));
     if (managers['2']) managers['2'].setAudioFrequencyFactor(Math.max(0.1, midFactor));
     if (managers['3']) managers['3'].setAudioFrequencyFactor(Math.max(0.1, trebleFactor));
 
-    // Beat Pulse logic
     if (level > 0.4 && bands.bass > 0.6) {
       const pulseMultiplier = 1 + level * 0.8;
       if (managers['1']) managers['1'].triggerBeatPulse(Math.max(0.1, pulseMultiplier), 80);
@@ -186,7 +182,6 @@ const AudioAnalyzer = ({ managerInstancesRef }) => {
     }
   }, []);
 
-  // ONLY restart/cleanup when the global "isActive" flag changes
   useEffect(() => {
     if (isActive) {
         if (!streamRef.current) requestMicrophoneAccess();

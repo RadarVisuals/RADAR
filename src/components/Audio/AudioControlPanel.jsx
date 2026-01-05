@@ -1,9 +1,8 @@
-// src/components/Audio/AudioControlPanel.jsx
+//src/components/Audio/AudioControlPanel.jsx
+
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import PropTypes from "prop-types";
-// Removed useEngineStore import as it was only used for the legacy industrial config
 import SignalBus from "../../utils/SignalBus";
-
 import Panel from "../Panels/Panel";
 import "./AudioStyles/AudioControlPanel.css";
 
@@ -19,8 +18,6 @@ const AudioControlPanel = React.memo(({
   setAudioSettings,
 }) => {
   const [audioDevices, setAudioDevices] = useState([]);
-  
-  // --- REMOVED LEGACY INDUSTRIAL CONFIG SELECTORS HERE ---
   
   const levelRef = useRef(null);
   const bassRef = useRef(null);
@@ -50,7 +47,6 @@ const AudioControlPanel = React.memo(({
   useEffect(() => {
     if (!isAudioActive) return;
 
-    // SIGNAL BUS LISTENER
     const handleAudioUpdate = (data) => {
         const { level, frequencyBands } = data;
         
@@ -174,10 +170,8 @@ const AudioControlPanel = React.memo(({
                </button>
             </div>
 
-            {/* --- REMOVED LEGACY INDUSTRIAL MODE SECTION --- */}
-
             <div className="audio-settings-section section-box">
-              <h4 className="config-section-title">Audio Reactivity Settings</h4>
+              <h4 className="config-section-title">Layer Reactivity Settings</h4>
               <div className="slider-group">
                 <div className="slider-container">
                   <div className="slider-header"><span className="slider-label">Bass Impact (L1 Size)</span><span className="slider-value">{(audioSettings?.bassIntensity || 1.0).toFixed(1)}x</span></div>
