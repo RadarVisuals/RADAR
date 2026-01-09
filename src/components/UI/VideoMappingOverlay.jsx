@@ -4,7 +4,6 @@ import PropTypes from 'prop-types';
 
 /**
  * VideoMappingOverlay: Creates a hardware-accelerated black mask with a circular cutout.
- * Positioned at z-index 400 (behind UI but above visualizer).
  */
 const VideoMappingOverlay = ({ config, isVisible }) => {
   if (!isVisible) return null;
@@ -17,9 +16,16 @@ const VideoMappingOverlay = ({ config, isVisible }) => {
     left: 0,
     width: '100vw',
     height: '100vh',
-    zIndex: 400, // Corrected: Behind UI (500), Above Canvas (100)
+    zIndex: 400, 
     pointerEvents: 'none',
     backgroundColor: 'transparent',
+    /* 
+       PERFORMANCE FIX: 
+       translateZ(0) and will-change ensure the M4 Pro GPU handles this mask 
+       independently of the WebGL canvas.
+    */
+    transform: 'translateZ(0)',
+    willChange: 'background',
     background: `radial-gradient(
       circle at ${x}% ${y}%, 
       transparent 0%, 
