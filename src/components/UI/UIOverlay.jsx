@@ -1,5 +1,5 @@
 // src/components/UI/UIOverlay.jsx
-import React, { useCallback, useMemo, useEffect } from 'react';
+import React, { useCallback, useMemo, useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
 
 import TopRightControls from '../Toolbars/TopRightControls';
@@ -160,16 +160,32 @@ function UIOverlay({
   
   const { onEnhancedView, onToggleParallax, onPreviewEffect, toggleSequencer, isSequencerActive, sequencerIntervalMs, setSequencerInterval } = actions;
 
+  // Receiver Mode Specific Interaction State
+  const [showReceiverHint, setShowReceiverHint] = useState(true);
+
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Tab' && isMappingMode) {
         e.preventDefault(); 
         setMappingUiVisibility(!isMappingUiVisible);
       }
+      // Press 'F' to fullscreen if in projector mode
+      if (e.key?.toLowerCase() === 'f' && isProjectorMode) {
+        const root = document.getElementById('fullscreen-root');
+        if (root) root.requestFullscreen().catch(() => {});
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isMappingMode, isMappingUiVisible, setMappingUiVisibility]);
+  }, [isMappingMode, isMappingUiVisible, setMappingUiVisibility, isProjectorMode]);
+
+  // Hide the hint after 5 seconds
+  useEffect(() => {
+    if (isProjectorMode) {
+        const timer = setTimeout(() => setShowReceiverHint(false), 5000);
+        return () => clearTimeout(timer);
+    }
+  }, [isProjectorMode]);
 
   const workspaceList = useMemo(() => {
     if (!stagedSetlist?.workspaces) return [];
@@ -180,24 +196,54 @@ function UIOverlay({
   const showSceneBar = shouldShowInterface && !activePanel && !!currentProfileAddress;
   const mainUiContainerClass = `ui-elements-container ${shouldShowInterface ? "visible" : "hidden-by-opacity"}`;
 
+  const handleReceiverClick = useCallback(() => {
+    const root = document.getElementById('fullscreen-root');
+    if (root && !document.fullscreenElement) {
+        root.requestFullscreen().catch((err) => console.warn("Manual fullscreen failed:", err));
+    }
+  }, []);
+
   if (!isReady) return null;
 
-  // --- RECEIVER MODE STRIP ---
+  // --- RECEIVER MODE STRIP (Dual Screen) ---
   if (isProjectorMode) {
       return (
           <>
             <VideoMappingOverlay isVisible={true} config={mappingConfig} />
             <div 
+                className="receiver-interaction-layer"
                 style={{
                     position: 'fixed',
                     top: 0, left: 0, width: '100vw', height: '100vh',
                     zIndex: 9999,
                     pointerEvents: 'auto',
-                    cursor: 'none'
+                    cursor: showReceiverHint ? 'pointer' : 'none',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: 'transparent'
                 }}
+                onClick={handleReceiverClick}
                 onDoubleClick={() => window.location.reload()}
-                title="Receiver mode active. Double-click to reload and exit."
-            />
+            >
+                {showReceiverHint && (
+                    <div style={{
+                        padding: '20px',
+                        background: 'rgba(0,0,0,0.7)',
+                        border: '1px solid var(--color-primary)',
+                        borderRadius: '12px',
+                        color: 'var(--color-primary)',
+                        textAlign: 'center',
+                        pointerEvents: 'none',
+                        animation: 'fadeIn 0.5s ease-out'
+                    }}>
+                        <h2 style={{fontSize: '18px', marginBottom: '8px'}}>RECEIVER MODE ACTIVE</h2>
+                        <p style={{fontSize: '12px', opacity: 0.8}}>Single Click: Fullscreen</p>
+                        <p style={{fontSize: '12px', opacity: 0.8}}>Double Click: Exit & Reload</p>
+                    </div>
+                )}
+            </div>
           </>
       );
   }

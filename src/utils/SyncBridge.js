@@ -14,7 +14,7 @@ class SyncBridge {
     this.role = 'sender'; // Default role is Controller
     this.bc = new BroadcastChannel(this.channelName);
 
-    // High-frequency listener for crossfader movements (Auto-fades and Manual)
+    // High-frequency listener for crossfader movements
     SignalBus.on('crossfader:update', (value) => {
       if (this.role === 'sender') {
         this.sendCrossfader(value);
@@ -28,10 +28,6 @@ class SyncBridge {
     };
   }
 
-  /**
-   * Sets the identity of this tab.
-   * @param {'sender' | 'receiver'} newRole 
-   */
   setRole(newRole) {
     this.role = newRole;
     if (import.meta.env.DEV) {
@@ -55,6 +51,11 @@ class SyncBridge {
   sendAudioData(data) {
     if (this.role !== 'sender') return;
     this.bc.postMessage({ type: 'AUDIO_DATA', data });
+  }
+
+  sendAudioSettings(settings) {
+    if (this.role !== 'sender') return;
+    this.bc.postMessage({ type: 'AUDIO_SETTINGS', settings });
   }
 
   sendMappingConfig(config) {
@@ -96,7 +97,6 @@ class SyncBridge {
 
     switch (type) {
       case 'PARAM_UPDATE':
-        // Update both the Logic Engine and the current active deck
         SignalBus.emit('param:update', {
           layerId: msg.layerId,
           param: msg.param,
@@ -106,19 +106,20 @@ class SyncBridge {
         break;
 
       case 'CROSSFADER':
-        // Frame-by-frame fader sync for smooth crossfades
         SignalBus.emit('crossfader:set', msg.value);
         useEngineStore.getState().setCrossfader(msg.value);
         useEngineStore.getState().setRenderedCrossfader(msg.value);
         break;
 
       case 'AUDIO_DATA':
-        // Inject remote audio analysis into the local SignalBus
         SignalBus.emit('audio:analysis', msg.data);
         break;
 
+      case 'AUDIO_SETTINGS':
+        useEngineStore.getState().setAudioSettings(msg.settings);
+        break;
+
       case 'MAPPING_CONFIG':
-        // Update Video Mapping Iris Mask
         if (msg.config) {
           Object.entries(msg.config).forEach(([key, val]) => {
             useUIStore.getState().updateMappingConfig(key, val);
@@ -127,30 +128,25 @@ class SyncBridge {
         break;
 
       case 'DECK_CONFIG':
-        // Load Side A/B data when scenes are swapped/selected
         useEngineStore.getState().setDeckConfig(msg.side, msg.config);
         break;
 
       case 'MOD_VALUE':
-        // Shader/FX Base value change
         if (engine) engine.setModulationValue(msg.paramId, msg.value);
         useEngineStore.getState().setEffectBaseValue(msg.paramId, msg.value);
         break;
 
       case 'PATCH_ADD':
-        // Modulation Patch Wiring
         if (engine) engine.addModulationPatch(msg.source, msg.target, msg.amount);
         useEngineStore.getState().addPatch(msg.source, msg.target, msg.amount);
         break;
 
       case 'PATCH_REMOVE':
-        // Modulation Patch Unwiring
         if (engine) engine.removeModulationPatch(msg.patchId);
         useEngineStore.getState().removePatch(msg.patchId);
         break;
 
       case 'LFO_CONFIG':
-        // LFO Speed/Type updates
         if (engine) engine.lfo.setConfig(msg.lfoId, msg.param, msg.value);
         useEngineStore.getState().setLfoSetting(msg.lfoId, msg.param, msg.value);
         break;

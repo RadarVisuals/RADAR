@@ -1,9 +1,7 @@
-//src/components/Audio/AudioAnalyzer.jsx
-
+// src/components/Audio/AudioAnalyzer.jsx
 import React, { useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { useEngineStore } from "../../store/useEngineStore";
-import { useProjectStore } from "../../store/useProjectStore";
 import { syncBridge } from "../../utils/SyncBridge";
 import SignalBus from "../../utils/SignalBus";
 
@@ -13,9 +11,6 @@ const AudioAnalyzer = ({ managerInstancesRef }) => {
   const isActive = useEngineStore((state) => state.isAudioActive);
   const audioSettings = useEngineStore((state) => state.audioSettings);
   
-  const layerConfigs = useProjectStore((state) => state.stagedWorkspace?.layers);
-
-  const audioSettingsRef = useRef(audioSettings);
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
   const sourceRef = useRef(null);
@@ -24,8 +19,10 @@ const AudioAnalyzer = ({ managerInstancesRef }) => {
   const streamRef = useRef(null);
   const isCleanupScheduledRef = useRef(false);
 
+  // Sync Audio Settings to Receiver tab whenever they change
   useEffect(() => {
-    audioSettingsRef.current = audioSettings;
+    syncBridge.sendAudioSettings(audioSettings);
+    
     if (analyserRef.current && audioContextRef.current && audioContextRef.current.state === "running") {
         try {
             const smoothing = audioSettings.smoothingFactor ?? 0.6;
@@ -35,28 +32,6 @@ const AudioAnalyzer = ({ managerInstancesRef }) => {
         }
     }
   }, [audioSettings]);
-
-  const applyAudioToLayers = useCallback((bands, level) => {
-    const managers = managerInstancesRef?.current;
-    const currentSettings = audioSettingsRef.current;
-
-    if (!managers || !currentSettings) return;
-
-    const { bassIntensity = 1.0, midIntensity = 1.0, trebleIntensity = 1.0 } = currentSettings;
-
-    const bassFactor = 1 + (bands.bass * 0.8 * bassIntensity);
-    const midFactor = 1 + (bands.mid * 1.0 * midIntensity);
-    const trebleFactor = 1 + (bands.treble * 2.0 * trebleIntensity);
-
-    if (managers['1']) managers['1'].setAudioFrequencyFactor(Math.max(0.1, bassFactor));
-    if (managers['2']) managers['2'].setAudioFrequencyFactor(Math.max(0.1, midFactor));
-    if (managers['3']) managers['3'].setAudioFrequencyFactor(Math.max(0.1, trebleFactor));
-
-    if (level > 0.4 && bands.bass > 0.6) {
-      const pulseMultiplier = 1 + level * 0.8;
-      if (managers['1']) managers['1'].triggerBeatPulse(Math.max(0.1, pulseMultiplier), 80);
-    }
-  }, [managerInstancesRef]);
 
   const processAudioData = useCallback((dataArray) => {
     if (!dataArray || !analyserRef.current) return;
@@ -87,15 +62,12 @@ const AudioAnalyzer = ({ managerInstancesRef }) => {
         frequencyBands: { bass, mid, treble } 
     };
     
-    // SYNC BRIDGE: BROADCAST AUDIO ANALYSIS
-    // This allows the receiver tab to react to sound even if it doesn't have mic permissions.
+    // BROADCAST: Send raw data to local SignalBus (for Controller visual feedback)
+    // and to the SyncBridge (for Receiver visual reaction)
+    SignalBus.emit('audio:analysis', analysisResults);
     syncBridge.sendAudioData(analysisResults);
 
-    applyAudioToLayers(analysisResults.frequencyBands, averageLevel);
-
-    SignalBus.emit('audio:analysis', analysisResults);
-
-  }, [applyAudioToLayers]);
+  }, []);
 
   const analyzeAudio = useCallback(() => {
     if (!analyserRef.current || !dataArrayRef.current || !isActive || !audioContextRef.current || audioContextRef.current.state !== 'running') {
@@ -123,7 +95,7 @@ const AudioAnalyzer = ({ managerInstancesRef }) => {
       }
 
       analyserRef.current.fftSize = FFT_SIZE;
-      analyserRef.current.smoothingTimeConstant = audioSettingsRef.current?.smoothingFactor ?? 0.6;
+      analyserRef.current.smoothingTimeConstant = audioSettings?.smoothingFactor ?? 0.6;
       analyserRef.current.minDecibels = -90;
       analyserRef.current.maxDecibels = -10;
 
@@ -143,7 +115,7 @@ const AudioAnalyzer = ({ managerInstancesRef }) => {
     } catch (e) {
       console.error("[AudioAnalyzer] Setup error:", e);
     }
-  }, [analyzeAudio]);
+  }, [analyzeAudio, audioSettings]);
 
   const requestMicrophoneAccess = useCallback(async () => {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;

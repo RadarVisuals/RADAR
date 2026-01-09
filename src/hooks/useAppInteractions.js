@@ -27,7 +27,7 @@ export const useAppInteractions = (props) => {
   const { hostProfileAddress } = useProfileSessionState(); 
   
   const uiStateHook = useUIState('tab1');
-  const { addNotification, unreadCount } = useNotificationContext();
+  const { addNotification } = useNotificationContext();
   
   const { savedReactions } = useInteractionSettingsState();
   
@@ -40,18 +40,21 @@ export const useAppInteractions = (props) => {
     clearPendingActions: s.clearPendingActions
   })));
 
-  // SYNC BRIDGE: SUBSCRIBE TO DECK CONFIGURATION CHANGES
-  // This ensures that when the Controller selects a scene, the Receiver tab 
-  // also loads that scene data into its invisible "Deck B" before the crossfade starts.
+  // SYNC BRIDGE: SUBSCRIBE TO DECK AND AUDIO SETTING CHANGES
   useEffect(() => {
     const unsub = useEngineStore.subscribe(
-      (state) => ({ a: state.sideA.config, b: state.sideB.config }),
+      (state) => ({ a: state.sideA.config, b: state.sideB.config, audio: state.audioSettings }),
       (current, prev) => {
+        // Sync Visual Decks
         if (current.a !== prev.a) {
           syncBridge.sendDeckConfig('A', current.a);
         }
         if (current.b !== prev.b) {
           syncBridge.sendDeckConfig('B', current.b);
+        }
+        // Sync Audio Reactivity Settings
+        if (current.audio !== prev.audio) {
+          syncBridge.sendAudioSettings(current.audio);
         }
       }
     );
@@ -168,13 +171,12 @@ export const useAppInteractions = (props) => {
 
   return useMemo(() => ({
     uiStateHook,
-    notificationData: { unreadCount },
     handleTokenApplied,
     processEffect,
     createDefaultEffect,
     applyPlaybackValueToManager,
   }), [
-    uiStateHook, unreadCount, handleTokenApplied,
+    uiStateHook, handleTokenApplied,
     processEffect, createDefaultEffect,
     applyPlaybackValueToManager
   ]);
