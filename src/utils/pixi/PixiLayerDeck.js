@@ -1,5 +1,5 @@
 // src/utils/pixi/PixiLayerDeck.js
-import { Container, Sprite, Texture, Graphics } from 'pixi.js';
+import { Container, Sprite, Texture } from 'pixi.js';
 import ValueInterpolator from '../ValueInterpolator';
 import { sliderParams } from '../../config/sliderParams';
 import { getDecodedImage } from '../imageDecoder';
@@ -10,19 +10,25 @@ const BASE_SCALE_MODIFIER = 0.5;
 class Quadrant {
   constructor(container) {
     this.container = new Container();
-    this.mask = new Graphics();
+    
+    // PERFORMANCE FIX: Use a Sprite mask instead of Graphics.
+    // Sprite masks are significantly faster and allow for GPU batching.
+    this.maskSprite = new Sprite(Texture.WHITE);
     this.sprite = new Sprite(Texture.EMPTY);
+    
     this.sprite.anchor.set(0.5);
-    this.container.mask = this.mask;
-    this.container.addChild(this.mask);
+    this.container.mask = this.maskSprite;
+    
+    this.container.addChild(this.maskSprite);
     this.container.addChild(this.sprite);
     container.addChild(this.container);
   }
 
   updateMask(x, y, w, h) {
-    this.mask.clear();
-    this.mask.rect(x, y, w, h);
-    this.mask.fill({ color: 0xffffff });
+    this.maskSprite.x = x;
+    this.maskSprite.y = y;
+    this.maskSprite.width = w;
+    this.maskSprite.height = h;
   }
 
   setTexture(texture) {
@@ -35,6 +41,9 @@ export class PixiLayerDeck {
     this.layerId = layerId;
     this.deckId = deckId;
     this.container = new Container();
+    
+    // PERFORMANCE FIX: Set sortableChildren to false to avoid CPU overhead
+    this.container.sortableChildren = false;
     
     this.quadrants = [
       new Quadrant(this.container), 
@@ -84,29 +93,18 @@ export class PixiLayerDeck {
       this.modulatedValues = values;
   }
 
-  /**
-   * SYNC PHYSICS FIX:
-   * Snaps the angle and all interpolators (especially speed) to match the 
-   * other deck perfectly. This prevents the "crazy spin" during transitions.
-   */
   syncPhysicsFrom(otherDeck) {
     if (!otherDeck) return;
-    
-    // Match current rotation phase
     this.continuousAngle = otherDeck.continuousAngle;
-    
-    // Match drift state
     this.driftState.x = otherDeck.driftState.x;
     this.driftState.y = otherDeck.driftState.y;
     this.driftState.phase = otherDeck.driftState.phase;
     
-    // Snap all interpolators (prevents the speed-up slingshot)
     Object.keys(this.interpolators).forEach(key => {
         if (otherDeck.interpolators[key]) {
             this.interpolators[key].snap(otherDeck.interpolators[key].currentValue);
         }
     });
-
     this.playbackValues = { ...otherDeck.playbackValues };
   }
 
@@ -170,11 +168,6 @@ export class PixiLayerDeck {
     const drift = getVal('drift');
     const driftSpeed = getVal('driftSpeed');
 
-    /**
-     * ROTATION WRAP FIX:
-     * We use modulo 360 to keep the angle in a safe range.
-     * Large numbers cause jitter and calculation artifacts.
-     */
     if (Math.abs(speed) > 0.00001) {
         this.continuousAngle = (this.continuousAngle + (speed * direction * deltaTime * 600)) % 360;
     }
@@ -239,12 +232,18 @@ export class PixiLayerDeck {
     quad.sprite.scale.set(sx, sy);
     quad.sprite.rotation = rot;
     quad.sprite.alpha = alpha;
-    if (quad.container.blendMode !== blend) quad.container.blendMode = blend;
+    
+    // PERFORMANCE FIX: Only update blendMode if it actually changes.
+    // Switching blend modes triggers a WebGL context change.
+    if (quad.container.blendMode !== blend) {
+        quad.container.blendMode = blend;
+    }
   }
 
   resize(renderer) {
     const w = renderer.screen.width; const h = renderer.screen.height;
     const hw = (w * 0.5) | 0; const hh = (h * 0.5) | 0;
+    
     this.quadrants[0].updateMask(0, 0, hw, hh);
     this.quadrants[1].updateMask(hw, 0, w - hw, hh);
     this.quadrants[2].updateMask(0, hh, hw, h - hh);

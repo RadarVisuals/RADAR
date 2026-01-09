@@ -59,30 +59,33 @@ export default class PixiEngine {
     this.app = new Application();
     
     try {
-      // PERFORMANCE FIX: 
-      // 1. Force resolution to 1.0. Retina screens (M4) try to use 2.0 or 3.0, 
-      //    which multiplies the pixel count exponentially. 1.0 is plenty for VJing.
-      // 2. Disable antialias. At 120Hz with motion, you don't need it, and it saves GPU cycles.
-      // 3. Added 'failIfMajorPerformanceCaveat' to ensure we don't fallback to slow software rendering.
+      /**
+       * MACBOOK M4 PRO PERFORMANCE TUNING:
+       * 1. Resolution: On Retina displays, 1.0 resolution is still massive.
+       *    We use 0.75 on high-DPI screens to save fill-rate during crossfades.
+       * 2. roundPixels: true. This prevents sub-pixel interpolation, a major source of 
+       *    MacBook Pro stuttering during rotation/scaling.
+       * 3. powerPreference: 'high-performance' hints to the M4 Pro to stay in high-gear.
+       */
+      const optimalResolution = window.devicePixelRatio > 1 ? 0.75 : 1.0;
+
       await this.app.init({
         canvas: this.canvas,
         resizeTo: this.canvas.parentElement, 
         backgroundAlpha: 0,
         antialias: false, 
-        resolution: 1.0, 
+        resolution: optimalResolution, 
         autoDensity: true,
+        roundPixels: true, 
         powerPreference: 'high-performance', 
         preference: 'webgl',
-        hello: false,
+        hello: false
       });
 
       if (this._isDestroyed) {
           this.app.destroy(true);
           return;
       }
-
-      // Add CSS hint to the canvas for smoother scaling on Retina
-      this.canvas.style.imageRendering = 'auto';
 
       this.app.stage.addChild(this.rootContainer);
 
@@ -161,8 +164,8 @@ export default class PixiEngine {
 
     try {
         const now = performance.now();
-        // Clamping deltaTime prevents large jumps if the browser stutters
-        const deltaTime = Math.min(ticker.deltaTime, 2.0); 
+        // Clamping deltaTime to prevent huge jumps if a frame drops
+        const deltaTime = Math.min(ticker.deltaTime, 1.5); 
 
         const audioData = this.audioReactor.getAudioData();
         const finalParams = this.logic.update(deltaTime, audioData);
