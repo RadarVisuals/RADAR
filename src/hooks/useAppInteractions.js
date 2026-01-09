@@ -12,11 +12,17 @@ import { scaleNormalizedValue } from "../utils/helpers";
 import { syncBridge } from '../utils/SyncBridge';
 import SignalBus from '../utils/SignalBus'; 
 import { useShallow } from 'zustand/react/shallow';
-import { getPixiEngine } from './usePixiOrchestrator'; // Import added
+import { getPixiEngine } from './usePixiOrchestrator';
 
 export const useAppInteractions = (props) => {
   const {
-    managerInstancesRef, isMountedRef, onTogglePLock, onNextScene, onPrevScene, onNextWorkspace, onPrevWorkspace,
+    managerInstancesRef,
+    isMountedRef,
+    onTogglePLock,
+    onNextScene,
+    onPrevScene,
+    onNextWorkspace,
+    onPrevWorkspace,
   } = props;
 
   const { hostProfileAddress } = useProfileSessionState(); 
@@ -27,7 +33,8 @@ export const useAppInteractions = (props) => {
   const { processEffect, createDefaultEffect } = useVisualEffects(updateLayerConfig);
   
   const { pendingActions, clearPendingActions } = useEngineStore(useShallow(s => ({
-    pendingActions: s.pendingActions, clearPendingActions: s.clearPendingActions
+    pendingActions: s.pendingActions,
+    clearPendingActions: s.clearPendingActions
   })));
 
   // SYNC BRIDGE: SUBSCRIBE TO DECK AND AUDIO SETTING CHANGES
@@ -36,18 +43,29 @@ export const useAppInteractions = (props) => {
       (state) => ({ a: state.sideA.config, b: state.sideB.config, audio: state.audioSettings }),
       (current, prev) => {
         const engine = getPixiEngine();
-        if (!engine) return;
-
-        // FIX: When sending configurations, include the live physics state 
-        // from the engine. This keeps the Receiver tab's rotations perfectly aligned.
+        
+        // ENHANCED SYNC: When sending a deck config, attach the master physics state.
+        // This ensures the receiver tab is phase-locked to the controller.
         if (current.a !== prev.a) {
-          const physics = engine.getLivePhysics('A');
-          syncBridge.sendDeckConfig('A', { ...current.a, physicsContext: physics });
+          const physicsContext = {};
+          if (engine?.layerManager) {
+            engine.layerManager.layerList.forEach(l => {
+              physicsContext[l.id] = { continuousAngle: l.physics.continuousAngle, driftPhase: l.physics.driftPhase };
+            });
+          }
+          syncBridge.sendDeckConfig('A', { ...current.a, sharedPhysicsContext: physicsContext });
         }
+        
         if (current.b !== prev.b) {
-          const physics = engine.getLivePhysics('B');
-          syncBridge.sendDeckConfig('B', { ...current.b, physicsContext: physics });
+          const physicsContext = {};
+          if (engine?.layerManager) {
+            engine.layerManager.layerList.forEach(l => {
+              physicsContext[l.id] = { continuousAngle: l.physics.continuousAngle, driftPhase: l.physics.driftPhase };
+            });
+          }
+          syncBridge.sendDeckConfig('B', { ...current.b, sharedPhysicsContext: physicsContext });
         }
+
         if (current.audio !== prev.audio) {
           syncBridge.sendAudioSettings(current.audio);
         }
@@ -58,18 +76,29 @@ export const useAppInteractions = (props) => {
   
   const applyPlaybackValueToManager = useCallback((layerId, key, value) => {
     const manager = managerInstancesRef.current?.[String(layerId)];
-    if (manager?.snapVisualProperty) manager.snapVisualProperty(key, value);
+    if (manager?.snapVisualProperty) {
+      manager.snapVisualProperty(key, value);
+    }
   }, [managerInstancesRef]);
 
   const handleEventReceived = useCallback((event) => {
     if (!isMountedRef.current || !event?.typeId) return;
+    
     if (addNotification) addNotification(event);
-    if (event.type) SignalBus.emit('event:trigger', { type: event.type });
+    if (event.type) {
+        SignalBus.emit('event:trigger', { type: event.type });
+    }
 
     const reactionsMap = savedReactions || {};
     const typeIdToMatch = event.typeId.toLowerCase();
-    const matchingReaction = Object.values(reactionsMap).find(r => r?.event?.toLowerCase() === typeIdToMatch || r?.event === event.type);
-    if (matchingReaction && processEffect) processEffect({ ...matchingReaction, originEvent: event });
+    const matchingReaction = Object.values(reactionsMap).find(
+      r => r?.event?.toLowerCase() === typeIdToMatch || r?.event === event.type 
+    );
+
+    if (matchingReaction && processEffect) {
+      processEffect({ ...matchingReaction, originEvent: event });
+    }
+    
   }, [isMountedRef, addNotification, savedReactions, processEffect]);
 
   useLsp1Events(hostProfileAddress, handleEventReceived);
@@ -91,32 +120,65 @@ export const useAppInteractions = (props) => {
           case 'layerSelect': {
             const layerToTabMap = { 1: 'tab3', 2: 'tab2', 3: 'tab1' };
             const targetTab = layerToTabMap[action.layer];
-            if (targetTab && uiStateHook.setActiveLayerTab) uiStateHook.setActiveLayerTab(targetTab);
+            if (targetTab && uiStateHook.setActiveLayerTab) {
+              uiStateHook.setActiveLayerTab(targetTab);
+            }
             break;
           }
-          case 'globalAction':
-            if (action.action === 'pLockToggle' && onTogglePLock) onTogglePLock();
+          case 'globalAction': {
+            const actionName = action.action;
+            if (actionName === 'pLockToggle' && onTogglePLock) {
+              onTogglePLock();
+            }
             break;
-          case 'crossfaderUpdate':
-            if (handleCrossfaderChange) handleCrossfaderChange(action.value);
+          }
+          case 'crossfaderUpdate': {
+            const { value } = action;
+            if (handleCrossfaderChange) {
+              handleCrossfaderChange(value);
+            }
             break;
-          case 'nextScene': if (onNextScene) onNextScene(); break;
-          case 'prevScene': if (onPrevScene) onPrevScene(); break;
-          case 'nextWorkspace': if (onNextWorkspace) onNextWorkspace(); break;
-          case 'prevWorkspace': if (onPrevWorkspace) onPrevWorkspace(); break;
-          default: break;
+          }
+          case 'nextScene':
+            if (onNextScene) onNextScene();
+            break;
+          case 'prevScene':
+            if (onPrevScene) onPrevScene();
+            break;
+          case 'nextWorkspace':
+            if (onNextWorkspace) onNextWorkspace();
+            break;
+          case 'prevWorkspace':
+            if (onPrevWorkspace) onPrevWorkspace();
+            break;
+          default:
+            break;
         }
       });
       clearPendingActions();
     }
-  }, [pendingActions, clearPendingActions, managerInstancesRef, updateLayerConfig, uiStateHook, onTogglePLock, handleCrossfaderChange, onNextScene, onPrevScene, onNextWorkspace, onPrevWorkspace]);
+  }, [
+    pendingActions, clearPendingActions, managerInstancesRef, updateLayerConfig,
+    uiStateHook, onTogglePLock, handleCrossfaderChange, onNextScene, onPrevScene,
+    onNextWorkspace, onPrevWorkspace,
+  ]);
 
   const handleTokenApplied = useCallback(async (token, layerId) => {
     if (!isMountedRef.current) return;
-    if (updateTokenAssignment) updateTokenAssignment(token, layerId);
+    if (updateTokenAssignment) {
+      updateTokenAssignment(token, layerId);
+    }
   }, [isMountedRef, updateTokenAssignment]);
 
   return useMemo(() => ({
-    uiStateHook, handleTokenApplied, processEffect, createDefaultEffect, applyPlaybackValueToManager,
-  }), [uiStateHook, handleTokenApplied, processEffect, createDefaultEffect, applyPlaybackValueToManager]);
+    uiStateHook,
+    handleTokenApplied,
+    processEffect,
+    createDefaultEffect,
+    applyPlaybackValueToManager,
+  }), [
+    uiStateHook, handleTokenApplied,
+    processEffect, createDefaultEffect,
+    applyPlaybackValueToManager
+  ]);
 };

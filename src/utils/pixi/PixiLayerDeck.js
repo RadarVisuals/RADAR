@@ -45,8 +45,6 @@ export class PixiLayerDeck {
     ];
     
     this.config = this.getDefaultConfig();
-    this.continuousAngle = 0;
-    this.driftState = { x: 0, y: 0, phase: Math.random() * Math.PI * 2 };
     
     this.interpolators = {};
     this.playbackValues = {}; 
@@ -55,13 +53,6 @@ export class PixiLayerDeck {
     this.tokenId = null;
     this.currentTexture = null; 
     this._loadingTokenId = null;
-
-    this._reusableRenderState = {
-        speed: 0, size: 1, opacity: 1, drift: 0, driftSpeed: 0,
-        xaxis: 0, yaxis: 0, angle: 0, direction: 1,
-        blendMode: 'normal', enabled: true,
-        totalAngleRad: 0, driftX: 0, driftY: 0, continuousAngle: 0
-    };
 
     sliderParams.forEach(param => {
       const startVal = this.config[param.prop] || 0;
@@ -85,11 +76,9 @@ export class PixiLayerDeck {
       this.modulatedValues = values;
   }
 
+  // Decks no longer sync physics between each other because LayerManager owns the clock
   syncPhysicsFrom(otherDeck) {
     if (!otherDeck) return;
-    this.continuousAngle = otherDeck.continuousAngle;
-    this.driftState = { ...otherDeck.driftState };
-    
     Object.keys(this.interpolators).forEach(key => {
         if (otherDeck.interpolators[key]) {
             this.interpolators[key].snap(otherDeck.interpolators[key].currentValue);
@@ -132,14 +121,7 @@ export class PixiLayerDeck {
   }
 
   snapConfig(fullConfig) {
-    // FIX: Check for incoming physics synchronization state
-    if (fullConfig.livePhysics) {
-        this.continuousAngle = fullConfig.livePhysics.continuousAngle;
-        this.driftState = { ...fullConfig.livePhysics.driftState };
-    }
-
     for (const key in fullConfig) {
-        if (key === 'livePhysics') continue;
         const newValue = fullConfig[key];
         this.config[key] = newValue;
         if (this.interpolators[key]) {
@@ -148,77 +130,62 @@ export class PixiLayerDeck {
     }
   }
 
-  stepPhysics(deltaTime, now) {
+  stepPhysics(deltaTime) {
     for (const key in this.interpolators) {
         this.interpolators[key].update(deltaTime);
     }
-    
-    const getVal = (k) => {
-        if (this.playbackValues[k] !== undefined) return this.playbackValues[k];
-        const base = this.interpolators[k] ? this.interpolators[k].currentValue : this.config[k];
-        const mod = this.modulatedValues[k] !== undefined ? this.modulatedValues[k] : 0;
-        return base + mod;
-    };
-    
-    const speed = getVal('speed');
-    const direction = getVal('direction') ?? 1; 
-    const drift = getVal('drift');
-    const driftSpeed = getVal('driftSpeed');
-
-    if (Math.abs(speed) > 0.00001) {
-        this.continuousAngle += (speed * direction * deltaTime * 600);
-    }
-
-    if (drift > 0) {
-        this.driftState.phase += deltaTime * driftSpeed * 1.0;
-        const xVal = Math.sin(this.driftState.phase) * drift * 1.5;
-        const yVal = Math.cos(this.driftState.phase * 0.7 + 0.785398) * drift * 1.5; 
-        this.driftState.x = Math.max(-MAX_TOTAL_OFFSET, Math.min(MAX_TOTAL_OFFSET, xVal));
-        this.driftState.y = Math.max(-MAX_TOTAL_OFFSET, Math.min(MAX_TOTAL_OFFSET, yVal));
-    } else {
-        this.driftState.x *= 0.95; 
-        this.driftState.y *= 0.95;
-    }
+    // Shared rotation accumulation moved to LayerManager/CrossfaderSystem
   }
 
   resolveRenderState() {
-    const s = this._reusableRenderState;
     const getVal = (k) => {
         if (this.playbackValues[k] !== undefined) return this.playbackValues[k];
         const base = this.interpolators[k] ? this.interpolators[k].currentValue : this.config[k];
         const mod = this.modulatedValues[k] !== undefined ? this.modulatedValues[k] : 0;
         return base + mod;
     };
-    const angle = getVal('angle');
-    s.speed = getVal('speed'); s.size = getVal('size'); s.opacity = getVal('opacity');
-    s.drift = getVal('drift'); s.driftSpeed = getVal('driftSpeed');
-    s.xaxis = getVal('xaxis'); s.yaxis = getVal('yaxis'); s.angle = angle;
-    s.direction = getVal('direction') ?? 1; s.blendMode = getVal('blendMode'); s.enabled = getVal('enabled');
-    s.driftX = this.driftState.x; s.driftY = this.driftState.y;
-    s.continuousAngle = this.continuousAngle;
-    s.totalAngleRad = (angle + this.continuousAngle) * 0.01745329251; 
-    return s;
+    
+    return {
+        speed: getVal('speed'),
+        size: getVal('size'),
+        opacity: getVal('opacity'),
+        drift: getVal('drift'),
+        driftSpeed: getVal('driftSpeed'),
+        xaxis: getVal('xaxis'),
+        yaxis: getVal('yaxis'),
+        angle: getVal('angle'),
+        direction: getVal('direction') ?? 1,
+        blendMode: getVal('blendMode'),
+        enabled: getVal('enabled')
+    };
   }
 
-  applyRenderState(state, alphaMult, beatFactor, parallaxOffset, parallaxFactor, screen) {
+  applyRenderState(state, physicsData, alphaMult, beatFactor, parallaxOffset, parallaxFactor, screen) {
     if (alphaMult <= 0.001 || !state.enabled || !this.tokenId) { 
         this.container.visible = false; return; 
     }
     this.container.visible = true;
     const screenW = screen.width; const screenH = screen.height;
     const halfW = screenW * 0.5; const halfH = screenH * 0.5;
-    const targetX = halfW + (state.xaxis * 0.1) + state.driftX + (parallaxOffset.x * parallaxFactor);
-    const targetY = halfH + (state.yaxis * 0.1) + state.driftY + (parallaxOffset.y * parallaxFactor);
+
+    // Use shared physics data for positioning (drift)
+    const targetX = halfW + (state.xaxis * 0.1) + physicsData.driftX + (parallaxOffset.x * parallaxFactor);
+    const targetY = halfH + (state.yaxis * 0.1) + physicsData.driftY + (parallaxOffset.y * parallaxFactor);
+
     const tex = this.quadrants[0].sprite.texture;
     let screenRelativeScale = 1.0;
     if (tex && tex.valid && tex.width > 1) {
         const fitWidth = halfW / tex.width; const fitHeight = halfH / tex.height;
         screenRelativeScale = (fitWidth < fitHeight) ? fitWidth : fitHeight;
     }
+
     let finalScale = state.size * screenRelativeScale * beatFactor * BASE_SCALE_MODIFIER;
     const finalAlpha = Math.max(0, Math.min(1, state.opacity * alphaMult));
     const blend = BLEND_MODE_MAP[state.blendMode] || 'normal';
-    const rad = state.totalAngleRad;
+
+    // Rotation = Current Scene Angle + The Shared continuous master angle
+    const rad = (state.angle + physicsData.continuousAngle) * 0.01745329251;
+
     this._updateQuadrant(this.quadrants[0], targetX, targetY, finalScale, finalScale, rad, finalAlpha, blend);
     this._updateQuadrant(this.quadrants[1], screenW - targetX, targetY, -finalScale, finalScale, -rad, finalAlpha, blend);
     this._updateQuadrant(this.quadrants[2], targetX, screenH - targetY, finalScale, -finalScale, -rad, finalAlpha, blend);
