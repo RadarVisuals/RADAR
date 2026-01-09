@@ -3,57 +3,107 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vite + React</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>RADAR | Visual Synthesizer</title>
     <style>
-      /* Ensure html and body take full height of the iframe's allocated space */
+      /* 
+         PERFORMANCE OPTIMIZATION: 
+         Promote the entire app to a hardware-accelerated GPU layer.
+         This prevents the browser from re-calculating layouts during heavy crossfades.
+      */
       html, body {
         margin: 0;
         padding: 0;
         width: 100%;
         height: 100%;
-        background: #000000; /* Base background */
-        color: #00f3ff; /* Base text color */
+        background: #000000;
+        color: #00f3ff;
         font-family: Arial, sans-serif;
-        display: block; /* Explicitly block */
-        /* --- ADDED: Prevent scroll chaining to parent page --- */
+        display: block;
+        overflow: hidden;
+        /* Prevent elastic bounce scrolling on macOS/iOS */
         overscroll-behavior: contain;
-        /* ---------------------------------------------------- */
+        /* Force GPU Layer promotion */
+        transform: translateZ(0);
+        -webkit-font-smoothing: antialiased;
       }
 
-      /* Ensure #root takes full height of the body */
       #root {
         width: 100%;
         height: 100%;
-        margin: 0; /* Reset margin */
-        padding: 0; /* Reset padding */
-        overflow: hidden; /* Prevent scrollbars on root */
-        display: block; /* Ensure it behaves as a block */
-        position: relative; /* Needed if children use absolute positioning relative to root */
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        display: block;
+        position: relative;
+        /* GPU isolation for the main React tree */
+        transform: translateZ(0);
       }
 
-      /* Style for the portal target - ensure it doesn't interfere */
+      /* 
+         RETINA / M4 OPTIMIZATION: 
+         Explicitly tell the browser's compositor how to handle the canvas.
+         Using crisp-edges and webkit-optimize-contrast prevents the CPU from 
+         trying to "soften" the image, which is a major source of lag on 4K/Retina.
+      */
+      canvas {
+        image-rendering: -webkit-optimize-contrast;
+        image-rendering: crisp-edges;
+        image-rendering: pixelated;
+        /* Ensures the canvas doesn't flicker during rapid property changes */
+        backface-visibility: hidden;
+        -webkit-backface-visibility: hidden;
+        transform: translateZ(0);
+      }
+
+      /* 
+         Portal Target: 
+         Fixed position ensures it's not affected by parent transforms.
+         Pointer-events: none ensures it doesn't block canvas clicks.
+      */
       #portal-container {
-        position: fixed; /* Or absolute, depending on need */
+        position: fixed;
         top: 0;
         left: 0;
-        width: 0; /* Takes no space */
-        height: 0; /* Takes no space */
-        z-index: 10000; /* High z-index for overlays */
-        pointer-events: none; /* Allow clicks through container */
+        width: 0;
+        height: 0;
+        z-index: 10000;
+        pointer-events: none;
       }
-      /* Allow pointer events on direct children */
+      
+      /* Re-enable pointers for actual UI elements inside the portal */
       #portal-container > * {
          pointer-events: auto;
+      }
+
+      /* Simple hidden state for initial load */
+      .static-loader {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: #000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        transition: opacity 0.5s ease;
       }
 
     </style>
   </head>
   <body>
     <div id="root"></div>
-    <!-- Add a dedicated container for portals outside the main app root -->
+    
+    <!-- Dedicated container for overlays/modals -->
     <div id="portal-container"></div>
-    <!-- The #decoded-image-pool div has been removed -->
+
+    <!-- Optional: Minimal static loader before React takes over -->
+    <div class="static-loader">
+       <div style="color: #00f3ff; font-family: monospace; letter-spacing: 2px;">INITIALIZING_RADAR_ENGINE...</div>
+    </div>
+
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

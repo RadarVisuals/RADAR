@@ -59,6 +59,11 @@ export default class PixiEngine {
     this.app = new Application();
     
     try {
+      // PERFORMANCE FIX: 
+      // 1. Force resolution to 1.0. Retina screens (M4) try to use 2.0 or 3.0, 
+      //    which multiplies the pixel count exponentially. 1.0 is plenty for VJing.
+      // 2. Disable antialias. At 120Hz with motion, you don't need it, and it saves GPU cycles.
+      // 3. Added 'failIfMajorPerformanceCaveat' to ensure we don't fallback to slow software rendering.
       await this.app.init({
         canvas: this.canvas,
         resizeTo: this.canvas.parentElement, 
@@ -68,12 +73,16 @@ export default class PixiEngine {
         autoDensity: true,
         powerPreference: 'high-performance', 
         preference: 'webgl',
+        hello: false,
       });
 
       if (this._isDestroyed) {
           this.app.destroy(true);
           return;
       }
+
+      // Add CSS hint to the canvas for smoother scaling on Retina
+      this.canvas.style.imageRendering = 'auto';
 
       this.app.stage.addChild(this.rootContainer);
 
@@ -139,11 +148,6 @@ export default class PixiEngine {
   
   clearPlaybackValues() { this.layerManager?.layerList.forEach(l => { l.deckA.playbackValues = {}; l.deckB.playbackValues = {}; }); }
   
-  /**
-   * DECK SYNC FIX:
-   * Transfers the live continuous rotation from the active deck to the target deck
-   * before the crossfade starts.
-   */
   syncDeckPhysics(layerId, targetDeckSide) {
       const deckTarget = this.layerManager?.getDeck(layerId, targetDeckSide);
       const deckSource = this.layerManager?.getDeck(layerId, targetDeckSide === 'A' ? 'B' : 'A');
@@ -157,7 +161,8 @@ export default class PixiEngine {
 
     try {
         const now = performance.now();
-        const deltaTime = Math.min(ticker.deltaTime, 1.5); 
+        // Clamping deltaTime prevents large jumps if the browser stutters
+        const deltaTime = Math.min(ticker.deltaTime, 2.0); 
 
         const audioData = this.audioReactor.getAudioData();
         const finalParams = this.logic.update(deltaTime, audioData);

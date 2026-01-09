@@ -165,7 +165,8 @@ function UIOverlay({
 
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'Tab' && isMappingMode) {
+      // TAB key toggles UI visibility in both normal Mapping mode AND Projector mode
+      if (e.key === 'Tab' && (isMappingMode || isProjectorMode)) {
         e.preventDefault(); 
         setMappingUiVisibility(!isMappingUiVisible);
       }
@@ -179,7 +180,7 @@ function UIOverlay({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isMappingMode, isMappingUiVisible, setMappingUiVisibility, isProjectorMode]);
 
-  // Hide the hint after 5 seconds
+  // Hide the initial hint after a short duration
   useEffect(() => {
     if (isProjectorMode) {
         const timer = setTimeout(() => setShowReceiverHint(false), 5000);
@@ -205,17 +206,29 @@ function UIOverlay({
 
   if (!isReady) return null;
 
-  // --- RECEIVER MODE STRIP (Dual Screen) ---
+  // --- RECEIVER MODE (Dual Screen) ---
   if (isProjectorMode) {
       return (
           <>
+            {/* The actual visual mask */}
             <VideoMappingOverlay isVisible={true} config={mappingConfig} />
+
+            {/* Conditional UI for Calibration in Receiver Mode */}
+            {isMappingUiVisible && (
+                 <div className="projector-calibration-ui" style={{ position: 'fixed', top: '20px', left: '20px', zIndex: 1001, pointerEvents: 'auto' }}>
+                    <PanelWrapper className="animating">
+                        <MappingPanel onClose={() => setMappingUiVisibility(false)} />
+                    </PanelWrapper>
+                 </div>
+            )}
+
+            {/* Fullscreen Interaction & Hint Layer */}
             <div 
                 className="receiver-interaction-layer"
                 style={{
                     position: 'fixed',
                     top: 0, left: 0, width: '100vw', height: '100vh',
-                    zIndex: 9999,
+                    zIndex: 999, // Below the Calibration UI (1001)
                     pointerEvents: 'auto',
                     cursor: showReceiverHint ? 'pointer' : 'none',
                     display: 'flex',
@@ -229,18 +242,22 @@ function UIOverlay({
             >
                 {showReceiverHint && (
                     <div style={{
-                        padding: '20px',
-                        background: 'rgba(0,0,0,0.7)',
+                        padding: '25px',
+                        background: 'rgba(0,0,0,0.85)',
                         border: '1px solid var(--color-primary)',
                         borderRadius: '12px',
                         color: 'var(--color-primary)',
                         textAlign: 'center',
                         pointerEvents: 'none',
-                        animation: 'fadeIn 0.5s ease-out'
+                        animation: 'fadeIn 0.5s ease-out',
+                        boxShadow: '0 0 20px rgba(0, 243, 255, 0.2)'
                     }}>
-                        <h2 style={{fontSize: '18px', marginBottom: '8px'}}>RECEIVER MODE ACTIVE</h2>
-                        <p style={{fontSize: '12px', opacity: 0.8}}>Single Click: Fullscreen</p>
-                        <p style={{fontSize: '12px', opacity: 0.8}}>Double Click: Exit & Reload</p>
+                        <h2 style={{fontSize: '18px', marginBottom: '12px', letterSpacing: '1px'}}>RECEIVER MODE ACTIVE</h2>
+                        <div style={{fontSize: '12px', opacity: 0.9, display: 'flex', flexDirection: 'column', gap: '6px'}}>
+                            <p><strong>Single Click:</strong> Fullscreen</p>
+                            <p><strong>Tab Key:</strong> Toggle Calibration UI</p>
+                            <p><strong>Double Click:</strong> Exit & Reload</p>
+                        </div>
                     </div>
                 )}
             </div>
@@ -248,6 +265,7 @@ function UIOverlay({
       );
   }
   
+  // --- SENDER / CONTROLLER MODE ---
   return (
     <>
       {import.meta.env.DEV && <SignalDebugger />}
