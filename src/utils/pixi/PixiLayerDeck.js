@@ -10,14 +10,10 @@ const BASE_SCALE_MODIFIER = 0.5;
 class Quadrant {
   constructor(container) {
     this.container = new Container();
-    
-    // BATCHING FIX: Sprite masks are faster than Graphics on high-res displays
     this.maskSprite = new Sprite(Texture.WHITE);
     this.sprite = new Sprite(Texture.EMPTY);
-    
     this.sprite.anchor.set(0.5);
     this.container.mask = this.maskSprite;
-    
     this.container.addChild(this.maskSprite);
     this.container.addChild(this.sprite);
     container.addChild(this.container);
@@ -64,7 +60,7 @@ export class PixiLayerDeck {
         speed: 0, size: 1, opacity: 1, drift: 0, driftSpeed: 0,
         xaxis: 0, yaxis: 0, angle: 0, direction: 1,
         blendMode: 'normal', enabled: true,
-        totalAngleRad: 0, driftX: 0, driftY: 0
+        totalAngleRad: 0, driftX: 0, driftY: 0, continuousAngle: 0
     };
 
     sliderParams.forEach(param => {
@@ -91,11 +87,11 @@ export class PixiLayerDeck {
 
   syncPhysicsFrom(otherDeck) {
     if (!otherDeck) return;
+    // Hard-sync the physics accumulation to prevent jumps
     this.continuousAngle = otherDeck.continuousAngle;
-    this.driftState.x = otherDeck.driftState.x;
-    this.driftState.y = otherDeck.driftState.y;
-    this.driftState.phase = otherDeck.driftState.phase;
+    this.driftState = { ...otherDeck.driftState };
     
+    // Snap all interpolators to the source deck's live values
     Object.keys(this.interpolators).forEach(key => {
         if (otherDeck.interpolators[key]) {
             this.interpolators[key].snap(otherDeck.interpolators[key].currentValue);
@@ -164,8 +160,9 @@ export class PixiLayerDeck {
     const drift = getVal('drift');
     const driftSpeed = getVal('driftSpeed');
 
+    // Infinitely growing angle to prevent 360-0 snapping jumps
     if (Math.abs(speed) > 0.00001) {
-        this.continuousAngle = (this.continuousAngle + (speed * direction * deltaTime * 600)) % 360;
+        this.continuousAngle += (speed * direction * deltaTime * 600);
     }
 
     if (drift > 0) {
@@ -194,6 +191,7 @@ export class PixiLayerDeck {
     s.xaxis = getVal('xaxis'); s.yaxis = getVal('yaxis'); s.angle = angle;
     s.direction = getVal('direction') ?? 1; s.blendMode = getVal('blendMode'); s.enabled = getVal('enabled');
     s.driftX = this.driftState.x; s.driftY = this.driftState.y;
+    s.continuousAngle = this.continuousAngle;
     s.totalAngleRad = (angle + this.continuousAngle) * 0.01745329251; 
     return s;
   }
