@@ -60,23 +60,22 @@ export default class PixiEngine {
     
     try {
       /**
-       * MACBOOK M4 PRO PERFORMANCE TUNING:
-       * 1. Resolution: On Retina displays, 1.0 resolution is still massive.
-       *    We use 0.75 on high-DPI screens to save fill-rate during crossfades.
-       * 2. roundPixels: true. This prevents sub-pixel interpolation, a major source of 
-       *    MacBook Pro stuttering during rotation/scaling.
-       * 3. powerPreference: 'high-performance' hints to the M4 Pro to stay in high-gear.
+       * MACBOOK M4 PRO STABILITY FIX:
+       * 1. resolution: We use window.devicePixelRatio. This ensures 1:1 pixel mapping.
+       *    This fixes the pixelation and ensures Kaleidoscope math is correct.
+       * 2. autoDensity: true. This allows the CSS size of the canvas to stay 100% 
+       *    while the internal buffer handles the Retina density.
+       * 3. roundPixels: false. Reverting this because it causes jitter on Retina.
+       * 4. antialias: false. Still disabled; Retina's high density makes it redundant 
+       *    and it's a major FPS killer during crossfades.
        */
-      const optimalResolution = window.devicePixelRatio > 1 ? 0.75 : 1.0;
-
       await this.app.init({
         canvas: this.canvas,
         resizeTo: this.canvas.parentElement, 
         backgroundAlpha: 0,
         antialias: false, 
-        resolution: optimalResolution, 
+        resolution: window.devicePixelRatio || 1, 
         autoDensity: true,
-        roundPixels: true, 
         powerPreference: 'high-performance', 
         preference: 'webgl',
         hello: false
@@ -121,7 +120,10 @@ export default class PixiEngine {
     const w = this.app.renderer.screen.width;
     const h = this.app.renderer.screen.height;
     if (w <= 0 || h <= 0) return;
+    
+    // Crucial: ensures filters cover the whole high-res buffer
     this.rootContainer.filterArea = this.app.screen; 
+    
     if (this.feedbackSystem) this.feedbackSystem.resize(w, h);
     if (this.layerManager) this.layerManager.resize();
   }
@@ -164,7 +166,6 @@ export default class PixiEngine {
 
     try {
         const now = performance.now();
-        // Clamping deltaTime to prevent huge jumps if a frame drops
         const deltaTime = Math.min(ticker.deltaTime, 1.5); 
 
         const audioData = this.audioReactor.getAudioData();

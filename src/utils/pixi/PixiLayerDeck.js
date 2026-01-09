@@ -10,12 +10,8 @@ const BASE_SCALE_MODIFIER = 0.5;
 class Quadrant {
   constructor(container) {
     this.container = new Container();
-    
-    // PERFORMANCE FIX: Use a Sprite mask instead of Graphics.
-    // Sprite masks are significantly faster and allow for GPU batching.
     this.maskSprite = new Sprite(Texture.WHITE);
     this.sprite = new Sprite(Texture.EMPTY);
-    
     this.sprite.anchor.set(0.5);
     this.container.mask = this.maskSprite;
     
@@ -41,9 +37,6 @@ export class PixiLayerDeck {
     this.layerId = layerId;
     this.deckId = deckId;
     this.container = new Container();
-    
-    // PERFORMANCE FIX: Set sortableChildren to false to avoid CPU overhead
-    this.container.sortableChildren = false;
     
     this.quadrants = [
       new Quadrant(this.container), 
@@ -99,7 +92,6 @@ export class PixiLayerDeck {
     this.driftState.x = otherDeck.driftState.x;
     this.driftState.y = otherDeck.driftState.y;
     this.driftState.phase = otherDeck.driftState.phase;
-    
     Object.keys(this.interpolators).forEach(key => {
         if (otherDeck.interpolators[key]) {
             this.interpolators[key].snap(otherDeck.interpolators[key].currentValue);
@@ -232,18 +224,12 @@ export class PixiLayerDeck {
     quad.sprite.scale.set(sx, sy);
     quad.sprite.rotation = rot;
     quad.sprite.alpha = alpha;
-    
-    // PERFORMANCE FIX: Only update blendMode if it actually changes.
-    // Switching blend modes triggers a WebGL context change.
-    if (quad.container.blendMode !== blend) {
-        quad.container.blendMode = blend;
-    }
+    if (quad.container.blendMode !== blend) quad.container.blendMode = blend;
   }
 
   resize(renderer) {
     const w = renderer.screen.width; const h = renderer.screen.height;
     const hw = (w * 0.5) | 0; const hh = (h * 0.5) | 0;
-    
     this.quadrants[0].updateMask(0, 0, hw, hh);
     this.quadrants[1].updateMask(hw, 0, w - hw, hh);
     this.quadrants[2].updateMask(0, hh, hw, h - hh);
