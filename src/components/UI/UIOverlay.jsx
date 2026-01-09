@@ -149,6 +149,7 @@ function UIOverlay({
 
   const isMappingMode = useUIStore(s => s.isMappingMode);
   const isMappingUiVisible = useUIStore(s => s.isMappingUiVisible);
+  const isProjectorMode = useUIStore(s => s.isProjectorMode);
   const mappingConfig = useUIStore(s => s.mappingConfig);
   const toggleMappingMode = useUIStore(s => s.toggleMappingMode);
   const setMappingUiVisibility = useUIStore(s => s.setMappingUiVisibility);
@@ -180,6 +181,26 @@ function UIOverlay({
   const mainUiContainerClass = `ui-elements-container ${shouldShowInterface ? "visible" : "hidden-by-opacity"}`;
 
   if (!isReady) return null;
+
+  // --- RECEIVER MODE STRIP ---
+  if (isProjectorMode) {
+      return (
+          <>
+            <VideoMappingOverlay isVisible={true} config={mappingConfig} />
+            <div 
+                style={{
+                    position: 'fixed',
+                    top: 0, left: 0, width: '100vw', height: '100vh',
+                    zIndex: 9999,
+                    pointerEvents: 'auto',
+                    cursor: 'none'
+                }}
+                onDoubleClick={() => window.location.reload()}
+                title="Receiver mode active. Double-click to reload and exit."
+            />
+          </>
+      );
+  }
   
   return (
     <>

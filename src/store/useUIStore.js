@@ -50,7 +50,6 @@ export const useUIStore = create(
           decodedPayload: notificationInput.decodedPayload,
           messageFromInput: notificationInput.message,
           link: notificationInput.link,
-          // Placeholder for names to be persisted later
           resolvedSenderName: null,
           resolvedFollowerName: null,
         };
@@ -68,10 +67,6 @@ export const useUIStore = create(
         }));
       },
 
-      /**
-       * updateNotification: Allows us to "bake" resolved names 
-       * into the notification object in LocalStorage.
-       */
       updateNotification: (id, updates) => {
         set((state) => ({
           notifications: state.notifications.map((n) =>
@@ -138,6 +133,38 @@ export const useUIStore = create(
         mappingConfig: { radius: 35.0, feather: 2.0, x: 50.0, y: 50.0 }
       }),
 
+      // =========================================
+      // 5. PROJECTOR MODE (RECEIVER)
+      // =========================================
+      isProjectorMode: false,
+
+      toggleProjectorMode: () => {
+        const currentState = get().isProjectorMode;
+        const newState = !currentState;
+        
+        if (newState) {
+          // ENTERING RECEIVER MODE
+          const root = document.getElementById('fullscreen-root');
+          if (root && !document.fullscreenElement) {
+            root.requestFullscreen().catch(err => {
+              console.warn(`[ProjectorMode] Fullscreen failed: ${err.message}`);
+            });
+          }
+          // Force close any panels
+          get().closePanel();
+        } else {
+          // EXITING RECEIVER MODE
+          if (document.fullscreenElement) {
+            document.exitFullscreen().catch(() => {});
+          }
+        }
+        
+        set({ isProjectorMode: newState });
+      },
+
+      // =========================================
+      // 6. GENERAL UI ACTIONS
+      // =========================================
       toggleUiVisibility: () => set((state) => ({ isUiVisible: !state.isUiVisible })),
       toggleInfoOverlay: () => set((state) => ({ infoOverlayOpen: !state.infoOverlayOpen })),
       setActiveLayerTab: (tab) => set({ activeLayerTab: tab }),

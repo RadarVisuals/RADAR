@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { useEngineStore } from "../../store/useEngineStore";
 import { useProjectStore } from "../../store/useProjectStore";
+import { syncBridge } from "../../utils/SyncBridge";
 import SignalBus from "../../utils/SignalBus";
 
 const FFT_SIZE = 2048;
@@ -81,14 +82,18 @@ const AudioAnalyzer = ({ managerInstancesRef }) => {
     const mid = Math.min(1, midCount > 0 ? (midSum / midCount / 255) : 0);
     const treble = Math.min(1, trebleCount > 0 ? (trebleSum / trebleCount / 255) : 0);
     
-    const newFrequencyBands = { bass, mid, treble };
-    
-    applyAudioToLayers(newFrequencyBands, averageLevel);
-
-    SignalBus.emit('audio:analysis', { 
+    const analysisResults = { 
         level: averageLevel, 
-        frequencyBands: newFrequencyBands 
-    });
+        frequencyBands: { bass, mid, treble } 
+    };
+    
+    // SYNC BRIDGE: BROADCAST AUDIO ANALYSIS
+    // This allows the receiver tab to react to sound even if it doesn't have mic permissions.
+    syncBridge.sendAudioData(analysisResults);
+
+    applyAudioToLayers(analysisResults.frequencyBands, averageLevel);
+
+    SignalBus.emit('audio:analysis', analysisResults);
 
   }, [applyAudioToLayers]);
 

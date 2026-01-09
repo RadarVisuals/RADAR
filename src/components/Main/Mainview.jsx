@@ -45,8 +45,9 @@ const portalContainerNode = typeof document !== 'undefined' ? document.getElemen
 const MainView = ({ blendModes = BLEND_MODES }) => {
   const { publicClient, walletClient, upInitializationError, upFetchStateError } = useUpProvider();
 
-  // MAPPING MODE INTEGRATION
+  // PROJECTOR MODE INTEGRATION
   const isMappingMode = useUIStore(s => s.isMappingMode);
+  const isProjectorMode = useUIStore(s => s.isProjectorMode);
 
   const {
     stagedSetlist,
@@ -253,7 +254,6 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
     animationDataRef: sequencer.animationDataRef,
   }), [sequencer, handleTogglePLock]);
 
-  // ADDED: mapping-active class based on isMappingMode
   const containerClass = `canvas-container 
     ${isTransitioning ? 'transitioning-active' : ''} 
     ${isWorkspaceTransitioning ? 'workspace-fading-out' : ''}
@@ -277,8 +277,11 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
           noPingSelectors={NO_PING_SELECTORS}
         />
 
+        {/* --- DUAL SCREEN SYNC: LOCAL MIC SUPPRESSION --- */}
+        {/* If this tab is the Receiver, it receives audio data via Bridge messages, 
+            so we disable the local microphone listener to prevent extra prompts. */}
         <AudioAnalyzerWrapper
-          isAudioActive={audioState.isAudioActive}
+          isAudioActive={isProjectorMode ? false : audioState.isAudioActive}
           managerInstancesRef={managerInstancesRef}
         />
 

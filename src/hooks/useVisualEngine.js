@@ -5,6 +5,7 @@ import { useProjectStore } from '../store/useProjectStore';
 import { useEngineStore } from '../store/useEngineStore';
 import { useVisualEffects } from './useVisualEffects'; 
 import { getPixiEngine } from './usePixiOrchestrator';
+import { syncBridge } from '../utils/SyncBridge';
 import SignalBus from '../utils/SignalBus';
 
 const AUTO_FADE_DURATION_MS = 1000;
@@ -47,6 +48,9 @@ export const useVisualEngine = () => {
     const updateLayerConfig = useCallback((layerId, key, value, isMidiUpdate = false, skipStoreUpdate = false) => {
         const engine = getPixiEngine();
         const activeDeck = engineState.crossfader < 0.5 ? 'A' : 'B';
+        
+        syncBridge.sendParamUpdate(layerId, key, value);
+
         if (engine) {
             if (isMidiUpdate) engine.updateConfig(layerId, key, value, activeDeck);
             else engine.snapConfig(layerId, { [key]: value }, activeDeck);
@@ -74,7 +78,9 @@ export const useVisualEngine = () => {
         storeActions.setTargetSceneName(sceneName);
 
         if (activeDeckIsA) { 
+            // ROTATION FIX: syncDeckPhysics ensures the next deck starts at the current angle
             ['1','2','3'].forEach(id => engine.syncDeckPhysics(id, 'B'));
+            
             storeActions.setDeckConfig('B', JSON.parse(JSON.stringify(targetScene)));
             storeActions.setIsAutoFading(true); 
             engine.fadeTo(1.0, duration, () => {
@@ -86,7 +92,9 @@ export const useVisualEngine = () => {
                 SignalBus.emit('crossfader:set', 1.0);
             });
         } else { 
+            // ROTATION FIX: syncDeckPhysics ensures the next deck starts at the current angle
             ['1','2','3'].forEach(id => engine.syncDeckPhysics(id, 'A'));
+            
             storeActions.setDeckConfig('A', JSON.parse(JSON.stringify(targetScene)));
             storeActions.setIsAutoFading(true); 
             engine.fadeTo(0.0, duration, () => {
@@ -120,18 +128,21 @@ export const useVisualEngine = () => {
             const engine = getPixiEngine();
             if (engine) engine.setModulationValue(paramId, value);
             storeActions.setEffectBaseValue(paramId, value);
+            syncBridge.sendModValue(paramId, value);
             setHasPendingChanges(true);
         },
         addPatch: (source, target, amount) => {
             const engine = getPixiEngine();
             if (engine) engine.addModulationPatch(source, target, amount);
             storeActions.addPatch(source, target, amount);
+            syncBridge.sendPatchAdd(source, target, amount);
             setHasPendingChanges(true);
         },
         removePatch: (patchId) => {
             const engine = getPixiEngine();
             if (engine) engine.removeModulationPatch(patchId);
             storeActions.removePatch(patchId);
+            syncBridge.sendPatchRemove(patchId);
             setHasPendingChanges(true);
         },
         clearAllPatches: () => {
@@ -145,7 +156,10 @@ export const useVisualEngine = () => {
             const engine = getPixiEngine();
             if (engine) {
                 const defaults = storeActions.baseValues;
-                Object.entries(defaults).forEach(([id, val]) => engine.setModulationValue(id, val));
+                Object.entries(defaults).forEach(([id, val]) => {
+                  engine.setModulationValue(id, val);
+                  syncBridge.sendModValue(id, val);
+                });
             }
             setHasPendingChanges(true);
         },
@@ -153,6 +167,7 @@ export const useVisualEngine = () => {
             const engine = getPixiEngine();
             if (engine) engine.lfo.setConfig(lfoId, param, value);
             storeActions.setLfoSetting(lfoId, param, value);
+            syncBridge.sendLfoConfig(lfoId, param, value);
             setHasPendingChanges(true);
         },
 
@@ -160,6 +175,7 @@ export const useVisualEngine = () => {
         handleCrossfaderChange: (val) => {
             const engine = getPixiEngine();
             if(engine) engine.cancelFade();
+            syncBridge.sendCrossfader(val);
             storeActions.setCrossfader(val);
             storeActions.setRenderedCrossfader(val); 
             SignalBus.emit('crossfader:set', val);

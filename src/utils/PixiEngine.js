@@ -1,4 +1,4 @@
-//src/utils/PixiEngine.js
+// src/utils/PixiEngine.js
 
 import { Application, Container } from 'pixi.js';
 import { PixiEffectsManager } from './pixi/PixiEffectsManager';
@@ -28,7 +28,6 @@ export default class PixiEngine {
     this.feedbackSystem = null; 
     this.crossfaderSystem = null; 
 
-    // Bind handlers
     this._resizeHandler = this.handleResize.bind(this);
     this._updateLoop = this.update.bind(this);
     this._fullscreenHandler = this.handleFullscreenChange.bind(this);
@@ -78,19 +77,13 @@ export default class PixiEngine {
 
       this.app.stage.addChild(this.rootContainer);
 
-      // --- LAYERS 1-3 & EFFECTS ---
       this.effectsManager.init(this.app.screen);
       this.layerManager = new LayerManager(this.app, this.effectsManager);
       this.feedbackSystem = new FeedbackSystem(this.app, this.rootContainer); 
       this.crossfaderSystem = new CrossfaderSystem(this.layerManager, this.audioReactor);
 
-      // Renderer resize listener (internal Pixi ResizeObserver)
       this.app.renderer.on('resize', this._resizeHandler);
-      
-      // Global window resize fallback
       window.addEventListener('resize', this._resizeHandler);
-      
-      // Fullscreen sync
       document.addEventListener('fullscreenchange', this._fullscreenHandler);
       document.addEventListener('webkitfullscreenchange', this._fullscreenHandler);
 
@@ -107,23 +100,16 @@ export default class PixiEngine {
   }
 
   handleFullscreenChange() {
-      // Small delays to ensure browser layout is stable after animation
       setTimeout(() => this.handleResize(), 100);
       setTimeout(() => this.handleResize(), 600); 
   }
 
   handleResize() {
     if (this._isDestroyed || !this.app || !this.app.renderer) return;
-
-    // Pull current screen bounds from the renderer
     const w = this.app.renderer.screen.width;
     const h = this.app.renderer.screen.height;
-
     if (w <= 0 || h <= 0) return;
-
-    // Fix clipping issues
     this.rootContainer.filterArea = this.app.screen; 
-    
     if (this.feedbackSystem) this.feedbackSystem.resize(w, h);
     if (this.layerManager) this.layerManager.resize();
   }
@@ -153,11 +139,15 @@ export default class PixiEngine {
   
   clearPlaybackValues() { this.layerManager?.layerList.forEach(l => { l.deckA.playbackValues = {}; l.deckB.playbackValues = {}; }); }
   
+  /**
+   * DECK SYNC FIX:
+   * Transfers the live continuous rotation from the active deck to the target deck
+   * before the crossfade starts.
+   */
   syncDeckPhysics(layerId, targetDeckSide) {
       const deckTarget = this.layerManager?.getDeck(layerId, targetDeckSide);
       const deckSource = this.layerManager?.getDeck(layerId, targetDeckSide === 'A' ? 'B' : 'A');
       if (deckTarget && deckSource) {
-          deckTarget.continuousAngle = deckSource.continuousAngle;
           deckTarget.syncPhysicsFrom(deckSource);
       }
   }
@@ -209,7 +199,7 @@ export default class PixiEngine {
             this.rootContainer.filters = this.effectsManager.getFilterList();
             
             if (mainGroup.parent !== this.rootContainer) {
-                this.rootContainer.addChildAt(mainGroup, 0); // No longer index 1 because Butterchurn is gone
+                this.rootContainer.addChildAt(mainGroup, 0); 
             }
 
             if (isFeedbackOn) {

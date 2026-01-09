@@ -3,14 +3,15 @@ import { useCallback, useEffect, useMemo } from 'react';
 import { useUIState } from './useUIState';
 import { useVisualEffects } from './useVisualEffects';
 import { useLsp1Events } from './useLsp1Events';
-import { useEngineStore } from '../store/useEngineStore'; // Updated
+import { useEngineStore } from '../store/useEngineStore'; 
 import { useProfileSessionState, useInteractionSettingsState } from './configSelectors'; 
 import { useVisualEngine } from './useVisualEngine';
 import { useNotificationContext } from './useNotificationContext'; 
 import { sliderParams } from '../config/sliderParams';
 import { scaleNormalizedValue } from "../utils/helpers";
+import { syncBridge } from '../utils/SyncBridge';
 import SignalBus from '../utils/SignalBus'; 
-import { useShallow } from 'zustand/react/shallow'; // Added for performance
+import { useShallow } from 'zustand/react/shallow';
 
 export const useAppInteractions = (props) => {
   const {
@@ -34,11 +35,28 @@ export const useAppInteractions = (props) => {
   
   const { processEffect, createDefaultEffect } = useVisualEffects(updateLayerConfig);
   
-  // --- REFACTORED: Get MIDI actions from Engine Store ---
   const { pendingActions, clearPendingActions } = useEngineStore(useShallow(s => ({
     pendingActions: s.pendingActions,
     clearPendingActions: s.clearPendingActions
   })));
+
+  // SYNC BRIDGE: SUBSCRIBE TO DECK CONFIGURATION CHANGES
+  // This ensures that when the Controller selects a scene, the Receiver tab 
+  // also loads that scene data into its invisible "Deck B" before the crossfade starts.
+  useEffect(() => {
+    const unsub = useEngineStore.subscribe(
+      (state) => ({ a: state.sideA.config, b: state.sideB.config }),
+      (current, prev) => {
+        if (current.a !== prev.a) {
+          syncBridge.sendDeckConfig('A', current.a);
+        }
+        if (current.b !== prev.b) {
+          syncBridge.sendDeckConfig('B', current.b);
+        }
+      }
+    );
+    return unsub;
+  }, []);
   
   const applyPlaybackValueToManager = useCallback((layerId, key, value) => {
     const manager = managerInstancesRef.current?.[String(layerId)];

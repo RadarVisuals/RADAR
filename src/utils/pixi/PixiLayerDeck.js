@@ -62,19 +62,9 @@ export class PixiLayerDeck {
         totalAngleRad: 0, driftX: 0, driftY: 0
     };
 
-    /**
-     * TUNING: GLOBAL HIGH-SPEED SMOOTHING (0.9)
-     * At 0.9, we achieve 90% travel per frame. 
-     * This provides the "Instant Response" feel while the math 
-     * handles the sub-frame interpolation required to hide MIDI steps.
-     */
     sliderParams.forEach(param => {
       const startVal = this.config[param.prop] || 0;
-      
-      // Global setting for instant but smooth response
-      const smoothing = 0.9; 
-
-      this.interpolators[param.prop] = new ValueInterpolator(startVal, smoothing);
+      this.interpolators[param.prop] = new ValueInterpolator(startVal, 0.9);
     });
   }
 
@@ -94,19 +84,30 @@ export class PixiLayerDeck {
       this.modulatedValues = values;
   }
 
+  /**
+   * SYNC PHYSICS FIX:
+   * Snaps the angle and all interpolators (especially speed) to match the 
+   * other deck perfectly. This prevents the "crazy spin" during transitions.
+   */
   syncPhysicsFrom(otherDeck) {
     if (!otherDeck) return;
+    
+    // Match current rotation phase
     this.continuousAngle = otherDeck.continuousAngle;
+    
+    // Match drift state
     this.driftState.x = otherDeck.driftState.x;
     this.driftState.y = otherDeck.driftState.y;
     this.driftState.phase = otherDeck.driftState.phase;
-    this.playbackValues = { ...otherDeck.playbackValues };
     
+    // Snap all interpolators (prevents the speed-up slingshot)
     Object.keys(this.interpolators).forEach(key => {
         if (otherDeck.interpolators[key]) {
             this.interpolators[key].snap(otherDeck.interpolators[key].currentValue);
         }
     });
+
+    this.playbackValues = { ...otherDeck.playbackValues };
   }
 
   async setTexture(imageSrc, tokenId) {
@@ -169,8 +170,13 @@ export class PixiLayerDeck {
     const drift = getVal('drift');
     const driftSpeed = getVal('driftSpeed');
 
+    /**
+     * ROTATION WRAP FIX:
+     * We use modulo 360 to keep the angle in a safe range.
+     * Large numbers cause jitter and calculation artifacts.
+     */
     if (Math.abs(speed) > 0.00001) {
-        this.continuousAngle += (speed * direction * deltaTime * 600);
+        this.continuousAngle = (this.continuousAngle + (speed * direction * deltaTime * 600)) % 360;
     }
 
     if (drift > 0) {
