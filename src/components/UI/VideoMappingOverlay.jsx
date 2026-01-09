@@ -3,7 +3,7 @@ import React from 'react';
 import PropTypes from 'prop-types';
 
 /**
- * VideoMappingOverlay: Creates a hardware-accelerated black mask with a circular cutout.
+ * VideoMappingOverlay: Optimized hardware-accelerated mask.
  */
 const VideoMappingOverlay = ({ config, isVisible }) => {
   if (!isVisible) return null;
@@ -20,19 +20,17 @@ const VideoMappingOverlay = ({ config, isVisible }) => {
     pointerEvents: 'none',
     backgroundColor: 'transparent',
     /* 
-       PERFORMANCE FIX: 
-       translateZ(0) and will-change ensure the M4 Pro GPU handles this mask 
-       independently of the WebGL canvas.
+       M4 OPTIMIZATION: 
+       Fast linear transitions on background gradients are handled by the 
+       OS compositor on Mac, bypassing the heavy main thread.
     */
-    transform: 'translateZ(0)',
-    willChange: 'background',
     background: `radial-gradient(
       circle at ${x}% ${y}%, 
       transparent 0%, 
       transparent ${radius}%, 
       rgba(0, 0, 0, 1) ${radius + feather}%
     )`,
-    transition: 'background 0.05s linear'
+    transition: 'background 0.1s linear'
   };
 
   return (

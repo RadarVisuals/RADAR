@@ -15,10 +15,9 @@
   --color-bg: #101018;
   --color-bg-light: #1a1a2e;
 
-  /* MODIFIED: Darkened these so they don't need blur to be readable */
-  --color-glass-bg: rgba(10, 10, 15, 0.95);
-  --color-glass-bg-light: rgba(20, 20, 30, 0.95);
-  --color-glass-bg-dark: rgba(5, 5, 10, 0.98);
+  --color-glass-bg: rgba(16, 16, 24, 0.8);
+  --color-glass-bg-light: rgba(26, 26, 46, 0.8);
+  --color-glass-bg-dark: rgba(5, 10, 15, 0.9);
 
   --color-success: #00ff00;
   --color-success-rgb: 0, 255, 0;
@@ -27,18 +26,37 @@
   --color-error: #ff5555;
   --color-error-rgb: 255, 85, 85;
 
+  --color-success-a90: rgba(0, 255, 0, 0.9);
+  --color-success-a30: rgba(0, 255, 0, 0.3);
+  --color-success-a10: rgba(0, 255, 0, 0.1);
+
+  --color-warning-a90: rgba(255, 165, 0, 0.9);
+  --color-warning-a30: rgba(255, 165, 0, 0.3);
+  --color-warning-a10: rgba(255, 165, 0, 0.1);
+
+  --color-error-a90: rgba(255, 85, 85, 0.9);
+  --color-error-a30: rgba(255, 85, 85, 0.3);
+  --color-error-a10: rgba(255, 85, 85, 0.1);
+
+  --color-lyx: #ff9000;
+  --color-lyx-a20: rgba(255, 144, 0, 0.2);
+  --color-token: #00ff80;
+  --color-token-a20: rgba(0, 255, 128, 0.2);
+  --color-contract: #0080ff;
+  --color-contract-a20: rgba(0, 128, 255, 0.2);
+
   --color-accent: #FFD700;
   --color-bass: #FF5733;
   --color-mid: #FFC300;
   --color-treble: #33FFBD;
 
-  --color-text: rgba(255, 255, 255, 0.95);
-  --color-text-muted: rgba(255, 255, 255, 0.7);
-  --color-text-dim: rgba(255, 255, 255, 0.5);
+  --color-text: rgba(255, 255, 255, 0.9);
+  --color-text-muted: rgba(255, 255, 255, 0.6);
+  --color-text-dim: rgba(255, 255, 255, 0.4);
 
-  --color-border: rgba(0, 243, 255, 0.25);
-  --color-border-light: rgba(0, 243, 255, 0.4);
-  --color-border-dark: rgba(0, 243, 255, 0.15);
+  --color-border: rgba(0, 243, 255, 0.2);
+  --color-border-light: rgba(0, 243, 255, 0.3);
+  --color-border-dark: rgba(0, 243, 255, 0.1);
 
   --space-xxs: 4px;
   --space-xs: 8px;
@@ -54,16 +72,18 @@
   --radius-xl: 12px;
   --radius-circle: 50%;
 
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 10px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 5px 15px rgba(0, 0, 0, 0.6);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 10px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 5px 15px rgba(0, 0, 0, 0.3);
 
   --shadow-primary-sm: 0 0 5px rgba(0, 243, 255, 0.2);
   --shadow-primary-md: 0 0 10px rgba(0, 243, 255, 0.3);
   --shadow-primary-lg: 0 0 15px rgba(0, 243, 255, 0.3);
 
-  --transition-fast: 0.15s ease;
-  --transition-normal: 0.25s ease;
+  --transition-fast: 0.2s ease;
+  --transition-normal: 0.3s ease;
+  --transition-slow: 0.5s ease;
+  --transition-elastic: 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 
   --z-background: 1;
   --z-base: 10;
@@ -73,21 +93,26 @@
   --z-panel-active: 1001;
   --z-overlay: 1500;
   --z-top: 2000;
+  --z-tooltip: 2500;
 
   --icon-size-sm: 24px;
   --icon-size-md: 28px;
   --icon-size-lg: 35px;
   
   --panel-width: 300px;
+  --control-panel-width: 300px;
 
-  /* PERFORMANCE FIX: Set to 0 to stop the GPU from multi-pass blurring */
-  --blur-amount: 0px;
+  /* PERFORMANCE FIX: 4px is optimized for Retina/M4 compositor caching */
+  --blur-amount: 4px;
 
   --font-family: "Arial", sans-serif;
   --font-size-xs: 10px;
   --font-size-sm: 11px;
   --font-size-md: 14px;
   --font-size-lg: 16px;
+  --font-size-xl: 18px;
+  --font-size-xxl: 24px;
+
   --header-height: 40px;
   --panel-left-position: 90px;
 }

@@ -88,27 +88,37 @@
   background: var(--color-warning-a50, rgba(255, 165, 0, 0.5));
 }
 
-/* Main UI Container */
+/* 
+   Main UI Container: PERFORMANCE FORTIFICATION
+   Setting width/height to 0 prevents the browser from calculating 
+   alpha-blending for a full-screen transparent layer on M4 Retina.
+   We use 'overflow: visible' so the children (panels/bars) still appear.
+*/
 .ui-elements-container {
   position: absolute;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
+  width: 0;
+  height: 0;
   pointer-events: none;
   z-index: var(--z-ui); 
   opacity: 1;
   visibility: visible;
+  overflow: visible; 
   transition: opacity 0.5s ease-in-out, visibility 0s linear 0s;
 }
+
 .ui-elements-container.visible {
   opacity: 1;
   visibility: visible;
   transition-delay: 0s;
 }
+
+/* Ensure individual child UI elements remain interactive */
 .ui-elements-container.visible > * {
   pointer-events: auto;
 }
+
 .ui-elements-container.hidden-by-opacity {
   opacity: 0;
   visibility: hidden;
@@ -128,7 +138,6 @@
   align-items: center;
   gap: var(--space-xs);
 }
-
 
 /* Status Display */
 .status-display {
