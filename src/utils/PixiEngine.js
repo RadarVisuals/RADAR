@@ -60,21 +60,23 @@ export default class PixiEngine {
     
     try {
       /**
-       * MACBOOK M4 PRO STABILITY FIX:
-       * 1. resolution: We use window.devicePixelRatio. This ensures 1:1 pixel mapping.
-       *    This fixes the pixelation and ensures Kaleidoscope math is correct.
-       * 2. autoDensity: true. This allows the CSS size of the canvas to stay 100% 
-       *    while the internal buffer handles the Retina density.
-       * 3. roundPixels: false. Reverting this because it causes jitter on Retina.
-       * 4. antialias: false. Still disabled; Retina's high density makes it redundant 
-       *    and it's a major FPS killer during crossfades.
+       * SHADER COMPATIBILITY & PERFORMANCE TUNING:
+       * 
+       * 1. resolution: Forced to 1.0. This fixes Kaleidoscope and other shaders
+       *    that rely on 1:1 pixel mapping. It also massively reduces the load on 
+       *    MacBook Pro M4 GPUs by not over-rendering Retina pixels.
+       * 
+       * 2. autoDensity: true. Ensures the 1.0 resolution buffer scales 
+       *    to fill the high-DPI screen area correctly.
+       * 
+       * 3. antialias: false. Critical for performance on M4 Pro during crossfades.
        */
       await this.app.init({
         canvas: this.canvas,
         resizeTo: this.canvas.parentElement, 
         backgroundAlpha: 0,
         antialias: false, 
-        resolution: window.devicePixelRatio || 1, 
+        resolution: 1.0, 
         autoDensity: true,
         powerPreference: 'high-performance', 
         preference: 'webgl',
@@ -121,7 +123,7 @@ export default class PixiEngine {
     const h = this.app.renderer.screen.height;
     if (w <= 0 || h <= 0) return;
     
-    // Crucial: ensures filters cover the whole high-res buffer
+    // Forces filters to recalculate for the full screen buffer
     this.rootContainer.filterArea = this.app.screen; 
     
     if (this.feedbackSystem) this.feedbackSystem.resize(w, h);

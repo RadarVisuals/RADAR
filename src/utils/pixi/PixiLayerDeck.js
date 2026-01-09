@@ -10,8 +10,11 @@ const BASE_SCALE_MODIFIER = 0.5;
 class Quadrant {
   constructor(container) {
     this.container = new Container();
+    
+    // BATCHING FIX: Sprite masks are faster than Graphics on high-res displays
     this.maskSprite = new Sprite(Texture.WHITE);
     this.sprite = new Sprite(Texture.EMPTY);
+    
     this.sprite.anchor.set(0.5);
     this.container.mask = this.maskSprite;
     
@@ -92,6 +95,7 @@ export class PixiLayerDeck {
     this.driftState.x = otherDeck.driftState.x;
     this.driftState.y = otherDeck.driftState.y;
     this.driftState.phase = otherDeck.driftState.phase;
+    
     Object.keys(this.interpolators).forEach(key => {
         if (otherDeck.interpolators[key]) {
             this.interpolators[key].snap(otherDeck.interpolators[key].currentValue);
