@@ -143,7 +143,17 @@ function UIOverlay({
     fullSceneList: savedSceneList 
   } = useSetManagementState();
   
-  const { renderedCrossfaderValue, isAutoFading, handleSceneSelect, handleCrossfaderChange, handleCrossfaderCommit, transitionMode, toggleTransitionMode } = useVisualEngine();
+  const { 
+      renderedCrossfaderValue, 
+      isAutoFading, 
+      handleSceneSelect, 
+      handleCrossfaderChange, 
+      handleCrossfaderCommit, 
+      transitionMode, 
+      toggleTransitionMode,
+      processEffect 
+  } = useVisualEngine();
+
   const { unreadCount } = useNotificationContext();
   const { isRadarProjectAdmin, hostProfileAddress: currentProfileAddress, isHostProfileOwner } = useProfileSessionState();
 
@@ -158,19 +168,16 @@ function UIOverlay({
   const { isUiVisible, activePanel, toggleInfoOverlay, toggleUiVisibility, openPanel, closePanel } = uiState;
   const { isAudioActive } = audioState;
   
-  const { onEnhancedView, onToggleParallax, onPreviewEffect, toggleSequencer, isSequencerActive, sequencerIntervalMs, setSequencerInterval } = actions;
+  const { onEnhancedView, onToggleParallax, toggleSequencer, isSequencerActive, sequencerIntervalMs, setSequencerInterval } = actions;
 
-  // Receiver Mode Specific Interaction State
   const [showReceiverHint, setShowReceiverHint] = useState(true);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // TAB key toggles UI visibility in both normal Mapping mode AND Projector mode
       if (e.key === 'Tab' && (isMappingMode || isProjectorMode)) {
         e.preventDefault(); 
         setMappingUiVisibility(!isMappingUiVisible);
       }
-      // Press 'F' to fullscreen if in projector mode
       if (e.key?.toLowerCase() === 'f' && isProjectorMode) {
         const root = document.getElementById('fullscreen-root');
         if (root) root.requestFullscreen().catch(() => {});
@@ -180,7 +187,6 @@ function UIOverlay({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isMappingMode, isMappingUiVisible, setMappingUiVisibility, isProjectorMode]);
 
-  // Hide the initial hint after a short duration
   useEffect(() => {
     if (isProjectorMode) {
         const timer = setTimeout(() => setShowReceiverHint(false), 5000);
@@ -204,167 +210,128 @@ function UIOverlay({
     }
   }, []);
 
-  if (!isReady) return null;
+  // PERFORMANCE MEMO: Only recalculate structure if major session state changes.
+  // Value-based updates (like crossfader movement) are now handled inside children.
+  const memoizedUI = useMemo(() => {
+    if (!isReady) return null;
 
-  // --- RECEIVER MODE (Dual Screen) ---
-  if (isProjectorMode) {
-      return (
+    if (isProjectorMode) {
+        return (
+            <>
+              <VideoMappingOverlay isVisible={true} config={mappingConfig} />
+              {isMappingUiVisible && (
+                   <div className="projector-calibration-ui" style={{ position: 'fixed', top: '20px', left: '20px', zIndex: 1001, pointerEvents: 'auto' }}>
+                      <PanelWrapper className="animating">
+                          <MappingPanel onClose={() => setMappingUiVisibility(false)} />
+                      </PanelWrapper>
+                   </div>
+              )}
+              <div className="receiver-interaction-layer" style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 999, pointerEvents: 'auto', cursor: showReceiverHint ? 'pointer' : 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'transparent' }} onClick={handleReceiverClick} onDoubleClick={() => window.location.reload()} >
+                  {showReceiverHint && (
+                      <div style={{ padding: '25px', background: 'rgba(0,0,0,0.85)', border: '1px solid var(--color-primary)', borderRadius: '12px', color: 'var(--color-primary)', textAlign: 'center', pointerEvents: 'none', animation: 'fadeIn 0.5s ease-out', boxShadow: '0 0 20px rgba(0, 243, 255, 0.2)' }}>
+                          <h2 style={{fontSize: '18px', marginBottom: '12px', letterSpacing: '1px'}}>RECEIVER MODE ACTIVE</h2>
+                          <div style={{fontSize: '12px', opacity: 0.9, display: 'flex', flexDirection: 'column', gap: '6px'}}>
+                              <p><strong>Single Click:</strong> Fullscreen</p>
+                              <p><strong>Tab Key:</strong> Toggle Calibration UI</p>
+                              <p><strong>Double Click:</strong> Exit & Reload</p>
+                          </div>
+                      </div>
+                  )}
+              </div>
+            </>
+        );
+    }
+
+    return (
+      <>
+        {import.meta.env.DEV && <SignalDebugger />}
+        <VideoMappingOverlay isVisible={isMappingMode} config={mappingConfig} />
+        
+        <MemoizedTopRightControls
+            isRadarProjectAdmin={isRadarProjectAdmin}
+            isHostProfileOwner={isHostProfileOwner}
+            onWhitelistClick={() => toggleSidePanel('whitelist')}
+            onInfoClick={toggleInfoOverlay} 
+            onToggleUI={toggleUiVisibility} 
+            onEnhancedView={onEnhancedView} 
+            isUiVisible={shouldShowInterface} 
+            isParallaxEnabled={configData.isParallaxEnabled}
+            onToggleParallax={onToggleParallax}
+            transitionMode={transitionMode}
+            onToggleTransitionMode={toggleTransitionMode}
+            isMappingMode={isMappingMode}
+            onToggleMapping={toggleMappingMode}
+        />
+
+        {shouldShowInterface && (
           <>
-            {/* The actual visual mask */}
-            <VideoMappingOverlay isVisible={true} config={mappingConfig} />
+            <ActivePanelRenderer
+                uiState={uiState}
+                audioState={audioState}
+                pLockProps={pLockProps}
+                onPreviewEffect={processEffect}
+                sequencerIntervalMs={sequencerIntervalMs}
+                onSetSequencerInterval={setSequencerInterval}
+                crossfadeDurationMs={crossfadeDurationMs}
+                onSetCrossfadeDuration={onSetCrossfadeDuration}
+            />
 
-            {/* Conditional UI for Calibration in Receiver Mode */}
-            {isMappingUiVisible && (
-                 <div className="projector-calibration-ui" style={{ position: 'fixed', top: '20px', left: '20px', zIndex: 1001, pointerEvents: 'auto' }}>
-                    <PanelWrapper className="animating">
-                        <MappingPanel onClose={() => setMappingUiVisibility(false)} />
-                    </PanelWrapper>
-                 </div>
-            )}
-
-            {/* Fullscreen Interaction & Hint Layer */}
-            <div 
-                className="receiver-interaction-layer"
-                style={{
-                    position: 'fixed',
-                    top: 0, left: 0, width: '100vw', height: '100vh',
-                    zIndex: 999, // Below the Calibration UI (1001)
-                    pointerEvents: 'auto',
-                    cursor: showReceiverHint ? 'pointer' : 'none',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: 'transparent'
-                }}
-                onClick={handleReceiverClick}
-                onDoubleClick={() => window.location.reload()}
-            >
-                {showReceiverHint && (
-                    <div style={{
-                        padding: '25px',
-                        background: 'rgba(0,0,0,0.85)',
-                        border: '1px solid var(--color-primary)',
-                        borderRadius: '12px',
-                        color: 'var(--color-primary)',
-                        textAlign: 'center',
-                        pointerEvents: 'none',
-                        animation: 'fadeIn 0.5s ease-out',
-                        boxShadow: '0 0 20px rgba(0, 243, 255, 0.2)'
-                    }}>
-                        <h2 style={{fontSize: '18px', marginBottom: '12px', letterSpacing: '1px'}}>RECEIVER MODE ACTIVE</h2>
-                        <div style={{fontSize: '12px', opacity: 0.9, display: 'flex', flexDirection: 'column', gap: '6px'}}>
-                            <p><strong>Single Click:</strong> Fullscreen</p>
-                            <p><strong>Tab Key:</strong> Toggle Calibration UI</p>
-                            <p><strong>Double Click:</strong> Exit & Reload</p>
-                        </div>
-                    </div>
+            <div className={mainUiContainerClass}>
+              <div className="bottom-right-icons">
+                <MemoizedGlobalMIDIStatus />
+                <button
+                  className={`toolbar-icon sequencer-toggle-button ${isSequencerActive ? "active" : ""}`}
+                  onClick={toggleSequencer} 
+                  title={isSequencerActive ? `Stop Scene Sequencer` : `Start Scene Sequencer`}
+                  aria-label={isSequencerActive ? "Stop Scene Sequencer" : "Start Scene Sequencer"} 
+                  disabled={isConfigLoading || !currentProfileAddress}
+                >
+                  <SequencerIcon className="icon-image" />
+                </button>
+                
+                {isMappingMode && (
+                   <button 
+                      className={`toolbar-icon ${activePanel === 'mapping' ? 'active' : ''}`}
+                      onClick={() => toggleSidePanel('mapping')}
+                      title="Iris Mask Calibration"
+                   >
+                      <ViewfinderCircleIcon className="icon-image" style={{padding: '4px'}} />
+                   </button>
                 )}
+                <MemoizedAudioStatusIcon isActive={isAudioActive} onClick={() => openPanel('audio')} />
+              </div>
+
+              <div className="vertical-toolbar-container">
+                <MemoizedVerticalToolbar activePanel={activePanel} setActivePanel={toggleSidePanel} notificationCount={unreadCount} />
+              </div>
+
+              {showSceneBar && (
+                <div className="bottom-center-controls">
+                  <WorkspaceSelectorDots workspaces={workspaceList} activeWorkspaceName={currentWorkspaceName} onSelectWorkspace={loadWorkspace} isLoading={isAutoFading || isConfigLoading} />
+                  <Crossfader value={renderedCrossfaderValue} onInput={handleCrossfaderChange} onChange={handleCrossfaderCommit} disabled={isAutoFading} />
+                  <MemoizedSceneSelectorBar savedSceneList={savedSceneList} currentSceneName={activeSceneName} onSceneSelect={(sceneName) => handleSceneSelect(sceneName, crossfadeDurationMs)} isLoading={isAutoFading || isConfigLoading} />
+                </div>
+              )}
             </div>
           </>
-      );
-  }
-  
-  // --- SENDER / CONTROLLER MODE ---
-  return (
-    <>
-      {import.meta.env.DEV && <SignalDebugger />}
+        )}
+        <OverlayRenderer uiState={uiState} />
+        {!currentProfileAddress && ( <GeneralConnectPill /> )}
+      </>
+    );
+  }, [
+      isReady, isProjectorMode, isMappingMode, mappingConfig, isMappingUiVisible, showReceiverHint,
+      isRadarProjectAdmin, isHostProfileOwner, shouldShowInterface, activePanel,
+      savedSceneList, activeSceneName, workspaceList, currentWorkspaceName,
+      unreadCount, isAudioActive, isSequencerActive, isConfigLoading, currentProfileAddress,
+      transitionMode, configData.isParallaxEnabled, renderedCrossfaderValue,
+      handleCrossfaderChange, handleCrossfaderCommit, handleSceneSelect, crossfadeDurationMs,
+      setSequencerInterval, sequencerIntervalMs, toggleSequencer, toggleInfoOverlay, 
+      toggleUiVisibility, onEnhancedView, onToggleParallax, toggleSidePanel, openPanel, 
+      uiState, audioState, pLockProps, processEffect
+  ]);
 
-      <VideoMappingOverlay isVisible={isMappingMode} config={mappingConfig} />
-
-      {isReady && (
-        <MemoizedTopRightControls
-          isRadarProjectAdmin={isRadarProjectAdmin}
-          isHostProfileOwner={isHostProfileOwner}
-          onWhitelistClick={() => toggleSidePanel('whitelist')}
-          onInfoClick={toggleInfoOverlay} 
-          onToggleUI={toggleUiVisibility} 
-          onEnhancedView={onEnhancedView} 
-          isUiVisible={shouldShowInterface} 
-          isParallaxEnabled={configData.isParallaxEnabled}
-          onToggleParallax={onToggleParallax}
-          transitionMode={transitionMode}
-          onToggleTransitionMode={toggleTransitionMode}
-          isMappingMode={isMappingMode}
-          onToggleMapping={toggleMappingMode}
-        />
-      )}
-
-      {shouldShowInterface && (
-        <>
-          <ActivePanelRenderer
-              uiState={uiState}
-              audioState={audioState}
-              pLockProps={pLockProps}
-              onPreviewEffect={onPreviewEffect}
-              sequencerIntervalMs={sequencerIntervalMs}
-              onSetSequencerInterval={setSequencerInterval}
-              crossfadeDurationMs={crossfadeDurationMs}
-              onSetCrossfadeDuration={onSetCrossfadeDuration}
-          />
-
-          <div className={mainUiContainerClass}>
-            <div className="bottom-right-icons">
-              <MemoizedGlobalMIDIStatus />
-              <button
-                className={`toolbar-icon sequencer-toggle-button ${isSequencerActive ? "active" : ""}`}
-                onClick={toggleSequencer} 
-                title={isSequencerActive ? `Stop Scene Sequencer` : `Start Scene Sequencer`}
-                aria-label={isSequencerActive ? "Stop Scene Sequencer" : "Start Scene Sequencer"} 
-                disabled={isConfigLoading || !currentProfileAddress}
-              >
-                <SequencerIcon className="icon-image" />
-              </button>
-              
-              {isMappingMode && (
-                 <button 
-                    className={`toolbar-icon ${activePanel === 'mapping' ? 'active' : ''}`}
-                    onClick={() => toggleSidePanel('mapping')}
-                    title="Iris Mask Calibration"
-                 >
-                    <ViewfinderCircleIcon className="icon-image" style={{padding: '4px'}} />
-                 </button>
-              )}
-
-              <MemoizedAudioStatusIcon isActive={isAudioActive} onClick={() => openPanel('audio')} />
-            </div>
-
-            <div className="vertical-toolbar-container">
-              <MemoizedVerticalToolbar activePanel={activePanel} setActivePanel={toggleSidePanel} notificationCount={unreadCount} />
-            </div>
-
-            {showSceneBar && (
-              <div className="bottom-center-controls">
-                <WorkspaceSelectorDots
-                  workspaces={workspaceList}
-                  activeWorkspaceName={currentWorkspaceName}
-                  onSelectWorkspace={loadWorkspace}
-                  isLoading={isAutoFading || isConfigLoading}
-                />
-                
-                <Crossfader
-                  value={renderedCrossfaderValue}
-                  onInput={handleCrossfaderChange}
-                  onChange={handleCrossfaderCommit}
-                  disabled={isAutoFading}
-                />
-
-                <MemoizedSceneSelectorBar
-                  savedSceneList={savedSceneList} 
-                  currentSceneName={activeSceneName}
-                  onSceneSelect={(sceneName) => handleSceneSelect(sceneName, crossfadeDurationMs)} 
-                  isLoading={isAutoFading || isConfigLoading}
-                />
-              </div>
-            )}
-          </div>
-        </>
-      )}
-
-      <OverlayRenderer uiState={uiState} />
-      {!currentProfileAddress && ( <GeneralConnectPill /> )}
-    </>
-  );
+  return memoizedUI;
 }
 
 UIOverlay.propTypes = {

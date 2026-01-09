@@ -6,27 +6,32 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
   
-  /* PERFORMANCE FIX: Contain paint strictly to the panel box */
-  contain: paint;
+  /* 
+     PERFORMANCE FIX: 
+     Changed from 'strict' to 'content' to prevent the 0px height collapse.
+     'content' optimizes layout, paint, and style without breaking auto-sizing.
+  */
+  contain: content;
   
   backdrop-filter: blur(var(--blur-amount));
   -webkit-backdrop-filter: blur(var(--blur-amount));
   
   color: var(--color-text);
   overflow: hidden;
-  max-height: 80vh;
+  max-height: 85vh; /* Increased slightly for better fit */
   display: flex;
   flex-direction: column;
   
-  /* Explicitly avoid forcing new GPU layers for every tiny UI element */
-  transform: none; 
+  /* Force a separate layer for the panel to prevent repainting the whole screen */
+  transform: translateZ(0); 
+  will-change: transform;
 }
 
 .panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 15px;
+  padding: 12px 15px;
   background: rgba(0, 20, 30, 0.7); 
   border-bottom: 1px solid rgba(0, 243, 255, 0.15);
   flex-shrink: 0;
@@ -42,8 +47,8 @@
 }
 
 .close-button {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -51,7 +56,7 @@
   background: transparent;
   color: var(--color-primary);
   cursor: pointer;
-  font-size: 16px;
+  font-size: 18px;
   border-radius: var(--radius-sm);
   transition: all var(--transition-fast);
   padding: 0;
@@ -59,6 +64,7 @@
 
 .close-button:hover {
   background: rgba(0, 243, 255, 0.1);
+  transform: scale(1.1);
 }
 
 .panel-content {
@@ -67,6 +73,8 @@
   flex: 1;
   /* Optimization for high-DPI scrolling */
   overscroll-behavior: contain;
+  /* Ensure content is treated as a separate layer */
+  transform: translateZ(0);
 }
 
 .panel-content::-webkit-scrollbar {

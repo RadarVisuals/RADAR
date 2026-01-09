@@ -102,8 +102,11 @@
   --panel-width: 300px;
   --control-panel-width: 300px;
 
-  /* PERFORMANCE FIX: 4px is optimized for Retina/M4 compositor caching */
-  --blur-amount: 4px;
+  /* PERFORMANCE OPTIMIZATION: 
+     2px blur is the sweet spot for Retina M4. It creates the glass effect 
+     while allowing the GPU to use a much smaller sampling radius.
+  */
+  --blur-amount: 2px;
 
   --font-family: "Arial", sans-serif;
   --font-size-xs: 10px;

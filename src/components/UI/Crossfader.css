@@ -20,7 +20,6 @@ input[type="range"].crossfader-slider {
   border-radius: 3px;
   cursor: grab;
   margin: 0;
-  /* Prevent interaction jitter */
   touch-action: none;
 }
 
@@ -43,7 +42,10 @@ input[type="range"].crossfader-slider {
   border: 2px solid #000;
   cursor: pointer;
   margin-top: -6px; /* Center handle on track */
-  box-shadow: 0 0 10px rgba(0, 243, 255, 0.4);
+  
+  /* PERFORMANCE: Use a very basic shadow instead of a glowing one */
+  box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+  
   /* PERFORMANCE: Force GPU layer for the moving handle */
   transform: translateZ(0);
   will-change: transform;
