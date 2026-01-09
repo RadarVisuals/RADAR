@@ -9,12 +9,7 @@ export class LayerManager {
         this.mainLayerGroup = new Container();
         this.layers = {};
         this.layerList = [];
-        
-        // Temp storage for modulation distribution
-        this.deckModulations = {
-            '1': {}, '2': {}, '3': {}
-        };
-
+        this.deckModulations = { '1': {}, '2': {}, '3': {} };
         this.init();
     }
 
@@ -23,43 +18,28 @@ export class LayerManager {
             const container = new Container();
             const deckA = new PixiLayerDeck(id, 'A');
             const deckB = new PixiLayerDeck(id, 'B');
-            
             container.addChild(deckA.container);
             container.addChild(deckB.container);
-            
             const layerObj = { id, container, deckA, deckB };
             this.layers[id] = layerObj;
             this.layerList.push(layerObj);
-            
             this.mainLayerGroup.addChild(container);
         });
-
         this.app.stage.addChild(this.mainLayerGroup);
     }
 
-    // --- NEW METHOD FOR STEP 2 ---
     applyModulations(allParams) {
-        // Reset temp storage
-        this.deckModulations['1'] = {};
-        this.deckModulations['2'] = {};
-        this.deckModulations['3'] = {};
-
-        // Parse and distribute
+        this.deckModulations['1'] = {}; this.deckModulations['2'] = {}; this.deckModulations['3'] = {};
         for (const fullKey in allParams) {
             if (fullKey.startsWith('layer.')) {
-                // Key format: layer.1.speed
                 const parts = fullKey.split('.');
                 if (parts.length === 3) {
                     const layerId = parts[1];
                     const param = parts[2];
-                    if (this.deckModulations[layerId]) {
-                        this.deckModulations[layerId][param] = allParams[fullKey];
-                    }
+                    if (this.deckModulations[layerId]) this.deckModulations[layerId][param] = allParams[fullKey];
                 }
             }
         }
-
-        // Apply to decks (Both A and B receive modulation equally for now)
         ['1', '2', '3'].forEach(id => {
             if (this.layers[id]) {
                 const mods = this.deckModulations[id];
@@ -71,7 +51,6 @@ export class LayerManager {
 
     resize() {
         this.mainLayerGroup.filterArea = null;
-
         for (const layer of this.layerList) {
             layer.deckA.resize(this.app.renderer);
             layer.deckB.resize(this.app.renderer);
@@ -87,7 +66,12 @@ export class LayerManager {
     snapConfig(layerId, fullConfig, deckSide = 'A') {
         if (!this.layers[layerId]) return;
         const deck = deckSide === 'A' ? this.layers[layerId].deckA : this.layers[layerId].deckB;
-        deck.snapConfig(fullConfig);
+        
+        // FIX: Extract the specific physics for this layer if provided by the SyncBridge
+        const physicsData = fullConfig.physicsContext ? fullConfig.physicsContext[layerId] : null;
+        const configToApply = physicsData ? { ...fullConfig, livePhysics: physicsData } : fullConfig;
+        
+        deck.snapConfig(configToApply);
     }
 
     async setTexture(layerId, deckSide, imageSrc, tokenId) {

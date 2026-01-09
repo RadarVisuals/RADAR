@@ -87,11 +87,9 @@ export class PixiLayerDeck {
 
   syncPhysicsFrom(otherDeck) {
     if (!otherDeck) return;
-    // Hard-sync the physics accumulation to prevent jumps
     this.continuousAngle = otherDeck.continuousAngle;
     this.driftState = { ...otherDeck.driftState };
     
-    // Snap all interpolators to the source deck's live values
     Object.keys(this.interpolators).forEach(key => {
         if (otherDeck.interpolators[key]) {
             this.interpolators[key].snap(otherDeck.interpolators[key].currentValue);
@@ -134,7 +132,14 @@ export class PixiLayerDeck {
   }
 
   snapConfig(fullConfig) {
+    // FIX: Check for incoming physics synchronization state
+    if (fullConfig.livePhysics) {
+        this.continuousAngle = fullConfig.livePhysics.continuousAngle;
+        this.driftState = { ...fullConfig.livePhysics.driftState };
+    }
+
     for (const key in fullConfig) {
+        if (key === 'livePhysics') continue;
         const newValue = fullConfig[key];
         this.config[key] = newValue;
         if (this.interpolators[key]) {
@@ -160,7 +165,6 @@ export class PixiLayerDeck {
     const drift = getVal('drift');
     const driftSpeed = getVal('driftSpeed');
 
-    // Infinitely growing angle to prevent 360-0 snapping jumps
     if (Math.abs(speed) > 0.00001) {
         this.continuousAngle += (speed * direction * deltaTime * 600);
     }
