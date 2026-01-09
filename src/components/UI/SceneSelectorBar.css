@@ -2,20 +2,16 @@
 @import "../../styles/variables.css";
 
 :root {
-  --color-scene-active-bg: rgba(255, 193, 7, 0.85);
+  --color-scene-active-bg: rgba(255, 193, 7, 0.9);
   --color-scene-active-border: rgba(255, 193, 7, 1.0);
-  --color-scene-active-text: #1a1a2e;
+  --color-scene-active-text: #000000;
 
   --color-scene-hover-bg: rgba(255, 204, 51, 0.8);
   --color-scene-hover-border: rgba(255, 214, 82, 1.0);
   --color-scene-hover-text: #1a1a2e;
 
-  --ping-duration: 1.5s;
-  --ping-color: rgba(255, 193, 7, 0.7);
-  --ping-spread: 5px;
-
-  --color-scene-default-border: var(--color-border);
-  --slide-duration: 300ms;
+  --ping-duration: 2s;
+  --ping-color: rgba(255, 193, 7, 0.6);
 }
 
 .scene-selector-bar {
@@ -23,9 +19,8 @@
   align-items: center;
   gap: var(--space-xs);
   padding: var(--space-xxs);
-  border: none;
-  border-radius: var(--radius-md);
-  transition: opacity var(--transition-normal), visibility var(--transition-normal);
+  /* PERFORMANCE: Isolate the bar from the rest of the layout */
+  contain: content;
   opacity: 1;
   visibility: visible;
   background: transparent;
@@ -34,97 +29,45 @@
 .scene-buttons-container {
   display: flex;
   gap: var(--space-sm);
-  transition: transform var(--slide-duration) ease-in-out;
-  transform: translateX(0);
-}
-
-@keyframes slideInFromRight {
-  from { transform: translateX(100%); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
-}
-@keyframes slideInFromLeft {
-  from { transform: translateX(-100%); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
-}
-
-.scene-buttons-container.slide-in-left {
-  animation: slideInFromLeft var(--slide-duration) ease-in-out forwards;
-}
-.scene-buttons-container.slide-in-right {
-  animation: slideInFromRight var(--slide-duration) ease-in-out forwards;
+  will-change: transform;
 }
 
 .scene-selector-button,
 .pagination-button {
   font-family: var(--font-family);
-  font-weight: 600;
+  font-weight: 700;
   color: var(--color-text);
-  border: 1px solid var(--color-scene-default-border);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
+  transition: background-color 0.2s, transform 0.2s;
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0;
-  line-height: 1;
-  background: var(--color-button-secondary-a80);
-  backdrop-filter: blur(var(--blur-amount));
-  -webkit-backdrop-filter: blur(var(--blur-amount));
-  overflow: hidden;
+  background: var(--color-glass-bg-dark);
   position: relative;
+  /* PERFORMANCE: Ensure each button is its own paint layer */
+  transform: translateZ(0);
 }
 
 .scene-selector-button {
   font-size: var(--font-size-xs);
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
 }
 
 .pagination-button {
   font-size: var(--font-size-sm);
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
 }
 
-.scene-selector-button:hover:not(:disabled):not(.active),
-.pagination-button:hover:not(:disabled) {
+.scene-selector-button:hover:not(:disabled):not(.active) {
   background: var(--color-scene-hover-bg);
-  border-color: var(--color-scene-hover-border);
   color: var(--color-scene-hover-text);
   transform: translateY(-1px);
-}
-
-.scene-selector-button:active:not(:disabled):not(.active),
-.pagination-button:active:not(:disabled) {
-  background: rgba(255, 180, 0, 0.9);
-  transform: translateY(0px);
-  box-shadow: none;
-}
-
-.scene-selector-button:disabled,
-.pagination-button:disabled {
-  color: var(--color-text);
-  border-color: var(--color-scene-default-border);
-  background: var(--color-button-secondary-a80);
-  backdrop-filter: blur(var(--blur-amount));
-  -webkit-backdrop-filter: blur(var(--blur-amount));
-  cursor: not-allowed;
-  pointer-events: none;
-  opacity: 0.8;
-  animation: none !important;
-  box-shadow: none !important;
-  transform: none !important;
-}
-
-@keyframes continuous-ping-animation {
-  0%, 100% {
-    box-shadow: 0 0 0 0px var(--ping-color);
-  }
-  50% {
-    box-shadow: 0 0 0 var(--ping-spread) rgba(255, 193, 7, 0);
-  }
 }
 
 .scene-selector-button.active {
@@ -132,18 +75,35 @@
   border-color: var(--color-scene-active-border);
   color: var(--color-scene-active-text);
   cursor: default;
-  transform: translateY(0px);
-  animation: continuous-ping-animation var(--ping-duration) infinite ease-out;
 }
 
-.scene-selector-button.active:disabled {
-  background: var(--color-scene-active-bg);
-  border-color: var(--color-scene-active-border);
-  color: var(--color-scene-active-text);
-  opacity: 0.7;
-  animation: none;
-  box-shadow: none;
-  cursor: not-allowed;
+/* 
+   PERFORMANCE FIX: 
+   Instead of box-shadow (slow), we use an absolute pseudo-element 
+   and animate transform/opacity (blazing fast on M4).
+*/
+.scene-selector-button.active::after {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  border: 2px solid var(--ping-color);
+  border-radius: var(--radius-sm);
   pointer-events: none;
-  transform: none;
+  animation: hardware-ping var(--ping-duration) infinite cubic-bezier(0, 0, 0.2, 1);
+}
+
+@keyframes hardware-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+.scene-selector-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

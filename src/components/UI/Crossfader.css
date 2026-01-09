@@ -5,97 +5,60 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-sm);
   padding: var(--space-xs) 0;
+  contain: layout style;
 }
 
-.crossfader-label {
-  color: var(--color-text);
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  min-width: 60px;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* --- START MODIFICATION --- */
-/* Increased selector specificity and adjusted width */
+/* --- THE PERFORMANCE FIX --- */
 input[type="range"].crossfader-slider {
   -webkit-appearance: none;
   appearance: none;
-  width: 250px; 
+  width: 280px; 
   height: 6px;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.1);
   outline: none;
+  border-radius: 3px;
   cursor: grab;
   margin: 0;
-  padding: 0;
-}
-/* --- END MODIFICATION --- */
-
-
-.crossfader-slider:active {
-  cursor: grabbing;
+  /* Prevent interaction jitter */
+  touch-action: none;
 }
 
-/* --- Webkit (Chrome, Safari) --- */
+/* Target the track specifically */
 .crossfader-slider::-webkit-slider-runnable-track {
   width: 100%;
   height: 6px;
-  background: var(--color-bg-light);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  transition: var(--transition-fast);
+  cursor: pointer;
+  background: transparent;
 }
 
-.crossfader-slider:hover::-webkit-slider-runnable-track {
-  border-color: var(--color-border-light);
-}
-
+/* Target the thumb/handle */
 .crossfader-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
-  border-radius: var(--radius-circle);
+  height: 18px;
+  width: 18px;
+  border-radius: 4px;
   background: var(--color-primary);
-  border: 2px solid var(--color-bg-dark);
-  margin-top: -6px; /* (track-height - thumb-height) / 2 + border */
-  box-shadow: var(--shadow-primary-sm);
-  transition: transform var(--transition-fast);
-}
-
-.crossfader-slider:active::-webkit-slider-thumb {
-    transform: scale(1.1);
-}
-
-/* --- Mozilla (Firefox) --- */
-.crossfader-slider::-moz-range-track {
-  width: 100%;
-  height: 6px;
-  background: var(--color-bg-light);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  transition: var(--transition-fast);
-}
-
-.crossfader-slider:hover::-moz-range-track {
-  border-color: var(--color-border-light);
+  border: 2px solid #000;
+  cursor: pointer;
+  margin-top: -6px; /* Center handle on track */
+  box-shadow: 0 0 10px rgba(0, 243, 255, 0.4);
+  /* PERFORMANCE: Force GPU layer for the moving handle */
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 .crossfader-slider::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  border-radius: var(--radius-circle);
+  height: 18px;
+  width: 18px;
+  border-radius: 4px;
   background: var(--color-primary);
-  border: 2px solid var(--color-bg-dark);
-  box-shadow: var(--shadow-primary-sm);
-  transition: transform var(--transition-fast);
+  border: 2px solid #000;
+  cursor: pointer;
+  transform: translateZ(0);
 }
 
-.crossfader-slider:active::-moz-range-thumb {
-    transform: scale(1.1);
+.crossfader-slider:active {
+  cursor: grabbing;
 }
