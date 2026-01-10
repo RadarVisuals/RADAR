@@ -6,6 +6,8 @@ import { getDecodedImage } from '../imageDecoder';
 import { MAX_TOTAL_OFFSET, BLEND_MODE_MAP } from './PixiConstants';
 
 const BASE_SCALE_MODIFIER = 0.5;
+// DEFAULT_SMOOTHING: 0.9 is your preferred responsiveness for MIDI.
+const DEFAULT_SMOOTHING = 0.9;
 
 class Quadrant {
   constructor(container) {
@@ -56,7 +58,7 @@ export class PixiLayerDeck {
 
     sliderParams.forEach(param => {
       const startVal = this.config[param.prop] || 0;
-      this.interpolators[param.prop] = new ValueInterpolator(startVal, 0.9);
+      this.interpolators[param.prop] = new ValueInterpolator(startVal, DEFAULT_SMOOTHING);
     });
   }
 
@@ -68,15 +70,26 @@ export class PixiLayerDeck {
     defaultConfig.enabled = true;
     defaultConfig.blendMode = 'normal';
     defaultConfig.direction = 1;
-    defaultConfig.speed = 0; 
     return defaultConfig;
+  }
+
+  /**
+   * Resets all parameters to their default values.
+   */
+  resetToDefaults() {
+    const defaults = this.getDefaultConfig();
+    this.config = { ...defaults };
+    for (const key in this.interpolators) {
+        if (defaults[key] !== undefined) {
+            this.interpolators[key].snap(defaults[key]);
+        }
+    }
   }
 
   setModulatedValues(values) {
       this.modulatedValues = values;
   }
 
-  // Decks no longer sync physics between each other because LayerManager owns the clock
   syncPhysicsFrom(otherDeck) {
     if (!otherDeck) return;
     Object.keys(this.interpolators).forEach(key => {
@@ -90,12 +103,17 @@ export class PixiLayerDeck {
   async setTexture(imageSrc, tokenId) {
     if (this.tokenId === tokenId) return;
     this._loadingTokenId = tokenId;
+    
     if (!imageSrc) {
         this.tokenId = tokenId;
         this.quadrants.forEach(q => q.setTexture(Texture.EMPTY));
-        if (this.currentTexture) { this.currentTexture.destroy(false); this.currentTexture = null; }
+        if (this.currentTexture) { 
+            this.currentTexture.destroy(false); 
+            this.currentTexture = null; 
+        }
         return;
     }
+
     try {
       const imageBitmap = await getDecodedImage(imageSrc);
       if (this._loadingTokenId === tokenId) {
@@ -108,24 +126,52 @@ export class PixiLayerDeck {
     } catch (e) { 
         if (this._loadingTokenId === tokenId) {
             this.quadrants.forEach(q => q.setTexture(Texture.EMPTY));
-            if (this.currentTexture) { this.currentTexture.destroy(false); this.currentTexture = null; }
+            if (this.currentTexture) { 
+                this.currentTexture.destroy(false); 
+                this.currentTexture = null; 
+            }
         }
     }
   }
 
-  updateConfig(key, value) {
+  /**
+   * updateConfig: Direct parameter updates (MIDI/Mouse).
+   * @param {boolean} isManual - If true (Mouse/Slider), we snap. If false (MIDI), we Glide.
+   */
+  updateConfig(key, value, isManual = false) {
     this.config[key] = value;
     if (this.interpolators[key]) {
-        this.interpolators[key].setTarget(value);
+        if (isManual) {
+            this.interpolators[key].snap(value);
+        } else {
+            this.interpolators[key].setTarget(value);
+        }
     }
   }
 
-  snapConfig(fullConfig) {
+  /**
+   * snapConfig: Synchronizes the GPU deck with the React Store.
+   * @param {boolean} forceSnap - If true (Scene Load), reset deck to clean slate and jump instantly.
+   */
+  snapConfig(fullConfig, forceSnap = false) {
+    // 1. Scene Load Logic: Wipe to defaults so missing JSON keys don't "stick"
+    if (forceSnap) {
+        this.resetToDefaults();
+    }
+
+    // 2. Apply config
     for (const key in fullConfig) {
         const newValue = fullConfig[key];
         this.config[key] = newValue;
+
         if (this.interpolators[key]) {
-            this.interpolators[key].snap(newValue);
+            if (forceSnap) {
+                // HARD JUMP: Used for scene changes
+                this.interpolators[key].snap(newValue);
+            } else {
+                // SOFT TARGET: Used for store sync to keep MIDI gliding smooth
+                this.interpolators[key].setTarget(newValue);
+            }
         }
     }
   }
@@ -134,13 +180,12 @@ export class PixiLayerDeck {
     for (const key in this.interpolators) {
         this.interpolators[key].update(deltaTime);
     }
-    // Shared rotation accumulation moved to LayerManager/CrossfaderSystem
   }
 
   resolveRenderState() {
     const getVal = (k) => {
         if (this.playbackValues[k] !== undefined) return this.playbackValues[k];
-        const base = this.interpolators[k] ? this.interpolators[k].currentValue : this.config[k];
+        const base = this.interpolators[k] ? this.interpolators[k].currentValue : (this.config[k] ?? 0);
         const mod = this.modulatedValues[k] !== undefined ? this.modulatedValues[k] : 0;
         return base + mod;
     };
@@ -154,28 +199,32 @@ export class PixiLayerDeck {
         xaxis: getVal('xaxis'),
         yaxis: getVal('yaxis'),
         angle: getVal('angle'),
-        direction: getVal('direction') ?? 1,
-        blendMode: getVal('blendMode'),
-        enabled: getVal('enabled')
+        direction: this.config.direction ?? 1,
+        blendMode: this.config.blendMode || 'normal',
+        enabled: this.config.enabled ?? true
     };
   }
 
   applyRenderState(state, physicsData, alphaMult, beatFactor, parallaxOffset, parallaxFactor, screen) {
     if (alphaMult <= 0.001 || !state.enabled || !this.tokenId) { 
-        this.container.visible = false; return; 
+        this.container.visible = false; 
+        return; 
     }
+    
     this.container.visible = true;
-    const screenW = screen.width; const screenH = screen.height;
-    const halfW = screenW * 0.5; const halfH = screenH * 0.5;
+    const screenW = screen.width; 
+    const screenH = screen.height;
+    const halfW = screenW * 0.5; 
+    const halfH = screenH * 0.5;
 
-    // Use shared physics data for positioning (drift)
     const targetX = halfW + (state.xaxis * 0.1) + physicsData.driftX + (parallaxOffset.x * parallaxFactor);
     const targetY = halfH + (state.yaxis * 0.1) + physicsData.driftY + (parallaxOffset.y * parallaxFactor);
 
     const tex = this.quadrants[0].sprite.texture;
     let screenRelativeScale = 1.0;
     if (tex && tex.valid && tex.width > 1) {
-        const fitWidth = halfW / tex.width; const fitHeight = halfH / tex.height;
+        const fitWidth = halfW / tex.width; 
+        const fitHeight = halfH / tex.height;
         screenRelativeScale = (fitWidth < fitHeight) ? fitWidth : fitHeight;
     }
 
@@ -183,7 +232,6 @@ export class PixiLayerDeck {
     const finalAlpha = Math.max(0, Math.min(1, state.opacity * alphaMult));
     const blend = BLEND_MODE_MAP[state.blendMode] || 'normal';
 
-    // Rotation = Current Scene Angle + The Shared continuous master angle
     const rad = (state.angle + physicsData.continuousAngle) * 0.01745329251;
 
     this._updateQuadrant(this.quadrants[0], targetX, targetY, finalScale, finalScale, rad, finalAlpha, blend);
@@ -197,15 +245,17 @@ export class PixiLayerDeck {
     quad.sprite.scale.set(sx, sy);
     quad.sprite.rotation = rot;
     quad.sprite.alpha = alpha;
-    if (quad.container.blendMode !== blend) quad.container.blendMode = blend;
+    if (quad.container.blendMode !== blend) {
+        quad.container.blendMode = blend;
+    }
   }
 
   resize(renderer) {
-    const w = renderer.screen.width; const h = renderer.screen.height;
-    const hw = (w * 0.5) | 0; const hh = (h * 0.5) | 0;
+    const hw = (renderer.screen.width * 0.5) | 0; 
+    const hh = (renderer.screen.height * 0.5) | 0;
     this.quadrants[0].updateMask(0, 0, hw, hh);
-    this.quadrants[1].updateMask(hw, 0, w - hw, hh);
-    this.quadrants[2].updateMask(0, hh, hw, h - hh);
-    this.quadrants[3].updateMask(hw, hh, w - hw, h - hh);
+    this.quadrants[1].updateMask(hw, 0, renderer.screen.width - hw, hh);
+    this.quadrants[2].updateMask(0, hh, hw, renderer.screen.height - hh);
+    this.quadrants[3].updateMask(hw, hh, renderer.screen.width - hw, renderer.screen.height - hh);
   }
 }

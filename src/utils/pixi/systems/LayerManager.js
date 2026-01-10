@@ -27,7 +27,6 @@ export class LayerManager {
                 container, 
                 deckA, 
                 deckB,
-                // THE SHARED PHYSICS CLOCK
                 physics: {
                     continuousAngle: 0,
                     driftX: 0,
@@ -42,19 +41,13 @@ export class LayerManager {
         this.app.stage.addChild(this.mainLayerGroup);
     }
 
-    /**
-     * Steps the shared physics for a specific layer.
-     * This is called by CrossfaderSystem using the LERPED speed.
-     */
     stepLayerSharedPhysics(layerId, speed, direction, drift, driftSpeed, deltaTime) {
         const p = this.layers[layerId].physics;
 
-        // Update Shared Rotation
         if (Math.abs(speed) > 0.00001) {
             p.continuousAngle += (speed * direction * deltaTime * 600);
         }
 
-        // Update Shared Drift
         if (drift > 0) {
             p.driftPhase += deltaTime * driftSpeed * 1.0;
             p.driftX = Math.sin(p.driftPhase) * drift * 1.5;
@@ -100,24 +93,23 @@ export class LayerManager {
         }
     }
 
-    updateConfig(layerId, key, value, deckSide = 'A') {
+    updateConfig(layerId, key, value, deckSide = 'A', isManual = false) {
         if (!this.layers[layerId]) return;
         const deck = deckSide === 'A' ? this.layers[layerId].deckA : this.layers[layerId].deckB;
-        deck.updateConfig(key, value);
+        deck.updateConfig(key, value, isManual);
     }
 
-    snapConfig(layerId, fullConfig, deckSide = 'A') {
+    snapConfig(layerId, fullConfig, deckSide = 'A', forceSnap = false) {
         if (!this.layers[layerId]) return;
         const deck = deckSide === 'A' ? this.layers[layerId].deckA : this.layers[layerId].deckB;
         
-        // SYNC BRIDGE FIX: If the bridge sent shared physics values, apply them to the master clock
         if (fullConfig.sharedPhysicsContext) {
             const p = this.layers[layerId].physics;
             p.continuousAngle = fullConfig.sharedPhysicsContext.continuousAngle;
             p.driftPhase = fullConfig.sharedPhysicsContext.driftPhase;
         }
 
-        deck.snapConfig(fullConfig);
+        deck.snapConfig(fullConfig, forceSnap);
     }
 
     async setTexture(layerId, deckSide, imageSrc, tokenId) {

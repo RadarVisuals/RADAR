@@ -210,8 +210,6 @@ function UIOverlay({
     }
   }, []);
 
-  // PERFORMANCE MEMO: Only recalculate structure if major session state changes.
-  // Value-based updates (like crossfader movement) are now handled inside children.
   const memoizedUI = useMemo(() => {
     if (!isReady) return null;
 
@@ -279,6 +277,8 @@ function UIOverlay({
             <div className={mainUiContainerClass}>
               <div className="bottom-right-icons">
                 <MemoizedGlobalMIDIStatus />
+                
+                {/* SEQUENCER ICON - Forced White */}
                 <button
                   className={`toolbar-icon sequencer-toggle-button ${isSequencerActive ? "active" : ""}`}
                   onClick={toggleSequencer} 
@@ -286,16 +286,17 @@ function UIOverlay({
                   aria-label={isSequencerActive ? "Stop Scene Sequencer" : "Start Scene Sequencer"} 
                   disabled={isConfigLoading || !currentProfileAddress}
                 >
-                  <SequencerIcon className="icon-image" />
+                  <SequencerIcon className="icon-image" style={{ color: '#ffffff' }} />
                 </button>
                 
+                {/* MAPPING ICON - Forced White */}
                 {isMappingMode && (
                    <button 
                       className={`toolbar-icon ${activePanel === 'mapping' ? 'active' : ''}`}
                       onClick={() => toggleSidePanel('mapping')}
                       title="Iris Mask Calibration"
                    >
-                      <ViewfinderCircleIcon className="icon-image" style={{padding: '4px'}} />
+                      <ViewfinderCircleIcon className="icon-image" style={{padding: '4px', color: '#ffffff' }} />
                    </button>
                 )}
                 <MemoizedAudioStatusIcon isActive={isAudioActive} onClick={() => openPanel('audio')} />

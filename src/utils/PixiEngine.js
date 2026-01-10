@@ -33,13 +33,17 @@ export default class PixiEngine {
     this._onParamUpdate = (data) => {
         const { layerId, param, value, isNormalized } = data;
         if (!this.layerManager || !this.crossfaderSystem) return;
+        
         let finalValue = value;
         if (isNormalized) {
             const config = sliderParams.find(p => p.prop === param);
             if (config) finalValue = config.min + (value * (config.max - config.min));
         }
+        
         const activeDeck = this.crossfaderSystem.crossfadeValue < 0.5 ? 'A' : 'B';
-        this.layerManager.updateConfig(layerId, param, finalValue, activeDeck);
+        
+        // MIDI/SIGNAL BUS PATH: isManual = false (Ensures Glide)
+        this.layerManager.updateConfig(layerId, param, finalValue, activeDeck, false);
     };
   }
 
@@ -76,7 +80,17 @@ export default class PixiEngine {
     } catch (e) { console.error("[PixiEngine] Critical Init Error:", e); }
   }
 
-  // FIX: New helper to extract physics state for SyncBridge
+  getLiveValue(layerId, param) {
+    if (!this.layerManager || !this.crossfaderSystem) return 0;
+    const activeDeckSide = this.crossfaderSystem.crossfadeValue < 0.5 ? 'A' : 'B';
+    const deck = this.layerManager.getDeck(layerId, activeDeckSide);
+    if (!deck) return 0;
+    if (deck.interpolators[param]) {
+        return deck.interpolators[param].currentValue;
+    }
+    return deck.config[param] || 0;
+  }
+
   getLivePhysics(side) {
     if (!this.layerManager) return null;
     const physics = {};
@@ -112,8 +126,18 @@ export default class PixiEngine {
   get modulationEngine() { return this.logic.modulationEngine; }
   get lfo() { return this.logic.lfo; }
   async setTexture(layerId, deckSide, imageSrc, tokenId) { if (this.layerManager) await this.layerManager.setTexture(layerId, deckSide, imageSrc, tokenId); }
-  updateConfig(layerId, key, value, deckSide = 'A') { if (this.layerManager) this.layerManager.updateConfig(layerId, key, value, deckSide); }
-  snapConfig(layerId, fullConfig, deckSide = 'A') { if (this.layerManager) { this.bootstrapped = true; this.layerManager.snapConfig(layerId, fullConfig, deckSide); } }
+  
+  updateConfig(layerId, key, value, deckSide = 'A', isManual = false) { 
+      if (this.layerManager) this.layerManager.updateConfig(layerId, key, value, deckSide, isManual); 
+  }
+  
+  snapConfig(layerId, fullConfig, deckSide = 'A', forceSnap = false) { 
+      if (this.layerManager) { 
+          this.bootstrapped = true; 
+          this.layerManager.snapConfig(layerId, fullConfig, deckSide, forceSnap); 
+      } 
+  }
+
   setAudioFactors(factors) { this.audioReactor.setAudioFactors(factors); }
   triggerBeatPulse(factor, duration) { this.audioReactor.triggerBeatPulse(factor, duration); }
   setParallax(x, y) { if (this.crossfaderSystem) this.crossfaderSystem.setParallax(x, y); }

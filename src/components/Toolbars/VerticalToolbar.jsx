@@ -1,7 +1,6 @@
 // src/components/Toolbars/VerticalToolbar.jsx
 import React from "react";
 import PropTypes from "prop-types";
-import { CpuChipIcon } from '@heroicons/react/24/outline'; // Using CpuChip as Matrix/Wiring icon
 
 import "./ToolbarStyles/VerticalToolbar.css";
 import {
@@ -12,6 +11,7 @@ import {
   writeIcon,
   wavezIcon,
   setsIcon,
+  ufoIcon,
 } from "../../assets";
 import { useNotificationContext } from "../../hooks/useNotificationContext"; 
 
@@ -27,13 +27,12 @@ const VerticalToolbar = ({
     }
   };
 
-  // Adjusted positions since we merged two buttons into one
   const buttonPositions = [
     { top: "20px" },  // Controls
     { top: "65px" },  // Notifications
     { top: "110px" }, // Events
     { top: "155px" }, // Tokens
-    { top: "200px" }, // MODULATION MATRIX (New)
+    { top: "200px" }, // MODULATION MATRIX
     { top: "245px" }, // Sets
     { top: "290px" }, // Save
     { top: "335px" }, // Audio
@@ -60,14 +59,14 @@ const VerticalToolbar = ({
         <img src={changetokenIcon} alt="Tokens" className="icon-image" />
       </button>
 
-      {/* --- NEW MODULATION BUTTON --- */}
+      {/* --- MODULATION BUTTON (UFO) --- */}
       <button 
         className={`vertical-toolbar-icon ${activePanel === "modulation" ? "active" : ""}`} 
         onClick={() => handleIconClick("modulation")} 
         title="Modulation Matrix (FX Wiring)" 
         style={buttonPositions[4]}
       >
-        <CpuChipIcon className="icon-image" style={{padding: '4px', color: 'var(--color-primary)'}} />
+        <img src={ufoIcon} className="icon-image ufo-icon-adjust" alt="Modulation" />
       </button>
 
       <button className={`vertical-toolbar-icon ${activePanel === "sets" ? "active" : ""}`} onClick={() => handleIconClick("sets")} title="Setlist" style={buttonPositions[5]}>

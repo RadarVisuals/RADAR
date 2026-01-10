@@ -8,6 +8,7 @@ import fallbackConfig from '../config/fallback-config';
 import { RADAR_OFFICIAL_ADMIN_ADDRESS, IPFS_GATEWAY } from "../config/global-config";
 import { keccak256, stringToBytes } from "viem";
 import { useEngineStore } from './useEngineStore';
+import { midiManager } from '../utils/MidiManager'; // IMPORTED
 
 const EMPTY_SETLIST = {
   defaultWorkspaceName: null,
@@ -28,9 +29,6 @@ const OFFICIAL_WHITELIST_KEY = keccak256(stringToBytes("RADAR.OfficialWhitelist"
 const TOKEN_CACHE_DURATION_MS = 5 * 60 * 1000;
 
 export const useProjectStore = create(devtools((set, get) => ({
-  // =========================================
-  // 1. STATE
-  // =========================================
   configService: null,
   isConfigReady: false,
   isLoading: false,
@@ -51,10 +49,6 @@ export const useProjectStore = create(devtools((set, get) => ({
   tokenFetchProgress: { loaded: 0, total: 0, loading: false },
   lastTokenFetchTimestamp: 0,
 
-  // =========================================
-  // 2. ACTIONS
-  // =========================================
-  
   setHasPendingChanges: (val) => set({ hasPendingChanges: val }),
 
   initService: (provider, walletClient, publicClient) => {
@@ -192,6 +186,9 @@ export const useProjectStore = create(devtools((set, get) => ({
         loadingMessage: ""
       });
 
+      // TRIGGER CATCH RESET
+      midiManager.resetCatchState();
+
       get().refreshOwnedTokens(profileAddress); 
 
       const defaultName = loadedSetlist.defaultWorkspaceName || Object.keys(loadedSetlist.workspaces)[0];
@@ -259,6 +256,9 @@ export const useProjectStore = create(devtools((set, get) => ({
         loadingMessage: ""
       });
 
+      // TRIGGER CATCH RESET
+      midiManager.resetCatchState();
+
       return { success: true };
 
     } catch (err) {
@@ -268,7 +268,11 @@ export const useProjectStore = create(devtools((set, get) => ({
     }
   },
 
-  setActiveSceneName: (name) => set({ activeSceneName: name }),
+  setActiveSceneName: (name) => {
+      set({ activeSceneName: name });
+      // TRIGGER CATCH RESET
+      midiManager.resetCatchState();
+  },
   
   addScene: (sceneName, sceneData) => set((state) => {
     const newWorkspace = JSON.parse(JSON.stringify(state.stagedWorkspace));
@@ -415,10 +419,10 @@ export const useProjectStore = create(devtools((set, get) => ({
     try {
       const workspaceToUpload = JSON.parse(JSON.stringify(state.stagedWorkspace));
       
-      const engineState = useEngineStore.getState();
+      const engineStore = useEngineStore.getState();
       workspaceToUpload.modulation = {
-          baseValues: engineState.baseValues,
-          patches: engineState.patches
+          baseValues: engineStore.baseValues,
+          patches: engineStore.patches
       };
       
       const wsName = state.activeWorkspaceName || `Workspace_${Date.now()}`;

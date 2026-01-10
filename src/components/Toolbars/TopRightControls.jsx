@@ -49,7 +49,7 @@ const TopRightControls = ({
         </button>
       )}
 
-      {/* VIDEO MAPPING TRIGGER */}
+      {/* VIDEO MAPPING TRIGGER - Default White */}
       {isUiVisible && onToggleMapping && (
         <button
           className={`toolbar-icon ${isMappingMode ? "active" : ""}`}
@@ -61,7 +61,7 @@ const TopRightControls = ({
             className="icon-image" 
             style={{ 
               padding: '3px', 
-              color: isMappingMode ? 'var(--color-primary)' : 'inherit' 
+              color: isMappingMode ? 'var(--color-primary)' : '#ffffff' 
             }} 
           />
         </button>
@@ -105,9 +105,9 @@ const TopRightControls = ({
           aria-label={transitionMode === 'flythrough' ? "Switch to Interpolate Mode" : "Switch to Hyperdrift Mode"}
         >
           {transitionMode === 'flythrough' ? (
-            <RocketLaunchIcon className="icon-image" style={{ padding: '3px' }} />
+            <RocketLaunchIcon className="icon-image" style={{ padding: '3px', color: '#ffffff' }} />
           ) : (
-            <ArrowsRightLeftIcon className="icon-image" style={{ padding: '3px' }} />
+            <ArrowsRightLeftIcon className="icon-image" style={{ padding: '3px', color: '#ffffff' }} />
           )}
         </button>
       )}

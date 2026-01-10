@@ -68,20 +68,17 @@ const EnhancedControlPanel = ({
     uiControlConfig 
   } = useVisualEngine();
 
-  // --- STABLE SELECTORS FOR MIDI ACTIONS ---
   const isAutoFading = useEngineStore(state => state.isAutoFading);
   const isConnected = useEngineStore(state => state.isConnected);
   const midiLearning = useEngineStore(state => state.midiLearning);
   const learningLayer = useEngineStore(state => state.learningLayer);
 
-  // Get stable action references from store to avoid infinite loops
   const setMidiLearning = useEngineStore(state => state.setMidiLearning);
   const setLearningLayer = useEngineStore(state => state.setLearningLayer);
 
   const stagedSetlist = useProjectStore(s => s.stagedSetlist);
   const midiMap = stagedSetlist?.globalUserMidiMap || {};
   const layerMappings = midiMap.layerSelects || {};
-  // -----------------------------------------
 
   const [newSceneName, setNewSceneName] = useState("");
   const [localIntervalInput, setLocalIntervalInput] = useState(sequencerIntervalMs / 1000);
@@ -121,12 +118,14 @@ const EnhancedControlPanel = ({
   const activeLayerConfigs = uiControlConfig?.layers;
   const config = useMemo(() => activeLayerConfigs?.[activeLayer] || getDefaultLayerConfigTemplate(), [activeLayerConfigs, activeLayer]);
   
+  // MOUSE INTERACTION HANDLER: skipStoreUpdate=true, isManual=true
   const handleSliderInput = useCallback((name, value) => {
-    onLayerConfigChange(activeLayer, name, value, false, true);
+    onLayerConfigChange(activeLayer, name, value, false, true, true);
   }, [onLayerConfigChange, activeLayer]);
 
+  // COMMIT HANDLER: skipStoreUpdate=false, isManual=true
   const handleSliderCommit = useCallback((name, value) => {
-    onLayerConfigChange(activeLayer, name, value, false, false);
+    onLayerConfigChange(activeLayer, name, value, false, false, true);
   }, [onLayerConfigChange, activeLayer]);
 
   const handleCreateScene = useCallback(() => {
@@ -135,22 +134,17 @@ const EnhancedControlPanel = ({
       addToast("Scene name cannot be empty.", "warning");
       return;
     }
-    
     const liveLayersConfig = JSON.parse(JSON.stringify(uiControlConfig.layers));
-
     const newSceneData = {
       name,
       ts: Date.now(),
       layers: liveLayersConfig,
       tokenAssignments: JSON.parse(JSON.stringify(uiControlConfig.tokenAssignments)),
     };
-
     addNewSceneToStagedWorkspace(name, newSceneData);
     setActiveSceneName(name);
-
     addToast(`Scene "${name}" created and staged.`, "success");
     setNewSceneName("");
-    
   }, [newSceneName, uiControlConfig, addNewSceneToStagedWorkspace, addToast, setActiveSceneName]);
 
   const handleDeleteScene = useCallback((nameToDelete) => {
@@ -193,9 +187,9 @@ const EnhancedControlPanel = ({
     return "Unknown";
   }, [layerMappings]);
 
-  const handleBlendModeChange = useCallback((e) => onLayerConfigChange(activeLayer, "blendMode", e.target.value, false), [onLayerConfigChange, activeLayer]);
-  const handleDirectionToggle = useCallback(() => onLayerConfigChange(activeLayer, "direction", - (config.direction || 1), false), [onLayerConfigChange, activeLayer, config.direction]);
-  const handleEnabledToggle = useCallback((e) => onLayerConfigChange(activeLayer, "enabled", e.target.checked, false), [onLayerConfigChange, activeLayer]);
+  const handleBlendModeChange = useCallback((e) => onLayerConfigChange(activeLayer, "blendMode", e.target.value, false, false, true), [onLayerConfigChange, activeLayer]);
+  const handleDirectionToggle = useCallback(() => onLayerConfigChange(activeLayer, "direction", - (config.direction || 1), false, false, true), [onLayerConfigChange, activeLayer, config.direction]);
+  const handleEnabledToggle = useCallback((e) => onLayerConfigChange(activeLayer, "enabled", e.target.checked, false, false, true), [onLayerConfigChange, activeLayer]);
   
   const stopMIDILearn = useCallback(() => setMidiLearning(null), [setMidiLearning]);
   const stopLayerMIDILearn = useCallback(() => setLearningLayer(null), [setLearningLayer]);
@@ -392,7 +386,6 @@ const EnhancedControlPanel = ({
         </div>
       )}
 
-      {/* Manual learning reset UI */}
       {(midiLearning || learningLayer) && (
           <div className="midi-learning-global-cancel">
               <button className="btn btn-sm btn-block btn-secondary" onClick={() => { stopMIDILearn(); stopLayerMIDILearn(); }}>

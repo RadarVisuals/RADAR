@@ -3,10 +3,10 @@ import { useEngineStore } from '../store/useEngineStore';
 import { useProjectStore } from '../store/useProjectStore';
 import { sliderParams } from '../config/sliderParams'; 
 import SignalBus from './SignalBus';
-import debounce from './debounce';
+import { getPixiEngine } from '../hooks/usePixiOrchestrator';
 
 /**
- * High-Performance MidiManager
+ * High-Performance MidiManager with Parameter Catching (Soft Takeover)
  * 
  * Bypasses the React render cycle for knobs/sliders for zero latency.
  * Correctly detects and dispatches global actions (Pads) for scene/workspace navigation.
@@ -16,9 +16,12 @@ class MidiManager {
     this.midiAccess = null;
     
     // Throttling mechanism for Store Sync (Persistence)
-    // We only update the heavy Project Store every 60ms for knobs.
     this.storeSyncThrottle = null;
     this.pendingSyncs = new Map();
+
+    // SOFT TAKEOVER STATE
+    this.catchStatus = new Map();
+    this.CATCH_THRESHOLD = 0.06; // Normalized 0-1 scale
   }
 
   async connect() {
@@ -40,6 +43,43 @@ class MidiManager {
     this.midiAccess.inputs.forEach((input) => {
       input.onmidimessage = (msg) => this.handleMessage(msg);
     });
+  }
+
+  /**
+   * Resets all caught flags. Use this when loading a new scene or workspace.
+   */
+  resetCatchState() {
+    this.catchStatus.clear();
+    if (import.meta.env.DEV) console.log("[MIDI] Catch status reset for new context.");
+  }
+
+  /**
+   * SOFT TAKEOVER CHECK
+   */
+  _checkCatch(layerId, param, physicalVal) {
+    const catchKey = `${layerId}:${param}`;
+    if (this.catchStatus.get(catchKey)) return true;
+
+    const engine = getPixiEngine();
+    if (!engine) return true;
+
+    let softwareVal = 0;
+    if (layerId === 'global' && param === 'crossfader') {
+        softwareVal = useEngineStore.getState().crossfader;
+    } else {
+        const liveVal = engine.getLiveValue(layerId, param);
+        const config = sliderParams.find(p => p.prop === param);
+        if (config) {
+            softwareVal = (liveVal - config.min) / (config.max - config.min);
+        }
+    }
+
+    const distance = Math.abs(physicalVal - softwareVal);
+    if (distance <= this.CATCH_THRESHOLD) {
+        this.catchStatus.set(catchKey, true);
+        return true;
+    }
+    return false;
   }
 
   handleMessage(message) {
@@ -90,14 +130,15 @@ class MidiManager {
         const mapping = midiMap.global.crossfader;
         if (this._isMatch(mapping, type, data1, msgChan)) {
             const val = this._normalize(data2, mapping.type, data1);
-            SignalBus.emit('crossfader:set', val);
-            this._scheduleStoreSync('global', 'crossfader', val);
+            if (this._checkCatch('global', 'crossfader', val)) {
+                SignalBus.emit('crossfader:set', val);
+                this._scheduleStoreSync('global', 'crossfader', val);
+            }
             return;
         }
     }
 
     // --- B. PARAMETER MAPPINGS (Knobs) ---
-    // We check these first as they are high-frequency
     for (const layerId in midiMap) {
       if (layerId === "global" || layerId === "layerSelects") continue;
       
@@ -110,19 +151,19 @@ class MidiManager {
           
           const normalized = this._normalize(data2, mapping.type, data1);
 
-          // FAST PATH: Visual Bypass
-          SignalBus.emit('param:update', { 
-              layerId, param: paramName, value: normalized, isNormalized: true 
-          });
-
-          // SLOW PATH: Throttled Store Sync
-          this._scheduleStoreSync(layerId, paramName, normalized);
+          // CATCH CHECK
+          if (this._checkCatch(layerId, paramName, normalized)) {
+              SignalBus.emit('param:update', { 
+                  layerId, param: paramName, value: normalized, isNormalized: true 
+              });
+              this._scheduleStoreSync(layerId, paramName, normalized);
+          }
           return;
         }
       }
     }
 
-    // --- C. GLOBAL ACTIONS (Pads/Buttons) ---
+    // --- C. GLOBAL ACTIONS ---
     if (midiMap.global) {
       const actions = [
         { key: 'nextScene', type: 'nextScene' },
@@ -135,7 +176,6 @@ class MidiManager {
       for (const a of actions) {
         const mapping = midiMap.global[a.key];
         if (mapping && this._isMatch(mapping, type, data1, msgChan)) {
-          // Actions should only trigger on NoteOn or a CC value spike
           if (isNoteOn || (isCC && data2 > 64)) {
             engineStore.queueMidiAction(a.action ? { type: a.type, action: a.action } : { type: a.type });
             return;
@@ -156,32 +196,20 @@ class MidiManager {
     }
   }
 
-  /**
-   * Helper to match a mapping against a message
-   */
   _isMatch(mapping, type, data1, msgChan) {
     if (!mapping) return false;
-    // Check channel if it was specified in the mapping
     if (mapping.channel !== undefined && mapping.channel !== msgChan) return false;
-    
     if (mapping.type === "cc" && type === 0xb0 && mapping.number === data1) return true;
     if (mapping.type === "note" && type === 0x90 && mapping.number === data1) return true;
     if (mapping.type === "pitchbend" && type === 0xe0) return true;
-    
     return false;
   }
 
-  /**
-   * Helper to normalize MIDI data to 0.0 - 1.0
-   */
   _normalize(value, type, data1) {
     if (type === "pitchbend") return Math.max(0, Math.min(1, ((value << 7) | data1) / 16383));
     return value / 127;
   }
 
-  /**
-   * Background Store Sync logic for high-frequency performance
-   */
   _scheduleStoreSync(layerId, param, normalizedValue) {
     const key = `${layerId}:${param}`;
     this.pendingSyncs.set(key, { layerId, param, value: normalizedValue });

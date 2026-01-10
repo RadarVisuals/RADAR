@@ -24,27 +24,24 @@ export function usePixiOrchestrator({ canvasRef, sideA, sideB, crossfaderValue, 
           await engine.init();
           globalEngineInstance = engine;
           setIsEngineReady(true);
-        } catch (err) { console.error("[Orchestrator] Startup failed:", err); } 
-        finally { isInitializing = false; }
+        } catch (err) { 
+          console.error("[Orchestrator] Startup failed:", err); 
+        } finally { 
+          isInitializing = false; 
+        }
       }
     };
     startup();
   }, [canvasRef]); 
 
-  const syncDeckConfig = (engine, configWrapper, side, forceSnap = false) => {
+  const syncDeckConfig = useCallback((engine, configWrapper, side, forceSnap = false) => {
     if (!configWrapper) return;
     const { layers, tokenAssignments } = configWrapper;
     
     ['1', '2', '3'].forEach(layerId => {
         if (layers?.[layerId]) {
-            // FIX: If we are fading to this deck, SNAP the target scene configuration.
-            // The Crossfader handles the visual glide; the individual parameters should not.
-            if (forceSnap || isFirstLoadRef.current) {
-                engine.snapConfig(layerId, layers[layerId], side);
-            } else {
-                // Background deck preparation
-                engine.snapConfig(layerId, layers[layerId], side);
-            }
+            // SYNC FIX: forceSnap is only true on actual scene jumps
+            engine.snapConfig(layerId, layers[layerId], side, forceSnap);
         }
         if (tokenAssignments?.[layerId]) {
             const token = tokenAssignments[layerId];
@@ -53,25 +50,37 @@ export function usePixiOrchestrator({ canvasRef, sideA, sideB, crossfaderValue, 
             if (src) engine.setTexture(layerId, side, src, id);
         }
     });
-  };
+  }, []);
 
   useEffect(() => { 
       if (isEngineReady && globalEngineInstance && sideA?.config) {
           const newName = sideA.config.name;
           const configChanged = lastProcessedSceneA.current !== newName;
-          syncDeckConfig(globalEngineInstance, sideA.config, 'A', configChanged);
-          if (configChanged) { lastProcessedSceneA.current = newName; isFirstLoadRef.current = false; }
+          const shouldSnap = configChanged || isFirstLoadRef.current;
+          
+          syncDeckConfig(globalEngineInstance, sideA.config, 'A', shouldSnap);
+          
+          if (configChanged) { 
+              lastProcessedSceneA.current = newName; 
+              isFirstLoadRef.current = false; 
+          }
       }
-  }, [sideA, isEngineReady]);
+  }, [sideA, isEngineReady, syncDeckConfig]);
 
   useEffect(() => { 
       if (isEngineReady && globalEngineInstance && sideB?.config) {
           const newName = sideB.config.name;
           const configChanged = lastProcessedSceneB.current !== newName;
-          syncDeckConfig(globalEngineInstance, sideB.config, 'B', configChanged);
-          if (configChanged) { lastProcessedSceneB.current = newName; isFirstLoadRef.current = false; }
+          const shouldSnap = configChanged || isFirstLoadRef.current;
+          
+          syncDeckConfig(globalEngineInstance, sideB.config, 'B', shouldSnap);
+          
+          if (configChanged) { 
+              lastProcessedSceneB.current = newName; 
+              isFirstLoadRef.current = false; 
+          }
       }
-  }, [sideB, isEngineReady]);
+  }, [sideB, isEngineReady, syncDeckConfig]);
 
   const restartCanvasAnimations = useCallback(() => globalEngineInstance?.app?.ticker.start(), []);
   const stopCanvasAnimations = useCallback(() => globalEngineInstance?.app?.ticker.stop(), []);

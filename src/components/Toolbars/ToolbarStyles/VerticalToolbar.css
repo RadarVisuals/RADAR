@@ -1,3 +1,6 @@
+/* src/components/Toolbars/ToolbarStyles/VerticalToolbar.css */
+@import "../../../styles/variables.css";
+
 .vertical-toolbar-icon {
   position: fixed;
   left: var(--space-lg);
@@ -36,6 +39,14 @@
   height: var(--icon-size-md);
   transition: all var(--transition-fast);
   opacity: 0.9;
+}
+
+/* --- UFO ICON SPECIFIC ADJUSTMENT --- */
+.vertical-toolbar-icon .icon-image.ufo-icon-adjust {
+  width: 24px; 
+  height: 30px;
+  /* Combine both X and Y into one declaration so they both work */
+  transform: translate(1px, 1px); 
 }
 
 .vertical-toolbar-icon:hover .icon-image,
