@@ -7,6 +7,7 @@ import {
 import { uploadJsonToPinata } from "./PinataService.js";
 import { ERC725YDataKeys } from "@lukso/lsp-smart-contracts";
 import { Buffer } from "buffer";
+import { loadAssetsWithRetries } from "../utils/RobustLoader";
 
 // --- IMPORT CENTRALIZED UTILITIES ---
 import {
@@ -556,6 +557,11 @@ class ConfigurationService {
     }
   }
 
+  /**
+   * --- ROBUST METADATA LOADING ---
+   * Fetches metadata in parallel with concurrency limits and retries.
+   * UNWRAPS RobustLoader results before returning.
+   */
   async getTokensMetadataForPage(
     collectionAddress,
     identifiers,
@@ -576,6 +582,7 @@ class ConfigurationService {
     const baseUriKey = ERC725YDataKeys.LSP8.LSP8TokenMetadataBaseURI;
 
     try {
+      // 1. Batch Fetch Raw Data from Blockchain
       const contractCalls = pageIdentifiers.map((tokenId) => ({
         address: checksummedCollection,
         abi: LSP8_ABI,
@@ -583,6 +590,7 @@ class ConfigurationService {
         args: [tokenId, lsp4Key],
       }));
 
+      // Append base URI request
       contractCalls.push({
         address: checksummedCollection,
         abi: LSP8_ABI,
@@ -594,23 +602,35 @@ class ConfigurationService {
         contracts: contractCalls,
         batchSize: MULTICALL_BATCH_SIZE,
       });
+      
       const baseUriResult = results.pop();
       const baseUriBytes =
         baseUriResult.status === "success" ? baseUriResult.result : null;
 
-      const metadataPromises = results.map(async (res, index) => {
-        const tokenId = pageIdentifiers[index];
+      // 2. Prepare items for RobustLoader
+      const tasks = results.map((res, index) => ({
+        id: pageIdentifiers[index], 
+        result: res,
+        baseUriBytes: baseUriBytes
+      }));
+
+      // 3. Process with Retries (The "Robust" Part)
+      const processSingleItem = async (task) => {
+        const tokenId = task.id;
+        const res = task.result;
         let metadata = null;
 
         if (res.status === "success" && res.result && res.result !== "0x") {
           metadata = await this._processMetadataBytes(res.result, tokenId);
         }
 
-        if (!metadata && baseUriBytes && baseUriBytes !== "0x") {
-          metadata = await this._processBaseUriBytes(baseUriBytes, tokenId);
+        if (!metadata && task.baseUriBytes && task.baseUriBytes !== "0x") {
+          metadata = await this._processBaseUriBytes(task.baseUriBytes, tokenId);
         }
 
-        if (!metadata || !metadata.image) return null;
+        if (!metadata || !metadata.image) {
+            return null;
+        }
 
         return {
           id: `${collectionAddress}-${tokenId}`,
@@ -622,10 +642,25 @@ class ConfigurationService {
             image: metadata.image,
           },
         };
-      });
+      };
 
-      const resolvedItems = await Promise.all(metadataPromises);
-      return resolvedItems.filter(Boolean);
+      // Limit concurrency
+      const robustResults = await loadAssetsWithRetries(
+          tasks, 
+          processSingleItem, 
+          6, // Concurrency
+          2  // Retries
+      );
+
+      // --- CRITICAL FIX: Unwrap RobustLoader results ---
+      // RobustLoader returns: [{ status: 'fulfilled', value: TOKEN_OBJECT }, ...]
+      // We need just: [TOKEN_OBJECT, ...]
+      const unwrappedItems = robustResults
+        .filter(r => r.status === 'fulfilled' && r.value !== null)
+        .map(r => r.value);
+
+      return unwrappedItems;
+
     } catch (e) {
       console.error("[CS] Batch metadata fetch failed:", e);
       return [];
@@ -665,6 +700,74 @@ class ConfigurationService {
       }
     }
     return allResults;
+  }
+
+  // --- REFACTORED INTERNAL HELPER ---
+  async _resolveMetadataFromBytes(
+    collectionAddress,
+    tokenId,
+    metadataUriBytes
+  ) {
+    if (!metadataUriBytes || metadataUriBytes === "0x") {
+      return await this.fetchTokenMetadata(tokenId);
+    }
+
+    const url = decodeVerifiableUri(metadataUriBytes);
+    if (url) {
+      const metadataJson = await fetchMetadata(url);
+      if (metadataJson) {
+        const image = extractImageFromMetadata(metadataJson);
+        return {
+          name: metadataJson.LSP4Metadata?.name || metadataJson.name,
+          description:
+            metadataJson.LSP4Metadata?.description || metadataJson.description,
+          image: image,
+          attributes: metadataJson.attributes,
+        };
+      }
+    }
+    return null;
+  }
+
+  async fetchTokenMetadata(tokenId) {
+    if (!tokenId || !this.collectionAddress) return null;
+    const cacheKey = `metadata_${this.collectionAddress}_${tokenId}`;
+    if (this.metadataCache.has(cacheKey))
+      return this.metadataCache.get(cacheKey);
+
+    try {
+      const data = await this.publicClient.readContract({
+        address: this.collectionAddress,
+        abi: LSP8_ABI,
+        functionName: "getDataForTokenId",
+        args: [tokenId, ERC725YDataKeys.LSP4.LSP4Metadata],
+      });
+
+      const metadata = await this._resolveMetadataFromBytes(
+        this.collectionAddress,
+        tokenId,
+        data
+      );
+      if (metadata) {
+        this.metadataCache.set(cacheKey, metadata);
+        return metadata;
+      }
+      return { name: `Token #${tokenId.slice(0, 6)}`, image: null };
+    } catch (e) {
+      return { name: "Error loading token", image: null };
+    }
+  }
+
+  async loadTokenIntoCanvas(tokenId, canvasManager) {
+    const metadata = await this.fetchTokenMetadata(tokenId);
+    if (metadata?.image) {
+      await canvasManager.setImage(metadata.image);
+      return true;
+    }
+    await canvasManager.setImage(
+      `https://via.placeholder.com/600x400?text=No+Image`
+    );
+    return false;
   }
 }
 

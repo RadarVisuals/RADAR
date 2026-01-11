@@ -1,6 +1,7 @@
 // src/utils/imageDecoder.js
 
 import { demoAssetMap } from '../assets/DemoLayers/initLayers';
+import { loadAssetsWithRetries } from './RobustLoader'; // <-- Import your new tool
 
 /**
  * LRU Cache Configuration
@@ -102,9 +103,8 @@ export const getDecodedImage = (src) => {
   // Use a temporary Image element to fetch the blob
   return new Promise((resolve, reject) => {
     const img = new Image();
-    if (src.startsWith('http') && !src.startsWith(window.location.origin)) {
-      img.crossOrigin = "Anonymous";
-    }
+    // Allow cross-origin for IPFS gateways/external sources
+    img.crossOrigin = "Anonymous";
 
     img.src = src;
 
@@ -121,30 +121,44 @@ export const getDecodedImage = (src) => {
     };
 
     img.onerror = (error) => {
-      console.error(`[ImageDecoder] Failed to load image blob for bitmap creation: ${src}`, error);
-      reject(error);
+      // Don't log error here, let RobustLoader handle retries first.
+      // We reject so RobustLoader knows it failed.
+      reject(new Error(`Failed to load image: ${src}`));
     };
   });
 };
 
 /**
- * Preloads and decodes an array of image URLs into ImageBitmaps.
- * This is now an async function that returns a Promise which resolves when all images are processed.
+ * Preloads and decodes an array of image URLs into ImageBitmaps using RobustLoader.
+ * 
+ * - Limits concurrency to 6 (browser limit per domain is usually 6, avoids queue blocking)
+ * - Retries failed downloads 3 times with backoff
+ * 
  * @param {string[]} urls - An array of image URLs to preload.
  * @returns {Promise<void>} A promise that resolves when all images have been attempted.
  */
 export const preloadImages = async (urls) => {
   if (!Array.isArray(urls)) return;
 
-  const preloadPromises = urls.map(url => {
-    if (typeof url === 'string' && url.length > 0 && !decodedImageCache.has(url)) {
-      return getDecodedImage(url).catch(() => {
-        // Errors are already logged in getDecodedImage. We catch here so one failed image doesn't stop all others.
-      });
-    }
-    return Promise.resolve();
-  });
+  // Filter out duplicates and already cached items to save bandwidth
+  const uniqueUrls = [...new Set(urls)].filter(url => 
+    typeof url === 'string' && url.length > 0 && !decodedImageCache.has(url)
+  );
 
-  // Wait for all image decoding promises to settle (either resolve or reject).
-  await Promise.allSettled(preloadPromises);
+  if (uniqueUrls.length === 0) return;
+
+  // Map URLs to objects with an 'id' for the loader
+  const assetsToLoad = uniqueUrls.map(url => ({ id: url }));
+
+  // Use the RobustLoader to handle the queue
+  await loadAssetsWithRetries(
+    assetsToLoad,
+    (item) => getDecodedImage(item.id), // The task to run
+    6, // Concurrency (Parallel downloads)
+    3  // Retries per image
+  );
+  
+  if (import.meta.env.DEV) {
+    console.log(`[ImageDecoder] Preload complete for ${uniqueUrls.length} assets.`);
+  }
 };

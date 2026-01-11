@@ -1,13 +1,14 @@
 // src/utils/PixiEngine.js
 import { Application, Container } from 'pixi.js';
 import { PixiEffectsManager } from './pixi/PixiEffectsManager';
-import SignalBus from '../utils/SignalBus';
+import SignalBus from './SignalBus';
 import { sliderParams } from '../config/sliderParams';
 import { AudioReactor } from './pixi/systems/AudioReactor';
 import { FeedbackSystem } from './pixi/systems/FeedbackSystem';
 import { LayerManager } from './pixi/systems/LayerManager';
 import { CrossfaderSystem } from './pixi/systems/CrossfaderSystem.js';
 import { LogicController } from './LogicController';
+import { RenderLoop } from './pixi/RenderLoop'; // <-- Import the new Loop
 
 export default class PixiEngine {
   constructor(canvasElement) {
@@ -15,19 +16,26 @@ export default class PixiEngine {
     this.canvas = canvasElement;
     this.isReady = false;
     this._isDestroyed = false;
-    this.bootstrapped = false;
+    
+    // Core Logic Systems
     this.logic = new LogicController();
-    this.effectsManager = new PixiEffectsManager();
     this.audioReactor = new AudioReactor();
+    
+    // Visual Systems (Initialized in init())
+    this.effectsManager = new PixiEffectsManager();
     this.rootContainer = new Container(); 
     this.layerManager = null; 
     this.feedbackSystem = null; 
     this.crossfaderSystem = null; 
+    
+    // The Render Loop Manager
+    this.renderLoop = null;
 
+    // Event Handlers
     this._resizeHandler = this.handleResize.bind(this);
-    this._updateLoop = this.update.bind(this);
     this._fullscreenHandler = this.handleFullscreenChange.bind(this);
     
+    // Signal Bus Listeners
     this._onEventTrigger = (data) => { if(this.logic) this.logic.triggerEvent(data.type); };
 
     this._onParamUpdate = (data) => {
@@ -49,7 +57,9 @@ export default class PixiEngine {
 
   async init() {
     if (this.isReady || this._isDestroyed || this.app) return;
+    
     this.app = new Application();
+    
     try {
       await this.app.init({
         canvas: this.canvas,
@@ -62,23 +72,56 @@ export default class PixiEngine {
         preference: 'webgl',
         hello: false
       });
-      if (this._isDestroyed) { this.app.destroy(true); return; }
+
+      if (this._isDestroyed) { 
+          this.app.destroy(true); 
+          return; 
+      }
+
+      // Setup Scene Graph
       this.app.stage.addChild(this.rootContainer);
+      
+      // Initialize Systems
       this.effectsManager.init(this.app.screen);
       this.layerManager = new LayerManager(this.app, this.effectsManager);
       this.feedbackSystem = new FeedbackSystem(this.app, this.rootContainer); 
       this.crossfaderSystem = new CrossfaderSystem(this.layerManager, this.audioReactor);
+
+      // Initialize Render Loop
+      this.renderLoop = new RenderLoop(this.app, {
+          logic: this.logic,
+          audioReactor: this.audioReactor,
+          effectsManager: this.effectsManager,
+          layerManager: this.layerManager,
+          crossfaderSystem: this.crossfaderSystem,
+          feedbackSystem: this.feedbackSystem,
+          rootContainer: this.rootContainer
+      });
+
+      // Bind Resize & Input Events
       this.app.renderer.on('resize', this._resizeHandler);
       window.addEventListener('resize', this._resizeHandler);
       document.addEventListener('fullscreenchange', this._fullscreenHandler);
       document.addEventListener('webkitfullscreenchange', this._fullscreenHandler);
+      
+      // Initial Layout Calculation
       this.handleResize(); 
-      this.app.ticker.add(this._updateLoop);
+      
+      // Start Loop
+      this.renderLoop.start();
+
+      // Bind Signals
       SignalBus.on('event:trigger', this._onEventTrigger);
       SignalBus.on('param:update', this._onParamUpdate);
+      
       this.isReady = true;
-    } catch (e) { console.error("[PixiEngine] Critical Init Error:", e); }
+
+    } catch (e) { 
+        console.error("[PixiEngine] Critical Init Error:", e); 
+    }
   }
+
+  // --- API Methods called by React Hooks ---
 
   getLiveValue(layerId, param) {
     if (!this.layerManager || !this.crossfaderSystem) return 0;
@@ -106,26 +149,59 @@ export default class PixiEngine {
     return physics;
   }
 
-  handleFullscreenChange() { setTimeout(() => this.handleResize(), 100); setTimeout(() => this.handleResize(), 600); }
+  handleFullscreenChange() { 
+      setTimeout(() => this.handleResize(), 100); 
+      setTimeout(() => this.handleResize(), 600); 
+  }
+
   handleResize() {
     if (this._isDestroyed || !this.app || !this.app.renderer) return;
-    const w = this.app.renderer.screen.width; const h = this.app.renderer.screen.height;
+    const w = this.app.renderer.screen.width; 
+    const h = this.app.renderer.screen.height;
     if (w <= 0 || h <= 0) return;
+    
     this.rootContainer.filterArea = this.app.screen; 
+    
     if (this.feedbackSystem) this.feedbackSystem.resize(w, h);
     if (this.layerManager) this.layerManager.resize();
   }
 
-  fadeTo(target, duration, onComplete) { if (this.crossfaderSystem) this.crossfaderSystem.fadeTo(target, duration, onComplete); }
-  cancelFade() { if (this.crossfaderSystem) this.crossfaderSystem.cancelFade(); }
-  setRenderedCrossfade(value) { if (this.crossfaderSystem) this.crossfaderSystem.crossfadeValue = value; }
-  setModulationValue(paramId, value) { this.logic.setBaseValue(paramId, value); }
-  addModulationPatch(source, target, amount) { this.logic.addPatch(source, target, amount); }
-  removeModulationPatch(patchId) { this.logic.removePatch(patchId); }
-  clearModulationPatches() { this.logic.clearPatches(); }
+  // --- Delegation to Subsystems ---
+
+  fadeTo(target, duration, onComplete) { 
+      if (this.crossfaderSystem) this.crossfaderSystem.fadeTo(target, duration, onComplete); 
+  }
+  
+  cancelFade() { 
+      if (this.crossfaderSystem) this.crossfaderSystem.cancelFade(); 
+  }
+  
+  setRenderedCrossfade(value) { 
+      if (this.crossfaderSystem) this.crossfaderSystem.crossfadeValue = value; 
+  }
+
+  setModulationValue(paramId, value) { 
+      this.logic.setBaseValue(paramId, value); 
+  }
+  
+  addModulationPatch(source, target, amount) { 
+      this.logic.addPatch(source, target, amount); 
+  }
+  
+  removeModulationPatch(patchId) { 
+      this.logic.removePatch(patchId); 
+  }
+  
+  clearModulationPatches() { 
+      this.logic.clearPatches(); 
+  }
+  
   get modulationEngine() { return this.logic.modulationEngine; }
   get lfo() { return this.logic.lfo; }
-  async setTexture(layerId, deckSide, imageSrc, tokenId) { if (this.layerManager) await this.layerManager.setTexture(layerId, deckSide, imageSrc, tokenId); }
+
+  async setTexture(layerId, deckSide, imageSrc, tokenId) { 
+      if (this.layerManager) await this.layerManager.setTexture(layerId, deckSide, imageSrc, tokenId); 
+  }
   
   updateConfig(layerId, key, value, deckSide = 'A', isManual = false) { 
       if (this.layerManager) this.layerManager.updateConfig(layerId, key, value, deckSide, isManual); 
@@ -133,79 +209,70 @@ export default class PixiEngine {
   
   snapConfig(layerId, fullConfig, deckSide = 'A', forceSnap = false) { 
       if (this.layerManager) { 
-          this.bootstrapped = true; 
+          // Signal to RenderLoop that we have valid data to render physics
+          if (this.renderLoop) this.renderLoop.setBootstrapped(true);
           this.layerManager.snapConfig(layerId, fullConfig, deckSide, forceSnap); 
       } 
   }
 
-  setAudioFactors(factors) { this.audioReactor.setAudioFactors(factors); }
-  triggerBeatPulse(factor, duration) { this.audioReactor.triggerBeatPulse(factor, duration); }
-  setParallax(x, y) { if (this.crossfaderSystem) this.crossfaderSystem.setParallax(x, y); }
-  applyPlaybackValue(layerId, key, value) { 
-      const deckA = this.layerManager?.getDeck(layerId, 'A'); const deckB = this.layerManager?.getDeck(layerId, 'B');
-      if (deckA) deckA.playbackValues[key] = value; if (deckB) deckB.playbackValues[key] = value;
+  setAudioFactors(factors) { 
+      this.audioReactor.setAudioFactors(factors); 
   }
-  clearPlaybackValues() { this.layerManager?.layerList.forEach(l => { l.deckA.playbackValues = {}; l.deckB.playbackValues = {}; }); }
+  
+  triggerBeatPulse(factor, duration) { 
+      this.audioReactor.triggerBeatPulse(factor, duration); 
+  }
+  
+  setParallax(x, y) { 
+      if (this.crossfaderSystem) this.crossfaderSystem.setParallax(x, y); 
+  }
+  
+  applyPlaybackValue(layerId, key, value) { 
+      const deckA = this.layerManager?.getDeck(layerId, 'A'); 
+      const deckB = this.layerManager?.getDeck(layerId, 'B');
+      if (deckA) deckA.playbackValues[key] = value; 
+      if (deckB) deckB.playbackValues[key] = value;
+  }
+  
+  clearPlaybackValues() { 
+      this.layerManager?.layerList.forEach(l => { 
+          l.deckA.playbackValues = {}; 
+          l.deckB.playbackValues = {}; 
+      }); 
+  }
+  
   syncDeckPhysics(layerId, targetDeckSide) {
       const deckTarget = this.layerManager?.getDeck(layerId, targetDeckSide);
       const deckSource = this.layerManager?.getDeck(layerId, targetDeckSide === 'A' ? 'B' : 'A');
       if (deckTarget && deckSource) deckTarget.syncPhysicsFrom(deckSource);
   }
 
-  update(ticker) {
-    if (this._isDestroyed || !this.isReady) return;
-    try {
-        const now = performance.now(); const deltaTime = Math.min(ticker.deltaTime, 1.5); 
-        const audioData = this.audioReactor.getAudioData();
-        const finalParams = this.logic.update(deltaTime, audioData);
-        this.effectsManager.applyValues(finalParams);
-        if (this.layerManager) this.layerManager.applyModulations(finalParams);
-        if (this.layerManager && this.bootstrapped) {
-            const activeDeckSide = this.crossfaderSystem.crossfadeValue < 0.5 ? 'A' : 'B';
-            ['1', '2', '3'].forEach(layerId => {
-                const deck = this.layerManager.getDeck(layerId, activeDeckSide);
-                if (deck) { for (const prop in deck.interpolators) { SignalBus.emit(`ui:smooth_update:${layerId}:${prop}`, deck.interpolators[prop].currentValue); } }
-            });
-        }
-        let isFeedbackOn = false;
-        if (this.feedbackSystem) {
-            if (finalParams['feedback.enabled'] !== undefined) this.feedbackSystem.updateConfig('enabled', finalParams['feedback.enabled'] > 0.5); 
-            ['amount', 'scale', 'rotation', 'xOffset', 'yOffset', 'hueShift', 'satShift', 'contrast', 'sway', 'chroma', 'invert', 'renderOnTop'].forEach(p => { if (finalParams[`feedback.${p}`] !== undefined) this.feedbackSystem.updateConfig(p, finalParams[`feedback.${p}`]); });
-            isFeedbackOn = this.feedbackSystem.config.enabled;
-        }
-        if (this.bootstrapped) {
-            this.effectsManager.update(ticker, this.app.renderer);
-            this.crossfaderSystem.update(deltaTime * 0.01666, now, this.app.screen);
-        }
-        if (this.layerManager) {
-            const mainGroup = this.layerManager.mainLayerGroup;
-            this.rootContainer.filters = this.effectsManager.getFilterList();
-            if (mainGroup.parent !== this.rootContainer) this.rootContainer.addChildAt(mainGroup, 0); 
-            if (isFeedbackOn) {
-                this.feedbackSystem.render(this.rootContainer); this.rootContainer.visible = false; 
-                this.feedbackSystem.displaySprite.visible = true;
-                if (this.feedbackSystem.displaySprite.parent !== this.app.stage) this.app.stage.addChild(this.feedbackSystem.displaySprite);
-            } else {
-                this.rootContainer.visible = true; if (this.feedbackSystem.displaySprite.parent) this.feedbackSystem.displaySprite.visible = false;
-            }
-        }
-    } catch (e) { if (import.meta.env.DEV) console.error("[PixiEngine] Update Loop Failed:", e); }
-  }
+  // --- Lifecycle ---
 
   destroy() { 
-      this._isDestroyed = true; this.isReady = false; 
+      this._isDestroyed = true; 
+      this.isReady = false; 
+      
+      // Remove Listeners
       window.removeEventListener('resize', this._resizeHandler);
       document.removeEventListener('fullscreenchange', this._fullscreenHandler);
       document.removeEventListener('webkitfullscreenchange', this._fullscreenHandler);
       SignalBus.off('event:trigger', this._onEventTrigger);
       SignalBus.off('param:update', this._onParamUpdate);
+      
+      // Stop Loop
+      if (this.renderLoop) this.renderLoop.stop();
+
+      // Destroy Systems
       if (this.audioReactor) this.audioReactor.destroy();
       if (this.layerManager) this.layerManager.destroy();
       if (this.feedbackSystem) this.feedbackSystem.destroy();
+      
       this.rootContainer.destroy({ children: false });
+      
       if (this.app) {
           if (this.app.renderer) this.app.renderer.off('resize', this._resizeHandler);
-          this.app.ticker.remove(this._updateLoop); this.app.destroy(true, { children: true, texture: true }); 
+          this.app.destroy(true, { children: true, texture: true }); 
       }
   }
 }
