@@ -9,7 +9,6 @@ const MappingPanel = ({ onClose }) => {
   const config = useUIStore((state) => state.mappingConfig);
   const updateConfig = useUIStore((state) => state.updateMappingConfig);
   const resetConfig = useUIStore((state) => state.resetMappingConfig);
-  const toggleProjectorMode = useUIStore((state) => state.toggleProjectorMode);
 
   const handleSliderChange = (key, value) => {
     const numericVal = parseFloat(value);
@@ -20,21 +19,6 @@ const MappingPanel = ({ onClose }) => {
       ...config,
       [key]: numericVal
     });
-  };
-
-  const handleEnterProjectorMode = () => {
-    const confirmation = window.confirm(
-      "ACTIVATE PROJECTOR / RECEIVER MODE?\n\n" +
-      "This tab will become a dedicated full-screen render node.\n" +
-      "All UI will be hidden. This tab will respond to commands from your other Controller tab.\n\n" +
-      "Double-click anywhere on the screen later to reload and exit."
-    );
-
-    if (confirmation) {
-      syncBridge.setRole('receiver');
-      toggleProjectorMode(); // Triggers Fullscreen via Store logic
-      onClose();
-    }
   };
 
   return (
@@ -121,28 +105,6 @@ const MappingPanel = ({ onClose }) => {
           >
             Reset to Center
           </button>
-        </div>
-
-        {/* --- DUAL SCREEN INITIATION --- */}
-        <div className="section-box" style={{marginTop: 'var(--space-md)', border: '1px solid var(--color-accent)'}}>
-            <h4 style={{color: 'var(--color-accent)', fontSize: '12px', marginBottom: '8px'}}>Dual-Screen Projector Mode</h4>
-            <p style={{fontSize: '10px', color: 'var(--color-text-muted)', lineHeight: '1.4'}}>
-                Turn this browser tab into a dedicated visual receiver. It will hide all UI and wait for sync data from your Controller tab.
-            </p>
-            <button 
-                className="btn btn-block"
-                style={{
-                    marginTop: '12px',
-                    backgroundColor: 'rgba(255, 215, 0, 0.15)',
-                    borderColor: 'var(--color-accent)',
-                    color: 'var(--color-accent)',
-                    fontWeight: 'bold',
-                    fontSize: '11px'
-                }}
-                onClick={handleEnterProjectorMode}
-            >
-                ENTER RECEIVER MODE
-            </button>
         </div>
       </div>
     </Panel>

@@ -28,8 +28,14 @@ import { useUIStore } from '../../store/useUIStore';
 import { useSetManagementState, useProfileSessionState } from '../../hooks/configSelectors';
 import { useVisualEngine } from '../../hooks/useVisualEngine';
 import { useNotificationContext } from '../../hooks/useNotificationContext';
+import { syncBridge } from '../../utils/SyncBridge';
 
-import { ForwardIcon as SequencerIcon, ViewfinderCircleIcon } from '@heroicons/react/24/outline';
+import { 
+  ForwardIcon as SequencerIcon, 
+  ViewfinderCircleIcon, 
+  ComputerDesktopIcon 
+} from '@heroicons/react/24/outline';
+
 import './UIOverlay.css';
 
 const MemoizedTopRightControls = React.memo(TopRightControls);
@@ -161,6 +167,8 @@ function UIOverlay({
   const isMappingUiVisible = useUIStore(s => s.isMappingUiVisible);
   const isProjectorMode = useUIStore(s => s.isProjectorMode);
   const mappingConfig = useUIStore(s => s.mappingConfig);
+  
+  const toggleProjectorMode = useUIStore(s => s.toggleProjectorMode);
   const toggleMappingMode = useUIStore(s => s.toggleMappingMode);
   const setMappingUiVisibility = useUIStore(s => s.setMappingUiVisibility);
   const toggleSidePanel = useUIStore(s => s.togglePanel);
@@ -171,13 +179,28 @@ function UIOverlay({
   const { onEnhancedView, onToggleParallax, toggleSequencer, isSequencerActive, sequencerIntervalMs, setSequencerInterval } = actions;
 
   const [showReceiverHint, setShowReceiverHint] = useState(true);
+  const [showReceiverConfirmation, setShowReceiverConfirmation] = useState(false);
 
+  // --- KEYBOARD SHORTCUTS ---
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'Tab' && (isMappingMode || isProjectorMode)) {
+      // Allow TAB to toggle Mapping UI inside Projector Mode
+      if (e.key === 'Tab' && isProjectorMode) {
+        e.preventDefault(); 
+        if (!isMappingMode) {
+            useUIStore.setState({ isMappingMode: true, isMappingUiVisible: true });
+        } else {
+            setMappingUiVisibility(!isMappingUiVisible);
+        }
+      }
+      
+      // Standard Mapping Mode Tab toggle
+      if (e.key === 'Tab' && isMappingMode && !isProjectorMode) {
         e.preventDefault(); 
         setMappingUiVisibility(!isMappingUiVisible);
       }
+
+      // 'F' key to Fullscreen inside Projector Mode
       if (e.key?.toLowerCase() === 'f' && isProjectorMode) {
         const root = document.getElementById('fullscreen-root');
         if (root) root.requestFullscreen().catch(() => {});
@@ -210,20 +233,42 @@ function UIOverlay({
     }
   }, []);
 
+  const handleToggleReceiverMode = useCallback(() => {
+    // Immediate toggle OFF if already active
+    if (isProjectorMode) {
+        toggleProjectorMode();
+        return;
+    }
+    // Show custom modal instead of window.confirm
+    setShowReceiverConfirmation(true);
+  }, [isProjectorMode, toggleProjectorMode]);
+
+  const confirmReceiverMode = useCallback(() => {
+      syncBridge.setRole('receiver');
+      // Ensure Video Mapping (Iris) is OFF by default when entering receiver mode
+      useUIStore.setState({ isMappingMode: false, isMappingUiVisible: false });
+      toggleProjectorMode();
+      setShowReceiverConfirmation(false);
+  }, [toggleProjectorMode]);
+
   const memoizedUI = useMemo(() => {
     if (!isReady) return null;
 
     if (isProjectorMode) {
         return (
             <>
-              <VideoMappingOverlay isVisible={true} config={mappingConfig} />
-              {isMappingUiVisible && (
+              {/* Only show mask if mapping mode is active */}
+              <VideoMappingOverlay isVisible={isMappingMode} config={mappingConfig} />
+              
+              {/* Only show Calibration UI if both Mapping Mode AND UI Visibility are on */}
+              {isMappingMode && isMappingUiVisible && (
                    <div className="projector-calibration-ui" style={{ position: 'fixed', top: '20px', left: '20px', zIndex: 1001, pointerEvents: 'auto' }}>
                       <PanelWrapper className="animating">
                           <MappingPanel onClose={() => setMappingUiVisibility(false)} />
                       </PanelWrapper>
                    </div>
               )}
+
               <div className="receiver-interaction-layer" style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 999, pointerEvents: 'auto', cursor: showReceiverHint ? 'pointer' : 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'transparent' }} onClick={handleReceiverClick} onDoubleClick={() => window.location.reload()} >
                   {showReceiverHint && (
                       <div style={{ padding: '25px', background: 'rgba(0,0,0,0.85)', border: '1px solid var(--color-primary)', borderRadius: '12px', color: 'var(--color-primary)', textAlign: 'center', pointerEvents: 'none', animation: 'fadeIn 0.5s ease-out', boxShadow: '0 0 20px rgba(0, 243, 255, 0.2)' }}>
@@ -261,6 +306,40 @@ function UIOverlay({
             onToggleMapping={toggleMappingMode}
         />
 
+        {/* --- CUSTOM RECEIVER MODE MODAL --- */}
+        {showReceiverConfirmation && (
+          <div className="receiver-modal-overlay">
+            <div className="receiver-modal-content">
+              <div className="receiver-modal-header">
+                <ComputerDesktopIcon style={{ width: '28px', height: '28px', color: 'var(--color-primary)' }} />
+                <h3 className="receiver-modal-title">Dual-Screen Setup</h3>
+              </div>
+              
+              <div className="receiver-modal-body">
+                <p>This action turns this browser window into a dedicated <strong>Output Display</strong> for a second screen or projector.</p>
+                
+                <div className="receiver-modal-info-box">
+                  <strong>How to use:</strong>
+                  <ol>
+                    <li>Move this window to your extended display/projector.</li>
+                    <li>Click <strong>ACTIVATE</strong> below. All UI will vanish.</li>
+                    <li>Open RADAR in a <strong>NEW TAB</strong> on your main screen to control this instance.</li>
+                  </ol>
+                </div>
+                
+                <p style={{ fontSize: '0.9em', opacity: 0.7, fontStyle: 'italic' }}>
+                  To exit Receiver Mode later: <strong>Double-click anywhere on the screen.</strong>
+                </p>
+              </div>
+
+              <div className="receiver-modal-footer">
+                <button className="receiver-modal-btn cancel" onClick={() => setShowReceiverConfirmation(false)}>Cancel</button>
+                <button className="receiver-modal-btn confirm" onClick={confirmReceiverMode}>Activate Receiver</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {shouldShowInterface && (
           <>
             <ActivePanelRenderer
@@ -278,7 +357,17 @@ function UIOverlay({
               <div className="bottom-right-icons">
                 <MemoizedGlobalMIDIStatus />
                 
-                {/* SEQUENCER ICON - Forced White */}
+                {/* PROJECTOR MODE TOGGLE */}
+                <button
+                  className={`toolbar-icon ${isProjectorMode ? "active" : ""}`}
+                  onClick={handleToggleReceiverMode}
+                  title="Dual-Screen / Projector Setup"
+                  aria-label="Enter Receiver Mode"
+                >
+                  <ComputerDesktopIcon className="icon-image" style={{ padding: '4px', color: '#ffffff' }} />
+                </button>
+
+                {/* SEQUENCER ICON */}
                 <button
                   className={`toolbar-icon sequencer-toggle-button ${isSequencerActive ? "active" : ""}`}
                   onClick={toggleSequencer} 
@@ -289,7 +378,7 @@ function UIOverlay({
                   <SequencerIcon className="icon-image" style={{ color: '#ffffff' }} />
                 </button>
                 
-                {/* MAPPING ICON - Forced White */}
+                {/* MAPPING ICON */}
                 {isMappingMode && (
                    <button 
                       className={`toolbar-icon ${activePanel === 'mapping' ? 'active' : ''}`}
@@ -321,7 +410,7 @@ function UIOverlay({
       </>
     );
   }, [
-      isReady, isProjectorMode, isMappingMode, mappingConfig, isMappingUiVisible, showReceiverHint,
+      isReady, isProjectorMode, isMappingMode, mappingConfig, isMappingUiVisible, showReceiverHint, showReceiverConfirmation,
       isRadarProjectAdmin, isHostProfileOwner, shouldShowInterface, activePanel,
       savedSceneList, activeSceneName, workspaceList, currentWorkspaceName,
       unreadCount, isAudioActive, isSequencerActive, isConfigLoading, currentProfileAddress,
@@ -329,7 +418,7 @@ function UIOverlay({
       handleCrossfaderChange, handleCrossfaderCommit, handleSceneSelect, crossfadeDurationMs,
       setSequencerInterval, sequencerIntervalMs, toggleSequencer, toggleInfoOverlay, 
       toggleUiVisibility, onEnhancedView, onToggleParallax, toggleSidePanel, openPanel, 
-      uiState, audioState, pLockProps, processEffect
+      uiState, audioState, pLockProps, processEffect, handleToggleReceiverMode, toggleMappingMode, confirmReceiverMode
   ]);
 
   return memoizedUI;

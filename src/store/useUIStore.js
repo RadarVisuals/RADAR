@@ -111,12 +111,7 @@ export const useUIStore = create(
         const newState = !currentState;
         
         if (newState) {
-          const root = document.getElementById('fullscreen-root');
-          if (root && !document.fullscreenElement) {
-            root.requestFullscreen().catch(err => {
-              console.warn(`[MappingMode] Fullscreen failed: ${err.message}`);
-            });
-          }
+          // If entering mapping mode, ensure panels are closed so we see the full screen
           get().closePanel();
         }
         
@@ -144,12 +139,8 @@ export const useUIStore = create(
         
         if (newState) {
           // ENTERING RECEIVER MODE
-          const root = document.getElementById('fullscreen-root');
-          if (root && !document.fullscreenElement) {
-            root.requestFullscreen().catch(err => {
-              console.warn(`[ProjectorMode] Fullscreen failed: ${err.message}`);
-            });
-          }
+          // We do NOT force fullscreen here anymore. User can do it manually.
+          
           // Force close any panels
           get().closePanel();
         } else {
