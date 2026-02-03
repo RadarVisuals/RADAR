@@ -8,7 +8,7 @@ import fallbackConfig from '../config/fallback-config';
 import { RADAR_OFFICIAL_ADMIN_ADDRESS, IPFS_GATEWAY } from "../config/global-config";
 import { keccak256, stringToBytes } from "viem";
 import { useEngineStore } from './useEngineStore';
-import { midiManager } from '../utils/MidiManager'; // IMPORTED
+import { midiManager } from '../utils/MidiManager';
 
 const EMPTY_SETLIST = {
   defaultWorkspaceName: null,
@@ -186,16 +186,52 @@ export const useProjectStore = create(devtools((set, get) => ({
         loadingMessage: ""
       });
 
-      // TRIGGER CATCH RESET
       midiManager.resetCatchState();
-
       get().refreshOwnedTokens(profileAddress); 
 
       const defaultName = loadedSetlist.defaultWorkspaceName || Object.keys(loadedSetlist.workspaces)[0];
+      
       if (defaultName) {
         await get().loadWorkspace(defaultName);
       } else {
-        set({ stagedWorkspace: EMPTY_WORKSPACE, activeWorkspaceName: null, activeSceneName: null });
+        // === FIX START: Handle Empty Profile Case ===
+        // Construct a valid Workspace object structure in-memory
+        const fallbackData = JSON.parse(JSON.stringify(fallbackConfig));
+        
+        const tempWorkspace = {
+            presets: {
+                "Init": {
+                    name: "Init",
+                    ...fallbackData,
+                    ts: Date.now()
+                }
+            },
+            defaultPresetName: "Init",
+            modulation: { baseValues: {}, patches: [] }
+        };
+
+        // Reset Engine Modulation to defaults
+        const engineStore = useEngineStore.getState();
+        engineStore.loadModulationState(null, null);
+
+        // Preload default demo assets
+        const imageUrls = new Set();
+        Object.values(fallbackData.tokenAssignments || {}).forEach(t => {
+            const src = resolveImageUrl(t);
+            if(src) imageUrls.add(src);
+        });
+        if(imageUrls.size > 0) await preloadImages(Array.from(imageUrls));
+
+        set({
+            stagedWorkspace: tempWorkspace,
+            activeWorkspaceName: "New Workspace", 
+            activeSceneName: "Init",
+            isLoading: false,
+            loadingMessage: ""
+        });
+        
+        midiManager.resetCatchState();
+        // === FIX END ===
       }
 
     } catch (err) {
@@ -256,9 +292,7 @@ export const useProjectStore = create(devtools((set, get) => ({
         loadingMessage: ""
       });
 
-      // TRIGGER CATCH RESET
       midiManager.resetCatchState();
-
       return { success: true };
 
     } catch (err) {
@@ -270,7 +304,6 @@ export const useProjectStore = create(devtools((set, get) => ({
 
   setActiveSceneName: (name) => {
       set({ activeSceneName: name });
-      // TRIGGER CATCH RESET
       midiManager.resetCatchState();
   },
   

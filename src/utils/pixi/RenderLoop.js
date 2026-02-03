@@ -1,6 +1,8 @@
 // src/utils/pixi/RenderLoop.js
 import SignalBus from '../SignalBus';
 
+const FPS_REPORT_INTERVAL = 1000; // Report every 1000ms (1 second)
+
 export class RenderLoop {
     constructor(app, systems) {
         this.app = app;
@@ -17,6 +19,11 @@ export class RenderLoop {
         // State
         this.isRunning = false;
         this.bootstrapped = false;
+        
+        // --- ADDED FPS TRACKING STATE ---
+        this._frameCount = 0;
+        this._lastTime = performance.now();
+        // --- END ADDED FPS TRACKING STATE ---
 
         // Bind the loop function once to ensure 'this' context is correct
         this.tick = this.tick.bind(this);
@@ -51,6 +58,19 @@ export class RenderLoop {
             const now = performance.now();
             // Cap deltaTime to prevent huge jumps if tab was inactive
             const deltaTime = Math.min(ticker.deltaTime, 1.5);
+
+            // --- ADDED FPS REPORTING LOGIC ---
+            this._frameCount++;
+            const deltaReport = now - this._lastTime;
+            
+            if (deltaReport >= FPS_REPORT_INTERVAL) {
+                const actualFps = Math.round((this._frameCount * 1000) / deltaReport);
+                // Broadcast the actual rate to the FpsDisplay component
+                SignalBus.emit('engine:actual_fps', actualFps); 
+                this._frameCount = 0;
+                this._lastTime = now;
+            }
+            // --- END ADDED FPS REPORTING LOGIC ---
 
             // 1. Audio Processing
             const audioData = this.audioReactor.getAudioData();

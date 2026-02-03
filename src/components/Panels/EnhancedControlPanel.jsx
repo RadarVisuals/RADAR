@@ -14,6 +14,7 @@ import { useVisualEngine } from "../../hooks/useVisualEngine";
 import { useToast } from "../../hooks/useToast";
 import { BLEND_MODES } from "../../config/global-config";
 import { sliderParams } from "../../config/sliderParams";
+import { getPixiEngine } from "../../hooks/usePixiOrchestrator"; // <-- Import getPixiEngine
 
 import {
   toplayerIcon,
@@ -72,6 +73,11 @@ const EnhancedControlPanel = ({
   const isConnected = useEngineStore(state => state.isConnected);
   const midiLearning = useEngineStore(state => state.midiLearning);
   const learningLayer = useEngineStore(state => state.learningLayer);
+  
+  // --- ADDED FPS STATE & ACTION ---
+  const currentMaxFPS = useEngineStore(state => state.maxFPS);
+  const setMaxFPS = useEngineStore(state => state.setMaxFPS);
+  // --- END ADDED FPS STATE & ACTION ---
 
   const setMidiLearning = useEngineStore(state => state.setMidiLearning);
   const setLearningLayer = useEngineStore(state => state.setLearningLayer);
@@ -113,17 +119,31 @@ const EnhancedControlPanel = ({
     onSetCrossfadeDuration(newDurationSeconds * 1000);
     addToast(`Crossfade duration set to ${newDurationSeconds}s.`, "success");
   };
+  
+  // --- UPDATED FPS CHANGE HANDLER ---
+  const handleFPSChange = useCallback((newFPS) => {
+    // 1. Update Persistent Store
+    setMaxFPS(newFPS);
+    
+    // 2. Apply instantly to Engine
+    const engine = getPixiEngine();
+    if (engine) {
+        engine.setMaxFPS(newFPS);
+    }
+
+    const label = newFPS === 0 ? "Uncapped (Native)" : `${newFPS} FPS`;
+    addToast(`Render rate set to ${label}.`, 'success');
+  }, [addToast, setMaxFPS]);
+  // --- END UPDATED FPS CHANGE HANDLER ---
 
   const activeLayer = useMemo(() => String(tabToLayerIdMap[activeTab] || 3), [activeTab]);
   const activeLayerConfigs = uiControlConfig?.layers;
   const config = useMemo(() => activeLayerConfigs?.[activeLayer] || getDefaultLayerConfigTemplate(), [activeLayerConfigs, activeLayer]);
   
-  // MOUSE INTERACTION HANDLER: skipStoreUpdate=true, isManual=true
   const handleSliderInput = useCallback((name, value) => {
     onLayerConfigChange(activeLayer, name, value, false, true, true);
   }, [onLayerConfigChange, activeLayer]);
 
-  // COMMIT HANDLER: skipStoreUpdate=false, isManual=true
   const handleSliderCommit = useCallback((name, value) => {
     onLayerConfigChange(activeLayer, name, value, false, false, true);
   }, [onLayerConfigChange, activeLayer]);
@@ -217,7 +237,9 @@ const EnhancedControlPanel = ({
                 <div className="slider-header">
                   <span className="slider-label">{isLocked && <span className="plock-indicator" title="Parameter Locked">●</span>}{label}</span>
                   <div className="slider-controls">
-                    <span className="slider-value">{formatValue(config[prop] ?? defaultValue, formatDecimals)}</span>
+                    <span className="slider-value">
+                      {formatValue(config[prop] ?? defaultValue, formatDecimals)}
+                    </span>
                     {isConnected && isProfileOwner && (<button type="button" className={`midi-btn small-action-button ${isLearningThis ? "learning" : ""}`} onClick={() => handleEnterMIDILearnMode(prop)} disabled={!isConnected || !!learningLayer || (midiLearning !== null && !isLearningThis)} title={`Map MIDI to ${label}`}> {isLearningThis ? "..." : "M"} </button>)}
                   </div>
                 </div>
@@ -243,7 +265,9 @@ const EnhancedControlPanel = ({
           <div className="blendmode-container">
             <label htmlFor={`blendModeVertical-${activeLayer}`}>BLEND MODE</label>
             <select id={`blendModeVertical-${activeLayer}`} className="custom-select blend-mode-select" name="blendMode" value={config.blendMode || "normal"} onChange={handleBlendModeChange} aria-label="Select Blend Mode">
-              {BLEND_MODES.map((mode) => (<option key={mode} value={mode}>{mode.charAt(0).toUpperCase() + mode.slice(1).replace("-", " ")}</option>))}
+              {BLEND_MODES.map((mode) => (
+                <option key={mode} value={mode}>{mode.charAt(0).toUpperCase() + mode.slice(1).replace("-", " ")}</option>
+              ))}
             </select>
           </div>
           <button type="button" className="changerotation-btn icon-button" onClick={handleDirectionToggle} title="Change Rotation Direction" aria-label="Change Rotation Direction"><img src={rotateIcon} className="changerotation-icon" alt="Change Rotation" /></button>
@@ -290,7 +314,7 @@ const EnhancedControlPanel = ({
       </div>
 
       <div className="sequencer-settings-section">
-        <h4 className="midi-section-title">Scene Sequencer Settings</h4>
+        <h4 className="config-section-title">Scene Sequencer Settings</h4>
         <div className="sequencer-interval-form">
             <label htmlFor="crossfade-duration-input">Crossfade Duration:</label>
             <input
@@ -324,6 +348,33 @@ const EnhancedControlPanel = ({
             <button className="btn btn-sm interval-set-button" onClick={handleSetInterval} disabled={isAutoFading}>Set</button>
         </div>
       </div>
+      
+      {/* --- ADDED SECTION: PERFORMANCE SETTINGS --- */}
+      <div className="performance-settings-section">
+        <h4 className="config-section-title">Performance Settings</h4>
+        <div className="fps-control-group">
+          <span className="fps-label">Max Render Rate:</span>
+          <div className="fps-buttons">
+            <button
+              className={`btn btn-sm fps-button ${currentMaxFPS === 0 ? 'active' : ''}`}
+              onClick={() => handleFPSChange(0)}
+              disabled={currentMaxFPS === 0}
+              title="Native Refresh Rate (Uncapped). Recommended for high-refresh monitors (120/144Hz)."
+            >
+              NATIVE
+            </button>
+            <button
+              className={`btn btn-sm fps-button ${currentMaxFPS === 60 ? 'active' : ''}`}
+              onClick={() => handleFPSChange(60)}
+              disabled={currentMaxFPS === 60}
+              title="Locks render rate to 60 FPS. Recommended for 60Hz displays and projectors."
+            >
+              60 FPS
+            </button>
+          </div>
+        </div>
+      </div>
+      {/* --- END ADDED SECTION --- */}
 
       {isConnected && (
         <div className="midi-mappings-section">

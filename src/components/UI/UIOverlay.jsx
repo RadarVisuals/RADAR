@@ -1,5 +1,6 @@
 // src/components/UI/UIOverlay.jsx
 import React, { useCallback, useMemo, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import PropTypes from 'prop-types';
 
 import TopRightControls from '../Toolbars/TopRightControls';
@@ -127,7 +128,14 @@ const ActivePanelRenderer = (props) => {
 
 const OverlayRenderer = ({ uiState }) => {
     const { infoOverlayOpen, toggleInfoOverlay } = uiState;
-    return infoOverlayOpen ? <InfoOverlay isOpen={infoOverlayOpen} onClose={toggleInfoOverlay} /> : null;
+    // Get portal target node
+    const portalTarget = typeof document !== 'undefined' ? document.getElementById('portal-container') : null;
+
+    // The InfoOverlay component handles its own internal visibility/transitions
+    return infoOverlayOpen && portalTarget ? createPortal(
+        <InfoOverlay isOpen={infoOverlayOpen} onClose={toggleInfoOverlay} />,
+        portalTarget
+    ) : null;
 };
 
 function UIOverlay({
@@ -139,6 +147,9 @@ function UIOverlay({
   configData,
   crossfadeDurationMs,
   onSetCrossfadeDuration,
+  // --- ADDED PROP ---
+  isFullscreenActive, 
+  // --- END ADDED PROP ---
 }) {
   const { 
     stagedSetlist, 
@@ -180,6 +191,9 @@ function UIOverlay({
 
   const [showReceiverHint, setShowReceiverHint] = useState(true);
   const [showReceiverConfirmation, setShowReceiverConfirmation] = useState(false);
+
+  // Define portal target once
+  const portalTarget = typeof document !== 'undefined' ? document.getElementById('portal-container') : null;
 
   // --- KEYBOARD SHORTCUTS ---
   useEffect(() => {
@@ -306,13 +320,13 @@ function UIOverlay({
             onToggleMapping={toggleMappingMode}
         />
 
-        {/* --- CUSTOM RECEIVER MODE MODAL --- */}
-        {showReceiverConfirmation && (
-          <div className="receiver-modal-overlay">
-            <div className="receiver-modal-content">
+        {/* --- CUSTOM RECEIVER MODE MODAL (PORTALED) --- */}
+        {showReceiverConfirmation && portalTarget && createPortal(
+          <div className="receiver-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="receiver-modal-title">
+            <div className="receiver-modal-content" onClick={(e) => e.stopPropagation()}>
               <div className="receiver-modal-header">
                 <ComputerDesktopIcon style={{ width: '28px', height: '28px', color: 'var(--color-primary)' }} />
-                <h3 className="receiver-modal-title">Dual-Screen Setup</h3>
+                <h3 className="receiver-modal-title" id="receiver-modal-title">Dual-Screen Setup</h3>
               </div>
               
               <div className="receiver-modal-body">
@@ -337,7 +351,8 @@ function UIOverlay({
                 <button className="receiver-modal-btn confirm" onClick={confirmReceiverMode}>Activate Receiver</button>
               </div>
             </div>
-          </div>
+          </div>,
+          portalTarget // <--- Render into the portal container
         )}
 
         {shouldShowInterface && (
@@ -361,8 +376,9 @@ function UIOverlay({
                 <button
                   className={`toolbar-icon ${isProjectorMode ? "active" : ""}`}
                   onClick={handleToggleReceiverMode}
-                  title="Dual-Screen / Projector Setup"
+                  title={isFullscreenActive ? "Exit Fullscreen to use Dual-Screen Mode" : "Dual-Screen / Projector Setup"} // <--- UPDATED TITLE
                   aria-label="Enter Receiver Mode"
+                  disabled={isFullscreenActive} // <--- APPLIED DISABLED PROP
                 >
                   <ComputerDesktopIcon className="icon-image" style={{ padding: '4px', color: '#ffffff' }} />
                 </button>
@@ -418,7 +434,9 @@ function UIOverlay({
       handleCrossfaderChange, handleCrossfaderCommit, handleSceneSelect, crossfadeDurationMs,
       setSequencerInterval, sequencerIntervalMs, toggleSequencer, toggleInfoOverlay, 
       toggleUiVisibility, onEnhancedView, onToggleParallax, toggleSidePanel, openPanel, 
-      uiState, audioState, pLockProps, processEffect, handleToggleReceiverMode, toggleMappingMode, confirmReceiverMode
+      uiState, audioState, pLockProps, processEffect, handleToggleReceiverMode, toggleMappingMode, confirmReceiverMode,
+      portalTarget,
+      isFullscreenActive // <--- ADDED DEPENDENCY
   ]);
 
   return memoizedUI;
@@ -433,6 +451,9 @@ UIOverlay.propTypes = {
   isReady: PropTypes.bool,
   crossfadeDurationMs: PropTypes.number.isRequired,
   onSetCrossfadeDuration: PropTypes.func.isRequired,
+  // --- ADDED PROP TYPE ---
+  isFullscreenActive: PropTypes.bool.isRequired,
+  // --- END ADDED PROP TYPE ---
 };
 
 export default React.memo(UIOverlay);

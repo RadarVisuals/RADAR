@@ -12,6 +12,7 @@ import { useProjectStore } from '../store/useProjectStore';
 import { useWalletStore } from '../store/useWalletStore'; 
 import { useEngineStore } from '../store/useEngineStore';
 import SignalBus from '../utils/SignalBus';
+import fallbackConfig from '../config/fallback-config'; // Import fallback config
 
 export const useCoreApplicationStateAndLifecycle = (props) => {
   const { isBenignOverlayActive, animatingPanel } = props;
@@ -35,27 +36,62 @@ export const useCoreApplicationStateAndLifecycle = (props) => {
   const isReadyForLifecycle = isFullyLoaded && !isLoading;
   const fullSceneList = useMemo(() => Object.values(stagedWorkspace?.presets || {}).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })), [stagedWorkspace]);
 
+  // --- INITIALIZATION EFFECT ---
   useEffect(() => {
+    // Only run if ready and NOT yet initialized
     if (!isReadyForLifecycle || hasInitializedDecksRef.current) return;
+    
     const store = useEngineStore.getState();
-    store.setCrossfader(0.0); store.setRenderedCrossfader(0.0); SignalBus.emit('crossfader:set', 0.0);
+    store.setCrossfader(0.0); 
+    store.setRenderedCrossfader(0.0); 
+    SignalBus.emit('crossfader:set', 0.0);
+
     if (fullSceneList.length > 0) {
+        // Standard Path: Load from Scenes
         const initialSceneName = stagedWorkspace.defaultPresetName || fullSceneList[0]?.name;
         let startIndex = fullSceneList.findIndex(p => p.name === initialSceneName);
         if (startIndex === -1) startIndex = 0;
+        
         const nextIndex = fullSceneList.length > 1 ? (startIndex + 1) % fullSceneList.length : startIndex;
+        
         store.setDeckConfig('A', JSON.parse(JSON.stringify(fullSceneList[startIndex])));
         store.setDeckConfig('B', JSON.parse(JSON.stringify(fullSceneList[nextIndex])));
-        if (activeSceneName !== fullSceneList[startIndex].name) setActiveSceneName(fullSceneList[startIndex].name);
-        hasInitializedDecksRef.current = true;
+        
+        if (activeSceneName !== fullSceneList[startIndex].name) {
+            setActiveSceneName(fullSceneList[startIndex].name);
+        }
+    } else {
+        // --- FIX: EMPTY PROFILE FALLBACK ---
+        // If no scenes exist, we MUST inject a default config into the Engine Store
+        // otherwise 'uiControlConfig' remains null, and 'layerConfigs' remains undefined,
+        // causing the 'Initializing Managers' deadlock.
+        console.warn("[CoreApp] No scenes found. Initializing engine with Fallback Config.");
+        
+        const blankConfig = {
+            name: "Init",
+            ...JSON.parse(JSON.stringify(fallbackConfig))
+        };
+
+        store.setDeckConfig('A', blankConfig);
+        store.setDeckConfig('B', blankConfig);
+        
+        // Don't set activeSceneName if it doesn't exist in the list, 
+        // but ensure the store has data to render.
     }
+    
+    // Mark as initialized so we don't re-run this logic
+    hasInitializedDecksRef.current = true;
+
   }, [isReadyForLifecycle, fullSceneList, stagedWorkspace, activeSceneName, setActiveSceneName]);
 
   useEffect(() => {
     const handleDocked = (side) => {
         const { isAutoFading, sideA, sideB, sequencerState } = useEngineStore.getState();
         const storeActions = useEngineStore.getState();
+        
+        // Prevent auto-sequencing if we have 0 or 1 scenes
         if (isAutoFading || fullSceneList.length < 2) return;
+        
         let nextScene;
         if (sequencerState.active) { nextScene = fullSceneList[sequencerState.nextIndex % fullSceneList.length]; } 
         else { const currentName = side === 'A' ? sideA.config?.name : sideB.config?.name; const idx = fullSceneList.findIndex(s => s.name === currentName); nextScene = fullSceneList[(idx + 1) % fullSceneList.length]; }

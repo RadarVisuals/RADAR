@@ -407,7 +407,8 @@
 
 .scene-list::-webkit-scrollbar { width: 6px; }
 .scene-list::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.1); }
-.scene-list::-webkit-scrollbar-thumb { background-color: var(--color-primary-a30); }
+.scene-list::-webkit-scrollbar-thumb { background-color: var(--color-primary-a30); border-radius: 3px; }
+.scene-list::-webkit-scrollbar-thumb:hover { background-color: var(--color-primary-a50); }
 
 .scene-list li {
   display: flex;
@@ -488,7 +489,8 @@
 }
 
 /* --- SCENE SEQUENCER CONTROLS --- */
-.sequencer-settings-section {
+.sequencer-settings-section,
+.performance-settings-section { /* Added performance section header */
   margin-top: var(--space-lg);
   padding-top: var(--space-md);
   border-top: 1px solid var(--color-border);
@@ -499,10 +501,8 @@
 
 .sequencer-interval-form {
   display: grid;
-  /* --- THIS IS THE FIX --- */
   /* The first column (label) now takes up the flexible space, pushing the controls to the right. */
   grid-template-columns: 1fr auto auto auto;
-  /* --- END FIX --- */
   align-items: center;
   gap: var(--space-sm);
 }
@@ -514,10 +514,8 @@
 }
 
 .sequencer-interval-form .interval-input {
-  /* --- THIS IS THE FIX --- */
   /* Set a specific width for the input field to prevent it from stretching. */
   width: 60px;
-  /* --- END FIX --- */
   text-align: right;
   padding-right: var(--space-xs);
 }
@@ -539,4 +537,50 @@
 
 .sequencer-interval-form .interval-set-button {
   flex-shrink: 0;
+}
+
+/* --- NEW PERFORMANCE SECTION STYLES --- */
+.performance-settings-section .config-section-title {
+  margin-bottom: var(--space-sm);
+}
+
+.fps-control-group {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) 0;
+}
+
+.fps-label {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.fps-buttons {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.fps-button {
+  padding: var(--space-xxs) var(--space-sm) !important;
+  font-size: var(--font-size-xs) !important;
+  font-weight: 600;
+}
+
+.fps-button.active {
+  background-color: var(--color-primary) !important;
+  color: var(--color-bg-dark) !important;
+  border-color: var(--color-primary) !important;
+}
+
+.fps-warning-text {
+  margin-top: var(--space-xs);
+  text-align: center;
+  padding: var(--space-xs);
+  background-color: var(--color-warning-a05);
+  border: 1px solid var(--color-warning-a30);
+  border-radius: var(--radius-sm);
 }

@@ -1,14 +1,15 @@
 // src/utils/PixiEngine.js
 import { Application, Container } from 'pixi.js';
 import { PixiEffectsManager } from './pixi/PixiEffectsManager';
-import SignalBus from './SignalBus';
+import SignalBus from '../utils/SignalBus';
 import { sliderParams } from '../config/sliderParams';
 import { AudioReactor } from './pixi/systems/AudioReactor';
 import { FeedbackSystem } from './pixi/systems/FeedbackSystem';
 import { LayerManager } from './pixi/systems/LayerManager';
 import { CrossfaderSystem } from './pixi/systems/CrossfaderSystem.js';
-import { LogicController } from './LogicController';
-import { RenderLoop } from './pixi/RenderLoop'; // <-- Import the new Loop
+import { LogicController } from '../utils/LogicController'; 
+import { RenderLoop } from './pixi/RenderLoop';
+import { useEngineStore } from '../store/useEngineStore'; 
 
 export default class PixiEngine {
   constructor(canvasElement) {
@@ -58,6 +59,8 @@ export default class PixiEngine {
   async init() {
     if (this.isReady || this._isDestroyed || this.app) return;
     
+    const initialMaxFPS = useEngineStore.getState().maxFPS;
+    
     this.app = new Application();
     
     try {
@@ -70,13 +73,18 @@ export default class PixiEngine {
         autoDensity: true,
         powerPreference: 'high-performance', 
         preference: 'webgl',
-        hello: false
+        hello: false,
       });
 
       if (this._isDestroyed) { 
           this.app.destroy(true); 
           return; 
       }
+
+      // --- APPLY STORED FPS SETTING ---
+      // 0 = Uncapped (Native rAF)
+      // >0 = Throttled
+      this.app.ticker.maxFPS = initialMaxFPS;
 
       // Setup Scene Graph
       this.app.stage.addChild(this.rootContainer);
@@ -119,6 +127,19 @@ export default class PixiEngine {
     } catch (e) { 
         console.error("[PixiEngine] Critical Init Error:", e); 
     }
+  }
+
+  /**
+   * --- INSTANT FPS UPDATE ---
+   * Called directly by UI to avoid refresh
+   */
+  setMaxFPS(fps) {
+      if (this.app && this.app.ticker) {
+          this.app.ticker.maxFPS = fps;
+          if (import.meta.env.DEV) {
+              console.log(`[PixiEngine] Updated maxFPS to ${fps === 0 ? 'Native (0)' : fps}`);
+          }
+      }
   }
 
   // --- API Methods called by React Hooks ---
@@ -209,7 +230,6 @@ export default class PixiEngine {
   
   snapConfig(layerId, fullConfig, deckSide = 'A', forceSnap = false) { 
       if (this.layerManager) { 
-          // Signal to RenderLoop that we have valid data to render physics
           if (this.renderLoop) this.renderLoop.setBootstrapped(true);
           this.layerManager.snapConfig(layerId, fullConfig, deckSide, forceSnap); 
       } 
@@ -247,23 +267,18 @@ export default class PixiEngine {
       if (deckTarget && deckSource) deckTarget.syncPhysicsFrom(deckSource);
   }
 
-  // --- Lifecycle ---
-
   destroy() { 
       this._isDestroyed = true; 
       this.isReady = false; 
       
-      // Remove Listeners
       window.removeEventListener('resize', this._resizeHandler);
       document.removeEventListener('fullscreenchange', this._fullscreenHandler);
       document.removeEventListener('webkitfullscreenchange', this._fullscreenHandler);
       SignalBus.off('event:trigger', this._onEventTrigger);
       SignalBus.off('param:update', this._onParamUpdate);
       
-      // Stop Loop
       if (this.renderLoop) this.renderLoop.stop();
 
-      // Destroy Systems
       if (this.audioReactor) this.audioReactor.destroy();
       if (this.layerManager) this.layerManager.destroy();
       if (this.feedbackSystem) this.feedbackSystem.destroy();

@@ -1,45 +1,33 @@
 // src/components/MainViewParts/FpsDisplay.jsx
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
+import SignalBus from '../../utils/SignalBus'; // ADDED IMPORT
 
 import './FpsDisplay.css';
 
 const FpsDisplay = ({ showFpsCounter }) => {
   const textRef = useRef(null);
-  const frameCountRef = useRef(0);
-  const lastTimeRef = useRef(performance.now());
-  const rafId = useRef(null);
+  const [currentFps, setCurrentFps] = useState('--');
 
   useEffect(() => {
-    const updateFps = () => {
-      const now = performance.now();
-      const delta = now - lastTimeRef.current;
-      frameCountRef.current++;
+    if (!showFpsCounter) return;
 
-      if (delta >= 1000) {
-        const fps = Math.round((frameCountRef.current * 1000) / delta);
-        
+    // We only update the display text when a new FPS value is broadcast
+    const handleFpsUpdate = (fps) => {
         // PERFORMANCE FIX: Update DOM directly to avoid React re-render overhead
         if (textRef.current) {
             textRef.current.textContent = `FPS: ${fps}`;
+            // Optional: for components that need the numerical value
+            setCurrentFps(fps); 
         }
-        
-        frameCountRef.current = 0;
-        lastTimeRef.current = now;
-      }
-      rafId.current = requestAnimationFrame(updateFps);
     };
 
-    if (showFpsCounter) {
-        lastTimeRef.current = performance.now();
-        frameCountRef.current = 0;
-        rafId.current = requestAnimationFrame(updateFps);
-    }
+    // Subscribe to the engine's actual FPS output
+    const unsubscribe = SignalBus.on('engine:actual_fps', handleFpsUpdate);
 
     return () => {
-      if (rafId.current) {
-        cancelAnimationFrame(rafId.current);
-      }
+      // Cleanup the SignalBus listener on unmount
+      unsubscribe();
     };
   }, [showFpsCounter]);
 
@@ -49,7 +37,7 @@ const FpsDisplay = ({ showFpsCounter }) => {
 
   return (
     <div className="fps-counter" aria-live="off">
-      <span ref={textRef}>FPS: --</span>
+      <span ref={textRef}>FPS: {currentFps}</span> 
     </div>
   );
 };

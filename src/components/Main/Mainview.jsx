@@ -301,6 +301,9 @@ const MainView = ({ blendModes = BLEND_MODES }) => {
               }}
               crossfadeDurationMs={crossfadeDurationMs}
               onSetCrossfadeDuration={setCrossfadeDurationMs}
+              // --- ADDED/UPDATED PROP ---
+              isFullscreenActive={isFullscreenActive}
+              // --- END ADDED/UPDATED PROP ---
             />
             <StatusIndicator
                 showStatusDisplay={showStatusDisplay}
