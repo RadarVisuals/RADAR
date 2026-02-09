@@ -45,9 +45,9 @@ export class FeedbackSystem {
 
         const { width, height } = this.app.screen;
         
-        // PERFORMANCE OPTIMIZATION: Cap feedback resolution to 1.0
-        // Feedback loops accumulate noise, high resolution is wasted VRAM/Fillrate here.
-        const res = Math.min(this.app.renderer.resolution, 1.0);
+        // QUALITY FIX: Use the actual renderer resolution (e.g. 2 for Retina)
+        // This ensures the feedback loop has enough pixels to zoom effectively without immediate blur.
+        const res = this.app.renderer.resolution; 
 
         if (this.buffers.length > 0) {
             this.buffers.forEach(b => b.destroy(true));
@@ -59,7 +59,9 @@ export class FeedbackSystem {
             height, 
             resolution: res,
             antialias: false,
-            scaleMode: 'linear',
+            // AESTHETIC FIX: Reverted to 'linear' for smooth trails.
+            // The higher resolution above will keep it looking crisp longer.
+            scaleMode: 'linear', 
             depth: true,
             stencil: true
         };

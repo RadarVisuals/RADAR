@@ -58,10 +58,17 @@ class SyncBridge {
     this.bc.postMessage({ type: 'AUDIO_SETTINGS', settings });
   }
 
+  // --- MAPPING SYNC START ---
+  sendMappingState(isActive) {
+    if (this.role !== 'sender') return;
+    this.bc.postMessage({ type: 'MAPPING_STATE', isActive });
+  }
+
   sendMappingConfig(config) {
     if (this.role !== 'sender') return;
     this.bc.postMessage({ type: 'MAPPING_CONFIG', config });
   }
+  // --- MAPPING SYNC END ---
 
   sendDeckConfig(side, config) {
     if (this.role !== 'sender') return;
@@ -117,6 +124,15 @@ class SyncBridge {
 
       case 'AUDIO_SETTINGS':
         useEngineStore.getState().setAudioSettings(msg.settings);
+        break;
+
+      case 'MAPPING_STATE':
+        // Directly update the store to toggle the mask visibility on the receiver
+        if (msg.isActive) {
+            useUIStore.setState({ isMappingMode: true });
+        } else {
+            useUIStore.setState({ isMappingMode: false });
+        }
         break;
 
       case 'MAPPING_CONFIG':

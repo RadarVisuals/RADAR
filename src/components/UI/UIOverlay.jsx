@@ -147,9 +147,7 @@ function UIOverlay({
   configData,
   crossfadeDurationMs,
   onSetCrossfadeDuration,
-  // --- ADDED PROP ---
   isFullscreenActive, 
-  // --- END ADDED PROP ---
 }) {
   const { 
     stagedSetlist, 
@@ -265,6 +263,16 @@ function UIOverlay({
       setShowReceiverConfirmation(false);
   }, [toggleProjectorMode]);
 
+  // --- MAPPING SYNC WRAPPER ---
+  const handleToggleMapping = useCallback(() => {
+    // Calculate new state
+    const newState = !isMappingMode;
+    // Perform Local Toggle
+    toggleMappingMode();
+    // Broadcast State to Receiver
+    syncBridge.sendMappingState(newState);
+  }, [isMappingMode, toggleMappingMode]);
+
   const memoizedUI = useMemo(() => {
     if (!isReady) return null;
 
@@ -317,7 +325,7 @@ function UIOverlay({
             transitionMode={transitionMode}
             onToggleTransitionMode={toggleTransitionMode}
             isMappingMode={isMappingMode}
-            onToggleMapping={toggleMappingMode}
+            onToggleMapping={handleToggleMapping} 
         />
 
         {/* --- CUSTOM RECEIVER MODE MODAL (PORTALED) --- */}
@@ -352,7 +360,7 @@ function UIOverlay({
               </div>
             </div>
           </div>,
-          portalTarget // <--- Render into the portal container
+          portalTarget
         )}
 
         {shouldShowInterface && (
@@ -376,9 +384,9 @@ function UIOverlay({
                 <button
                   className={`toolbar-icon ${isProjectorMode ? "active" : ""}`}
                   onClick={handleToggleReceiverMode}
-                  title={isFullscreenActive ? "Exit Fullscreen to use Dual-Screen Mode" : "Dual-Screen / Projector Setup"} // <--- UPDATED TITLE
+                  title={isFullscreenActive ? "Exit Fullscreen to use Dual-Screen Mode" : "Dual-Screen / Projector Setup"} 
                   aria-label="Enter Receiver Mode"
-                  disabled={isFullscreenActive} // <--- APPLIED DISABLED PROP
+                  disabled={isFullscreenActive} 
                 >
                   <ComputerDesktopIcon className="icon-image" style={{ padding: '4px', color: '#ffffff' }} />
                 </button>
@@ -435,8 +443,9 @@ function UIOverlay({
       setSequencerInterval, sequencerIntervalMs, toggleSequencer, toggleInfoOverlay, 
       toggleUiVisibility, onEnhancedView, onToggleParallax, toggleSidePanel, openPanel, 
       uiState, audioState, pLockProps, processEffect, handleToggleReceiverMode, toggleMappingMode, confirmReceiverMode,
+      handleToggleMapping, // <--- ADDED DEPENDENCY
       portalTarget,
-      isFullscreenActive // <--- ADDED DEPENDENCY
+      isFullscreenActive
   ]);
 
   return memoizedUI;
@@ -451,9 +460,7 @@ UIOverlay.propTypes = {
   isReady: PropTypes.bool,
   crossfadeDurationMs: PropTypes.number.isRequired,
   onSetCrossfadeDuration: PropTypes.func.isRequired,
-  // --- ADDED PROP TYPE ---
   isFullscreenActive: PropTypes.bool.isRequired,
-  // --- END ADDED PROP TYPE ---
 };
 
 export default React.memo(UIOverlay);
