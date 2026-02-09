@@ -251,8 +251,10 @@ export class PixiLayerDeck {
   }
 
   resize(renderer) {
-    const hw = (renderer.screen.width * 0.5) | 0; 
-    const hh = (renderer.screen.height * 0.5) | 0;
+    // FIX: Removed bitwise floor (| 0) to allow sub-pixel precision on odd-width screens/projectors
+    const hw = renderer.screen.width * 0.5; 
+    const hh = renderer.screen.height * 0.5;
+    
     this.quadrants[0].updateMask(0, 0, hw, hh);
     this.quadrants[1].updateMask(hw, 0, renderer.screen.width - hw, hh);
     this.quadrants[2].updateMask(0, hh, hw, renderer.screen.height - hh);
