@@ -10,13 +10,17 @@ import WaveDistortEffect from './library/WaveDistortEffect';
 import KaleidoscopeEffect from './library/KaleidoscopeEffect';
 import AsciiEffect from './library/AsciiEffect';
 import ShockwaveEffect from './library/ShockwaveEffect';
-import CRTEffect from './library/CRTEffect'; // <-- NEW
+import CRTEffect from './library/CRTEffect';
+
+// --- NEW PSYTRANCE ADDITIONS ---
+import ColorCycleEffect from './library/ColorCycleEffect';
 
 /**
  * Central registry of all available modular effects.
  * Keys match the ID used in the Engine Store and Logic Controller.
  */
 export const SHADER_CLASSES = {
+    // Standard Library
     'liquid': LiquidEffect,
     'adversarial': AdversarialEffect,
     'bloom': BloomEffect,
@@ -28,7 +32,10 @@ export const SHADER_CLASSES = {
     'kaleidoscope': KaleidoscopeEffect,
     'ascii': AsciiEffect,
     'shockwave': ShockwaveEffect,
-    'crt': CRTEffect // <-- NEW
+    'crt': CRTEffect,
+
+    // New "Set & Forget" Effects
+    'colorCycle': ColorCycleEffect // Slow Hue Shift
 };
 
 export const generateEffectManifest = (corePhysicsManifest = {}) => {

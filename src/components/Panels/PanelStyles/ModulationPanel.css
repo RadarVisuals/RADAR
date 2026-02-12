@@ -1,16 +1,47 @@
 /* src/components/Panels/PanelStyles/ModulationPanel.css */
 @import "../../../styles/variables.css";
 
+/* --- MIDI MAPPING STYLES (NEW) --- */
+.midi-learn-btn {
+    background: var(--color-primary-a10);
+    border: 1px solid var(--color-primary-a30);
+    color: var(--color-primary);
+    border-radius: 3px;
+    cursor: pointer;
+    outline: none;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.midi-learn-btn:hover:not(:disabled) {
+    background: var(--color-primary-a20);
+    border-color: var(--color-primary-a50);
+}
+
+.midi-learn-btn.learning {
+    background: var(--color-accent-a20);
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+    animation: blink 1s infinite;
+}
+
+@keyframes blink { 
+    0% { opacity: 1; } 
+    50% { opacity: 0.5; } 
+    100% { opacity: 1; } 
+}
+
+/* --- EXISTING STYLES --- */
+
 .modulation-panel .panel-content {
     padding: var(--space-sm);
     display: flex;
     flex-direction: column;
     gap: var(--space-xs);
-    
-    /* --- FIX: PREVENT LAYOUT SHIFT --- */
     overflow-y: auto;
     scrollbar-gutter: stable; 
-    /* -------------------------------- */
 }
 
 .mod-list-container {
@@ -27,23 +58,6 @@
     border-radius: var(--radius-sm);
     padding: var(--space-sm);
     margin-bottom: var(--space-sm);
-}
-
-.section-header-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: 1px solid var(--color-border);
-    padding-bottom: 4px;
-    margin-bottom: 8px;
-}
-
-.section-title-small {
-    font-size: 10px;
-    color: var(--color-primary);
-    text-transform: uppercase;
-    font-weight: bold;
-    margin: 0;
 }
 
 .lfo-config-row {
@@ -81,7 +95,7 @@
     height: 8px;
     border-radius: 50%;
     background: var(--color-text);
-    transition: transform 0.05s linear; /* Fast for smooth anim */
+    transition: transform 0.05s linear;
 }
 
 .lfo-label {
@@ -134,7 +148,7 @@
 /* --- Action Buttons Row --- */
 .mod-actions-row {
     display: flex;
-    justify-content: flex-end; /* Align to right */
+    justify-content: flex-end;
     align-items: center;
     gap: 12px;
     margin-bottom: var(--space-sm);
@@ -217,10 +231,8 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-    /* --- FIX: AESTHETIC ALIGNMENT --- */
     padding: 6px;
-    background: rgba(0, 0, 0, 0.15); /* Subtle dimming instead of border line */
-    /* Removed border-left and margin-left to prevent "weird line" look */
+    background: rgba(0, 0, 0, 0.15);
 }
 
 /* --- Effect Group (Rack Module Style) --- */
@@ -275,15 +287,6 @@
 .effect-status-dot.on {
     background-color: var(--color-primary);
     box-shadow: 0 0 6px var(--color-primary);
-}
-
-.mod-badge {
-    font-size: 8px;
-    background: var(--color-warning-a30);
-    color: var(--color-warning);
-    padding: 1px 3px;
-    border-radius: 2px;
-    font-weight: bold;
 }
 
 .effect-label {
@@ -358,7 +361,6 @@
     align-items: center;
 }
 
-/* Background visualizer */
 .slider-track-bg {
     position: absolute;
     top: 50%;
@@ -376,11 +378,10 @@
     height: 100%;
     background: var(--color-primary);
     width: 0%;
-    transition: width 0s; /* Instant updates from SignalBus */
+    transition: width 0s;
     opacity: 0.6;
 }
 
-/* Foreground interaction slider */
 .base-slider {
     -webkit-appearance: none;
     appearance: none;
@@ -412,11 +413,9 @@
     display: flex;
     flex-direction: column;
     gap: 3px;
-    /* --- FIX: REMOVED BORDER-LEFT --- */
     padding: 4px;
     background: rgba(0,0,0,0.2);
     border-radius: var(--radius-sm);
-    /* -------------------------------- */
 }
 
 .patch-row {
@@ -444,15 +443,6 @@
     display: flex;
     align-items: center;
     height: 12px;
-}
-
-.center-tick {
-    position: absolute;
-    left: 50%;
-    height: 4px;
-    width: 1px;
-    background: var(--color-text-dim);
-    pointer-events: none;
 }
 
 .patch-amount-slider {

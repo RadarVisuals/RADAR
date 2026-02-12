@@ -61,6 +61,11 @@ export const useSetManagementState = () => {
     setDefaultScene: s.setDefaultScene,
     addCollectionToLibrary: s.addCollectionToLibrary,
     removeCollectionFromLibrary: s.removeCollectionFromLibrary,
+    // --- ADDED PALETTE ACTIONS ---
+    addPalette: s.addPalette,
+    removePalette: s.removePalette,
+    addTokenToPalette: s.addTokenToPalette,
+    removeTokenFromPalette: s.removeTokenFromPalette,
   })));
 
   const session = useProfileSessionState();

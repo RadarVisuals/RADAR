@@ -1,7 +1,8 @@
 // src/utils/MidiManager.js
 import { useEngineStore } from '../store/useEngineStore';
 import { useProjectStore } from '../store/useProjectStore';
-import { sliderParams } from '../config/sliderParams'; 
+import { sliderParams } from '../config/sliderParams';
+import { getParamDefinition } from '../config/EffectManifest'; // <-- IMPORTED
 import SignalBus from './SignalBus';
 import { getPixiEngine } from '../hooks/usePixiOrchestrator';
 
@@ -10,6 +11,8 @@ import { getPixiEngine } from '../hooks/usePixiOrchestrator';
  * 
  * Bypasses the React render cycle for knobs/sliders for zero latency.
  * Correctly detects and dispatches global actions (Pads) for scene/workspace navigation.
+ * 
+ * UPDATED: Now supports mapping ANY parameter defined in EffectManifest.
  */
 class MidiManager {
   constructor() {
@@ -56,24 +59,48 @@ class MidiManager {
   /**
    * SOFT TAKEOVER CHECK
    */
-  _checkCatch(layerId, param, physicalVal) {
-    const catchKey = `${layerId}:${param}`;
+  _checkCatch(groupKey, param, physicalVal) {
+    const fullId = param.includes('.') ? param : `${groupKey}.${param}`;
+    
+    // 1. Resolve Definition
+    // Try explicit ID first, then generic
+    const targetDef = getParamDefinition(fullId) || getParamDefinition(param);
+
+    // Skip catch logic for booleans (buttons/pads), they should trigger instantly
+    if (targetDef && targetDef.type === 'bool') return true;
+
+    const catchKey = `${groupKey}:${param}`;
     if (this.catchStatus.get(catchKey)) return true;
 
-    const engine = getPixiEngine();
-    if (!engine) return true;
-
+    const store = useEngineStore.getState();
     let softwareVal = 0;
-    if (layerId === 'global' && param === 'crossfader') {
-        softwareVal = useEngineStore.getState().crossfader;
-    } else {
-        const liveVal = engine.getLiveValue(layerId, param);
-        const config = sliderParams.find(p => p.prop === param);
-        if (config) {
-            softwareVal = (liveVal - config.min) / (config.max - config.min);
+
+    // 2. Determine Software Value (Normalized 0-1)
+    if (groupKey === 'global' && param === 'crossfader') {
+        softwareVal = store.crossfader;
+    } 
+    else if (['1', '2', '3'].includes(groupKey)) {
+        // Legacy Layer Logic (Read from Engine for best accuracy on layers)
+        const engine = getPixiEngine();
+        if (engine) {
+            const liveVal = engine.getLiveValue(groupKey, param);
+            const config = sliderParams.find(p => p.prop === param);
+            if (config) {
+                softwareVal = (liveVal - config.min) / (config.max - config.min);
+            }
+        }
+    } 
+    else {
+        // Effect Logic (Read from Store BaseValues)
+        // We use baseValues because modulation is additive, and MIDI controls the base knob.
+        const rawVal = store.baseValues[fullId];
+        if (targetDef && rawVal !== undefined) {
+             const range = targetDef.max - targetDef.min;
+             softwareVal = range === 0 ? 0 : (rawVal - targetDef.min) / range;
         }
     }
 
+    // 3. Compare
     const distance = Math.abs(physicalVal - softwareVal);
     if (distance <= this.CATCH_THRESHOLD) {
         this.catchStatus.set(catchKey, true);
@@ -125,7 +152,7 @@ class MidiManager {
     const projectStore = useProjectStore.getState();
     const midiMap = projectStore.stagedSetlist.globalUserMidiMap || {};
 
-    // --- A. CROSSFADER CHECK ---
+    // --- A. GLOBAL CROSSFADER ---
     if (midiMap.global?.crossfader) {
         const mapping = midiMap.global.crossfader;
         if (this._isMatch(mapping, type, data1, msgChan)) {
@@ -138,27 +165,86 @@ class MidiManager {
         }
     }
 
-    // --- B. PARAMETER MAPPINGS (Knobs) ---
-    for (const layerId in midiMap) {
-      if (layerId === "global" || layerId === "layerSelects") continue;
+    // --- B. PARAMETER MAPPINGS (Unified: Layers + Effects) ---
+    for (const groupKey in midiMap) {
+      // Skip special keys
+      if (groupKey === "global" || groupKey === "layerSelects") continue;
       
-      const layerParams = midiMap[layerId];
-      if (!layerParams) continue;
+      const groupParams = midiMap[groupKey];
+      if (!groupParams) continue;
 
-      for (const paramName in layerParams) {
-        const mapping = layerParams[paramName];
+      for (const paramKey in groupParams) {
+        const mapping = groupParams[paramKey];
+        
         if (mapping && this._isMatch(mapping, type, data1, msgChan)) {
           
-          const normalized = this._normalize(data2, mapping.type, data1);
+          // Construct ID to find definition
+          const fullId = paramKey.includes('.') ? paramKey : `${groupKey}.${paramKey}`;
+          const paramDef = getParamDefinition(fullId) || getParamDefinition(paramKey);
 
-          // CATCH CHECK
-          if (this._checkCatch(layerId, paramName, normalized)) {
-              SignalBus.emit('param:update', { 
-                  layerId, param: paramName, value: normalized, isNormalized: true 
-              });
-              this._scheduleStoreSync(layerId, paramName, normalized);
+          if (paramDef) {
+              // --- TYPE: BOOLEAN (Toggle) ---
+              if (paramDef.type === 'bool') {
+                  // Only toggle on Note On press
+                  if (isNoteOn) { 
+                      const currentVal = engineStore.baseValues[paramDef.id] || 0;
+                      const newVal = currentVal > 0.5 ? 0 : 1; // Flip
+                      
+                      // Immediate Update
+                      const engine = getPixiEngine();
+                      if (engine) engine.setModulationValue(paramDef.id, newVal);
+                      
+                      // Persist
+                      this._scheduleStoreSync(groupKey, paramKey, newVal);
+                  }
+                  // For CC buttons, usually > 64 is ON, < 64 is OFF, or toggle behavior?
+                  // Sticking to NoteOn toggle for pads mostly.
+                  else if (isCC) {
+                      const newVal = data2 > 63 ? 1 : 0;
+                      const engine = getPixiEngine();
+                      if (engine) engine.setModulationValue(paramDef.id, newVal);
+                      this._scheduleStoreSync(groupKey, paramKey, newVal);
+                  }
+              } 
+              // --- TYPE: FLOAT/INT (Slider/Knob) ---
+              else {
+                  const normalized = this._normalize(data2, mapping.type, data1);
+                  
+                  // Scale from 0-1 to Min-Max
+                  const scaledVal = paramDef.min + (normalized * (paramDef.max - paramDef.min));
+
+                  // Catch Check
+                  if (this._checkCatch(groupKey, paramKey, normalized)) {
+                      
+                      const engine = getPixiEngine();
+                      if (engine) {
+                          if (['1','2','3'].includes(groupKey)) {
+                              // Layer: Use SignalBus for smooth interpolation hook
+                              SignalBus.emit('param:update', { 
+                                  layerId: groupKey, param: paramKey, value: scaledVal, isNormalized: false 
+                              });
+                          } else {
+                              // Effect: Direct Set
+                              engine.setModulationValue(paramDef.id, scaledVal);
+                          }
+                      }
+                      this._scheduleStoreSync(groupKey, paramKey, scaledVal);
+                  }
+              }
+          } 
+          // --- FALLBACK (Old Layer Logic) ---
+          else {
+              const normalized = this._normalize(data2, mapping.type, data1);
+              if (['1','2','3'].includes(groupKey)) {
+                  if (this._checkCatch(groupKey, paramKey, normalized)) {
+                      SignalBus.emit('param:update', { 
+                          layerId: groupKey, param: paramKey, value: normalized, isNormalized: true 
+                      });
+                      this._scheduleStoreSync(groupKey, paramKey, normalized);
+                  }
+              }
           }
-          return;
+          return; // Stop processing after match
         }
       }
     }
@@ -210,22 +296,42 @@ class MidiManager {
     return value / 127;
   }
 
-  _scheduleStoreSync(layerId, param, normalizedValue) {
-    const key = `${layerId}:${param}`;
-    this.pendingSyncs.set(key, { layerId, param, value: normalizedValue });
+  _scheduleStoreSync(groupKey, param, value) {
+    // Throttled update to Zustand to prevent persistence lag
+    const key = `${groupKey}:${param}`;
+    this.pendingSyncs.set(key, { groupKey, param, value });
 
     if (!this.storeSyncThrottle) {
       this.storeSyncThrottle = setTimeout(() => {
         const engine = useEngineStore.getState();
         const project = useProjectStore.getState();
         
-        this.pendingSyncs.forEach(({ layerId, param, value }) => {
-          if (layerId === 'global') {
+        this.pendingSyncs.forEach(({ groupKey, param, value }) => {
+          if (groupKey === 'global' && param === 'crossfader') {
             engine.setCrossfader(value);
-          } else {
+          } 
+          else if (['1','2','3'].includes(groupKey)) {
+            // Check if normalized fallback needed
             const config = sliderParams.find(p => p.prop === param);
-            const scaled = config ? config.min + (value * (config.max - config.min)) : value;
-            engine.updateActiveDeckConfig(layerId, param, scaled);
+            // If value is already scaled (from new logic), good. 
+            // If normalized (0-1 from fallback logic), scale it.
+            // Simplified: The new logic sends Scaled. The fallback sends Normalized.
+            // Ideally we ensure consistency. 
+            // For safety, assume value passed here matches what the engine expects.
+            
+            // Legacy Scaler for fallback support
+            let finalVal = value;
+            if (value <= 1.0 && config && config.max > 1.0) {
+                 // Heuristic: If val is 0-1 but max is huge, likely normalized
+                 finalVal = config.min + (value * (config.max - config.min));
+            }
+            engine.updateActiveDeckConfig(groupKey, param, finalVal);
+          } 
+          else {
+            // Effect Param: Just set base value
+            // We construct full ID or use param if it contains dot
+            const fullId = param.includes('.') ? param : `${groupKey}.${param}`;
+            engine.setEffectBaseValue(fullId, value);
           }
         });
 
@@ -238,15 +344,15 @@ class MidiManager {
 
   _handleParamMapping(learning, mappingData) {
     const projectStore = useProjectStore.getState();
-    const currentMap = { ...projectStore.stagedSetlist.globalUserMidiMap };
+    const currentMap = JSON.parse(JSON.stringify(projectStore.stagedSetlist.globalUserMidiMap || {}));
     
-    if (learning.type === 'param') {
-      const lKey = String(learning.layer);
-      currentMap[lKey] = { ...(currentMap[lKey] || {}), [learning.param]: mappingData };
-    } else {
-      if (!currentMap.global) currentMap.global = {};
-      currentMap.global[learning.control] = mappingData;
-    }
+    // learning.layer holds the group name (e.g., 'bloom', 'feedback', '1', '2')
+    // learning.param holds the parameter name (e.g., 'intensity', 'scale')
+    
+    const group = String(learning.layer);
+    if (!currentMap[group]) currentMap[group] = {};
+    
+    currentMap[group][learning.param] = mappingData;
     
     projectStore.updateGlobalMidiMap(currentMap);
     useEngineStore.getState().setMidiLearning(null);

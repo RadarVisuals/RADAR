@@ -1,10 +1,12 @@
 // src/components/Panels/ModulationPanel.jsx
-import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import Panel from './Panel';
 import { useVisualEngine } from '../../hooks/useVisualEngine';
 import { EFFECT_MANIFEST } from '../../config/EffectManifest';
 import SignalBus from '../../utils/SignalBus'; 
+import { useEngineStore } from '../../store/useEngineStore'; 
+import { useProfileSessionState } from '../../hooks/configSelectors';
 import './PanelStyles/ModulationPanel.css';
 
 const SIGNAL_SOURCES = [
@@ -25,8 +27,6 @@ const SIGNAL_SOURCES = [
         { value: 'event.any', label: 'Any Event' }
     ]}
 ];
-
-// --- Sub-components (Unchanged logic) ---
 
 const LfoConfigurator = ({ lfoId, label, settings, onChange }) => {
     const { frequency, type } = settings || { frequency: 1, type: 'sine' };
@@ -90,6 +90,24 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
     const valueDisplayRef = useRef(null);
     const isModulatable = def.type === 'float' || def.type === 'int';
 
+    // --- MIDI MAPPING HOOKS ---
+    const { isProfileOwner } = useProfileSessionState();
+    const isConnected = useEngineStore(s => s.isConnected);
+    const midiLearning = useEngineStore(s => s.midiLearning);
+    const setMidiLearning = useEngineStore(s => s.setMidiLearning);
+
+    // Helper to extract group for mapping
+    // e.g., "bloom.intensity" -> group="bloom", param="intensity"
+    const [group, paramName] = paramId.split('.');
+    
+    const handleLearn = () => {
+        if (!isProfileOwner || !isConnected) return;
+        setMidiLearning({ type: 'param', param: paramName, layer: group });
+    };
+
+    const isLearningThis = midiLearning?.param === paramName && midiLearning?.layer === group;
+    // --------------------------
+
     useEffect(() => {
         if (!isModulatable) return;
         const handleUpdate = (allValues) => {
@@ -120,7 +138,23 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
     return (
         <div className="param-block">
             <div className="param-header">
-                <span className="param-name">{def.label}</span>
+                <div style={{display: 'flex', gap: '6px', alignItems: 'center'}}>
+                    <span className="param-name">{def.label}</span>
+                    
+                    {/* --- MIDI MAP BUTTON --- */}
+                    {isConnected && isProfileOwner && (
+                        <button 
+                            className={`midi-learn-btn small-action-button ${isLearningThis ? "learning" : ""}`}
+                            onClick={handleLearn}
+                            style={{fontSize:'8px', padding:'1px 4px', height:'14px', lineHeight:1, minWidth:'14px'}}
+                            disabled={!!midiLearning && !isLearningThis}
+                            title={`Map MIDI to ${def.label}`}
+                        >
+                            {isLearningThis ? "..." : "M"}
+                        </button>
+                    )}
+                </div>
+
                 {isModulatable && (
                     <span ref={valueDisplayRef} className="param-value-display">
                         {Number(currentValue).toFixed(def.type === 'int' ? 0 : 2)}
@@ -210,8 +244,6 @@ const ParamControl = ({ paramId, def, currentValue, patches, onUpdateBase, onAdd
     );
 };
 
-// --- Main Panel ---
-
 const ModulationPanel = ({ onClose }) => {
     const { 
         baseValues, patches, setModulationValue, 
@@ -221,12 +253,8 @@ const ModulationPanel = ({ onClose }) => {
         resetBaseValues 
     } = useVisualEngine();
     
-    // --- REFACTORED CATEGORY LOGIC ---
-    // Instead of hardcoded arrays, we group by the 'category' string in the Manifest
     const categorizedEffects = useMemo(() => {
         const groups = {};
-        
-        // Ensure Core Physics comes first
         groups['Core Physics'] = [];
 
         Object.entries(EFFECT_MANIFEST).forEach(([key, config]) => {
@@ -239,7 +267,6 @@ const ModulationPanel = ({ onClose }) => {
             }
         });
 
-        // Sort keys to ensure 'Core Physics' is first, 'Other' is last
         const sortedKeys = Object.keys(groups).sort((a, b) => {
             if (a === 'Core Physics') return -1;
             if (b === 'Core Physics') return 1;
