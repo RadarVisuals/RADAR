@@ -2,7 +2,7 @@
 import { useEngineStore } from '../store/useEngineStore';
 import { useProjectStore } from '../store/useProjectStore';
 import { sliderParams } from '../config/sliderParams';
-import { getParamDefinition } from '../config/EffectManifest'; // <-- IMPORTED
+import { getParamDefinition } from '../config/EffectManifest';
 import SignalBus from './SignalBus';
 import { getPixiEngine } from '../hooks/usePixiOrchestrator';
 
@@ -13,6 +13,7 @@ import { getPixiEngine } from '../hooks/usePixiOrchestrator';
  * Correctly detects and dispatches global actions (Pads) for scene/workspace navigation.
  * 
  * UPDATED: Now supports mapping ANY parameter defined in EffectManifest.
+ * FIXED: Auto-catches parameters upon learning to allow immediate control (override).
  */
 class MidiManager {
   constructor() {
@@ -135,9 +136,12 @@ class MidiManager {
     // 2. Handle Learning Mode
     if (engineStore.midiLearning) {
       if (isCC || isNoteOn || isPitch) {
+        // midiLearning structure: { type: 'param', param: 'intensity', layer: 'bloom' }
         this._handleParamMapping(engineStore.midiLearning, {
           type: isCC ? "cc" : (isNoteOn ? "note" : "pitchbend"),
-          number: data1, channel: msgChan,
+          number: data1, 
+          channel: msgChan,
+          isToggle: isNoteOn // Hint for boolean handling
         });
       }
       return;
@@ -311,25 +315,16 @@ class MidiManager {
             engine.setCrossfader(value);
           } 
           else if (['1','2','3'].includes(groupKey)) {
-            // Check if normalized fallback needed
+            // Legacy Scaler for fallback support if needed
             const config = sliderParams.find(p => p.prop === param);
-            // If value is already scaled (from new logic), good. 
-            // If normalized (0-1 from fallback logic), scale it.
-            // Simplified: The new logic sends Scaled. The fallback sends Normalized.
-            // Ideally we ensure consistency. 
-            // For safety, assume value passed here matches what the engine expects.
-            
-            // Legacy Scaler for fallback support
             let finalVal = value;
             if (value <= 1.0 && config && config.max > 1.0) {
-                 // Heuristic: If val is 0-1 but max is huge, likely normalized
                  finalVal = config.min + (value * (config.max - config.min));
             }
             engine.updateActiveDeckConfig(groupKey, param, finalVal);
           } 
           else {
             // Effect Param: Just set base value
-            // We construct full ID or use param if it contains dot
             const fullId = param.includes('.') ? param : `${groupKey}.${param}`;
             engine.setEffectBaseValue(fullId, value);
           }
@@ -346,13 +341,17 @@ class MidiManager {
     const projectStore = useProjectStore.getState();
     const currentMap = JSON.parse(JSON.stringify(projectStore.stagedSetlist.globalUserMidiMap || {}));
     
-    // learning.layer holds the group name (e.g., 'bloom', 'feedback', '1', '2')
-    // learning.param holds the parameter name (e.g., 'intensity', 'scale')
-    
     const group = String(learning.layer);
     if (!currentMap[group]) currentMap[group] = {};
     
     currentMap[group][learning.param] = mappingData;
+
+    // --- FIX: FORCE CATCH ENABLED ---
+    // This explicitly allows immediate override without needing to cross the threshold
+    // specifically for the control we just learned.
+    const catchKey = `${group}:${learning.param}`;
+    this.catchStatus.set(catchKey, true);
+    // --------------------------------
     
     projectStore.updateGlobalMidiMap(currentMap);
     useEngineStore.getState().setMidiLearning(null);
