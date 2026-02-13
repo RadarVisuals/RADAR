@@ -5,6 +5,7 @@ import { sliderParams } from '../config/sliderParams';
 import { getParamDefinition } from '../config/EffectManifest';
 import SignalBus from './SignalBus';
 import { getPixiEngine } from '../hooks/usePixiOrchestrator';
+import { syncBridge } from './SyncBridge';
 
 /**
  * High-Performance MidiManager with Parameter Catching (Soft Takeover)
@@ -13,7 +14,7 @@ import { getPixiEngine } from '../hooks/usePixiOrchestrator';
  * Correctly detects and dispatches global actions (Pads) for scene/workspace navigation.
  * 
  * UPDATED: Now supports mapping ANY parameter defined in EffectManifest.
- * FIXED: Auto-catches parameters upon learning to allow immediate control (override).
+ * UPDATED: Broadcasts changes via SyncBridge to support Dual-Screen Mode.
  */
 class MidiManager {
   constructor() {
@@ -162,7 +163,11 @@ class MidiManager {
         if (this._isMatch(mapping, type, data1, msgChan)) {
             const val = this._normalize(data2, mapping.type, data1);
             if (this._checkCatch('global', 'crossfader', val)) {
+                // Update Local
                 SignalBus.emit('crossfader:set', val);
+                // Update Remote
+                syncBridge.sendCrossfader(val);
+                
                 this._scheduleStoreSync('global', 'crossfader', val);
             }
             return;
@@ -189,24 +194,24 @@ class MidiManager {
           if (paramDef) {
               // --- TYPE: BOOLEAN (Toggle) ---
               if (paramDef.type === 'bool') {
-                  // Only toggle on Note On press
-                  if (isNoteOn) { 
-                      const currentVal = engineStore.baseValues[paramDef.id] || 0;
-                      const newVal = currentVal > 0.5 ? 0 : 1; // Flip
+                  // Only toggle on Note On press, or CC thresholds
+                  if (isNoteOn || (isCC && isNoteOn === false)) { 
+                      let newVal; 
+                      if (isNoteOn) {
+                          const currentVal = engineStore.baseValues[paramDef.id] || 0;
+                          newVal = currentVal > 0.5 ? 0 : 1; // Flip
+                      } else {
+                          newVal = data2 > 63 ? 1 : 0;
+                      }
                       
                       // Immediate Update
                       const engine = getPixiEngine();
                       if (engine) engine.setModulationValue(paramDef.id, newVal);
                       
+                      // Sync to Receiver
+                      syncBridge.sendModValue(paramDef.id, newVal);
+
                       // Persist
-                      this._scheduleStoreSync(groupKey, paramKey, newVal);
-                  }
-                  // For CC buttons, usually > 64 is ON, < 64 is OFF, or toggle behavior?
-                  // Sticking to NoteOn toggle for pads mostly.
-                  else if (isCC) {
-                      const newVal = data2 > 63 ? 1 : 0;
-                      const engine = getPixiEngine();
-                      if (engine) engine.setModulationValue(paramDef.id, newVal);
                       this._scheduleStoreSync(groupKey, paramKey, newVal);
                   }
               } 
@@ -227,16 +232,20 @@ class MidiManager {
                               SignalBus.emit('param:update', { 
                                   layerId: groupKey, param: paramKey, value: scaledVal, isNormalized: false 
                               });
+                              // Sync to Receiver (Layer Param)
+                              syncBridge.sendParamUpdate(groupKey, paramKey, scaledVal);
                           } else {
                               // Effect: Direct Set
                               engine.setModulationValue(paramDef.id, scaledVal);
+                              // Sync to Receiver (Modulation Value)
+                              syncBridge.sendModValue(paramDef.id, scaledVal);
                           }
                       }
                       this._scheduleStoreSync(groupKey, paramKey, scaledVal);
                   }
               }
           } 
-          // --- FALLBACK (Old Layer Logic) ---
+          // --- FALLBACK (Old Layer Logic - Safety Net) ---
           else {
               const normalized = this._normalize(data2, mapping.type, data1);
               if (['1','2','3'].includes(groupKey)) {
@@ -244,6 +253,15 @@ class MidiManager {
                       SignalBus.emit('param:update', { 
                           layerId: groupKey, param: paramKey, value: normalized, isNormalized: true 
                       });
+                      
+                      // Calculate approximate scaled value for sync
+                      const config = sliderParams.find(p => p.prop === paramKey);
+                      let finalVal = normalized;
+                      if (config) finalVal = config.min + (normalized * (config.max - config.min));
+                      
+                      // Sync to Receiver
+                      syncBridge.sendParamUpdate(groupKey, paramKey, finalVal);
+
                       this._scheduleStoreSync(groupKey, paramKey, normalized);
                   }
               }
@@ -346,12 +364,11 @@ class MidiManager {
     
     currentMap[group][learning.param] = mappingData;
 
-    // --- FIX: FORCE CATCH ENABLED ---
+    // --- FORCE CATCH ENABLED ---
     // This explicitly allows immediate override without needing to cross the threshold
     // specifically for the control we just learned.
     const catchKey = `${group}:${learning.param}`;
     this.catchStatus.set(catchKey, true);
-    // --------------------------------
     
     projectStore.updateGlobalMidiMap(currentMap);
     useEngineStore.getState().setMidiLearning(null);
