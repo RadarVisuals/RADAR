@@ -1,7 +1,6 @@
 // src/components/Panels/EnhancedControlPanel.jsx
 import React, { useCallback, useMemo, useState, useEffect } from "react";
 import PropTypes from "prop-types";
-import { useShallow } from 'zustand/react/shallow';
 
 import Panel from "./Panel";
 import PLockController from './PLockController';
@@ -14,7 +13,7 @@ import { useVisualEngine } from "../../hooks/useVisualEngine";
 import { useToast } from "../../hooks/useToast";
 import { BLEND_MODES } from "../../config/global-config";
 import { sliderParams } from "../../config/sliderParams";
-import { getPixiEngine } from "../../hooks/usePixiOrchestrator"; // <-- Import getPixiEngine
+import { getPixiEngine } from "../../hooks/usePixiOrchestrator";
 
 import {
   toplayerIcon,
@@ -24,6 +23,53 @@ import {
 } from "../../assets";
 
 import "./PanelStyles/EnhancedControlPanel.css";
+
+// PERFORMANCE FIX: Separate memoized component for list items
+// This prevents 60+ items from re-rendering when only one scene becomes active.
+const SceneListItem = React.memo(({ 
+    scene, 
+    isActive, 
+    isDefault, 
+    isOwner, 
+    isSaving, 
+    onSelect, 
+    onSetDefault, 
+    onDelete 
+}) => {
+    return (
+        <li className={isActive ? "active" : ""}>
+            <div className="scene-main-content">
+                <button 
+                    className="scene-name" 
+                    onClick={() => onSelect(scene.name)} 
+                    disabled={isSaving} 
+                    title={`Load "${scene.name}"`}
+                >
+                    {scene.name}
+                </button>
+                {isDefault && <span className="default-scene-tag">(Default)</span>}
+            </div>
+            {isOwner && (
+                <div className="scene-actions">
+                    <button 
+                        className="btn-icon" 
+                        onClick={() => onSetDefault(scene.name)} 
+                        disabled={isSaving || isDefault} 
+                        title="Set as Default"
+                    >★</button>
+                    <button 
+                        className="btn-icon delete-scene" 
+                        onClick={() => onDelete(scene.name)} 
+                        disabled={isSaving} 
+                        title={`Delete "${scene.name}"`}
+                    >×</button>
+                </div>
+            )}
+        </li>
+    );
+});
+
+SceneListItem.displayName = 'SceneListItem';
 
 const getDefaultLayerConfigTemplate = () => ({
   enabled: true, blendMode: "normal", opacity: 1.0, size: 1.0, speed: 0.01,
@@ -74,10 +120,8 @@ const EnhancedControlPanel = ({
   const midiLearning = useEngineStore(state => state.midiLearning);
   const learningLayer = useEngineStore(state => state.learningLayer);
   
-  // --- ADDED FPS STATE & ACTION ---
   const currentMaxFPS = useEngineStore(state => state.maxFPS);
   const setMaxFPS = useEngineStore(state => state.setMaxFPS);
-  // --- END ADDED FPS STATE & ACTION ---
 
   const setMidiLearning = useEngineStore(state => state.setMidiLearning);
   const setLearningLayer = useEngineStore(state => state.setLearningLayer);
@@ -120,21 +164,13 @@ const EnhancedControlPanel = ({
     addToast(`Crossfade duration set to ${newDurationSeconds}s.`, "success");
   };
   
-  // --- UPDATED FPS CHANGE HANDLER ---
   const handleFPSChange = useCallback((newFPS) => {
-    // 1. Update Persistent Store
     setMaxFPS(newFPS);
-    
-    // 2. Apply instantly to Engine
     const engine = getPixiEngine();
-    if (engine) {
-        engine.setMaxFPS(newFPS);
-    }
-
+    if (engine) engine.setMaxFPS(newFPS);
     const label = newFPS === 0 ? "Uncapped (Native)" : `${newFPS} FPS`;
     addToast(`Render rate set to ${label}.`, 'success');
   }, [addToast, setMaxFPS]);
-  // --- END UPDATED FPS CHANGE HANDLER ---
 
   const activeLayer = useMemo(() => String(tabToLayerIdMap[activeTab] || 3), [activeTab]);
   const activeLayerConfigs = uiControlConfig?.layers;
@@ -150,15 +186,10 @@ const EnhancedControlPanel = ({
 
   const handleCreateScene = useCallback(() => {
     const name = newSceneName.trim();
-    if (!name) {
-      addToast("Scene name cannot be empty.", "warning");
-      return;
-    }
+    if (!name) { addToast("Scene name cannot be empty.", "warning"); return; }
     const liveLayersConfig = JSON.parse(JSON.stringify(uiControlConfig.layers));
     const newSceneData = {
-      name,
-      ts: Date.now(),
-      layers: liveLayersConfig,
+      name, ts: Date.now(), layers: liveLayersConfig,
       tokenAssignments: JSON.parse(JSON.stringify(uiControlConfig.tokenAssignments)),
     };
     addNewSceneToStagedWorkspace(name, newSceneData);
@@ -213,6 +244,10 @@ const EnhancedControlPanel = ({
   
   const stopMIDILearn = useCallback(() => setMidiLearning(null), [setMidiLearning]);
   const stopLayerMIDILearn = useCallback(() => setLearningLayer(null), [setLearningLayer]);
+
+  const handleItemSelect = useCallback((name) => {
+      onSceneSelect(name, crossfadeDurationMs);
+  }, [onSceneSelect, crossfadeDurationMs]);
 
   return (
     <Panel title={`Layer ${activeLayer} Controls`} onClose={onToggleMinimize} className="panel-from-toolbar enhanced-control-panel">
@@ -289,25 +324,17 @@ const EnhancedControlPanel = ({
         {savedSceneList.length > 0 ? (
           <ul className="scene-list">
             {savedSceneList.map((scene) => (
-              <li key={scene.name} className={scene.name === activeSceneName ? "active" : ""}>
-                <div className="scene-main-content">
-                  <button className="scene-name" onClick={() => onSceneSelect(scene.name, crossfadeDurationMs)} disabled={isSaving} title={`Load "${scene.name}"`}>
-                    {scene.name}
-                  </button>
-                  {stagedActiveWorkspace?.defaultPresetName === scene.name && (<span className="default-scene-tag">(Default)</span>)}
-                </div>
-                {isProfileOwner && (
-                  <div className="scene-actions">
-                    <button className="btn-icon" onClick={() => setDefaultSceneInStagedWorkspace(scene.name)} disabled={isSaving || stagedActiveWorkspace?.defaultPresetName === scene.name} title="Set as Default">★</button>
-                    <button 
-                      className="btn-icon delete-scene" 
-                      onClick={() => handleDeleteScene(scene.name)} 
-                      disabled={isSaving || savedSceneList.length <= 1} 
-                      title={savedSceneList.length <= 1 ? "Cannot delete the last scene" : `Delete "${scene.name}"`}
-                    >×</button>
-                  </div>
-                )}
-              </li>
+              <SceneListItem 
+                key={scene.name}
+                scene={scene}
+                isActive={scene.name === activeSceneName}
+                isDefault={stagedActiveWorkspace?.defaultPresetName === scene.name}
+                isOwner={isProfileOwner}
+                isSaving={isSaving}
+                onSelect={handleItemSelect}
+                onSetDefault={setDefaultSceneInStagedWorkspace}
+                onDelete={handleDeleteScene}
+              />
             ))}
           </ul>
         ) : <p className="no-scenes-message">No scenes saved in this workspace.</p>}
@@ -317,122 +344,37 @@ const EnhancedControlPanel = ({
         <h4 className="config-section-title">Scene Sequencer Settings</h4>
         <div className="sequencer-interval-form">
             <label htmlFor="crossfade-duration-input">Crossfade Duration:</label>
-            <input
-                id="crossfade-duration-input"
-                type="number"
-                className="form-control interval-input"
-                value={localDurationInput}
-                onChange={(e) => setLocalDurationInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSetDuration()}
-                min="0.1"
-                step="0.1"
-                disabled={isAutoFading}
-            />
+            <input id="crossfade-duration-input" type="number" className="form-control interval-input" value={localDurationInput} onChange={(e) => setLocalDurationInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSetDuration()} min="0.1" step="0.1" disabled={isAutoFading} />
             <span className="interval-unit">s</span>
             <button className="btn btn-sm interval-set-button" onClick={handleSetDuration} disabled={isAutoFading}>Set</button>
         </div>
         <div className="sequencer-interval-form">
             <label htmlFor="sequencer-interval-input">Interval Between Fades:</label>
-            <input
-                id="sequencer-interval-input"
-                type="number"
-                className="form-control interval-input"
-                value={localIntervalInput}
-                onChange={(e) => setLocalIntervalInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSetInterval()}
-                min="0"
-                step="0.1"
-                disabled={isAutoFading}
-            />
+            <input id="sequencer-interval-input" type="number" className="form-control interval-input" value={localIntervalInput} onChange={(e) => setLocalIntervalInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSetInterval()} min="0" step="0.1" disabled={isAutoFading} />
             <span className="interval-unit">s</span>
             <button className="btn btn-sm interval-set-button" onClick={handleSetInterval} disabled={isAutoFading}>Set</button>
         </div>
       </div>
       
-      {/* --- ADDED SECTION: PERFORMANCE SETTINGS --- */}
       <div className="performance-settings-section">
         <h4 className="config-section-title">Performance Settings</h4>
         <div className="fps-control-group">
           <span className="fps-label">Max Render Rate:</span>
           <div className="fps-buttons">
-            <button
-              className={`btn btn-sm fps-button ${currentMaxFPS === 0 ? 'active' : ''}`}
-              onClick={() => handleFPSChange(0)}
-              disabled={currentMaxFPS === 0}
-              title="Native Refresh Rate (Uncapped). Recommended for high-refresh monitors (120/144Hz)."
-            >
-              NATIVE
-            </button>
-            <button
-              className={`btn btn-sm fps-button ${currentMaxFPS === 60 ? 'active' : ''}`}
-              onClick={() => handleFPSChange(60)}
-              disabled={currentMaxFPS === 60}
-              title="Locks render rate to 60 FPS. Recommended for 60Hz displays and projectors."
-            >
-              60 FPS
-            </button>
+            <button className={`btn btn-sm fps-button ${currentMaxFPS === 0 ? 'active' : ''}`} onClick={() => handleFPSChange(0)} disabled={currentMaxFPS === 0} title="Native Refresh Rate">NATIVE</button>
+            <button className={`btn btn-sm fps-button ${currentMaxFPS === 60 ? 'active' : ''}`} onClick={() => handleFPSChange(60)} disabled={currentMaxFPS === 60} title="Locks to 60 FPS">60 FPS</button>
           </div>
         </div>
       </div>
-      {/* --- END ADDED SECTION --- */}
 
       {isConnected && (
         <div className="midi-mappings-section">
           <h4 className="midi-section-title">Global & Layer MIDI Mappings</h4>
           <div className="global-mapping-grid">
-            <div className="global-mapping-item">
-              <div className="global-mapping-label">Crossfader</div>
-              <div className="global-mapping-controls">
-                <span className="layer-mapping-text" title={displayGlobalMidiMapping('crossfader')}>{displayGlobalMidiMapping('crossfader')}</span>
-                <button type="button" className={`midi-learn-btn small-action-button ${midiLearning?.control === 'crossfader' ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('crossfader')} disabled={!isProfileOwner || !isConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Crossfader">{midiLearning?.control === 'crossfader' ? "..." : "Map"}</button>
-              </div>
-            </div>
-            <div className="global-mapping-item">
-              <div className="global-mapping-label">P-Lock Toggle</div>
-              <div className="global-mapping-controls">
-                <span className="layer-mapping-text" title={displayGlobalMidiMapping('pLockToggle')}>{displayGlobalMidiMapping('pLockToggle')}</span>
-                <button type="button" className={`midi-learn-btn small-action-button ${midiLearning?.control === 'pLockToggle' ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('pLockToggle')} disabled={!isProfileOwner || !isConnected || !!midiLearning || !!learningLayer} title="Map MIDI to P-Lock Toggle">{midiLearning?.control === 'pLockToggle' ? "..." : "Map"}</button>
-              </div>
-            </div>
-            <div className="global-mapping-item">
-              <div className="global-mapping-label">Previous Scene</div>
-              <div className="global-mapping-controls">
-                <span className="layer-mapping-text" title={displayGlobalMidiMapping('prevScene')}>{displayGlobalMidiMapping('prevScene')}</span>
-                <button type="button" className={`midi-learn-btn small-action-button ${midiLearning?.control === 'prevScene' ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('prevScene')} disabled={!isProfileOwner || !isConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Previous Scene">{midiLearning?.control === 'prevScene' ? "..." : "Map"}</button>
-              </div>
-            </div>
-            <div className="global-mapping-item">
-              <div className="global-mapping-label">Next Scene</div>
-              <div className="global-mapping-controls">
-                <span className="layer-mapping-text" title={displayGlobalMidiMapping('nextScene')}>{displayGlobalMidiMapping('nextScene')}</span>
-                <button type="button" className={`midi-learn-btn small-action-button ${midiLearning?.control === 'nextScene' ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('nextScene')} disabled={!isProfileOwner || !isConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Next Scene">{midiLearning?.control === 'nextScene' ? "..." : "Map"}</button>
-              </div>
-            </div>
-            <div className="global-mapping-item">
-              <div className="global-mapping-label">Previous Workspace</div>
-              <div className="global-mapping-controls">
-                <span className="layer-mapping-text" title={displayGlobalMidiMapping('prevWorkspace')}>{displayGlobalMidiMapping('prevWorkspace')}</span>
-                <button type="button" className={`midi-learn-btn small-action-button ${midiLearning?.control === 'prevWorkspace' ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('prevWorkspace')} disabled={!isProfileOwner || !isConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Previous Workspace">{midiLearning?.control === 'prevWorkspace' ? "..." : "Map"}</button>
-              </div>
-            </div>
-            <div className="global-mapping-item">
-              <div className="global-mapping-label">Next Workspace</div>
-              <div className="global-mapping-controls">
-                <span className="layer-mapping-text" title={displayGlobalMidiMapping('nextWorkspace')}>{displayGlobalMidiMapping('nextWorkspace')}</span>
-                <button type="button" className={`midi-learn-btn small-action-button ${midiLearning?.control === 'nextWorkspace' ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('nextWorkspace')} disabled={!isProfileOwner || !isConnected || !!midiLearning || !!learningLayer} title="Map MIDI to Next Workspace">{midiLearning?.control === 'nextWorkspace' ? "..." : "Map"}</button>
-              </div>
-            </div>
-          </div>
-          <div className="layer-mapping-grid">
-            {[3, 2, 1].map((layerNum) => (
-              <div key={`layer_mapping_${layerNum}`} className={`layer-mapping-item ${activeLayer === String(layerNum) ? "active" : ""}`}>
-                <div className="layer-mapping-label">Layer {layerNum} Select</div>
-                <div className="layer-mapping-controls">
-                  <span className="layer-mapping-text" title={displayLayerMidiMapping(String(layerNum))}>{displayLayerMidiMapping(String(layerNum))}</span>
-                  {isProfileOwner && (<button type="button" className={`midi-learn-btn small-action-button ${learningLayer === layerNum ? "learning" : ""}`} onClick={() => handleEnterLayerMIDILearnMode(layerNum)} disabled={!isConnected || !!midiLearning || (learningLayer !== null && learningLayer !== layerNum)} title={`Map MIDI to select Layer ${layerNum}`}> {learningLayer === layerNum ? "..." : "Map"} </button>)}
-                </div>
-              </div>
-            ))}
+            <div className="global-mapping-item"><div className="global-mapping-label">Crossfader</div><div className="global-mapping-controls"><span className="layer-mapping-text" title={displayGlobalMidiMapping('crossfader')}>{displayGlobalMidiMapping('crossfader')}</span><button type="button" className={`midi-learn-btn small-action-button ${midiLearning?.control === 'crossfader' ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('crossfader')} disabled={!isProfileOwner || !isConnected || !!midiLearning || !!learningLayer}>Map</button></div></div>
+            <div className="global-mapping-item"><div className="global-mapping-label">P-Lock Toggle</div><div className="global-mapping-controls"><span className="layer-mapping-text" title={displayGlobalMidiMapping('pLockToggle')}>{displayGlobalMidiMapping('pLockToggle')}</span><button type="button" className={`midi-learn-btn small-action-button ${midiLearning?.control === 'pLockToggle' ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('pLockToggle')} disabled={!isProfileOwner || !isConnected || !!midiLearning || !!learningLayer}>Map</button></div></div>
+            <div className="global-mapping-item"><div className="global-mapping-label">Prev Scene</div><div className="global-mapping-controls"><span className="layer-mapping-text" title={displayGlobalMidiMapping('prevScene')}>{displayGlobalMidiMapping('prevScene')}</span><button type="button" className={`midi-learn-btn small-action-button ${midiLearning?.control === 'prevScene' ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('prevScene')} disabled={!isProfileOwner || !isConnected || !!midiLearning || !!learningLayer}>Map</button></div></div>
+            <div className="global-mapping-item"><div className="global-mapping-label">Next Scene</div><div className="global-mapping-controls"><span className="layer-mapping-text" title={displayGlobalMidiMapping('nextScene')}>{displayGlobalMidiMapping('nextScene')}</span><button type="button" className={`midi-learn-btn small-action-button ${midiLearning?.control === 'nextScene' ? "learning" : ""}`} onClick={() => handleEnterGlobalMIDILearnMode('nextScene')} disabled={!isProfileOwner || !isConnected || !!midiLearning || !!learningLayer}>Map</button></div></div>
           </div>
         </div>
       )}
